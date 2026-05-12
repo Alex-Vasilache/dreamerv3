@@ -51,6 +51,7 @@ class Replay:
     self.save_wait = save_wait
 
     self.metrics = {'samples': 0, 'inserts': 0, 'updates': 0}
+    self._loaded_items = {}
 
   def __len__(self):
     return len(self.items)
@@ -339,24 +340,25 @@ class Replay:
     with ThreadPoolExecutor(16, 'replay_loader') as pool:
       chunks = [x for x in pool.map(load, filenames) if x]
 
-    # We need to recompute the number of items per chunk now because some
-    # chunks may be corrupted and thus not available.
-    # numitems = self._numitems(chunks + list(self.chunks.values()))
-    numitems = self._numitems(chunks)
-
     with self.rwlock.writing:
       self.saved.update([chunk.uuid for chunk in chunks])
       with self.refs_lock:
         for chunk in chunks:
           self.chunks[chunk.uuid] = chunk
-          self.refs[chunk.uuid] = 0
-        for chunk in reversed(chunks):
-          amount = numitems[chunk.uuid]
-          self.refs[chunk.uuid] += amount
-          if chunk.succ in self.refs:
-            self.refs[chunk.succ] += 1
-          for index in range(amount):
-            self._insert(chunk.uuid, index)
+          self.refs.setdefault(chunk.uuid, 0)
+        # Insert counts must include successor chunks already resident in RAM.
+        numitems = self._numitems(list(self.chunks.values()))
+        for chunk in reversed(list(self.chunks.values())):
+          target = numitems[chunk.uuid]
+          prev = self._loaded_items.get(chunk.uuid, 0)
+          delta = max(0, target - prev)
+          if delta:
+            self.refs[chunk.uuid] += delta
+            if chunk.succ in self.refs and prev == 0:
+              self.refs[chunk.succ] += 1
+            for index in range(prev, target):
+              self._insert(chunk.uuid, index)
+          self._loaded_items[chunk.uuid] = target
 
   @elements.timer.section('complete_chunk')
   def _complete(self, chunk, worker):

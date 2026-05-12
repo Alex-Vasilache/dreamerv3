@@ -13,7 +13,7 @@ set -euo pipefail
 source /apps/unit/DoyaU/vasilache/source_dreamerv3_env.sh
 
 if [ -z "${LOGDIR:-}" ]; then
-  RUN_DIR="$(mktemp -d /work/DoyaU/vasilache/dreamerv3_online_XXXXXX)"
+  RUN_DIR="$(dreamerv3_mktemp_run_dir dreamerv3_online)"
   LOGDIR="$RUN_DIR/logdir"
   mkdir -p "$LOGDIR"
   echo "LOGDIR=$LOGDIR" > "$RUN_DIR/job.env"
