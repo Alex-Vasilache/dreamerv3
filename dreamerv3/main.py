@@ -68,13 +68,18 @@ def main(argv=None):
 
   if config.script == 'train':
     if config.online_learning:
+      actor_agent = bind(make_agent, config)
+      if config.online_actor_cpu:
+        actor_agent = bind(make_agent, config.update(
+            jax=config.jax.update(platform='cpu', prealloc=False)))
       embodied.run.online.launch(
           bind(make_agent, config),
           bind(make_env, config),
           bind(make_logger, config),
           bind(make_replay, config, 'replay'),
           bind(make_stream, config),
-          args)
+          args,
+          make_actor_agent=actor_agent)
     else:
       embodied.run.train(
           bind(make_agent, config),
@@ -93,8 +98,12 @@ def main(argv=None):
         args)
 
   elif config.script == 'online_actor':
+    actor_agent = bind(make_agent, config)
+    if config.online_actor_cpu:
+      actor_agent = bind(make_agent, config.update(
+          jax=config.jax.update(platform='cpu', prealloc=False)))
     embodied.run.online.standalone_actor(
-        bind(make_agent, config),
+        actor_agent,
         bind(make_env, config),
         bind(make_logger, config),
         bind(make_replay, config, 'replay'),

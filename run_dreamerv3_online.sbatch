@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH -J dreamerv3_cartpole12m
+#SBATCH -J dreamerv3_online
 #SBATCH -p gpu
 #SBATCH -t 0-4:00:00
 #SBATCH -c 8
@@ -12,7 +12,7 @@ set -euo pipefail
 
 source /apps/unit/DoyaU/vasilache/source_dreamerv3_env.sh
 
-RUN_DIR="${RUN_DIR:-$(mktemp -d /work/DoyaU/vasilache/dreamerv3_run_XXXXXX)}"
+RUN_DIR="${RUN_DIR:-$(mktemp -d /work/DoyaU/vasilache/dreamerv3_online_XXXXXX)}"
 mkdir -p "$RUN_DIR"
 echo "RUN_DIR=$RUN_DIR" > "$RUN_DIR/job.env"
 
@@ -24,6 +24,8 @@ python -u /apps/unit/DoyaU/vasilache/code/dreamerv3/dreamerv3/main.py \
   --configs size12m \
   --task dmc_cartpole_swingup \
   --env.dmc.image False \
+  --online_learning True \
+  --online_actor_cpu True \
   --run.envs 4 \
   --run.steps 1100000 \
   --logger.outputs jsonl,scope,tensorboard \

@@ -15,6 +15,7 @@ defaults:
   replay_context: 1
   random_agent: False
   online_learning: False
+  online_actor_cpu: True
   clock_addr: ''
   clock_port: ''
   ipv6: False
