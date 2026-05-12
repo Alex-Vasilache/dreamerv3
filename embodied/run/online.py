@@ -157,8 +157,11 @@ def _shared_paths(logdir):
   return paths
 
 
-def launch(make_agent, make_env, make_logger, make_replay, make_stream, args):
+def launch(
+    make_agent, make_env, make_logger, make_replay, make_stream, args,
+    make_actor_agent=None):
   paths = _shared_paths(args.logdir)
+  make_actor_agent = make_actor_agent or make_agent
   ctx = mp.get_context('spawn')
   coordination = MpCoordination(ctx.Event(), ctx.Event())
   processes = [
@@ -171,8 +174,8 @@ def launch(make_agent, make_env, make_logger, make_replay, make_stream, args):
       ctx.Process(
           name='dreamerv3_actor',
           target=_actor_process,
-          args=(make_agent, make_env, make_logger, make_replay, paths, args,
-                coordination),
+          args=(make_actor_agent, make_env, make_logger, make_replay, paths,
+                args, coordination),
           daemon=False),
   ]
   for process in processes:
