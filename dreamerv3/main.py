@@ -64,6 +64,7 @@ def main(argv=None):
       consec_train=config.consec_train,
       consec_report=config.consec_report,
       replay_context=config.replay_context,
+      online_actor_flush_steps=config.online_actor_flush_steps,
   )
 
   if config.script == 'train':
@@ -72,6 +73,7 @@ def main(argv=None):
       if config.online_actor_cpu:
         actor_agent = bind(make_agent, config.update(
             jax=config.jax.update(platform='cpu', prealloc=False)))
+      actor_replay = bind(make_online_actor_replay, config, 'replay')
       embodied.run.online.launch(
           bind(make_agent, config),
           bind(make_env, config),
@@ -79,7 +81,8 @@ def main(argv=None):
           bind(make_replay, config, 'replay'),
           bind(make_stream, config),
           args,
-          make_actor_agent=actor_agent)
+          make_actor_agent=actor_agent,
+          make_actor_replay=actor_replay)
     else:
       embodied.run.train(
           bind(make_agent, config),
@@ -106,7 +109,7 @@ def main(argv=None):
         actor_agent,
         bind(make_env, config),
         bind(make_logger, config),
-        bind(make_replay, config, 'replay'),
+        bind(make_online_actor_replay, config, 'replay'),
         args)
 
   elif config.script == 'train_eval':
@@ -213,6 +216,13 @@ def make_logger(config):
       raise NotImplementedError(output)
   logger = elements.Logger(step, outputs, multiplier)
   return logger
+
+
+def make_online_actor_replay(config, folder, mode='train'):
+  cap = config.online_actor_replay_size
+  if cap:
+    config = config.update(replay=config.replay.update(size=cap))
+  return make_replay(config, folder, mode)
 
 
 def make_replay(config, folder, mode='train'):

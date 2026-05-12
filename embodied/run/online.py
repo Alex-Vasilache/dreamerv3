@@ -32,12 +32,29 @@ class OnlineSharedPaths:
   def shutdown(self):
     return elements.Path(self.root) / 'shutdown'
 
+  @property
+  def actor_step(self):
+    return elements.Path(self.root) / 'actor_step'
+
 
 class MpCoordination:
 
-  def __init__(self, shutdown=None, learner_ready=None):
+  def __init__(self, shutdown=None, learner_ready=None, partner_pid=None):
     self._shutdown = shutdown
     self._learner_ready = learner_ready
+    self._partner_pid = partner_pid
+
+  def set_partner_pid(self, pid):
+    self._partner_pid = pid
+
+  def partner_exited(self):
+    if self._partner_pid is None:
+      return False
+    try:
+      os.kill(self._partner_pid, 0)
+    except OSError:
+      return True
+    return False
 
   def wait_learner_ready(self):
     if self._learner_ready is not None:
@@ -159,27 +176,28 @@ def _shared_paths(logdir):
 
 def launch(
     make_agent, make_env, make_logger, make_replay, make_stream, args,
-    make_actor_agent=None):
+    make_actor_agent=None, make_actor_replay=None):
   paths = _shared_paths(args.logdir)
   make_actor_agent = make_actor_agent or make_agent
+  make_actor_replay = make_actor_replay or make_replay
   ctx = mp.get_context('spawn')
   coordination = MpCoordination(ctx.Event(), ctx.Event())
-  processes = [
-      ctx.Process(
-          name='dreamerv3_learner',
-          target=_learner_process,
-          args=(make_agent, make_logger, make_replay, make_stream, paths,
-                args, coordination),
-          daemon=False),
-      ctx.Process(
-          name='dreamerv3_actor',
-          target=_actor_process,
-          args=(make_actor_agent, make_env, make_logger, make_replay, paths,
-                args, coordination),
-          daemon=False),
-  ]
+  actor_process = ctx.Process(
+      name='dreamerv3_actor',
+      target=_actor_process,
+      args=(make_actor_agent, make_env, make_logger, make_actor_replay, paths,
+            args, coordination),
+      daemon=False)
+  learner_process = ctx.Process(
+      name='dreamerv3_learner',
+      target=_learner_process,
+      args=(make_agent, make_logger, make_replay, make_stream, paths,
+            args, coordination),
+      daemon=False)
+  processes = [learner_process, actor_process]
   for process in processes:
     process.start()
+  coordination.set_partner_pid(actor_process.pid)
   try:
     for process in processes:
       process.join()
@@ -242,6 +260,16 @@ def _atomic_write(path, data):
   os.replace(tmp, path)
 
 
+def _write_actor_step(path, step):
+  _atomic_write(path, str(int(step)).encode('utf-8'))
+
+
+def _read_actor_step(path):
+  if not path.exists():
+    return 0
+  return int(path.read_text().strip())
+
+
 def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
               coordination=None):
   agent = make_agent()
@@ -297,10 +325,16 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   print('Start actor loop')
   policy = lambda *a, **kw: agent.policy(*a, mode='train', **kw)
   driver.reset(agent.init_policy)
+  flush_pending = 0
+  flush_every = max(1, int(args.online_actor_flush_steps))
   while step < args.steps:
     shared_policy.load_into_agent(agent)
-    driver(policy, steps=max(10, args.batch_size))
-    shared_buffer.flush()
+    driver(policy, steps=10)
+    flush_pending += 10 * args.envs
+    if flush_pending >= flush_every:
+      shared_buffer.flush()
+      _write_actor_step(paths.actor_step, step)
+      flush_pending = 0
     if should_log(step):
       logger.add(epstats.result(), prefix='epstats')
       logger.add(shared_buffer.stats(), prefix='replay')
@@ -309,6 +343,7 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
       logger.add({'timer': elements.timer.stats()['summary']})
       logger.write()
   shared_buffer.flush()
+  _write_actor_step(paths.actor_step, step)
   logger.close()
 
 
@@ -326,9 +361,11 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   train_agg = elements.Agg()
   train_fps = elements.FPS()
   batch_steps = args.batch_size * args.batch_length
+  should_train = elements.when.Ratio(args.train_ratio / batch_steps)
   should_log = embodied.LocalClock(args.log_every)
   should_save = embodied.LocalClock(args.save_every)
   carry_train = agent.init_train(args.batch_size)
+  last_actor_step = -1
 
   cp = elements.Checkpoint(logdir / 'ckpt')
   cp.step = step
@@ -345,7 +382,8 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   print('Waiting for online replay prefill...')
   while not shared_buffer.ready(args.batch_size, args.batch_length):
     shared_buffer.refresh()
-    if coordination is not None and coordination.shutdown_set():
+    if coordination is not None and (
+        coordination.shutdown_set() or coordination.partner_exited()):
       shared_buffer.refresh()
       if shared_buffer.ready(args.batch_size, args.batch_length):
         break
@@ -356,7 +394,13 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
 
   stream_train = iter(agent.stream(make_stream(replay, 'train')))
   while step < args.steps:
-    shared_buffer.refresh()
+    if coordination is not None and coordination.partner_exited():
+      print('Actor exited; stopping learner.')
+      break
+    actor_step = _read_actor_step(paths.actor_step)
+    if actor_step > last_actor_step:
+      shared_buffer.refresh()
+      last_actor_step = actor_step
     if not shared_buffer.ready(args.batch_size, args.batch_length):
       if coordination is not None and coordination.shutdown_set():
         shared_buffer.refresh()
@@ -364,14 +408,19 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
           break
       time.sleep(0.01)
       continue
-    with elements.timer.section('stream_next'):
-      batch = next(stream_train)
-    carry_train, outs, mets = agent.train(carry_train, batch)
-    train_fps.step(batch_steps)
-    step.increment(batch_steps)
-    if 'replay' in outs:
-      replay.update(outs['replay'])
-    train_agg.add(mets, prefix='train')
+    repeats = should_train(actor_step)
+    if repeats <= 0:
+      time.sleep(0.001)
+      continue
+    for _ in range(repeats):
+      with elements.timer.section('stream_next'):
+        batch = next(stream_train)
+      carry_train, outs, mets = agent.train(carry_train, batch)
+      train_fps.step(batch_steps)
+      step.increment(batch_steps)
+      if 'replay' in outs:
+        replay.update(outs['replay'])
+      train_agg.add(mets, prefix='train')
     shared_policy.publish(agent)
     if should_log(step):
       logger.add(train_agg.result())
