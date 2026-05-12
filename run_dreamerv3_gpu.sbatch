@@ -12,7 +12,7 @@ set -euo pipefail
 
 source /apps/unit/DoyaU/vasilache/source_dreamerv3_env.sh
 
-RUN_DIR="${RUN_DIR:-$(mktemp -d /work/DoyaU/vasilache/dreamerv3_run_XXXXXX)}"
+RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir dreamerv3_run)}"
 mkdir -p "$RUN_DIR"
 echo "RUN_DIR=$RUN_DIR" > "$RUN_DIR/job.env"
 
