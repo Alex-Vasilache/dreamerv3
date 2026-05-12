@@ -2,9 +2,9 @@
 #SBATCH -J dreamerv3_online
 #SBATCH -p gpu
 #SBATCH -t 0-4:00:00
-#SBATCH -c 8
+#SBATCH -c 16
 #SBATCH --gres=gpu:v100:1
-#SBATCH --mem=32G
+#SBATCH --mem=96G
 #SBATCH -o /home/g/george-vasilache/slurm-%j.out
 #SBATCH -e /home/g/george-vasilache/slurm-%j.err
 

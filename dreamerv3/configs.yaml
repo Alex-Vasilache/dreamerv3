@@ -16,6 +16,8 @@ defaults:
   random_agent: False
   online_learning: False
   online_actor_cpu: True
+  online_actor_flush_steps: 128
+  online_actor_replay_size: 250000
   clock_addr: ''
   clock_port: ''
   ipv6: False
