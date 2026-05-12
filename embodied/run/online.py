@@ -2,6 +2,7 @@ import collections
 import multiprocessing as mp
 import os
 import pickle
+import threading
 import time
 from dataclasses import dataclass
 from functools import partial as bind
@@ -105,25 +106,11 @@ class SharedExperienceBuffer:
   def flush(self):
     self._replay.save()
 
-  def refresh(self):
+  def sync(self):
     replay = self._replay
     if not replay.directory:
       replay.load(amount=replay.capacity)
       return
-    replay.items.clear()
-    replay.fifo.clear()
-    replay.itemid = 0
-    if hasattr(replay.sampler, 'indices'):
-      replay.sampler.indices.clear()
-      replay.sampler.keys.clear()
-    replay.chunks.clear()
-    replay.refs.clear()
-    replay.streams.clear()
-    replay.current.clear()
-    replay.saved.clear()
-    if replay.online:
-      replay.lengths.clear()
-      replay.queue.clear()
     replay.load(amount=replay.capacity)
 
   def ready(self, batch_size, batch_length):
@@ -132,6 +119,27 @@ class SharedExperienceBuffer:
 
   def stats(self):
     return self._replay.stats()
+
+
+class ExperienceSyncThread:
+
+  def __init__(self, buffer, interval, stop):
+    self._buffer = buffer
+    self._interval = max(0.0, float(interval))
+    self._stop = stop
+    self._thread = None
+
+  def start(self):
+    if self._interval <= 0:
+      return
+    self._thread = threading.Thread(
+        target=self._run, name='online_replay_sync', daemon=True)
+    self._thread.start()
+
+  def _run(self):
+    while not self._stop.is_set():
+      self._buffer.sync()
+      self._stop.wait(self._interval)
 
 
 class SharedPolicyWeights:
@@ -286,6 +294,7 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   episodes = collections.defaultdict(elements.Agg)
   policy_fps = elements.FPS()
   should_log = embodied.LocalClock(args.log_every)
+  should_sync_policy = embodied.LocalClock(args.online_sync_every)
   @elements.timer.section('logfn')
   def logfn(tran, worker):
     episode = episodes[worker]
@@ -328,12 +337,13 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   flush_pending = 0
   flush_every = max(1, int(args.online_actor_flush_steps))
   while step < args.steps:
-    shared_policy.load_into_agent(agent)
-    driver(policy, steps=10)
-    flush_pending += 10 * args.envs
+    if should_sync_policy(step):
+      shared_policy.load_into_agent(agent)
+    driver(policy, steps=100)
+    _write_actor_step(paths.actor_step, step)
+    flush_pending += 100 * args.envs
     if flush_pending >= flush_every:
       shared_buffer.flush()
-      _write_actor_step(paths.actor_step, step)
       flush_pending = 0
     if should_log(step):
       logger.add(epstats.result(), prefix='epstats')
@@ -361,11 +371,13 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   train_agg = elements.Agg()
   train_fps = elements.FPS()
   batch_steps = args.batch_size * args.batch_length
-  should_train = elements.when.Ratio(args.train_ratio / batch_steps)
   should_log = embodied.LocalClock(args.log_every)
   should_save = embodied.LocalClock(args.save_every)
+  should_sync_policy = embodied.LocalClock(args.online_sync_every)
   carry_train = agent.init_train(args.batch_size)
-  last_actor_step = -1
+  replay_sync_stop = threading.Event()
+  replay_sync = ExperienceSyncThread(
+      shared_buffer, args.online_replay_sync_interval, replay_sync_stop)
 
   cp = elements.Checkpoint(logdir / 'ckpt')
   cp.step = step
@@ -381,10 +393,10 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   print('Start learner loop')
   print('Waiting for online replay prefill...')
   while not shared_buffer.ready(args.batch_size, args.batch_length):
-    shared_buffer.refresh()
+    shared_buffer.sync()
     if coordination is not None and (
         coordination.shutdown_set() or coordination.partner_exited()):
-      shared_buffer.refresh()
+      shared_buffer.sync()
       if shared_buffer.ready(args.batch_size, args.batch_length):
         break
       print('Actor exited before online replay prefill completed.')
@@ -392,27 +404,21 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       return
     time.sleep(0.05)
 
+  replay_sync.start()
   stream_train = iter(agent.stream(make_stream(replay, 'train')))
-  while step < args.steps:
-    if coordination is not None and coordination.partner_exited():
-      print('Actor exited; stopping learner.')
-      break
-    actor_step = _read_actor_step(paths.actor_step)
-    if actor_step > last_actor_step:
-      shared_buffer.refresh()
-      last_actor_step = actor_step
-    if not shared_buffer.ready(args.batch_size, args.batch_length):
-      if coordination is not None and coordination.shutdown_set():
-        shared_buffer.refresh()
-        if not shared_buffer.ready(args.batch_size, args.batch_length):
-          break
-      time.sleep(0.01)
-      continue
-    repeats = should_train(actor_step)
-    if repeats <= 0:
-      time.sleep(0.001)
-      continue
-    for _ in range(repeats):
+  try:
+    while step < args.steps:
+      if coordination is not None and coordination.partner_exited():
+        print('Actor exited; stopping learner.')
+        break
+      if not shared_buffer.ready(args.batch_size, args.batch_length):
+        shared_buffer.sync()
+        if coordination is not None and coordination.shutdown_set():
+          shared_buffer.sync()
+          if not shared_buffer.ready(args.batch_size, args.batch_length):
+            break
+        time.sleep(0.01)
+        continue
       with elements.timer.section('stream_next'):
         batch = next(stream_train)
       carry_train, outs, mets = agent.train(carry_train, batch)
@@ -421,14 +427,17 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       if 'replay' in outs:
         replay.update(outs['replay'])
       train_agg.add(mets, prefix='train')
-    shared_policy.publish(agent)
-    if should_log(step):
-      logger.add(train_agg.result())
-      logger.add(shared_buffer.stats(), prefix='replay')
-      logger.add(usage.stats(), prefix='usage')
-      logger.add({'fps/train': train_fps.result()})
-      logger.add({'timer': elements.timer.stats()['summary']})
-      logger.write()
-    if should_save(step):
-      cp.save()
+      if should_sync_policy(step):
+        shared_policy.publish(agent)
+      if should_log(step):
+        logger.add(train_agg.result())
+        logger.add(replay.stats(), prefix='replay')
+        logger.add(usage.stats(), prefix='usage')
+        logger.add({'fps/train': train_fps.result()})
+        logger.add({'timer': elements.timer.stats()['summary']})
+        logger.write()
+      if should_save(step):
+        cp.save()
+  finally:
+    replay_sync_stop.set()
   logger.close()

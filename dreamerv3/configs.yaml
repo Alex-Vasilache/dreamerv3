@@ -18,6 +18,8 @@ defaults:
   online_actor_cpu: True
   online_actor_flush_steps: 128
   online_actor_replay_size: 250000
+  online_sync_every: 180
+  online_replay_sync_interval: 5
   clock_addr: ''
   clock_port: ''
   ipv6: False
