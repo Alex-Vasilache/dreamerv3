@@ -91,7 +91,9 @@ def setup(
         '--xla_enable_async_all_gather=true',
     ]
   if xlaflags:
-    os.environ['XLA_FLAGS'] = ' '.join(xlaflags)
+    prior = os.environ.get('XLA_FLAGS', '').strip()
+    joined = ' '.join(xlaflags)
+    os.environ['XLA_FLAGS'] = f'{prior} {joined}'.strip() if prior else joined
 
   if num_processes > 1 and platform != 'tpu':
     # Note that the process_id is unrelated to the jax.process_index() that JAX
