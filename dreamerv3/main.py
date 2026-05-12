@@ -39,7 +39,8 @@ def main(argv=None):
   print('Run script:', config.script)
   if not config.script.endswith(('_env', '_replay')):
     logdir.mkdir()
-    config.save(logdir / 'config.yaml')
+    if config.script != 'online_actor':
+      config.save(logdir / 'config.yaml')
 
   def init():
     elements.timer.global_timer.enabled = config.logger.timer
@@ -66,12 +67,37 @@ def main(argv=None):
   )
 
   if config.script == 'train':
-    embodied.run.train(
+    if config.online_learning:
+      embodied.run.online.launch(
+          bind(make_agent, config),
+          bind(make_env, config),
+          bind(make_logger, config),
+          bind(make_replay, config, 'replay'),
+          bind(make_stream, config),
+          args)
+    else:
+      embodied.run.train(
+          bind(make_agent, config),
+          bind(make_replay, config, 'replay'),
+          bind(make_env, config),
+          bind(make_stream, config),
+          bind(make_logger, config),
+          args)
+
+  elif config.script == 'online_learner':
+    embodied.run.online.standalone_learner(
         bind(make_agent, config),
-        bind(make_replay, config, 'replay'),
-        bind(make_env, config),
-        bind(make_stream, config),
         bind(make_logger, config),
+        bind(make_replay, config, 'replay'),
+        bind(make_stream, config),
+        args)
+
+  elif config.script == 'online_actor':
+    embodied.run.online.standalone_actor(
+        bind(make_agent, config),
+        bind(make_env, config),
+        bind(make_logger, config),
+        bind(make_replay, config, 'replay'),
         args)
 
   elif config.script == 'train_eval':
@@ -187,12 +213,17 @@ def make_replay(config, folder, mode='train'):
   length = consec * batlen + config.replay_context
   assert config.batch_size * length <= capacity
 
-  directory = elements.Path(config.logdir) / folder
+  if folder == 'replay' and config.online_learning:
+    directory = elements.Path(config.logdir) / 'online_shared' / 'experience'
+  else:
+    directory = elements.Path(config.logdir) / folder
   if config.replicas > 1:
     directory /= f'{config.replica:05}'
   kwargs = dict(
       length=length, capacity=int(capacity), online=config.replay.online,
       chunksize=config.replay.chunksize, directory=directory)
+  if folder == 'replay' and config.online_learning:
+    kwargs['save_wait'] = True
 
   if config.replay.fracs.uniform < 1 and mode == 'train':
     assert config.jax.compute_dtype in ('bfloat16', 'float32'), (
