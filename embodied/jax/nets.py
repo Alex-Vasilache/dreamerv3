@@ -1,5 +1,6 @@
 import functools
 import math
+import os
 from typing import Callable
 
 import einops
@@ -13,6 +14,58 @@ COMPUTE_DTYPE = jnp.bfloat16
 LAYER_CALLBACK = lambda tensor, name: tensor
 
 f32 = jnp.float32
+_CONV_IMPL = os.environ.get('DREAMERV3_CONV_IMPL', '').lower()
+_USE_REFERENCE_CONV = _CONV_IMPL in ('reference', 'einsum', 'fallback', '1', 'true')
+
+
+def _same_pad_1d(in_size, kernel_size, stride):
+  out_size = (in_size + stride - 1) // stride
+  pad_total = max((out_size - 1) * stride + kernel_size - in_size, 0)
+  pad_before = pad_total // 2
+  pad_after = pad_total - pad_before
+  return pad_before, pad_after
+
+
+def _conv_general_dilated_nhwc_reference(
+    x, kernel, strides, padding, feature_group_count=1):
+  if feature_group_count != 1:
+    raise NotImplementedError(feature_group_count)
+  stride_y, stride_x = strides
+  kernel_y, kernel_x, _, _ = kernel.shape
+  if padding.upper() == 'SAME':
+    pad_y0, pad_y1 = _same_pad_1d(x.shape[1], kernel_y, stride_y)
+    pad_x0, pad_x1 = _same_pad_1d(x.shape[2], kernel_x, stride_x)
+    x = jnp.pad(
+        x, ((0, 0), (pad_y0, pad_y1), (pad_x0, pad_x1), (0, 0)))
+  elif padding.upper() != 'VALID':
+    raise NotImplementedError(padding)
+  batch, height, width, _ = x.shape
+  out_h = (height - kernel_y) // stride_y + 1
+  out_w = (width - kernel_x) // stride_x + 1
+  rows = jnp.arange(out_h)
+  cols = jnp.arange(out_w)
+
+  def row_fn(row):
+    def col_fn(col):
+      patch = jax.lax.dynamic_slice(
+          x, (0, row * stride_y, col * stride_x, 0),
+          (batch, kernel_y, kernel_x, x.shape[-1]))
+      return jnp.tensordot(patch, kernel, axes=((1, 2, 3), (0, 1, 2)))
+    return jax.vmap(col_fn)(cols)
+
+  y = jax.vmap(row_fn)(rows)
+  return jnp.transpose(y, (2, 0, 1, 3))
+
+
+def conv_general_dilated_nhwc(
+    x, kernel, strides, padding, feature_group_count=1):
+  if _USE_REFERENCE_CONV:
+    return _conv_general_dilated_nhwc_reference(
+        x, kernel, strides, padding, feature_group_count)
+  return jax.lax.conv_general_dilated(
+      x, kernel, strides, padding,
+      feature_group_count=feature_group_count,
+      dimension_numbers=('NHWC', 'HWIO', 'NHWC'))
 
 
 def cast(xs, force=False):
@@ -311,10 +364,9 @@ class Conv2D(nj.Module):
       stride = (1, 1)
     else:
       stride = (self.stride, self.stride)
-    x = jax.lax.conv_general_dilated(
+    x = conv_general_dilated_nhwc(
         x, kernel, stride, self.pad.upper(),
-        feature_group_count=self.groups,
-        dimension_numbers=('NHWC', 'HWIO', 'NHWC'))
+        feature_group_count=self.groups)
     if self.bias:
       x += self.value('bias', init(self.binit), self.depth).astype(x.dtype)
     return x
