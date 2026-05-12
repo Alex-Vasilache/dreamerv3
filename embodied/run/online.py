@@ -114,8 +114,7 @@ class SharedExperienceBuffer:
     replay.load(amount=replay.capacity)
 
   def ready(self, batch_size, batch_length):
-    del batch_length
-    return len(self._replay) >= batch_size
+    return len(self._replay) >= batch_size * batch_length
 
   def stats(self):
     return self._replay.stats()
@@ -392,17 +391,18 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
 
   print('Start learner loop')
   print('Waiting for online replay prefill...')
+  prefill_deadline = None
   while not shared_buffer.ready(args.batch_size, args.batch_length):
     shared_buffer.sync()
-    if coordination is not None and (
-        coordination.shutdown_set() or coordination.partner_exited()):
-      shared_buffer.sync()
-      if shared_buffer.ready(args.batch_size, args.batch_length):
-        break
-      print('Actor exited before online replay prefill completed.')
-      logger.close()
-      return
+    if coordination is not None and coordination.partner_exited():
+      prefill_deadline = prefill_deadline or time.time() + 30
+    if prefill_deadline and time.time() > prefill_deadline:
+      break
     time.sleep(0.05)
+  if not shared_buffer.ready(args.batch_size, args.batch_length):
+    print('Actor exited before online replay prefill completed.')
+    logger.close()
+    return
 
   replay_sync.start()
   stream_train = iter(agent.stream(make_stream(replay, 'train')))
@@ -414,7 +414,6 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       if not shared_buffer.ready(args.batch_size, args.batch_length):
         shared_buffer.sync()
         if coordination is not None and coordination.shutdown_set():
-          shared_buffer.sync()
           if not shared_buffer.ready(args.batch_size, args.batch_length):
             break
         time.sleep(0.01)
