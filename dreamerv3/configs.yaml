@@ -14,6 +14,7 @@ defaults:
   consec_report: 1
   replay_context: 1
   random_agent: False
+  online_learning: False
   clock_addr: ''
   clock_port: ''
   ipv6: False
@@ -78,6 +79,7 @@ defaults:
     prealloc: True
     jit: True
     debug: False
+    deterministic: False
     expect_devices: 0
     enable_policy: True
     coordinator_address: ''
