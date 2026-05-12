@@ -65,6 +65,8 @@ def main(argv=None):
       consec_report=config.consec_report,
       replay_context=config.replay_context,
       online_actor_flush_steps=config.online_actor_flush_steps,
+      online_sync_every=config.online_sync_every,
+      online_replay_sync_interval=config.online_replay_sync_interval,
   )
 
   if config.script == 'train':
