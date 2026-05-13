@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH -J dreamerv3_vis1m32e1
+#SBATCH -J dreamerv3_vis_ab_rms
 #SBATCH -p gpu
 #SBATCH -t 0-4:00:00
 #SBATCH -c 4
@@ -7,17 +7,16 @@
 #SBATCH --mem=96G
 #SBATCH -o /work/DoyaU/vasilache/work/slurm_logs/%x-%j.out
 #SBATCH -e /work/DoyaU/vasilache/work/slurm_logs/%x-%j.err
+#
+# A/B: same as run_dreamerv3_online_cartpole_vis.sbatch + ONLY use_rms_loss_norm.
 
 set -euo pipefail
-
+mkdir -p /work/DoyaU/vasilache/work/slurm_logs
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
-
-RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir dreamerv3_online_vis1m32_1env)}"
+RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir dreamerv3_online_vis1m32_1env_ab_rms)}"
 mkdir -p "$RUN_DIR"
 echo "RUN_DIR=$RUN_DIR" > "$RUN_DIR/job.env"
-
 export MUJOCO_GL=egl
-
 cd "$RUN_DIR"
 python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --logdir "$RUN_DIR/logdir" \
@@ -35,6 +34,6 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --run.steps 1100000 \
   --logger.outputs jsonl,scope,tensorboard \
   --jax.platform cuda \
-  --jax.prealloc False
-
+  --jax.prealloc False \
+  --agent.use_rms_loss_norm True
 exit $?

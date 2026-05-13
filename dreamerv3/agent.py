@@ -4,6 +4,7 @@ import chex
 import elements
 import embodied.jax
 import embodied.jax.nets as nn
+import embodied.jax.outs as outs
 import jax
 import jax.numpy as jnp
 import ninjax as nj
@@ -81,6 +82,14 @@ class Agent(embodied.jax.Agent):
     rec = scales.pop('rec')
     scales.update({k: rec for k in dec_space})
     self.scales = scales
+
+    if self.config.use_rms_loss_norm:
+      self.lossrms = {
+          k: embodied.jax.RmsTracker(
+              rate=self.config.loss_rms_rate, name=f'lossrms_{k.replace("/", "_")}')
+          for k in self.scales}
+    else:
+      self.lossrms = None
 
   @property
   def policy_keys(self):
@@ -185,20 +194,29 @@ class Agent(embodied.jax.Agent):
     shapes = {k: v.shape for k, v in losses.items()}
     assert all(x == (B, T) for x in shapes.values()), ((B, T), shapes)
 
-    # Imagination
-    K = min(self.config.imag_last or T, T)
+    # Imagination (K_imag) vs replay repval window (K_repl). Single-rollout uses
+    # K_imag=1 but K_repl>=2 when repval_loss is on, else lambda_return gets an
+    # empty term[:, 1:] slice and jnp.stack fails.
+    K_cap = min(self.config.imag_last or T, T)
+    if self.config.use_single_rollout:
+      K_imag = 1
+      K_repl = max(K_cap, 2) if self.config.repval_loss else K_cap
+      K_repl = min(K_repl, T)
+    else:
+      K_imag = K_cap
+      K_repl = K_cap
     H = self.config.imag_length
-    starts = self.dyn.starts(dyn_entries, dyn_carry, K)
+    starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
     policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
     _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
     first = jax.tree.map(
-        lambda x: x[:, -K:].reshape((B * K, 1, *x.shape[2:])), repfeat)
+        lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
     imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat)], 1)
     lastact = policyfn(jax.tree.map(lambda x: x[:, -1], imgfeat))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
-    assert all(x.shape[:2] == (B * K, H + 1) for x in jax.tree.leaves(imgfeat))
-    assert all(x.shape[:2] == (B * K, H + 1) for x in jax.tree.leaves(imgact))
+    assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
+    assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
     inp = self.feat2tensor(imgfeat)
     los, imgloss_out, mets = imag_loss(
         imgact,
@@ -212,16 +230,18 @@ class Agent(embodied.jax.Agent):
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
         **self.config.imag_loss)
-    losses.update({k: v.mean(1).reshape((B, K)) for k, v in los.items()})
+    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los.items()})
     metrics.update(mets)
 
     # Replay
     if self.config.repval_loss:
       feat = sg(repfeat, skip=self.config.repval_grad)
       last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]
-      boot = imgloss_out['ret'][:, 0].reshape(B, K)
+      boot = imgloss_out['ret'][:, 0].reshape(B, K_imag)
+      if K_repl != K_imag:
+        boot = jnp.broadcast_to(boot[:, -1:], (B, K_repl))
       feat, last, term, rew, boot = jax.tree.map(
-          lambda x: x[:, -K:], (feat, last, term, rew, boot))
+          lambda x: x[:, -K_repl:], (feat, last, term, rew, boot))
       inp = self.feat2tensor(feat)
       los, reploss_out, mets = repl_loss(
           last, term, rew, boot,
@@ -237,6 +257,10 @@ class Agent(embodied.jax.Agent):
     assert set(losses.keys()) == set(self.scales.keys()), (
         sorted(losses.keys()), sorted(self.scales.keys()))
     metrics.update({f'loss/{k}': v.mean() for k, v in losses.items()})
+    if self.config.use_rms_loss_norm:
+      losses = {
+          k: v / sg(self.lossrms[k](v, training))
+          for k, v in losses.items()}
     loss = sum([v.mean() * self.scales[k] for k, v in losses.items()])
 
     carry = (enc_carry, dyn_carry, dec_carry)
@@ -379,6 +403,34 @@ class Agent(embodied.jax.Agent):
     return optax.chain(*chain)
 
 
+def policy_behavior_kl(policy):
+  """KL(policy || prior) with prior = stop-grad behavioral copy."""
+  total = None
+  for v in policy.values():
+    inner = v.output
+    if isinstance(inner, outs.OneHot):
+      d = inner.dist
+      logits = d.logits
+      logp = jax.nn.log_softmax(logits, -1)
+      p = jax.nn.softmax(logits, -1)
+      logpref = jax.nn.log_softmax(sg(logits), -1)
+      kl = (p * (logp - logpref)).sum(-1)
+    elif isinstance(inner, outs.Categorical):
+      logits = inner.logits
+      logp = jax.nn.log_softmax(logits, -1)
+      p = jax.nn.softmax(logits, -1)
+      logpref = jax.nn.log_softmax(sg(logits), -1)
+      kl = (p * (logp - logpref)).sum(-1)
+    elif isinstance(inner, outs.Normal):
+      ref = outs.Normal(sg(inner.mean), sg(inner.stddev))
+      kl = inner.kl(ref)
+    else:
+      raise NotImplementedError(type(inner))
+    kl = v.agg(kl, v.axes)
+    total = kl if total is None else total + kl
+  return total
+
+
 def imag_loss(
     act, rew, con,
     policy, value, slowvalue,
@@ -390,6 +442,9 @@ def imag_loss(
     lam=0.95,
     actent=3e-4,
     slowreg=1.0,
+    use_pmpo_actor=False,
+    pmpo_beta=0.3,
+    pmpo_alpha=0.5,
 ):
   losses = {}
   metrics = {}
@@ -410,8 +465,23 @@ def imag_loss(
   adv_normed = (adv - aoffset) / ascale
   logpi = sum([v.logp(sg(act[k]))[:, :-1] for k, v in policy.items()])
   ents = {k: v.entropy()[:, :-1] for k, v in policy.items()}
-  policy_loss = sg(weight[:, :-1]) * -(
-      logpi * sg(adv_normed) + actent * sum(ents.values()))
+  w = sg(weight[:, :-1])
+  if use_pmpo_actor:
+    # PMPO target formula provided by user:
+    # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
+    adv_raw = ret - tarval[:, :-1]
+    pos = (adv_raw >= 0).astype(f32)
+    neg = (adv_raw < 0).astype(f32)
+    den_p = jnp.maximum(jnp.sum(pos, axis=-1, keepdims=True), 1.0)
+    den_n = jnp.maximum(jnp.sum(neg, axis=-1, keepdims=True), 1.0)
+    pos_coeff = pmpo_alpha * pos / den_p
+    neg_coeff = (1.0 - pmpo_alpha) * neg / den_n
+    kl_t = policy_behavior_kl(policy)[:, :-1]
+    policy_loss = (neg_coeff - pos_coeff) * logpi + pmpo_beta * kl_t
+    metrics['kl_behavior'] = kl_t.mean()
+  else:
+    policy_loss = w * -(
+        logpi * sg(adv_normed) + actent * sum(ents.values()))
   losses['policy'] = policy_loss
 
   voffset, vscale = valnorm(ret, update)
@@ -456,6 +526,10 @@ def repl_loss(
     lam=0.95,
 ):
   losses = {}
+  if last.shape[1] < 2:
+    losses['repval'] = jnp.zeros_like(f32(last))
+    outs = {'ret': jnp.zeros((last.shape[0], 0), f32)}
+    return losses, outs, {}
 
   voffset, vscale = valnorm.stats()
   val = value.pred() * vscale + voffset
