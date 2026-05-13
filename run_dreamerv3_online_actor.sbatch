@@ -4,12 +4,12 @@
 #SBATCH -t 0-4:00:00
 #SBATCH -c 8
 #SBATCH --mem=16G
-#SBATCH -o /home/g/george-vasilache/slurm-%j.out
-#SBATCH -e /home/g/george-vasilache/slurm-%j.err
+#SBATCH -o /work/DoyaU/vasilache/work/slurm_logs/%x-%j.out
+#SBATCH -e /work/DoyaU/vasilache/work/slurm_logs/%x-%j.err
 
 set -euo pipefail
 
-source /apps/unit/DoyaU/vasilache/source_dreamerv3_env.sh
+source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 
 if [ -z "${LOGDIR:-}" ]; then
   echo "LOGDIR must point at the learner logdir (export LOGDIR=...)" >&2
@@ -18,7 +18,7 @@ fi
 
 export MUJOCO_GL=egl
 
-python -u /apps/unit/DoyaU/vasilache/code/dreamerv3/dreamerv3/main.py \
+python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --logdir "$LOGDIR" \
   --script online_actor \
   --configs size12m dmc_vision \
