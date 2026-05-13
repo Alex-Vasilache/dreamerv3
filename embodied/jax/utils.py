@@ -91,6 +91,27 @@ class Normalize(nj.Module):
     var.write((1 - self.rate) * var.read() + self.rate * sg(x))
 
 
+class RmsTracker(nj.Module):
+
+  """EMA of batch mean(loss**2); read() returns sqrt for per-term RMS scaling."""
+
+  rate: float = 0.01
+  limit: float = 1e-8
+
+  def __init__(self):
+    self.sqrs = nj.Variable(jnp.ones, (), f32, name='sqrs')
+
+  def __call__(self, x, update):
+    x = sg(f32(x))
+    m2 = jnp.mean(jnp.square(x))
+    axes = internal.get_data_axes()
+    if axes:
+      m2 = jax.lax.pmean(m2, axes)
+    if update:
+      self.sqrs.write((1 - self.rate) * self.sqrs.read() + self.rate * m2)
+    return jnp.sqrt(jnp.maximum(self.sqrs.read(), self.limit))
+
+
 class SlowModel:
 
   def __init__(self, model, *, source, rate=1.0, every=1):

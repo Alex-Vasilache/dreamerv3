@@ -90,6 +90,9 @@ defaults:
     coordinator_address: ''
 
   agent:
+    use_single_rollout: False
+    use_rms_loss_norm: False
+    loss_rms_rate: 0.01
     loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
@@ -112,7 +115,14 @@ defaults:
     imag_length: 15
     horizon: 333
     contdisc: True
-    imag_loss: {slowtar: False, lam: 0.95, actent: 3e-4, slowreg: 1.0}
+    imag_loss:
+      slowtar: False
+      lam: 0.95
+      actent: 3e-4
+      slowreg: 1.0
+      use_pmpo_actor: False
+      pmpo_beta: 0.3
+      pmpo_alpha: 0.5
     repl_loss: {slowtar: False, lam: 0.95, slowreg: 1.0}
     slowvalue: {rate: 0.02, every: 1}
     retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
