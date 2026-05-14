@@ -1,24 +1,31 @@
 #!/usr/bin/env bash
-# Saion login node (not Slurm). Matches the flow used before: source env, then
-#   nohup tensorboard --logdir ... --port ... --host 0.0.0.0 --load_fast=false
-# with stdout/stderr in the run logdir. If dreamerv3_env fails (e.g. GLIBC),
-# try: module purge && module load python/3.7.3 && source /apps/unit/DoyaU/vasilache/apps/rl_env/bin/activate
+# TensorBoard on the Saion login node (do not run inside Slurm jobs for this).
+# Reference copy of the command: TENSORBOARD_SAION.md
+#
+# Canonical one-liner (same flags as the working setup):
+#   source "/apps/unit/DoyaU/vasilache/rl_env/bin/activate" \
+#     && tensorboard --logdir "/work/DoyaU/vasilache/work/<RUN_DIR>/" \
+#        --port 6006 --host 0.0.0.0 --load_fast=false
+#
+# Event files live under <RUN_DIR>/logdir/; pointing --logdir at <RUN_DIR> is fine
+# because TensorBoard recurses into subdirectories.
 #
 # Foreground (default):
-#   LOGDIR=.../logdir PORT=6016 ./tensorboard_login.sh
-# Background like before:
-#   LOGDIR=.../logdir PORT=6016 BACKGROUND=1 ./tensorboard_login.sh
+#   LOGDIR=/work/.../my_run/ PORT=6006 ./tensorboard_login.sh
+#
+# Background with logs under the run directory:
+#   LOGDIR=/work/.../my_run/ PORT=6006 BACKGROUND=1 ./tensorboard_login.sh
+#
+# If rl_env is missing on a host, fall back after adjusting paths/modules locally.
 
 set -euo pipefail
 
 # shellcheck source=/dev/null
-source /etc/profile.d/modules.sh 2>/dev/null || true
-# shellcheck source=/dev/null
-source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
+source "/apps/unit/DoyaU/vasilache/rl_env/bin/activate"
 
-LOGDIR="${LOGDIR:-/work/DoyaU/vasilache/work/dreamerv3_online_vis1m32_1env_v4_20260513_134842_d000kC/logdir}"
-PORT="${PORT:-6016}"
-TBLOG="${LOGDIR}/tensorboard_${PORT}.log"
+LOGDIR="${LOGDIR:-/work/DoyaU/vasilache/work/dreamerv3_online_vis1m32_1env_v4_20260513_134842_d000kC/}"
+PORT="${PORT:-6006}"
+TBLOG="${LOGDIR%/}/tensorboard_${PORT}.log"
 BACKGROUND="${BACKGROUND:-0}"
 
 tb_cmd=(tensorboard --logdir "$LOGDIR" --port "$PORT" --host 0.0.0.0 --load_fast=false)
