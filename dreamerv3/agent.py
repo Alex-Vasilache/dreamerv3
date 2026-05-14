@@ -1,3 +1,10 @@
+"""DreamerV3-style agent: RSSM world model + policy/value on imagined rollouts.
+
+Trains encoder, dynamics (RSSM), decoder, reward/continue heads, policy, and
+value in one step from replay sequences. Actor-critic losses use imagined
+trajectories from ``dyn.imagine``; optional ``repval_loss`` fits the value on
+real replay tails with bootstrap from imagination.
+"""
 import re
 
 import chex
@@ -15,14 +22,19 @@ from . import rssm
 
 f32 = jnp.float32
 i32 = jnp.int32
+# Stop-gradient helper: optionally pass gradients through (e.g. reward head).
 sg = lambda xs, skip=False: xs if skip else jax.lax.stop_gradient(xs)
+# Sample from a tree of distribution-like outputs (policy heads).
 sample = lambda xs: jax.tree.map(lambda x: x.sample(nj.seed()), xs)
 prefix = lambda xs, p: {f'{p}/{k}': v for k, v in xs.items()}
+# Concatenate pytrees along axis ``a`` (e.g. time) for feat/action sequences.
 concat = lambda xs, a: jax.tree.map(lambda *x: jnp.concatenate(x, a), *xs)
 isimage = lambda s: s.dtype == np.uint8 and len(s.shape) == 3
 
 
 class Agent(embodied.jax.Agent):
+  """World model + policy/value; ``loss`` composes model ELBO and imag AC."""
+
 
   banner = [
       r"---  ___                           __   ______ ---",
@@ -36,6 +48,7 @@ class Agent(embodied.jax.Agent):
     self.act_space = act_space
     self.config = config
 
+    # Encoder/decoder omit control/meta keys; dynamics still sees actions separately.
     exclude = ('is_first', 'is_last', 'is_terminal', 'reward')
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
     dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
@@ -49,12 +62,14 @@ class Agent(embodied.jax.Agent):
         'simple': rssm.Decoder,
     }[config.dec.typ](dec_space, **config.dec[config.dec.typ], name='dec')
 
+    # Flat RSSM state for MLP heads: deterministic dim + flattened stochastic samples.
     self.feat2tensor = lambda x: jnp.concatenate([
         nn.cast(x['deter']),
         nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1)))], -1)
 
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
+    # Reward and continue predictors on RSSM features (Gaussian / Bernoulli heads).
     self.rew = embodied.jax.MLPHead(scalar, **config.rewhead, name='rew')
     self.con = embodied.jax.MLPHead(binary, **config.conhead, name='con')
 
@@ -63,6 +78,7 @@ class Agent(embodied.jax.Agent):
     self.pol = embodied.jax.MLPHead(
         act_space, outs, **config.policy, name='pol')
 
+    # Value and EMA target for bootstrapping / slow regularizer in ``imag_loss``.
     self.val = embodied.jax.MLPHead(scalar, **config.value, name='val')
     self.slowval = embodied.jax.SlowModel(
         embodied.jax.MLPHead(scalar, **config.value, name='slowval'),
@@ -72,12 +88,14 @@ class Agent(embodied.jax.Agent):
     self.valnorm = embodied.jax.Normalize(**config.valnorm, name='valnorm')
     self.advnorm = embodied.jax.Normalize(**config.advnorm, name='advnorm')
 
+    # Modules updated by the single ``self.opt`` step in ``train``.
     self.modules = [
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
     self.opt = embodied.jax.Optimizer(
         self.modules, self._make_opt(**config.opt), summary_depth=1,
         name='opt')
 
+    # One ``rec`` scale is expanded to every reconstruction key in ``dec_space``.
     scales = self.config.loss_scales.copy()
     rec = scales.pop('rec')
     scales.update({k: rec for k in dec_space})
@@ -93,10 +111,12 @@ class Agent(embodied.jax.Agent):
 
   @property
   def policy_keys(self):
+    # Regex for checkpoint / param groups treated as policy (not value-only).
     return '^(enc|dyn|dec|pol)/'
 
   @property
   def ext_space(self):
+    """Extra keys stored in replay beyond ``obs_space`` (chunk id, optional RNN entries)."""
     spaces = {}
     spaces['consec'] = elements.Space(np.int32)
     spaces['stepid'] = elements.Space(np.uint8, 20)
@@ -108,6 +128,7 @@ class Agent(embodied.jax.Agent):
     return spaces
 
   def init_policy(self, batch_size):
+    """RNN carries for enc/dyn/dec plus zero initial previous action."""
     zeros = lambda x: jnp.zeros((batch_size, *x.shape), x.dtype)
     return (
         self.enc.initial(batch_size),
@@ -116,12 +137,15 @@ class Agent(embodied.jax.Agent):
         jax.tree.map(zeros, self.act_space))
 
   def init_train(self, batch_size):
+    """Same carry shape as policy (training reuses the same state layout)."""
     return self.init_policy(batch_size)
 
   def init_report(self, batch_size):
+    """Same carry shape as policy for ``report`` rollouts."""
     return self.init_policy(batch_size)
 
   def policy(self, carry, obs, mode='train'):
+    """One env step: encode obs, RSSM observe, sample policy action, update carry."""
     (enc_carry, dyn_carry, dec_carry, prevact) = carry
     kw = dict(training=False, single=True)
     reset = obs['is_first']
@@ -131,6 +155,7 @@ class Agent(embodied.jax.Agent):
     dec_entry = {}
     if dec_carry:
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
+    # Policy reads representation only (decoder used for logging / replay context).
     policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
     out = {}
@@ -144,6 +169,7 @@ class Agent(embodied.jax.Agent):
     return carry, act, out
 
   def train(self, carry, data):
+    """Optimizer step on ``loss``; may attach replay context writes for next batch."""
     carry, obs, prevact, stepid = self._apply_replay_context(carry, data)
     metrics, (carry, entries, outs, mets) = self.opt(
         self.loss, carry, obs, prevact, training=True, has_aux=True)
@@ -163,13 +189,14 @@ class Agent(embodied.jax.Agent):
     return carry, outs, metrics
 
   def loss(self, carry, obs, prevact, training):
+    """Full objective: world-model ELBO + imagined actor-critic (+ optional replay value)."""
     enc_carry, dyn_carry, dec_carry = carry
     reset = obs['is_first']
     B, T = reset.shape
     losses = {}
     metrics = {}
 
-    # World model
+    # --- World model (sequence ELBO): enc -> dyn -> dec, rew, con ---
     enc_carry, enc_entries, tokens = self.enc(
         enc_carry, obs, reset, training)
     dyn_carry, dyn_entries, los, repfeat, mets = self.dyn.loss(
@@ -178,8 +205,10 @@ class Agent(embodied.jax.Agent):
     metrics.update(mets)
     dec_carry, dec_entries, recons = self.dec(
         dec_carry, repfeat, reset, training)
+    # Optional stop-gradient on features feeding reward head (stabilize WM vs AC).
     inp = sg(self.feat2tensor(repfeat), skip=self.config.reward_grad)
     losses['rew'] = self.rew(inp, 2).loss(obs['reward'])
+    # Continue target: 1 until terminal; optional finite-horizon downweighting.
     con = f32(~obs['is_terminal'])
     if self.config.contdisc:
       con *= 1 - 1 / self.config.horizon
@@ -194,9 +223,11 @@ class Agent(embodied.jax.Agent):
     shapes = {k: v.shape for k, v in losses.items()}
     assert all(x == (B, T) for x in shapes.values()), ((B, T), shapes)
 
-    # Imagination (K_imag) vs replay repval window (K_repl). Single-rollout uses
-    # K_imag=1 but K_repl>=2 when repval_loss is on, else lambda_return gets an
-    # empty term[:, 1:] slice and jnp.stack fails.
+    # --- Imagination length K_imag vs replay value window K_repl ---
+    # B,T = batch and time from replay. K_cap upper-bounds how many start states
+    # we slice from the end of the sequence for imagination.
+    # Single-rollout uses K_imag=1 but K_repl>=2 when repval_loss is on, else
+    # lambda_return gets an empty term[:, 1:] slice and jnp.stack fails.
     K_cap = min(self.config.imag_last or T, T)
     if self.config.use_single_rollout:
       K_imag = 1
@@ -205,10 +236,11 @@ class Agent(embodied.jax.Agent):
     else:
       K_imag = K_cap
       K_repl = K_cap
-    H = self.config.imag_length
+    H = self.config.imag_length  # imagined steps after the start state (H+1 states).
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
     policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
     _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
+    # Prefix replay states to imagined chain so AC sees grounded first step.
     first = jax.tree.map(
         lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
     imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat)], 1)
@@ -233,7 +265,7 @@ class Agent(embodied.jax.Agent):
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los.items()})
     metrics.update(mets)
 
-    # Replay
+    # --- Optional replay value loss (tail of real sequence + imag bootstrap) ---
     if self.config.repval_loss:
       feat = sg(repfeat, skip=self.config.repval_grad)
       last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]
@@ -269,6 +301,7 @@ class Agent(embodied.jax.Agent):
     return loss, (carry, entries, outs, metrics)
 
   def report(self, carry, data):
+    """Eval-style forward, optional grad norms, and open-loop reconstruction video."""
     if not self.config.report:
       return carry, {}
 
@@ -283,7 +316,7 @@ class Agent(embodied.jax.Agent):
         carry, obs, prevact, training=False)
     mets.update(mets)
 
-    # Grad norms
+    # Per-loss-key gradient norm (expensive: extra backward per key).
     if self.config.report_gradnorms:
       for key in self.scales:
         try:
@@ -294,7 +327,7 @@ class Agent(embodied.jax.Agent):
         except KeyError:
           print(f'Skipping gradnorm summary for missing loss: {key}')
 
-    # Open loop
+    # Open loop: first half from real tokens; second half imagined from that state.
     firsthalf = lambda xs: jax.tree.map(lambda x: x[:RB, :T // 2], xs)
     secondhalf = lambda xs: jax.tree.map(lambda x: x[:RB, T // 2:], xs)
     dyn_carry = jax.tree.map(lambda x: x[:RB], dyn_carry)
@@ -310,7 +343,7 @@ class Agent(embodied.jax.Agent):
         dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs['is_first'])),
         training=False)
 
-    # Video preds
+    # Stack [truth | pred | abs error] with a time border for TensorBoard video.
     for key in self.dec.imgkeys:
       assert obs[key].dtype == jnp.uint8
       true = obs[key][:RB]
@@ -334,10 +367,12 @@ class Agent(embodied.jax.Agent):
     return carry, metrics
 
   def _apply_replay_context(self, carry, data):
+    """If replay_context: first K steps recompute carries from stored entries; else identity."""
     (enc_carry, dyn_carry, dec_carry, prevact) = carry
     carry = (enc_carry, dyn_carry, dec_carry)
     stepid = data['stepid']
     obs = {k: data[k] for k in self.obs_space}
+    # prevact[t] aligns with action before obs[t]; prepend stored carry, shift sequence.
     prepend = lambda x, y: jnp.concatenate([x[:, None], y[:, :-1]], 1)
     prevact = {k: prepend(prevact[k], data[k]) for k in self.act_space}
     if not self.config.replay_context:
@@ -356,6 +391,7 @@ class Agent(embodied.jax.Agent):
     rep_prevact = {k: data[k][:, K - 1: -1] for k in self.act_space}
     rep_stepid = rhs(stepid)
 
+    # New trajectory chunk (consec==0): use replay-derived carry/obs; else online path.
     first_chunk = (data['consec'][:, 0] == 0)
     carry, obs, prevact, stepid = jax.tree.map(
         lambda normal, replay: nn.where(first_chunk, replay, normal),
@@ -378,6 +414,7 @@ class Agent(embodied.jax.Agent):
       warmup: int = 1000,
       anneal: int = 0,
   ):
+    """Adam-like chain: AGC clip, RMS scale, momentum, optional WD mask, LR schedule."""
     chain = []
     chain.append(embodied.jax.opt.clip_by_agc(agc))
     chain.append(embodied.jax.opt.scale_by_rms(beta2, eps))
@@ -446,14 +483,25 @@ def imag_loss(
     pmpo_beta=0.3,
     pmpo_alpha=0.5,
 ):
+  """Actor-critic losses on imagined trajectories.
+
+  ``act`` / ``rew`` / ``con`` are time-major (T includes bootstrap); ``policy``
+  and ``value`` heads are evaluated on imagined states. TD(λ)-style returns
+  use ``lambda_return`` with bootstrap from ``tarval`` (slow value by default).
+  Policy loss is either REINFORCE + entropy or PMPO-style weighted log-prob + KL.
+  Value loss fits normalized returns plus optional slow-value regularizer.
+  """
   losses = {}
   metrics = {}
 
+  # Unnormalize critic predictions for bootstrapping and advantage baseline.
   voffset, vscale = valnorm.stats()
   val = value.pred() * vscale + voffset
   slowval = slowvalue.pred() * vscale + voffset
   tarval = slowval if slowtar else val
+  # Discount per step: either γ or finite-horizon (1 - 1/horizon) when not contdisc.
   disc = 1 if contdisc else 1 - 1 / horizon
+  # Discounted continuation weights from predicted continue probs ``con``.
   weight = jnp.cumprod(disc * con, 1) / disc
   last = jnp.zeros_like(con)
   term = 1 - con
@@ -484,6 +532,7 @@ def imag_loss(
         logpi * sg(adv_normed) + actent * sum(ents.values()))
   losses['policy'] = policy_loss
 
+  # NLL of value distribution against λ-returns (padded for length match to head API).
   voffset, vscale = valnorm(ret, update)
   tar_normed = (ret - voffset) / vscale
   tar_padded = jnp.concatenate([tar_normed, 0 * tar_normed[:, -1:]], 1)
@@ -512,7 +561,7 @@ def imag_loss(
       metrics[f'rand/{k}'] = (ents[k].mean() - lo) / (hi - lo)
 
   outs = {}
-  outs['ret'] = ret
+  outs['ret'] = ret  # Used as bootstrap for optional replay value loss.
   return losses, outs, metrics
 
 
@@ -525,6 +574,11 @@ def repl_loss(
     horizon=333,
     lam=0.95,
 ):
+  """Value loss on real replay tail; ``boot`` is return from imagination at slice boundary.
+
+  ``last`` masks episode boundaries; ``boot`` supplies bootstrap value at the
+  window edge. Same λ-return and slow-value mix as imagination, but no policy term.
+  """
   losses = {}
   if last.shape[1] < 2:
     losses['repval'] = jnp.zeros_like(f32(last))
@@ -536,7 +590,7 @@ def repl_loss(
   slowval = slowvalue.pred() * vscale + voffset
   tarval = slowval if slowtar else val
   disc = 1 - 1 / horizon
-  weight = f32(~last)
+  weight = f32(~last)  # Zero loss on steps after episode end (``last``).
   ret = lambda_return(last, term, rew, tarval, boot, disc, lam)
 
   voffset, vscale = valnorm(ret, update)
@@ -554,6 +608,11 @@ def repl_loss(
 
 
 def lambda_return(last, term, rew, val, boot, disc, lam):
+  """TD(λ)-style returns along time; ``boot`` is per-step bootstrap (often ``val``).
+
+  Shapes are (batch, time). ``last`` flags last step of trajectory; ``term`` is
+  terminal / non-continue. Iteration is backward from the final bootstrap slice.
+  """
   chex.assert_equal_shape((last, term, rew, val, boot))
   rets = [boot[:, -1]]
   live = (1 - f32(term))[:, 1:] * disc
