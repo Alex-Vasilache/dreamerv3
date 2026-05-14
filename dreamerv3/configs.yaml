@@ -90,10 +90,34 @@ defaults:
     coordinator_address: ''
 
   agent:
+    use_director_hrl: False
     use_single_rollout: False
     use_rms_loss_norm: False
     loss_rms_rate: 0.01
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, director_ae: 0.0, director_mgr: 0.0, director_wrk: 0.0, director_disag: 0.0}
+    director_hrl:
+      manager_step_K: 8
+      train_skill_duration: 8
+      env_skill_duration: 8
+      jointly: new
+      goal_reward: cosine_max
+      worker_rews: {extr: 0.0, expl: 0.0, goal: 1.0}
+      manager_rews: {extr: 1.0, expl: 0.1, goal: 0.0}
+      expl_rew: adver
+      adver_impl: squared
+      disag_models: 8
+      disag_head: {layers: 2, units: 512, act: silu, norm: rms, outscale: 0.01, winit: trunc_normal_in}
+      vae_replay: True
+      exploration_weight: 0.1
+      manager_delta: False
+      skill_syms: 8
+      skill_classes: 8
+      goal_kl_scale: 1.0
+      goal_encoder: {layers: 2, units: 512, act: silu, norm: rms, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
+      goal_decoder: {layers: 2, units: 512, act: silu, norm: rms, outscale: 0.01, winit: trunc_normal_in}
+      manager_policy: {layers: 2, units: 512, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
+      worker_policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
+      loss_scales: {director_ae: 0.05, director_mgr: 0.1, director_wrk: 1.0, director_disag: 0.0}
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -112,7 +136,7 @@ defaults:
     policy_dist_disc: categorical
     policy_dist_cont: bounded_normal
     imag_last: 0
-    imag_length: 15
+    imag_length: 16
     horizon: 333
     contdisc: True
     imag_loss:
