@@ -11,6 +11,8 @@ import ninjax as nj
 import numpy as np
 import optax
 
+from . import director_full as dfull
+from . import director_hrl as dch
 from . import rssm
 
 f32 = jnp.float32
@@ -74,6 +76,51 @@ class Agent(embodied.jax.Agent):
 
     self.modules = [
         self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
+    self.goal_enc = None
+    self.goal_dec = None
+    self.man_pol = None
+    self.worker_pol = None
+    if self.config.use_director_hrl:
+      dh = self.config.director_hrl
+      deter = self.config.dyn.rssm.deter
+      stoch_flat = self.config.dyn.rssm.stoch * self.config.dyn.rssm.classes
+      skill_space = elements.Space(
+          np.int32, (dh.skill_syms,), 0, dh.skill_classes)
+      goal_space = elements.Space(np.float32, (deter,))
+      enc_in_space = elements.Space(np.float32, (2 * deter,))
+      dec_in_space = elements.Space(
+          np.float32, (dh.skill_syms * dh.skill_classes + deter,))
+      self.goal_enc = embodied.jax.MLPHead(
+          enc_in_space,
+          {'skill': skill_space}, {'skill': 'categorical'},
+          **dh.goal_encoder, name='goal_enc')
+      self.goal_dec = embodied.jax.MLPHead(
+          dec_in_space, goal_space, 'mse', **dh.goal_decoder, name='goal_dec')
+      self.man_pol = embodied.jax.MLPHead(
+          elements.Space(np.float32, (deter,)),
+          {'skill': skill_space}, {'skill': 'categorical'},
+          **dh.manager_policy, name='man_pol')
+      worker_in = elements.Space(np.float32, (deter + stoch_flat + deter,))
+      self.worker_pol = embodied.jax.MLPHead(
+          worker_in, outs, **dh.worker_policy, name='worker_pol')
+      self.disag_heads = []
+      if str(dh.get('expl_rew', 'adver')) == 'disag':
+        dhead = dict(getattr(dh, 'disag_head', None) or {})
+        if not dhead:
+          dhead = {
+              'layers': 2, 'units': 512, 'act': 'silu', 'norm': 'rms',
+              'outscale': 0.01, 'winit': 'trunc_normal_in'}
+        for i in range(int(dh.get('disag_models', 8))):
+          h = embodied.jax.MLPHead(
+              elements.Space(np.float32, (deter,)),
+              elements.Space(np.float32, (stoch_flat,)),
+              'mse', **dhead,
+              name=f'disag{i}')
+          self.disag_heads.append(h)
+      self.modules += [
+          self.goal_enc, self.goal_dec, self.man_pol, self.worker_pol,
+          *self.disag_heads]
+
     self.opt = embodied.jax.Optimizer(
         self.modules, self._make_opt(**config.opt), summary_depth=1,
         name='opt')
@@ -81,6 +128,10 @@ class Agent(embodied.jax.Agent):
     scales = self.config.loss_scales.copy()
     rec = scales.pop('rec')
     scales.update({k: rec for k in dec_space})
+    scales.setdefault('director_disag', 0.0)
+    if self.config.use_director_hrl:
+      scales.update(self.config.director_hrl.loss_scales)
+      scales['policy'] = 0.0
     self.scales = scales
 
     if self.config.use_rms_loss_norm:
@@ -93,7 +144,19 @@ class Agent(embodied.jax.Agent):
 
   @property
   def policy_keys(self):
+    if self.config.use_director_hrl:
+      return '^(enc|dyn|dec|pol|goal_enc|goal_dec|man_pol|worker_pol|disag)/'
     return '^(enc|dyn|dec|pol)/'
+
+  def _director_decode_goal(self, skill_idx, ctx_deter):
+    dh = self.config.director_hrl
+    oh = jax.nn.one_hot(skill_idx, dh.skill_classes, dtype=f32)
+    flat = oh.reshape(*oh.shape[:-2], -1)
+    dec_in = jnp.concatenate([flat, ctx_deter], -1)
+    pred = self.goal_dec(dec_in, 1).pred()
+    if dh.manager_delta:
+      return ctx_deter + pred
+    return pred
 
   @property
   def ext_space(self):
@@ -109,11 +172,18 @@ class Agent(embodied.jax.Agent):
 
   def init_policy(self, batch_size):
     zeros = lambda x: jnp.zeros((batch_size, *x.shape), x.dtype)
-    return (
+    prev = jax.tree.map(zeros, self.act_space)
+    carry = (
         self.enc.initial(batch_size),
         self.dyn.initial(batch_size),
         self.dec.initial(batch_size),
-        jax.tree.map(zeros, self.act_space))
+        prev)
+    if not self.config.use_director_hrl:
+      return carry
+    dh = self.config.director_hrl
+    hrl = dch.initial_hrl_carry(
+        batch_size, self.config.dyn.rssm.deter, dh.skill_syms)
+    return (*carry, hrl)
 
   def init_train(self, batch_size):
     return self.init_policy(batch_size)
@@ -122,7 +192,10 @@ class Agent(embodied.jax.Agent):
     return self.init_policy(batch_size)
 
   def policy(self, carry, obs, mode='train'):
-    (enc_carry, dyn_carry, dec_carry, prevact) = carry
+    if self.config.use_director_hrl:
+      (enc_carry, dyn_carry, dec_carry, prevact, hrl) = carry
+    else:
+      (enc_carry, dyn_carry, dec_carry, prevact) = carry
     kw = dict(training=False, single=True)
     reset = obs['is_first']
     enc_carry, enc_entry, tokens = self.enc(enc_carry, obs, reset, **kw)
@@ -131,13 +204,34 @@ class Agent(embodied.jax.Agent):
     dec_entry = {}
     if dec_carry:
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
-    policy = self.pol(self.feat2tensor(feat), bdims=1)
-    act = sample(policy)
+    if self.config.use_director_hrl:
+      dh = self.config.director_hrl
+      K = int(dh.get('env_skill_duration', dh.manager_step_K))
+      deter = feat['deter']
+      renew = ((hrl['step'] % K) == 0).astype(f32)
+      man_out = self.man_pol(deter, bdims=1)
+      new_s = jnp.where(
+          renew[:, None], man_out['skill'].sample(nj.seed()), hrl['skill'])
+      g_raw = self._director_decode_goal(new_s, deter)
+      goal = jnp.where(renew[:, None], g_raw, hrl['goal'])
+      xw = jnp.concatenate([self.feat2tensor(feat), goal], -1)
+      pol_out = self.worker_pol(xw, bdims=1)
+      act = sample(pol_out)
+      hrl = dict(
+          step=hrl['step'] + 1,
+          skill=new_s,
+          goal=goal,
+      )
+    else:
+      policy = self.pol(self.feat2tensor(feat), bdims=1)
+      act = sample(policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
         lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
         dict(obs=obs, carry=carry, tokens=tokens, feat=feat, act=act)))
     carry = (enc_carry, dyn_carry, dec_carry, act)
+    if self.config.use_director_hrl:
+      carry = (*carry, hrl)
     if self.config.replay_context:
       out.update(elements.tree.flatdict(dict(
           enc=enc_entry, dyn=dyn_entry, dec=dec_entry)))
@@ -163,7 +257,11 @@ class Agent(embodied.jax.Agent):
     return carry, outs, metrics
 
   def loss(self, carry, obs, prevact, training):
-    enc_carry, dyn_carry, dec_carry = carry
+    if self.config.use_director_hrl:
+      enc_carry, dyn_carry, dec_carry, hrl_carry = carry
+    else:
+      enc_carry, dyn_carry, dec_carry = carry
+      hrl_carry = None
     reset = obs['is_first']
     B, T = reset.shape
     losses = {}
@@ -207,31 +305,180 @@ class Agent(embodied.jax.Agent):
       K_repl = K_cap
     H = self.config.imag_length
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
-    policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
-    _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
-    first = jax.tree.map(
-        lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
-    imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat)], 1)
-    lastact = policyfn(jax.tree.map(lambda x: x[:, -1], imgfeat))
-    lastact = jax.tree.map(lambda x: x[:, None], lastact)
-    imgact = concat([imgprevact, lastact], 1)
-    assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
-    assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
-    inp = self.feat2tensor(imgfeat)
-    los, imgloss_out, mets = imag_loss(
-        imgact,
-        self.rew(inp, 2).pred(),
-        self.con(inp, 2).prob(1),
-        self.pol(inp, 2),
-        self.val(inp, 2),
-        self.slowval(inp, 2),
-        self.retnorm, self.valnorm, self.advnorm,
-        update=training,
-        contdisc=self.config.contdisc,
-        horizon=self.config.horizon,
-        **self.config.imag_loss)
-    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los.items()})
-    metrics.update(mets)
+    if self.config.use_director_hrl:
+      dh = self.config.director_hrl
+      K = int(dh.get('train_skill_duration', dh.manager_step_K))
+      jointly = str(dh.get('jointly', 'new'))
+      assert jointly == 'new', (
+          f'director_hrl.jointly={jointly!r} is not supported; use jointly: new')
+      assert (H + 1) % K == 1, (
+          f'Director split/abstract requires (imag_length+1) % train_skill_duration == 1; '
+          f'got imag_length={H}, train_skill_duration={K}. Example: imag_length=15 -> 16 '
+          f'steps is invalid for K=8; use imag_length=16 -> 17 steps.')
+      if dh.get('vae_replay', True):
+        ae_loss, ae_mets = dch.goal_autoencoder_replay_loss(
+            self.goal_enc, self.goal_dec, repfeat['deter'], K, dh.skill_classes)
+        losses['director_ae'] = ae_loss
+        metrics.update(ae_mets)
+      else:
+        losses['director_ae'] = 0 * losses['rew']
+      if self.disag_heads:
+        losses['director_disag'] = dch.disag_replay_loss(
+            self.disag_heads, repfeat['deter'], repfeat['stoch'])
+      else:
+        losses['director_disag'] = 0 * losses['rew']
+      Bsz = B * K_imag
+      zskill = jnp.zeros((Bsz, dh.skill_syms), i32)
+      zgoal = jnp.zeros((Bsz, self.config.dyn.rssm.deter), f32)
+      zt = jnp.array(0, jnp.int32)
+
+      def hrl_step(pack, _):
+        carry_r, skill_idx, goal, t = pack
+        renew = ((t % K) == 0).astype(f32)
+        deter = carry_r['deter']
+        man_out = self.man_pol(deter, bdims=1)
+        new_s = jnp.where(
+            renew.astype(jnp.int32), man_out['skill'].sample(nj.seed()), skill_idx)
+        new_g = self._director_decode_goal(new_s, deter)
+        goal_n = jnp.where(renew[:, None], new_g, goal)
+        xw = jnp.concatenate([
+            self.feat2tensor({'deter': deter, 'stoch': carry_r['stoch']}),
+            goal_n], -1)
+        w_act = sample(self.worker_pol(xw, 1))
+        carry_n, (_, feat, _) = self.dyn.imagine(
+            carry_r, w_act, 1, training, single=True)
+        t_n = t + 1
+        return (carry_n, new_s, goal_n, t_n), (feat, w_act, goal_n, new_s)
+
+      pack0 = (starts, zskill, zgoal, zt)
+      (carry_f, _, _, _), stacked = nj.scan(
+          hrl_step, pack0, (), H, unroll=self.dyn.unroll, axis=1)
+      feat_seq, act_seq, goal_seq, skill_seq = stacked
+      first = jax.tree.map(
+          lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
+      imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(feat_seq)], 1)
+      goals_full = jnp.concatenate([zgoal[:, None], goal_seq], axis=1)
+      last_feat = jax.tree.map(lambda x: x[:, -1], imgfeat)
+      lx = jnp.concatenate([
+          self.feat2tensor(last_feat), goals_full[:, -1]], -1)
+      lastact = sample(self.worker_pol(lx, 1))
+      lastact = jax.tree.map(lambda x: x[:, None], lastact)
+      imgact = concat([act_seq, lastact], 1)
+      assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
+      assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
+      inp = self.feat2tensor(imgfeat)
+      deter_bt = imgfeat['deter']
+      cont_bt = self.con(inp, 2).prob(1)
+      rew_wm = self.rew(inp, 2).pred()
+      expl_source = str(dh.get('expl_rew', 'adver'))
+      if expl_source == 'disag':
+        assert self.disag_heads, (
+            'director_hrl.expl_rew=disag requires disag_models and disag_head in config')
+        expl_bt = dch.disag_reward(deter_bt, self.disag_heads)
+      else:
+        expl_bt = dch.elbo_adver_reward(
+            self.goal_enc, self.goal_dec, deter_bt, dh.skill_classes,
+            str(dh.get('adver_impl', 'squared')))
+      skill_full = jnp.concatenate([zskill[:, None], skill_seq], axis=1)
+      goal_reward_name = str(dh.get('goal_reward', 'cosine_max'))
+      traj = dfull.build_imag_traj_for_hierarchy(
+          deter_bt=deter_bt,
+          stoch_bt=imgfeat['stoch'],
+          act_primitives=imgact,
+          skill_idx=skill_full,
+          goal_bt=goals_full,
+          cont_bt=cont_bt,
+          rew_wm_pred=rew_wm,
+          expl_rew_bt=expl_bt,
+          goal_reward_name=goal_reward_name,
+          enc_fwd=None,
+      )
+      discount = float(self.config.discount)
+      wtraj, mtraj = dfull.split_and_abstract(traj, K, discount)
+      wr = dict(dh.get('worker_rews', {}))
+      we = float(wr.get('extr', 0.0))
+      wx = float(wr.get('expl', 0.0))
+      wg = float(wr.get('goal', 1.0))
+      dw = wtraj
+      fe_w = self.feat2tensor({'deter': dw['deter'], 'stoch': dw['stoch']})
+      inp_w_t = jnp.concatenate([fe_w, dw['goal']], axis=-1)
+      con_w = dw['cont']
+      rew_w = (
+          we * dw['reward_extr'] + wx * dw['reward_expl'] + wg * dw['reward_goal'])
+      rew_w = jnp.concatenate(
+          [rew_w, jnp.zeros((rew_w.shape[0], 1), f32)], axis=1)
+      los, imgloss_out, mets = imag_loss(
+          dw['action'],
+          rew_w,
+          con_w,
+          self.worker_pol(inp_w_t, 2),
+          self.val(fe_w, 2),
+          self.slowval(fe_w, 2),
+          self.retnorm, self.valnorm, self.advnorm,
+          update=training,
+          contdisc=self.config.contdisc,
+          horizon=self.config.horizon,
+          **self.config.imag_loss)
+      los_d = {k: v.mean(1).reshape((B, K_imag)) for k, v in los.items() if k != 'policy'}
+      los_d['director_wrk'] = los['policy'].mean(1).reshape((B, K_imag))
+      losses.update(los_d)
+      metrics.update(mets)
+      mr = dict(dh.get('manager_rews', {}))
+      me = float(mr.get('extr', 1.0))
+      mx = float(mr.get('expl', 0.1))
+      mg = float(mr.get('goal', 0.0))
+      mm = mtraj
+      fe_m = self.feat2tensor({'deter': mm['deter'], 'stoch': mm['stoch']})
+      rew_m = (
+          me * mm['reward_extr'] + mx * mm['reward_expl'] + mg * mm['reward_goal'])
+      rew_m = jnp.concatenate(
+          [rew_m, jnp.zeros((rew_m.shape[0], 1), f32)], axis=1)
+      mgr_act = {'skill': mm['action']}
+      los_m, _, mets_m = imag_loss(
+          mgr_act,
+          rew_m,
+          mm['cont'],
+          self.man_pol(mm['deter'], 2),
+          self.val(fe_m, 2),
+          self.slowval(fe_m, 2),
+          self.retnorm, self.valnorm, self.advnorm,
+          update=training,
+          contdisc=self.config.contdisc,
+          horizon=self.config.horizon,
+          **self.config.imag_loss)
+      losses['director_mgr'] = los_m['policy'].mean(1).reshape((B, K_imag))
+      losses['value'] = losses['value'] + los_m['value'].mean(1).reshape((B, K_imag))
+      metrics.update(prefix(mets_m, 'director/mgr'))
+    else:
+      policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
+      _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
+      first = jax.tree.map(
+          lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
+      imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat)], 1)
+      lastact = policyfn(jax.tree.map(lambda x: x[:, -1], imgfeat))
+      lastact = jax.tree.map(lambda x: x[:, None], lastact)
+      imgact = concat([imgprevact, lastact], 1)
+      assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
+      assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
+      inp = self.feat2tensor(imgfeat)
+      los, imgloss_out, mets = imag_loss(
+          imgact,
+          self.rew(inp, 2).pred(),
+          self.con(inp, 2).prob(1),
+          self.pol(inp, 2),
+          self.val(inp, 2),
+          self.slowval(inp, 2),
+          self.retnorm, self.valnorm, self.advnorm,
+          update=training,
+          contdisc=self.config.contdisc,
+          horizon=self.config.horizon,
+          **self.config.imag_loss)
+      losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los.items()})
+      metrics.update(mets)
+      losses['director_ae'] = 0 * losses['rew']
+      losses['director_mgr'] = 0 * losses['rew']
+      losses['director_wrk'] = 0 * losses['rew']
+      losses['director_disag'] = 0 * losses['rew']
 
     # Replay
     if self.config.repval_loss:
@@ -254,8 +501,8 @@ class Agent(embodied.jax.Agent):
       losses.update(los)
       metrics.update(prefix(mets, 'reploss'))
 
-    assert set(losses.keys()) == set(self.scales.keys()), (
-        sorted(losses.keys()), sorted(self.scales.keys()))
+    for k in list(losses.keys()):
+      assert k in self.scales, (k, sorted(self.scales.keys()))
     metrics.update({f'loss/{k}': v.mean() for k, v in losses.items()})
     if self.config.use_rms_loss_norm:
       losses = {
@@ -264,6 +511,8 @@ class Agent(embodied.jax.Agent):
     loss = sum([v.mean() * self.scales[k] for k, v in losses.items()])
 
     carry = (enc_carry, dyn_carry, dec_carry)
+    if hrl_carry is not None:
+      carry = (*carry, hrl_carry)
     entries = (enc_entries, dyn_entries, dec_entries)
     outs = {'tokens': tokens, 'repfeat': repfeat, 'losses': losses}
     return loss, (carry, entries, outs, metrics)
@@ -273,7 +522,10 @@ class Agent(embodied.jax.Agent):
       return carry, {}
 
     carry, obs, prevact, _ = self._apply_replay_context(carry, data)
-    (enc_carry, dyn_carry, dec_carry) = carry
+    if self.config.use_director_hrl:
+      enc_carry, dyn_carry, dec_carry, hrl_carry = carry
+    else:
+      enc_carry, dyn_carry, dec_carry = carry
     B, T = obs['is_first'].shape
     RB = min(6, B)
     metrics = {}
@@ -294,54 +546,65 @@ class Agent(embodied.jax.Agent):
         except KeyError:
           print(f'Skipping gradnorm summary for missing loss: {key}')
 
-    # Open loop
-    firsthalf = lambda xs: jax.tree.map(lambda x: x[:RB, :T // 2], xs)
-    secondhalf = lambda xs: jax.tree.map(lambda x: x[:RB, T // 2:], xs)
-    dyn_carry = jax.tree.map(lambda x: x[:RB], dyn_carry)
-    dec_carry = jax.tree.map(lambda x: x[:RB], dec_carry)
-    dyn_carry, _, obsfeat = self.dyn.observe(
-        dyn_carry, firsthalf(outs['tokens']), firsthalf(prevact),
-        firsthalf(obs['is_first']), training=False)
-    _, imgfeat, _ = self.dyn.imagine(
-        dyn_carry, secondhalf(prevact), length=T - T // 2, training=False)
-    dec_carry, _, obsrecons = self.dec(
-        dec_carry, obsfeat, firsthalf(obs['is_first']), training=False)
-    dec_carry, _, imgrecons = self.dec(
-        dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs['is_first'])),
-        training=False)
+    if not self.config.use_director_hrl:
+      firsthalf = lambda xs: jax.tree.map(lambda x: x[:RB, :T // 2], xs)
+      secondhalf = lambda xs: jax.tree.map(lambda x: x[:RB, T // 2:], xs)
+      dyn_carry = jax.tree.map(lambda x: x[:RB], dyn_carry)
+      dec_carry = jax.tree.map(lambda x: x[:RB], dec_carry)
+      dyn_carry, _, obsfeat = self.dyn.observe(
+          dyn_carry, firsthalf(outs['tokens']), firsthalf(prevact),
+          firsthalf(obs['is_first']), training=False)
+      _, imgfeat, _ = self.dyn.imagine(
+          dyn_carry, secondhalf(prevact), length=T - T // 2, training=False)
+      dec_carry, _, obsrecons = self.dec(
+          dec_carry, obsfeat, firsthalf(obs['is_first']), training=False)
+      dec_carry, _, imgrecons = self.dec(
+          dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs['is_first'])),
+          training=False)
 
-    # Video preds
-    for key in self.dec.imgkeys:
-      assert obs[key].dtype == jnp.uint8
-      true = obs[key][:RB]
-      pred = jnp.concatenate([obsrecons[key].pred(), imgrecons[key].pred()], 1)
-      pred = jnp.clip(pred * 255, 0, 255).astype(jnp.uint8)
-      error = ((i32(pred) - i32(true) + 255) / 2).astype(np.uint8)
-      video = jnp.concatenate([true, pred, error], 2)
+      # Video preds
+      for key in self.dec.imgkeys:
+        assert obs[key].dtype == jnp.uint8
+        true = obs[key][:RB]
+        pred = jnp.concatenate([obsrecons[key].pred(), imgrecons[key].pred()], 1)
+        pred = jnp.clip(pred * 255, 0, 255).astype(jnp.uint8)
+        error = ((i32(pred) - i32(true) + 255) / 2).astype(np.uint8)
+        video = jnp.concatenate([true, pred, error], 2)
 
-      video = jnp.pad(video, [[0, 0], [0, 0], [2, 2], [2, 2], [0, 0]])
-      mask = jnp.zeros(video.shape, bool).at[:, :, 2:-2, 2:-2, :].set(True)
-      border = jnp.full((T, 3), jnp.array([0, 255, 0]), jnp.uint8)
-      border = border.at[T // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
-      video = jnp.where(mask, video, border[None, :, None, None, :])
-      video = jnp.concatenate([video, 0 * video[:, :10]], 1)
+        video = jnp.pad(video, [[0, 0], [0, 0], [2, 2], [2, 2], [0, 0]])
+        mask = jnp.zeros(video.shape, bool).at[:, :, 2:-2, 2:-2, :].set(True)
+        border = jnp.full((T, 3), jnp.array([0, 255, 0]), jnp.uint8)
+        border = border.at[T // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
+        video = jnp.where(mask, video, border[None, :, None, None, :])
+        video = jnp.concatenate([video, 0 * video[:, :10]], 1)
 
-      B, T, H, W, C = video.shape
-      grid = video.transpose((1, 2, 0, 3, 4)).reshape((T, H, B * W, C))
-      metrics[f'openloop/{key}'] = grid
+        B, T, H, W, C = video.shape
+        grid = video.transpose((1, 2, 0, 3, 4)).reshape((T, H, B * W, C))
+        metrics[f'openloop/{key}'] = grid
 
     carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, metrics
 
   def _apply_replay_context(self, carry, data):
-    (enc_carry, dyn_carry, dec_carry, prevact) = carry
+    if self.config.use_director_hrl:
+      (enc_carry, dyn_carry, dec_carry, prevact, hrl_carry) = carry
+    else:
+      (enc_carry, dyn_carry, dec_carry, prevact) = carry
+      hrl_carry = None
     carry = (enc_carry, dyn_carry, dec_carry)
     stepid = data['stepid']
     obs = {k: data[k] for k in self.obs_space}
     prepend = lambda x, y: jnp.concatenate([x[:, None], y[:, :-1]], 1)
     prevact = {k: prepend(prevact[k], data[k]) for k in self.act_space}
     if not self.config.replay_context:
-      return carry, obs, prevact, stepid
+      if hrl_carry is not None:
+        hrl_carry = dch.reset_hrl_on_episode(
+            hrl_carry, obs['is_first'][:, 0],
+            deter_dim=self.config.dyn.rssm.deter,
+            skill_syms=self.config.director_hrl.skill_syms)
+      if hrl_carry is None:
+        return carry, obs, prevact, stepid
+      return (*carry, hrl_carry), obs, prevact, stepid
 
     K = self.config.replay_context
     nested = elements.tree.nestdict(data)
@@ -361,7 +624,14 @@ class Agent(embodied.jax.Agent):
         lambda normal, replay: nn.where(first_chunk, replay, normal),
         (carry, rhs(obs), rhs(prevact), rhs(stepid)),
         (rep_carry, rep_obs, rep_prevact, rep_stepid))
-    return carry, obs, prevact, stepid
+    if hrl_carry is not None:
+      hrl_carry = dch.reset_hrl_on_episode(
+          hrl_carry, obs['is_first'][:, 0],
+          deter_dim=self.config.dyn.rssm.deter,
+          skill_syms=self.config.director_hrl.skill_syms)
+    if hrl_carry is None:
+      return carry, obs, prevact, stepid
+    return (*carry, hrl_carry), obs, prevact, stepid
 
   def _make_opt(
       self,
