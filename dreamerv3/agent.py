@@ -74,8 +74,12 @@ class Agent(embodied.jax.Agent):
     self.valnorm = embodied.jax.Normalize(**config.valnorm, name='valnorm')
     self.advnorm = embodied.jax.Normalize(**config.advnorm, name='advnorm')
 
-    self.modules = [
-        self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
+    # Flat policy is unused in train loss when Director HRL is on; omit from
+    # ``self.modules`` so Ninjax state matches ``nj.grad`` targets.
+    core_modules = [self.dyn, self.enc, self.dec, self.rew, self.con, self.val]
+    if not self.config.use_director_hrl:
+      core_modules.insert(-1, self.pol)
+    self.modules = core_modules
     self.goal_enc = None
     self.goal_dec = None
     self.man_pol = None
@@ -87,22 +91,18 @@ class Agent(embodied.jax.Agent):
       skill_space = elements.Space(
           np.int32, (dh.skill_syms,), 0, dh.skill_classes)
       goal_space = elements.Space(np.float32, (deter,))
-      enc_in_space = elements.Space(np.float32, (2 * deter,))
-      dec_in_space = elements.Space(
-          np.float32, (dh.skill_syms * dh.skill_classes + deter,))
       self.goal_enc = embodied.jax.MLPHead(
-          enc_in_space,
-          {'skill': skill_space}, {'skill': 'categorical'},
+          {'skill': skill_space},
+          {'skill': 'categorical'},
           **dh.goal_encoder, name='goal_enc')
       self.goal_dec = embodied.jax.MLPHead(
-          dec_in_space, goal_space, 'mse', **dh.goal_decoder, name='goal_dec')
+          goal_space, 'mse', **dh.goal_decoder, name='goal_dec')
       self.man_pol = embodied.jax.MLPHead(
-          elements.Space(np.float32, (deter,)),
-          {'skill': skill_space}, {'skill': 'categorical'},
+          {'skill': skill_space},
+          {'skill': 'categorical'},
           **dh.manager_policy, name='man_pol')
-      worker_in = elements.Space(np.float32, (deter + stoch_flat + deter,))
       self.worker_pol = embodied.jax.MLPHead(
-          worker_in, outs, **dh.worker_policy, name='worker_pol')
+          act_space, outs, **dh.worker_policy, name='worker_pol')
       self.disag_heads = []
       if str(dh.get('expl_rew', 'adver')) == 'disag':
         dhead = dict(getattr(dh, 'disag_head', None) or {})
@@ -112,9 +112,9 @@ class Agent(embodied.jax.Agent):
               'outscale': 0.01, 'winit': 'trunc_normal_in'}
         for i in range(int(dh.get('disag_models', 8))):
           h = embodied.jax.MLPHead(
-              elements.Space(np.float32, (deter,)),
               elements.Space(np.float32, (stoch_flat,)),
-              'mse', **dhead,
+              'mse',
+              **dhead,
               name=f'disag{i}')
           self.disag_heads.append(h)
       self.modules += [
@@ -145,7 +145,8 @@ class Agent(embodied.jax.Agent):
   @property
   def policy_keys(self):
     if self.config.use_director_hrl:
-      return '^(enc|dyn|dec|pol|goal_enc|goal_dec|man_pol|worker_pol|disag)/'
+      return (
+          '^(enc|dyn|dec|goal_enc|goal_dec|man_pol|worker_pol|disag)/')
     return '^(enc|dyn|dec|pol)/'
 
   def _director_decode_goal(self, skill_idx, ctx_deter):
@@ -253,7 +254,13 @@ class Agent(embodied.jax.Agent):
       outs['replay'] = updates
     # if self.config.replay.fracs.priority > 0:
     #   outs['replay']['priority'] = losses['model']
-    carry = (*carry, {k: data[k][:, -1] for k in self.act_space})
+    act_last = {k: data[k][:, -1] for k in self.act_space}
+    if self.config.use_director_hrl:
+      enc_carry, dyn_carry, dec_carry, hrl_carry = carry
+      carry = (enc_carry, dyn_carry, dec_carry, act_last, hrl_carry)
+    else:
+      enc_carry, dyn_carry, dec_carry = carry
+      carry = (enc_carry, dyn_carry, dec_carry, act_last)
     return carry, outs, metrics
 
   def loss(self, carry, obs, prevact, training):
@@ -340,12 +347,13 @@ class Agent(embodied.jax.Agent):
         new_s = jnp.where(
             renew.astype(jnp.int32), man_out['skill'].sample(nj.seed()), skill_idx)
         new_g = self._director_decode_goal(new_s, deter)
-        goal_n = jnp.where(renew[:, None], new_g, goal)
+        # renew is scalar in time (shared across batch); jnp.where broadcasts.
+        goal_n = jnp.where(renew > 0, new_g, goal)
         xw = jnp.concatenate([
             self.feat2tensor({'deter': deter, 'stoch': carry_r['stoch']}),
             goal_n], -1)
         w_act = sample(self.worker_pol(xw, 1))
-        carry_n, (_, feat, _) = self.dyn.imagine(
+        carry_n, (feat, _) = self.dyn.imagine(
             carry_r, w_act, 1, training, single=True)
         t_n = t + 1
         return (carry_n, new_s, goal_n, t_n), (feat, w_act, goal_n, new_s)
@@ -393,7 +401,9 @@ class Agent(embodied.jax.Agent):
           goal_reward_name=goal_reward_name,
           enc_fwd=None,
       )
-      discount = float(self.config.discount)
+      discount = (
+          1.0 if self.config.contdisc
+          else (1.0 - 1.0 / float(self.config.horizon)))
       wtraj, mtraj = dfull.split_and_abstract(traj, K, discount)
       wr = dict(dh.get('worker_rews', {}))
       we = float(wr.get('extr', 0.0))
