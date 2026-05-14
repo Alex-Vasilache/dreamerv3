@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import embodied.jax.outs as outs
 import jax
 import jax.numpy as jnp
 import ninjax as nj
@@ -21,6 +22,18 @@ def cosine_max_reward(goal, state_deter):
   fnorm = jnp.linalg.norm(state_deter, axis=-1, keepdims=True) + 1e-8
   norm = jnp.maximum(gnorm, fnorm)
   return jnp.sum((goal / norm) * (state_deter / norm), axis=-1)
+
+
+def _categorical_logits(dist):
+  """Logits from MLPHead output; unwrap ``outs.Agg`` for vector-valued discrete spaces."""
+  d = dist
+  while isinstance(d, outs.Agg):
+    d = d.output
+  if isinstance(d, outs.OneHot):
+    return d.dist.logits
+  if isinstance(d, outs.Categorical):
+    return d.logits
+  raise TypeError(f'Expected Categorical/OneHot (optionally Agg), got {type(dist)}')
 
 
 def categorical_kl_to_uniform(logits):
@@ -65,11 +78,18 @@ def goal_autoencoder_replay_loss(enc, dec, deter_bt, manager_step_k: int, skill_
   dist = enc_out[key]
   skill_idx = dist.sample(nj.seed())
   oh = jax.nn.one_hot(skill_idx, skill_classes, dtype=f32)
-  flat = oh.reshape(*oh.shape[:-1], -1)
+  # Flatten skill_syms x classes into one dim (not *shape[:-1],-1 which keeps 4D).
+  flat = oh.reshape(oh.shape[0], oh.shape[1], -1)
   dec_in = jnp.concatenate([flat, ctx], axis=-1)
-  rec = jnp.mean(dec(dec_in, bdims=2).loss(sg(gol)), axis=-1)
-  kl_per_sym = categorical_kl_to_uniform(dist.logits)
-  kl = jnp.sum(kl_per_sym, axis=-1)
+  raw = dec(dec_in, bdims=2).loss(sg(gol))
+  if raw.ndim > 2:
+    rec = jnp.mean(raw, axis=tuple(range(2, raw.ndim)))
+  else:
+    rec = raw
+  kl_per_sym = categorical_kl_to_uniform(_categorical_logits(dist))
+  kl = kl_per_sym
+  while kl.ndim > 2:
+    kl = jnp.sum(kl, axis=-1)
   metrics = {f'director/ae_rec': rec.mean(), f'director/ae_kl': kl.mean()}
   pad = jnp.zeros((b, k), f32)
   full = jnp.concatenate([rec + kl, pad], axis=1)
@@ -79,7 +99,7 @@ def goal_autoencoder_replay_loss(enc, dec, deter_bt, manager_step_k: int, skill_
 def exploration_mse(dec, skill_idx, ctx_deter, next_deter, skill_classes: int):
   """Squared reconstruction error ||dec(onehot(skill), ctx) - s_{t+1}||^2 (mean over dims)."""
   oh = jax.nn.one_hot(skill_idx, skill_classes, dtype=f32)
-  flat = oh.reshape(*oh.shape[:-1], -1)
+  flat = oh.reshape(oh.shape[0], oh.shape[1], -1)
   dec_in = jnp.concatenate([flat, ctx_deter], axis=-1)
   pred = dec(dec_in, bdims=2).pred()
   return jnp.mean((pred - sg(next_deter)) ** 2, axis=-1)
@@ -105,7 +125,7 @@ def elbo_adver_reward(enc, dec, deter_bt, skill_classes: int, adver_impl: str):
   dist = enc_out[key]
   skill_idx = dist.sample(nj.seed())
   oh = jax.nn.one_hot(skill_idx, skill_classes, dtype=f32)
-  flat = oh.reshape(*oh.shape[:-1], -1)
+  flat = oh.reshape(oh.shape[0], oh.shape[1], -1)
   dec_in = jnp.concatenate([flat, ctx], axis=-1)
   pred = dec(dec_in, bdims=2).pred()
   feat = deter_bt.astype(f32)
