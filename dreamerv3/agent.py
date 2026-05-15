@@ -5,6 +5,7 @@ value in one step from replay sequences. Actor-critic losses use imagined
 trajectories from ``dyn.imagine``; optional ``repval_loss`` fits the value on
 real replay tails with bootstrap from imagination.
 """
+import math
 import re
 
 import chex
@@ -30,6 +31,27 @@ prefix = lambda xs, p: {f'{p}/{k}': v for k, v in xs.items()}
 # Concatenate pytrees along axis ``a`` (e.g. time) for feat/action sequences.
 concat = lambda xs, a: jax.tree.map(lambda *x: jnp.concatenate(x, a), *xs)
 isimage = lambda s: s.dtype == np.uint8 and len(s.shape) == 3
+
+
+def _tb_video_grid(video_bthwc):
+  """(batch, time, H, W, C) uint8 -> (time, H, batch*W, C) for TensorBoard video."""
+  rb, t, h, w, c = video_bthwc.shape
+  return video_bthwc.transpose(1, 2, 0, 3, 4).reshape(t, h, rb * w, c)
+
+
+def _vec_to_tb_rgb(vec_bt_d):
+  """(B, T, D) float -> (B, T, H, W, 3) uint8 via min-max norm on flattened vector."""
+  d = vec_bt_d.shape[-1]
+  h = max(1, int(math.floor(math.sqrt(float(d)))))
+  cells = int(math.ceil(d / h) * h)
+  w = cells // h
+  flat = jnp.pad(vec_bt_d, [(0, 0)] * (vec_bt_d.ndim - 1) + [(0, cells - d)])
+  lo = flat.min(axis=-1, keepdims=True)
+  hi = flat.max(axis=-1, keepdims=True)
+  g = (flat - lo) / (hi - lo + 1e-8)
+  g = g.reshape(*vec_bt_d.shape[:-1], h, w, 1)
+  u8 = (g * 255).astype(jnp.uint8)
+  return jnp.repeat(u8, 3, axis=-1)
 
 
 class Agent(embodied.jax.Agent):
@@ -354,6 +376,7 @@ class Agent(embodied.jax.Agent):
       losses = {
           k: v / sg(self.lossrms[k](v, training))
           for k, v in losses.items()}
+      metrics.update({f'loss_rms/{k}': v.mean() for k, v in losses.items()})
     loss = sum([v.mean() * self.scales[k] for k, v in losses.items()])
 
     carry = (enc_carry, dyn_carry, dec_carry)
@@ -362,7 +385,13 @@ class Agent(embodied.jax.Agent):
     return loss, (carry, entries, aux_outs, metrics)
 
   def report(self, carry, data):
-    """Eval-style forward, optional grad norms, and open-loop reconstruction video."""
+    """Eval-style forward, optional grad norms, open-loop video, and goal panels.
+
+    ``report/goal/*`` TensorBoard videos: ``deter_feat``, ``decoded_deter``, sampled
+    skill grid, per-image truth, and ``[truth | decoder(goal) | error]`` where the
+    decoder uses ``deter=decoded_goal`` and prior ``stoch`` from ``deter`` (Director
+    ``get_stoch`` pattern in ``hierarchy.py``).
+    """
     if not self.config.report:
       return carry, {}
 
@@ -375,7 +404,7 @@ class Agent(embodied.jax.Agent):
     # Train metrics
     _, (new_carry, entries, outs, mets) = self.loss(
         carry, obs, prevact, training=False)
-    mets.update(mets)
+    metrics.update(mets)
 
     # Per-loss-key gradient norm (expensive: extra backward per key).
     if self.config.report_gradnorms:
@@ -423,6 +452,36 @@ class Agent(embodied.jax.Agent):
       B, T, H, W, C = video.shape
       grid = video.transpose((1, 2, 0, 3, 4)).reshape((T, H, B * W, C))
       metrics[f'openloop/{key}'] = grid
+
+    # Goal autoencoder + image decode (Director: ``decoder({deter: goal, stoch: rssm.get_stoch(goal)})``).
+    rep = jax.tree.map(lambda x: x[:RB, :T], outs['repfeat'])
+    reset_s = obs['is_first'][:RB, :T]
+    deter_feat = sg(self.feat2deter(rep))
+    encoded_goal = self.goal_enc(deter_feat, 2)
+    skill_s = sample(encoded_goal)
+    dec_goal = self.goal_dec(skill_s, 2)
+    pred_deter = nn.cast(dec_goal.pred())
+    logit_p = self.dyn._prior(pred_deter)
+    stoch_p = nn.cast(self.dyn._dist(logit_p).pred())
+    feat_goal = {**rep, 'deter': pred_deter, 'stoch': stoch_p, 'logit': logit_p}
+    _, _, recons_goal = self.dec(dec_carry, feat_goal, reset_s, training=False)
+
+    metrics['goal/deter_feat'] = _tb_video_grid(_vec_to_tb_rgb(deter_feat))
+    metrics['goal/decoded_deter'] = _tb_video_grid(_vec_to_tb_rgb(pred_deter))
+    sk_idx = skill_s.argmax(-1).astype(f32)
+    k = float(skill_s.shape[-1])
+    sk_gray = (sk_idx / jnp.maximum(1.0, k - 1.0) * 255.0).astype(jnp.uint8)
+    sk_rgb = jnp.repeat(sk_gray[..., None], 3, axis=-1)
+    metrics['goal/skill_sampled'] = _tb_video_grid(sk_rgb)
+
+    for key in self.dec.imgkeys:
+      assert obs[key].dtype == jnp.uint8
+      true = obs[key][:RB, :T]
+      metrics[f'goal/image_{key}'] = _tb_video_grid(true)
+      pred_g = jnp.clip(recons_goal[key].pred() * 255, 0, 255).astype(jnp.uint8)
+      err = ((i32(pred_g) - i32(true) + 255) / 2).astype(np.uint8)
+      video = jnp.concatenate([true, pred_g, err], 2)
+      metrics[f'goal/recon_{key}'] = _tb_video_grid(video)
 
     carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
     return carry, metrics

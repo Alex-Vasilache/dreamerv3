@@ -27,10 +27,10 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --env.dmc.size 32 32 \
   --agent.enc.simple.outer True \
   --agent.dec.simple.outer True \
-  --batch_size 8 \
-  --batch_length 32 \
-  --online_learning True \
-  --online_actor_cpu True \
+  --batch_size 32 \
+  --batch_length 16 \
+  --online_learning False \
+  --online_actor_cpu False \
   --run.envs 1 \
   --run.steps 1100000 \
   --logger.outputs jsonl,scope,tensorboard \
