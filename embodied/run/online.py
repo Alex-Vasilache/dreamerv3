@@ -367,6 +367,7 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   batch_steps = args.batch_size * args.batch_length
   should_train = elements.when.Ratio(args.train_ratio / batch_steps)
   should_log = embodied.LocalClock(args.log_every)
+  should_report = embodied.LocalClock(args.report_every)
   should_save = embodied.LocalClock(args.save_every)
   should_sync_policy = embodied.LocalClock(args.online_sync_every)
   should_sync_replay = embodied.LocalClock(args.online_replay_sync_interval)
@@ -410,6 +411,8 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   _log_learner(
       logdir, f'prefill complete items={len(replay)} sampler={len(replay.sampler)}')
   stream_train = iter(agent.stream(make_stream(replay, 'train')))
+  stream_report = iter(agent.stream(make_stream(replay, 'report')))
+  carry_report = agent.init_report(args.batch_size)
   trained = False
   while not _actor_finished(paths, args, coordination):
     actor_step = _read_actor_step(paths.actor_step)
@@ -439,6 +442,12 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       if 'replay' in outs:
         replay.update(outs['replay'])
       train_agg.add(mets, prefix='train')
+      if should_report(step) and len(replay):
+        agg = elements.Agg()
+        for _ in range(args.consec_report * args.report_batches):
+          carry_report, mets = agent.report(carry_report, next(stream_report))
+          agg.add(mets)
+        logger.add(agg.result(), prefix='report')
     if should_sync_policy(step):
       shared_policy.publish(agent)
     if should_log(step):

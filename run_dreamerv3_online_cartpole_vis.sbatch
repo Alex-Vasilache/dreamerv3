@@ -29,8 +29,8 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --agent.dec.simple.outer True \
   --batch_size 32 \
   --batch_length 16 \
-  --online_learning False \
-  --online_actor_cpu False \
+  --online_learning True \
+  --online_actor_cpu True \
   --run.envs 1 \
   --run.steps 1100000 \
   --logger.outputs jsonl,scope,tensorboard \

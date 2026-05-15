@@ -231,7 +231,12 @@ def make_replay(config, folder, mode='train'):
   batlen = config.batch_length if mode == 'train' else config.report_length
   consec = config.consec_train if mode == 'train' else config.consec_report
   capacity = config.replay.size if mode == 'train' else config.replay.size / 10
-  length = consec * batlen + config.replay_context
+  train_need = config.consec_train * config.batch_length + config.replay_context
+  report_need = (
+      config.consec_report * config.report_length + config.replay_context)
+  # Train and report streams sample the same replay; chunks must cover both.
+  length = max(train_need, report_need) if mode == 'train' else (
+      consec * batlen + config.replay_context)
   assert config.batch_size * length <= capacity
 
   if folder == 'replay' and config.online_learning:
@@ -311,6 +316,9 @@ def wrap_env(env, config):
 
 
 def make_stream(config, replay, mode):
+  train_need = config.consec_train * config.batch_length + config.replay_context
+  report_need = (
+      config.consec_report * config.report_length + config.replay_context)
   fn = bind(replay.sample, config.batch_size, mode)
   stream = embodied.streams.Stateless(fn)
   stream = embodied.streams.Consec(
@@ -318,7 +326,8 @@ def make_stream(config, replay, mode):
       length=config.batch_length if mode == 'train' else config.report_length,
       consec=config.consec_train if mode == 'train' else config.consec_report,
       prefix=config.replay_context,
-      strict=(mode == 'train'),
+      # Longer stored sequences (for report) forbid strict==True on train slices.
+      strict=(mode == 'train' and report_need <= train_need),
       contiguous=True)
 
   return stream
