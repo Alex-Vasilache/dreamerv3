@@ -27,9 +27,9 @@ export MUJOCO_GL=egl
 
 cd "$RUN_DIR"
 AGENT_FLAGS=(
-  --agent.use_single_rollout False
-  --agent.use_rms_loss_norm False
-  --agent.imag_loss.use_pmpo_actor False 
+  --agent.use_single_rollout True
+  --agent.use_rms_loss_norm True
+  --agent.imag_loss.use_pmpo_actor True 
 )
 
 python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
@@ -42,8 +42,8 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --agent.dec.simple.outer True \
   --batch_size 32 \
   --batch_length 16 \
-  --online_learning True \
-  --online_actor_cpu True \
+  --online_learning False \
+  --online_actor_cpu False \
   --run.envs 1 \
   --run.steps 1100000 \
   --logger.outputs jsonl,scope,tensorboard \
