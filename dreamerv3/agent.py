@@ -48,6 +48,12 @@ class Agent(embodied.jax.Agent):
     self.act_space = act_space
     self.config = config
 
+    self.skill_shape = config.skill_shape
+    skill_shape_t = tuple(int(x) for x in self.skill_shape)
+    skill_classes = int(getattr(config, 'skill_classes', skill_shape_t[0]))
+    self.skill_space = elements.Space(np.int32, skill_shape_t, 0, skill_classes)
+    self.goal_shape = (self.config.dyn.rssm.deter,)
+
     # Encoder/decoder omit control/meta keys; dynamics still sees actions separately.
     exclude = ('is_first', 'is_last', 'is_terminal', 'reward')
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
@@ -62,10 +68,30 @@ class Agent(embodied.jax.Agent):
         'simple': rssm.Decoder,
     }[config.dec.typ](dec_space, **config.dec[config.dec.typ], name='dec')
 
+    # Goal Autoencoder: takes in deterministic hidden state of world model as input
+    # and outputs a categorical distribution as goal code (onehot head).
+    self.goal_code_space = elements.Space(
+        np.int32, skill_shape_t, 0, skill_classes)
+    self.goal_enc = embodied.jax.MLPHead(
+        self.goal_code_space, **config.goal_enc, name='goal_enc')
+    self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
+    self.goal_autoencoder_beta = config.goal_autoencoder_beta
+    # Uniform discrete prior (zero logits), same layout as ``goal_enc`` output:
+    # ``Agg(OneHot(Categorical), ...)`` matches Director's ``OneHotDist(zeros)`` + ``Independent``.
+    logits_shape = skill_shape_t + (skill_classes,)
+    goal_unimix = float(config.goal_enc.unimix)
+    self.skill_prior = outs.Agg(
+        outs.OneHot(jnp.zeros(logits_shape, dtype=f32), goal_unimix),
+        len(logits_shape),
+        jnp.sum,
+    )
+
     # Flat RSSM state for MLP heads: deterministic dim + flattened stochastic samples.
     self.feat2tensor = lambda x: jnp.concatenate([
         nn.cast(x['deter']),
         nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1)))], -1)
+
+    self.feat2deter = lambda x: nn.cast(x['deter'])
 
     scalar = elements.Space(np.float32, ())
     binary = elements.Space(bool, (), 0, 2)
@@ -74,9 +100,9 @@ class Agent(embodied.jax.Agent):
     self.con = embodied.jax.MLPHead(binary, **config.conhead, name='con')
 
     d1, d2 = config.policy_dist_disc, config.policy_dist_cont
-    outs = {k: d1 if v.discrete else d2 for k, v in act_space.items()}
+    policy_outs = {k: d1 if v.discrete else d2 for k, v in act_space.items()}
     self.pol = embodied.jax.MLPHead(
-        act_space, outs, **config.policy, name='pol')
+        act_space, policy_outs, **config.policy, name='pol')
 
     # Value and EMA target for bootstrapping / slow regularizer in ``imag_loss``.
     self.val = embodied.jax.MLPHead(scalar, **config.value, name='val')
@@ -90,7 +116,16 @@ class Agent(embodied.jax.Agent):
 
     # Modules updated by the single ``self.opt`` step in ``train``.
     self.modules = [
-        self.dyn, self.enc, self.dec, self.rew, self.con, self.pol, self.val]
+        self.dyn,
+        self.enc,
+        self.dec,
+        self.goal_enc,
+        self.goal_dec,
+        self.rew,
+        self.con,
+        self.pol,
+        self.val,
+    ]
     self.opt = embodied.jax.Optimizer(
         self.modules, self._make_opt(**config.opt), summary_depth=1,
         name='opt')
@@ -219,9 +254,23 @@ class Agent(embodied.jax.Agent):
       target = f32(value) / 255 if isimage(space) else value
       losses[key] = recon.loss(sg(target))
 
-    B, T = reset.shape
-    shapes = {k: v.shape for k, v in losses.items()}
-    assert all(x == (B, T) for x in shapes.values()), ((B, T), shapes)
+    # --- Goal Autoencoder ---
+    deter_feat = sg(self.feat2deter(repfeat))
+    encoded_goal = self.goal_enc(deter_feat, 2)
+    skill = sample(encoded_goal)
+    decoded_goal = self.goal_dec(skill, 2)
+    # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
+    losses['goal_rec'] = decoded_goal.loss(sg(deter_feat))
+    inner_kl = encoded_goal.output.kl(self.skill_prior.output)
+    kd = len(self.skill_shape)
+    goal_kl_bt = jnp.sum(inner_kl, axis=tuple(range(-kd, 0)))
+    losses['goal_kl'] = (
+        f32(self.config.goal_autoencoder_beta) * goal_kl_bt
+        if self.config.goal_kl
+        else jnp.zeros((B, T), f32))
+
+    shapes_bt = {k: v.shape for k, v in losses.items()}
+    assert all(x == (B, T) for x in shapes_bt.values()), ((B, T), shapes_bt)
 
     # --- Imagination length K_imag vs replay value window K_repl ---
     # B,T = batch and time from replay. K_cap upper-bounds how many start states
