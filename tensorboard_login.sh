@@ -3,7 +3,7 @@
 # Reference copy of the command: TENSORBOARD_SAION.md
 #
 # Canonical one-liner (same flags as the working setup):
-#   source "/apps/unit/DoyaU/vasilache/rl_env/bin/activate" \
+#   source "/apps/unit/DoyaU/vasilache/apps/rl_env/bin/activate" \
 #     && tensorboard --logdir "/work/DoyaU/vasilache/work/<RUN_DIR>/" \
 #        --port 6006 --host 0.0.0.0 --load_fast=false
 #
@@ -20,8 +20,20 @@
 
 set -euo pipefail
 
-# shellcheck source=/dev/null
-source "/apps/unit/DoyaU/vasilache/rl_env/bin/activate"
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  echo "tensorboard_login.sh: do not run TensorBoard inside Slurm (SLURM_JOB_ID=${SLURM_JOB_ID})." >&2
+  echo "SSH to the login node and run without a job allocation, or use tensorboard_login_node.sh." >&2
+  exit 2
+fi
+
+# Prefer rl_env (matches many Saion notes); fall back to DreamerV3 training venv.
+if [[ -f "/apps/unit/DoyaU/vasilache/apps/rl_env/bin/activate" ]]; then
+  # shellcheck source=/dev/null
+  source "/apps/unit/DoyaU/vasilache/apps/rl_env/bin/activate"
+else
+  # shellcheck source=/dev/null
+  source "/apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh"
+fi
 
 LOGDIR="${LOGDIR:-/work/DoyaU/vasilache/work/dreamerv3_online_vis1m32_1env_v4_20260513_134842_d000kC/}"
 PORT="${PORT:-6006}"
