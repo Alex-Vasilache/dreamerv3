@@ -76,15 +76,10 @@ class Agent(embodied.jax.Agent):
         self.goal_code_space, **config.goal_enc, name='goal_enc')
     self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
     self.goal_autoencoder_beta = config.goal_autoencoder_beta
-    # Uniform discrete prior (zero logits), same layout as ``goal_enc`` output:
-    # ``Agg(OneHot(Categorical), ...)`` matches Director's ``OneHotDist(zeros)`` + ``Independent``.
-    logits_shape = skill_shape_t + (skill_classes,)
-    goal_unimix = float(config.goal_enc.unimix)
-    self.skill_prior = outs.Agg(
-        outs.OneHot(jnp.zeros(logits_shape, dtype=f32), goal_unimix),
-        len(logits_shape),
-        jnp.sum,
-    )
+    # Uniform prior metadata only: built inside ``loss`` with ``zeros_like`` encoder
+    # logits so arrays stay on-device (``jnp.zeros`` here breaks sharded init).
+    self._skill_prior_unimix = float(config.goal_enc.unimix)
+    self._skill_prior_agg_dims = len(skill_shape_t) + 1
 
     # Flat RSSM state for MLP heads: deterministic dim + flattened stochastic samples.
     self.feat2tensor = lambda x: jnp.concatenate([
@@ -261,13 +256,30 @@ class Agent(embodied.jax.Agent):
     decoded_goal = self.goal_dec(skill, 2)
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
     losses['goal_rec'] = decoded_goal.loss(sg(deter_feat))
-    inner_kl = encoded_goal.output.kl(self.skill_prior.output)
+    prior_inner = outs.OneHot(
+        jnp.zeros_like(encoded_goal.output.dist.logits),
+        self._skill_prior_unimix)
+    skill_prior = outs.Agg(
+        prior_inner, self._skill_prior_agg_dims, jnp.sum)
+    inner_kl = encoded_goal.output.kl(skill_prior.output)
     kd = len(self.skill_shape)
     goal_kl_bt = jnp.sum(inner_kl, axis=tuple(range(-kd, 0)))
     losses['goal_kl'] = (
         f32(self.config.goal_autoencoder_beta) * goal_kl_bt
         if self.config.goal_kl
         else jnp.zeros((B, T), f32))
+    # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
+    ent_inner = encoded_goal.output.dist.entropy()
+    goal_ent_bt = jnp.sum(ent_inner, axis=tuple(range(-kd, 0)))
+    metrics.update({
+        'goal/rec_mean': losses['goal_rec'].mean(),
+        'goal/rec_std': losses['goal_rec'].std(),
+        'goal/kl_mean': losses['goal_kl'].mean(),
+        'goal/kl_raw_mean': goal_kl_bt.mean(),
+        'goal/kl_std': losses['goal_kl'].std(),
+        'goal/entropy_mean': goal_ent_bt.mean(),
+        'goal/entropy_std': goal_ent_bt.std(),
+    })
 
     shapes_bt = {k: v.shape for k, v in losses.items()}
     assert all(x == (B, T) for x in shapes_bt.values()), ((B, T), shapes_bt)
@@ -346,8 +358,8 @@ class Agent(embodied.jax.Agent):
 
     carry = (enc_carry, dyn_carry, dec_carry)
     entries = (enc_entries, dyn_entries, dec_entries)
-    outs = {'tokens': tokens, 'repfeat': repfeat, 'losses': losses}
-    return loss, (carry, entries, outs, metrics)
+    aux_outs = {'tokens': tokens, 'repfeat': repfeat, 'losses': losses}
+    return loss, (carry, entries, aux_outs, metrics)
 
   def report(self, carry, data):
     """Eval-style forward, optional grad norms, and open-loop reconstruction video."""

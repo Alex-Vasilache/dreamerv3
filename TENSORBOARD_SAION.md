@@ -1,16 +1,37 @@
 # TensorBoard (Saion login node)
 
-Run on the **login node**, not inside Slurm. Use `rl_env` so `tensorboard` matches the stack used for training.
+Run on the **login node**, not inside Slurm. The unit TensorBoard install lives under **`/apps/unit/DoyaU/vasilache/apps/rl_env`** (not `.../vasilache/rl_env`).
 
-## Single run (example v4 run)
+## Exact command (verified, Saion login)
+
+Background process; logs under the run directory. Replace `LOGDIR` / `PORT` for other runs:
 
 ```bash
-source "/apps/unit/DoyaU/vasilache/rl_env/bin/activate" && tensorboard \
-  --logdir "/work/DoyaU/vasilache/work/dreamerv3_online_vis1m32_1env_v4_20260513_134842_d000kC/" \
+source /etc/profile.d/modules.sh
+module load python/3.7.3
+
+LOGDIR=/work/DoyaU/vasilache/work/dreamerv3_online_vis1m32_1env_v4_20260515_140552_kIEXlI/
+PORT=6006
+TBLOG="${LOGDIR%/}/tensorboard_${PORT}.log"
+
+nohup tensorboard --logdir "$LOGDIR" --port "$PORT" --host 0.0.0.0 --load_fast=false \
+  >"$TBLOG" 2>&1 &
+echo "TB_PID=$!  log=$TBLOG  open http://127.0.0.1:${PORT}/"
+```
+
+You may see a harmless `openmpi.gcc` module warning; TensorBoard still starts. Use the URL from the `echo` line (default port 6006).
+
+## Single run (foreground, `apps/rl_env`)
+
+Alternative if you prefer the unit venv only (no `module load`):
+
+```bash
+source "/apps/unit/DoyaU/vasilache/apps/rl_env/bin/activate" && tensorboard \
+  --logdir "/work/DoyaU/vasilache/work/dreamerv3_online_vis1m32_1env_v4_20260515_140552_kIEXlI/" \
   --port 6006 --host 0.0.0.0 --load_fast=false
 ```
 
-Then open `http://127.0.0.1:6006/` (or SSH port-forward that port).
+Then open `http://127.0.0.1:6006/` (or SSH port-forward that port; match `--port` if you change it).
 
 `--logdir` may be the run directory (as above) or `.../<RUN_ID>/logdir/`; TensorBoard recurses under the path you give.
 

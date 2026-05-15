@@ -8,7 +8,7 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
-ROOT = os.environ.get('DREAMERV3_WORK', '/work/DoyaU/vasilache/work')
+ROOT = os.environ.get('DREAMERV3_WORK', '/bucket/DoyaU/vasilache/bucket/results/dreamerv3')
 PREFIX = 'dreamerv3_online_vis1m32_1env'
 
 # Use single-quoted family names so font-family="..." attributes stay valid XML.
