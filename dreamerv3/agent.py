@@ -469,9 +469,15 @@ def policy_behavior_kl(policy):
 
 
 def imag_loss(
-    act, rew, con,
-    policy, value, slowvalue,
-    retnorm, valnorm, advnorm,
+    act,
+    rew,
+    con,
+    policy,
+    value,
+    slowvalue,
+    retnorm,
+    valnorm,
+    advnorm,
     update,
     contdisc=True,
     slowtar=True,
@@ -485,11 +491,38 @@ def imag_loss(
 ):
   """Actor-critic losses on imagined trajectories.
 
-  ``act`` / ``rew`` / ``con`` are time-major (T includes bootstrap); ``policy``
-  and ``value`` heads are evaluated on imagined states. TD(λ)-style returns
-  use ``lambda_return`` with bootstrap from ``tarval`` (slow value by default).
-  Policy loss is either REINFORCE + entropy or PMPO-style weighted log-prob + KL.
-  Value loss fits normalized returns plus optional slow-value regularizer.
+  Shapes use replay batch ``B``, imagination starts per batch ``K_imag``, and
+  imagination depth ``H`` (``imag_length``). Write ``B_imag = B * K_imag``.
+
+  Args:
+    act: Imagined actions (``imgact``): pytree aligned with ``act_space``; each
+      leaf ``(B_imag, H + 1, *action_dims)``.
+    rew: Predicted rewards from the world-model head on imagined feats; scalar
+      per step, shape ``(B_imag, H + 1)``.
+    con: Predicted continuation probabilities (Bernoulli mean); shape
+      ``(B_imag, H + 1)``.
+    policy: Policy head outputs (``self.pol(...)``): dict keyed like ``act``;
+      ``.logp`` / ``.entropy`` reduce to leading axes ``(B_imag, H + 1)``.
+    value: Online value head outputs; ``.pred()`` shape ``(B_imag, H + 1)``.
+    slowvalue: Slow / target value head (EMA of ``value``); same batch axes.
+    retnorm: Return running normalizer (``Normalize``); maps ``ret`` to offset
+      and scale scalars (no leading batch axes).
+    valnorm: Value / return target normalizer (``Normalize``); same.
+    advnorm: Advantage normalizer (``Normalize``); same.
+    update: If true, update running stats inside the ``*norm`` modules (train).
+    contdisc: If true, per-step discount factor is 1; else ``1 - 1/horizon``.
+    slowtar: If true, bootstrap target uses ``slowvalue``; else ``value``.
+    horizon: Episode horizon used when ``contdisc`` is false (scalar int).
+    lam: TD(λ) parameter λ (scalar float).
+    actent: Entropy bonus coefficient on summed action entropies (scalar float).
+    slowreg: Weight on auxiliary NLL toward ``slowvalue.pred()`` (scalar float).
+    use_pmpo_actor: If true, use PMPO-style policy loss; else REINFORCE + entropy.
+    pmpo_beta: PMPO KL term coefficient β (scalar float).
+    pmpo_alpha: PMPO weight α on positive-advantage mass (scalar float).
+
+  Returns:
+    ``losses`` (per-step policy/value tensors), ``outs`` (e.g. ``ret`` for replay
+    bootstrap), and ``metrics`` scalars for logging.
   """
   losses = {}
   metrics = {}
