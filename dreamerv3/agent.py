@@ -72,8 +72,12 @@ class Agent(embodied.jax.Agent):
 
     self.skill_shape = config.skill_shape
     skill_shape_t = tuple(int(x) for x in self.skill_shape)
-    skill_classes = int(getattr(config, 'skill_classes', skill_shape_t[0]))
-    self.skill_space = elements.Space(np.int32, skill_shape_t, 0, skill_classes)
+    skill_classes = int(getattr(config, 'skill_classes', skill_shape_t[-1]))
+    if len(skill_shape_t) > 1:
+      assert skill_shape_t[-1] == skill_classes, (
+          'skill_shape[-1] must equal skill_classes (classes per categorical)')
+    # Director-style sparse skills: float one-hot matrix, not integer indices.
+    self.skill_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
     self.goal_shape = (self.config.dyn.rssm.deter,)
 
     # Encoder/decoder omit control/meta keys; dynamics still sees actions separately.
@@ -90,10 +94,9 @@ class Agent(embodied.jax.Agent):
         'simple': rssm.Decoder,
     }[config.dec.typ](dec_space, **config.dec[config.dec.typ], name='dec')
 
-    # Goal Autoencoder: takes in deterministic hidden state of world model as input
-    # and outputs a categorical distribution as goal code (onehot head).
-    self.goal_code_space = elements.Space(
-        np.int32, skill_shape_t, 0, skill_classes)
+    # Goal autoencoder (Director): L×C logits, straight-through one-hot sample,
+    # flatten to sparse L*C vector for the decoder. ``skill_shape`` is (L, C).
+    self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
     self.goal_enc = embodied.jax.MLPHead(
         self.goal_code_space, **config.goal_enc, name='goal_enc')
     self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
@@ -101,7 +104,7 @@ class Agent(embodied.jax.Agent):
     # Uniform prior metadata only: built inside ``loss`` with ``zeros_like`` encoder
     # logits so arrays stay on-device (``jnp.zeros`` here breaks sharded init).
     self._skill_prior_unimix = float(config.goal_enc.unimix)
-    self._skill_prior_agg_dims = len(skill_shape_t) + 1
+    self._skill_factorized = len(skill_shape_t) > 1
 
     # Flat RSSM state for MLP heads: deterministic dim + flattened stochastic samples.
     self.feat2tensor = lambda x: jnp.concatenate([
@@ -278,14 +281,12 @@ class Agent(embodied.jax.Agent):
     decoded_goal = self.goal_dec(skill, 2)
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
     goal_rec_loss = decoded_goal.loss(sg(deter_feat))
-    prior_inner = outs.OneHot(
-        jnp.zeros_like(encoded_goal.output.dist.logits),
-        self._skill_prior_unimix)
-    skill_prior = outs.Agg(
-        prior_inner, self._skill_prior_agg_dims, jnp.sum)
-    inner_kl = encoded_goal.output.kl(skill_prior.output)
-    kd = len(self.skill_shape)
-    goal_kl_bt = jnp.sum(inner_kl, axis=tuple(range(-kd, 0)))
+    goal_dist = encoded_goal.output
+    skill_prior = outs.OneHot(
+        jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)
+    inner_kl = goal_dist.kl(skill_prior)
+    # OneHot.kl on [..., L, C] logits already sums classes -> [..., L]; sum L -> [B, T].
+    goal_kl_bt = inner_kl.sum(-1) if self._skill_factorized else inner_kl
     goal_kl_loss = (
         f32(self.config.goal_autoencoder_beta) * goal_kl_bt
         if self.config.goal_kl
@@ -293,8 +294,8 @@ class Agent(embodied.jax.Agent):
 
     losses['goal_autoencoder'] = goal_rec_loss + goal_kl_loss
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
-    ent_inner = encoded_goal.output.dist.entropy()
-    goal_ent_bt = jnp.sum(ent_inner, axis=tuple(range(-kd, 0)))
+    ent = goal_dist.dist.entropy()
+    goal_ent_bt = ent.sum(-1) if self._skill_factorized else ent
     metrics.update({
         'goal/rec_mean': goal_rec_loss.mean(),
         'goal/rec_std': goal_rec_loss.std(),
@@ -470,10 +471,9 @@ class Agent(embodied.jax.Agent):
 
     metrics['goal/deter_feat'] = _tb_video_grid(_vec_to_tb_rgb(deter_feat))
     metrics['goal/decoded_deter'] = _tb_video_grid(_vec_to_tb_rgb(pred_deter))
-    sk_idx = skill_s.argmax(-1).astype(f32)
-    k = float(skill_s.shape[-1])
-    sk_gray = (sk_idx / jnp.maximum(1.0, k - 1.0) * 255.0).astype(jnp.uint8)
-    sk_rgb = jnp.repeat(sk_gray[..., None], 3, axis=-1)
+    # (RB, T, L, C) sparse one-hot matrix -> 8×8 RGB panel per frame.
+    sk_u8 = (skill_s * 255).astype(jnp.uint8)
+    sk_rgb = jnp.repeat(sk_u8[..., None], 3, axis=-1)
     metrics['goal/skill_sampled'] = _tb_video_grid(sk_rgb)
 
     for key in self.dec.imgkeys:
