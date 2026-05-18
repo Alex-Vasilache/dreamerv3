@@ -277,7 +277,7 @@ class Agent(embodied.jax.Agent):
     skill = sample(encoded_goal)
     decoded_goal = self.goal_dec(skill, 2)
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
-    losses['goal_rec'] = decoded_goal.loss(sg(deter_feat))
+    goal_rec_loss = decoded_goal.loss(sg(deter_feat))
     prior_inner = outs.OneHot(
         jnp.zeros_like(encoded_goal.output.dist.logits),
         self._skill_prior_unimix)
@@ -286,19 +286,21 @@ class Agent(embodied.jax.Agent):
     inner_kl = encoded_goal.output.kl(skill_prior.output)
     kd = len(self.skill_shape)
     goal_kl_bt = jnp.sum(inner_kl, axis=tuple(range(-kd, 0)))
-    losses['goal_kl'] = (
+    goal_kl_loss = (
         f32(self.config.goal_autoencoder_beta) * goal_kl_bt
         if self.config.goal_kl
         else jnp.zeros((B, T), f32))
+
+    losses['goal_autoencoder'] = goal_rec_loss + goal_kl_loss
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
     ent_inner = encoded_goal.output.dist.entropy()
     goal_ent_bt = jnp.sum(ent_inner, axis=tuple(range(-kd, 0)))
     metrics.update({
-        'goal/rec_mean': losses['goal_rec'].mean(),
-        'goal/rec_std': losses['goal_rec'].std(),
-        'goal/kl_mean': losses['goal_kl'].mean(),
+        'goal/rec_mean': goal_rec_loss.mean(),
+        'goal/rec_std': goal_rec_loss.std(),
+        'goal/kl_mean': goal_kl_loss.mean(),
         'goal/kl_raw_mean': goal_kl_bt.mean(),
-        'goal/kl_std': losses['goal_kl'].std(),
+        'goal/kl_std': goal_kl_loss.std(),
         'goal/entropy_mean': goal_ent_bt.mean(),
         'goal/entropy_std': goal_ent_bt.std(),
     })
