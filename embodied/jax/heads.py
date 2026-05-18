@@ -74,10 +74,15 @@ class Head(nj.Module):
     if isinstance(space, tuple):
       space = elements.Space(np.float32, space)
     if output == 'onehot':
-      classes = np.asarray(space.classes).flatten()
-      assert (classes == classes[0]).all(), classes
-      shape = (*space.shape, classes[0].item())
-      space = elements.Space(f32, shape, 0.0, 1.0)
+      if space.discrete:
+        # Integer code shape (L,): append class dimension -> (L, C) logits.
+        classes = np.asarray(space.classes).flatten()
+        assert (classes == classes[0]).all(), classes
+        shape = (*space.shape, classes[0].item())
+        space = elements.Space(f32, shape, 0.0, 1.0)
+      else:
+        # Float (L, C) event shape (Director-style); logits match space.shape.
+        space = elements.Space(f32, space.shape, 0.0, 1.0)
     self.space = space
     self.impl = output
     self.kw = {**kw, 'outscale': self.outscale}
