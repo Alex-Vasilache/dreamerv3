@@ -28,6 +28,64 @@ sg = lambda xs, skip=False: xs if skip else jax.lax.stop_gradient(xs)
 # Sample from a tree of distribution-like outputs (policy heads).
 sample = lambda xs: jax.tree.map(lambda x: x.sample(nj.seed()), xs)
 prefix = lambda xs, p: {f'{p}/{k}': v for k, v in xs.items()}
+
+
+def mgr_as_dict(out):
+  """Wrap a single manager head output as ``{'skill': ...}`` for shared code paths."""
+  return out if isinstance(out, dict) else {'skill': out}
+
+
+def skill_switch(update, new_skill, old_skill):
+  """Director ``switch``: keep ``old_skill`` unless ``update`` (per batch element)."""
+  u = jnp.asarray(update)
+  expand = lambda n, o: jnp.where(
+      u.reshape(u.shape + (1,) * (n.ndim - u.ndim)), n, o)
+  return jax.tree.map(expand, new_skill, old_skill)
+
+
+def imag_reward_pad(reward_step):
+  """Pad Director ``[1:]`` rewards so ``lambda_return`` has shape ``(B, T+1)``."""
+  return jnp.concatenate([jnp.zeros_like(reward_step[:, :1]), reward_step], axis=1)
+
+
+def goal_reward_cosine_max(goal, feat):
+  """Director ``goal_reward`` with ``cosine_max`` (``hierarchy.goal_reward``)."""
+  gnorm = jnp.linalg.norm(goal, axis=-1, keepdims=True) + 1e-12
+  fnorm = jnp.linalg.norm(feat, axis=-1, keepdims=True) + 1e-12
+  norm = jnp.maximum(gnorm, fnorm)
+  return jnp.sum((goal / norm) * (feat / norm), axis=-1)
+
+
+def aggregate_mgr_extr_rew(rew, con, k):
+  """Pool per-step extrinsic reward into skill windows (Director ``abstract_traj``).
+
+  Each block of ``k`` transitions gets one reward:
+  ``mean(rew_block * cumprod(con_block))`` placed at the block start index.
+  Other timesteps are zero so ``lambda_return`` does not double-count.
+  """
+  k = max(1, int(k))
+  B, T = rew.shape
+  out = jnp.zeros_like(rew)
+  r = rew[:, 1:]
+  c = con[:, 1:]
+  Tm = r.shape[1]
+  n = Tm // k
+  if n == 0:
+    return rew
+  r_blk = r[:, :n * k].reshape(B, n, k)
+  c_blk = c[:, :n * k].reshape(B, n, k)
+  weights = jnp.cumprod(c_blk, axis=-1)
+  agg = (r_blk * weights).mean(axis=-1)
+  idx = 1 + jnp.arange(n) * k
+  out = out.at[:, idx].set(agg)
+  rem = Tm - n * k
+  if rem > 0:
+    r_rem = r[:, n * k:]
+    c_rem = c[:, n * k:]
+    w = jnp.cumprod(c_rem, axis=-1)
+    agg_rem = (r_rem * w).mean(-1)
+    out = out.at[:, n * k + 1].set(agg_rem)
+  return out
 # Concatenate pytrees along axis ``a`` (e.g. time) for feat/action sequences.
 concat = lambda xs, a: jax.tree.map(lambda *x: jnp.concatenate(x, a), *xs)
 isimage = lambda s: s.dtype == np.uint8 and len(s.shape) == 3
@@ -111,13 +169,6 @@ class Agent(embodied.jax.Agent):
         nn.cast(x['deter']),
         nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1)))], -1)
 
-    # x is WM feat, y is goal
-    self.feat_goal2tensor = lambda x, y: jnp.concatenate([
-        nn.cast(x['deter']),
-        nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1))),
-        nn.cast(y.reshape((*y.shape[:-2], -1))),
-    ], -1)
-
     self.feat2deter = lambda x: nn.cast(x['deter'])
 
     scalar = elements.Space(np.float32, ())
@@ -188,6 +239,18 @@ class Agent(embodied.jax.Agent):
     scales = self.config.loss_scales.copy()
     rec = scales.pop('rec')
     scales.update({k: rec for k in dec_space})
+    policy_scale = scales.pop('policy', 1.0)
+    value_scale = scales.pop('value', 1.0)
+    scales['mgr_policy'] = policy_scale
+    scales['wkr_policy'] = policy_scale
+    scales['mgr_extr_value'] = value_scale
+    scales['mgr_expl_value'] = value_scale
+    scales['wkr_goal_value'] = value_scale
+    if 'repval' in scales:
+      repval_scale = scales.pop('repval')
+      scales['repmgr_extr_value'] = repval_scale
+      scales['repmgr_expl_value'] = repval_scale
+      scales['repwkr_goal_value'] = repval_scale
     self.scales = scales
 
     if self.config.use_rms_loss_norm:
@@ -200,8 +263,9 @@ class Agent(embodied.jax.Agent):
 
   @property
   def policy_keys(self):
-    # Regex for checkpoint / param groups treated as policy (not value-only).
-    return '^(enc|dyn|dec|pol)/'
+    # Regex for checkpoint / param groups synced to the actor process.
+    # Include manager + goal decoder used in ``policy()`` (not only worker ``pol``).
+    return '^(enc|dyn|dec|pol|manager_pol|goal_dec)/'
 
   @property
   def ext_space(self):
@@ -217,13 +281,18 @@ class Agent(embodied.jax.Agent):
     return spaces
 
   def init_policy(self, batch_size):
-    """RNN carries for enc/dyn/dec plus zero initial previous action."""
+    """RNN carries for enc/dyn/dec, prev action, and manager skill hold state."""
     zeros = lambda x: jnp.zeros((batch_size, *x.shape), x.dtype)
+    skill_shape = tuple(int(x) for x in self.skill_shape)
+    mgr_skill = {'skill': jnp.zeros((batch_size, *skill_shape), f32)}
+    mgr_step = jnp.zeros((batch_size,), i32)
     return (
         self.enc.initial(batch_size),
         self.dyn.initial(batch_size),
         self.dec.initial(batch_size),
-        jax.tree.map(zeros, self.act_space))
+        jax.tree.map(zeros, self.act_space),
+        mgr_skill,
+        mgr_step)
 
   def init_train(self, batch_size):
     """Same carry shape as policy (training reuses the same state layout)."""
@@ -233,9 +302,233 @@ class Agent(embodied.jax.Agent):
     """Same carry shape as policy for ``report`` rollouts."""
     return self.init_policy(batch_size)
 
+  def _unpack_carry(self, carry):
+    """``(enc, dyn, dec, prevact, mgr_skill, mgr_step)``; tolerate legacy 4-tuples."""
+    if len(carry) == 6:
+      return carry
+    enc, dyn, dec, prevact = carry[:4]
+    B = jax.tree.leaves(enc)[0].shape[0]
+    skill_shape = tuple(int(x) for x in self.skill_shape)
+    mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
+    mgr_step = jnp.zeros((B,), i32)
+    return enc, dyn, dec, prevact, mgr_skill, mgr_step
+
+  def _pack_carry(self, enc, dyn, dec, prevact, mgr_skill, mgr_step):
+    return (enc, dyn, dec, prevact, mgr_skill, mgr_step)
+
+  def _feat_goal2tensor(self, x, y):
+    """Concatenate WM features with goal; supports ``(B, D)`` and ``(B, T, D)`` goals."""
+    deter = nn.cast(x['deter'])
+    stoch = nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1)))
+    if y.ndim == deter.ndim:
+      goal = nn.cast(y)
+    else:
+      goal = nn.cast(y.reshape((*y.shape[:-2], -1)))
+    return jnp.concatenate([deter, stoch, goal], -1)
+
+  def _goal_from_skill(self, skill, bdims=1):
+    """Decoder mode (MSE ``pred``) from a sampled manager / VAE skill."""
+    s = skill['skill'] if isinstance(skill, dict) else skill
+    return self.goal_dec(s, bdims).pred()
+
+  def _manager_skill_step(self, feat, mgr_skill, mgr_step, reset):
+    """Resample skill every ``manager_sample_freq`` steps (Director carry switch)."""
+    K = max(1, int(self.manager_sample_freq))
+    mgr_step = jnp.where(reset, 0, mgr_step)
+    update = jnp.equal(mgr_step % K, 0)
+    new_skill = sample(mgr_as_dict(
+        self.manager_pol(self.feat2tensor(feat), bdims=1)))
+    mgr_skill = skill_switch(update, new_skill, mgr_skill)
+    goal = sg(self._goal_from_skill(mgr_skill))
+    mgr_step = mgr_step + 1
+    return mgr_skill, goal, mgr_step
+
+  def _goals_from_skills(self, skills, bdims=2):
+    """Batch-decode skills to goal vectors (Director ``dec.mode()``)."""
+    s = skills['skill'] if isinstance(skills, dict) else skills
+    bshape = s.shape[:bdims]
+    flat = s.reshape((-1, *s.shape[bdims:]))
+    goals = self.goal_dec(flat, 1).pred()
+    return goals.reshape(bshape + goals.shape[1:])
+
+  def _wkr_goal_reward(self, goals, imgfeat):
+    """Worker goal reward: ``cosine_max`` between ``goal`` and ``deter`` (Director)."""
+    feat = sg(self.feat2deter(imgfeat))
+    goal = sg(goals)
+    cos = goal_reward_cosine_max(goal, feat)
+    return imag_reward_pad(cos[:, 1:])
+
+  def _mgr_extr_rew(self, rew, con):
+    """Manager extrinsic reward: WM reward pooled over ``manager_sample_freq`` steps."""
+    return aggregate_mgr_extr_rew(rew, con, self.manager_sample_freq)
+
+  def _feat_from_goal(self, goal):
+    """RSSM feat for image decode from a proposed ``deter`` goal vector."""
+    goal = nn.cast(goal)
+    logit = self.dyn._prior(goal)
+    stoch = nn.cast(self.dyn._dist(logit).pred())
+    return dict(deter=goal, stoch=stoch, logit=logit)
+
+  def _propose_goal(self, feat, impl):
+    """Propose a goal vector from ``start`` state (Director ``propose_goal``)."""
+    B = feat['deter'].shape[0]
+    if impl == 'manager':
+      skill = sample(mgr_as_dict(
+          self.manager_pol(self.feat2tensor(feat), bdims=1)))
+      return sg(self._goal_from_skill(skill))
+    if impl == 'prior':
+      logits = jnp.zeros((B,) + tuple(int(x) for x in self.skill_shape), f32)
+      prior = outs.OneHot(logits, self._skill_prior_unimix)
+      skill = {'skill': prior.sample(nj.seed())}
+      return sg(self._goal_from_skill(skill))
+    if impl == 'replay':
+      deter = self.feat2deter(feat)
+      perm = jax.random.permutation(nj.seed(), jnp.arange(B))
+      target = deter[perm]
+      encoded = self.goal_enc(target, 1)
+      skill = sample(encoded)
+      s = skill['skill'] if isinstance(skill, dict) else skill
+      return sg(self.goal_dec(s, 1).pred())
+    raise NotImplementedError(impl)
+
+  def _worker_policy_fixed_goal(self, goal):
+    goal = sg(goal)
+    return lambda feat: sample(
+        self.pol(self._feat_goal2tensor(feat, goal), bdims=1))
+
+  def _decode_images_uint8(self, dec_carry, feat, reset):
+    _, _, recons = self.dec(dec_carry, feat, reset, training=False)
+    return {
+        k: jnp.clip(recons[k].pred() * 255, 0, 255).astype(jnp.uint8)
+        for k in self.dec.imgkeys}
+
+  def _report_impl_videos(self, repfeat, prevact, dec_carry, impl, RB, T):
+    """Director ``report_worker``: [initial | proposed goal | worker rollout]."""
+    metrics = {}
+    if not self.dec.imgkeys:
+      return metrics
+    horizon = int(getattr(self.config, 'worker_report_horizon', 32))
+    t0 = min(4, max(T - 1, 0))
+    horizon = min(horizon, max(T - t0 - 1, 1))
+    length = 1 + horizon
+
+    start_feat = jax.tree.map(lambda x: x[:, t0], repfeat)
+    goal = self._propose_goal(start_feat, impl)
+    dyn_start = dict(
+        deter=nn.cast(start_feat['deter']),
+        stoch=nn.cast(start_feat['stoch']))
+    _, imgfeat, _ = self.dyn.imagine(
+        dyn_start, self._worker_policy_fixed_goal(goal), horizon, training=False)
+
+    reset1 = jnp.zeros((RB, 1), bool)
+    reset_len = jnp.zeros((RB, length), bool)
+    start_dec = self._decode_images_uint8(dec_carry, start_feat, reset1)
+    goal_dec = self._decode_images_uint8(
+        dec_carry, self._feat_from_goal(goal), reset1)
+    roll_feat = concat([
+        jax.tree.map(lambda x: x[:, None], start_feat), imgfeat], 1)
+    roll_dec = self._decode_images_uint8(dec_carry, roll_feat, reset_len)
+
+    def tile_rb(u8, length):
+      if u8.ndim == 5:
+        return jnp.repeat(u8, length, axis=1)
+      return jnp.repeat(u8[:, None], length, axis=1)
+
+    for key in self.dec.imgkeys:
+      init_u8 = tile_rb(start_dec[key], length)
+      targ_u8 = tile_rb(goal_dec[key], length)
+      roll_u8 = roll_dec[key]
+      if roll_u8.ndim == 4:
+        roll_u8 = jnp.repeat(roll_u8[:, None], length, axis=1)
+      video = jnp.concatenate([init_u8, targ_u8, roll_u8], axis=3)
+      metrics[f'impl_{impl}/{key}'] = _tb_video_grid(video)
+    return metrics
+
+  def _mgr_expl_reward(self, imgfeat):
+    """Manager exploration reward: ``elbo_reward`` with ``adver_impl=squared``.
+
+    Uses per-step goal VAE recon ``((dec.mode() - feat)^2).mean(-1)``; our
+    encoder/decoder do not take a separate ``context`` input like Director.
+    """
+    deter = sg(self.feat2deter(imgfeat))
+    encoded = self.goal_enc(deter, 2)
+    skill = sample(encoded)
+    s = skill['skill'] if isinstance(skill, dict) else skill
+    pred = self.goal_dec(s, 2).pred()
+    sq = ((pred - deter) ** 2).mean(-1)
+    return imag_reward_pad(sq[:, 1:])
+
+  def _imagine_with_manager(self, starts, H, training):
+    """Imagine with manager skill resampled every ``manager_sample_freq`` steps."""
+    K = max(1, int(self.manager_sample_freq))
+    feat0 = dict(deter=starts['deter'], stoch=starts['stoch'])
+    mgr_skill = sample(mgr_as_dict(
+        self.manager_pol(self.feat2tensor(feat0), 1)))
+
+    def body(carry, _):
+      dyn_carry, mgr_skill, step_i = carry
+      feat = dict(deter=dyn_carry['deter'], stoch=dyn_carry['stoch'])
+      update = jnp.equal(step_i % K, 0)
+      new_skill = sample(mgr_as_dict(
+          self.manager_pol(self.feat2tensor(feat), 1)))
+      mgr_skill = skill_switch(update, new_skill, mgr_skill)
+      goal = sg(self._goal_from_skill(mgr_skill))
+      act = sample(self.pol(self._feat_goal2tensor(feat, goal), 1))
+      dyn_carry, (feat_next, act_out) = self.dyn.imagine(
+          dyn_carry, act, 1, training, single=True)
+      return (dyn_carry, mgr_skill, step_i + 1), (feat_next, act_out, mgr_skill)
+
+    if H < 1:
+      raise ValueError(f'imagination length must be >= 1, got {H}')
+    unroll = H if self.dyn.unroll else 1
+    # ``nj.scan(..., axis=1)`` requires ``xs`` with rank >= 2 (it swapaxes 0/1).
+    # Match ``rssm.imagine``: empty ``xs``, explicit ``length``, step in carry.
+    _, (imgfeat, imgact, img_skills) = nj.scan(
+        body, (starts, mgr_skill, jnp.int32(0)), (), H,
+        unroll=unroll, axis=1)
+
+    def _pad_skill_time(s):
+      if s.ndim < 2:
+        return s[:, None]
+      return jnp.concatenate([s, s[:, -1:]], axis=1)
+
+    img_skills = jax.tree.map(_pad_skill_time, img_skills)
+    return imgfeat, imgact, img_skills
+
+  def _manager_skills_on_sequence(self, repfeat):
+    """K-step manager skills along a ``(B, T)`` feature sequence (replay tail)."""
+    K = max(1, int(self.manager_sample_freq))
+    T = repfeat['deter'].shape[1]
+    feat0 = jax.tree.map(lambda x: x[:, 0], repfeat)
+    mgr_skill = sample(mgr_as_dict(
+        self.manager_pol(self.feat2tensor(feat0), 1)))
+
+    def body(mgr_skill, t):
+      feat = jax.tree.map(lambda x: x[:, t], repfeat)
+      update = jnp.equal(t % K, 0)
+      new_skill = sample(mgr_as_dict(
+          self.manager_pol(self.feat2tensor(feat), 1)))
+      mgr_skill = skill_switch(update, new_skill, mgr_skill)
+      return mgr_skill, mgr_skill
+
+    B = repfeat['deter'].shape[0]
+    if T <= 1:
+      _, skill = body(mgr_skill, 0)
+      return jax.tree.map(lambda x: x[:, None], skill)
+    _, skills = nj.scan(body, mgr_skill, jnp.arange(T), axis=0)
+
+    def orient_time(s):
+      if s.shape[0] == B and s.shape[1] == T:
+        return s
+      if s.shape[0] == T and s.shape[1] == B:
+        return jnp.swapaxes(s, 0, 1)
+      return s
+
+    return jax.tree.map(orient_time, skills)
+
   def policy(self, carry, obs, mode='train'):
     """One env step: encode obs, RSSM observe, sample policy action, update carry."""
-    (enc_carry, dyn_carry, dec_carry, prevact) = carry
+    (enc_carry, dyn_carry, dec_carry, prevact, mgr_skill, mgr_step) = carry
     kw = dict(training=False, single=True)
     reset = obs['is_first']
     enc_carry, enc_entry, tokens = self.enc(enc_carry, obs, reset, **kw)
@@ -245,18 +538,16 @@ class Agent(embodied.jax.Agent):
     if dec_carry:
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
 
-    manager_policy = self.manager_pol(self.feat2tensor(feat), bdims=1)
-    manager_act = sample(manager_policy) # TODO change to only sample every K steps, otherwise keep previous sampled manager_act
-    goal = self.goal_dec(manager_act, 2)
+    mgr_skill, goal, mgr_step = self._manager_skill_step(
+        feat, mgr_skill, mgr_step, reset)
 
-    # Policy reads representation only (decoder used for logging / replay context).
-    policy = self.pol(self.feat_goal2tensor(feat, sg(goal)), bdims=1)
+    policy = self.pol(self._feat_goal2tensor(feat, goal), bdims=1)
     act = sample(policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
         lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
         dict(obs=obs, carry=carry, tokens=tokens, feat=feat, act=act)))
-    carry = (enc_carry, dyn_carry, dec_carry, act)
+    carry = (enc_carry, dyn_carry, dec_carry, act, mgr_skill, mgr_step)
     if self.config.replay_context:
       out.update(elements.tree.flatdict(dict(
           enc=enc_entry, dyn=dyn_entry, dec=dec_entry)))
@@ -265,8 +556,9 @@ class Agent(embodied.jax.Agent):
   def train(self, carry, data):
     """Optimizer step on ``loss``; may attach replay context writes for next batch."""
     carry, obs, prevact, stepid = self._apply_replay_context(carry, data)
-    metrics, (carry, entries, outs, mets) = self.opt(
-        self.loss, carry, obs, prevact, training=True, has_aux=True)
+    enc, dyn, dec, prevact, mgr_skill, mgr_step = self._unpack_carry(carry)
+    metrics, ((enc, dyn, dec), entries, outs, mets) = self.opt(
+        self.loss, (enc, dyn, dec), obs, prevact, training=True, has_aux=True)
     metrics.update(mets)
     self.mgr_extr_slowval.update()
     outs = {}
@@ -277,9 +569,10 @@ class Agent(embodied.jax.Agent):
       assert all(x.shape[:2] == (B, T) for x in updates.values()), (
           (B, T), {k: v.shape for k, v in updates.items()})
       outs['replay'] = updates
-    # if self.config.replay.fracs.priority > 0:
-    #   outs['replay']['priority'] = losses['model']
-    carry = (*carry, {k: data[k][:, -1] for k in self.act_space})
+    carry = self._pack_carry(
+        enc, dyn, dec,
+        {k: data[k][:, -1] for k in self.act_space},
+        mgr_skill, mgr_step)
     return carry, outs, metrics
 
   def loss(self, carry, obs, prevact, training):
@@ -317,7 +610,8 @@ class Agent(embodied.jax.Agent):
     deter_feat = sg(self.feat2deter(repfeat))
     encoded_goal = self.goal_enc(deter_feat, 2)
     skill = sample(encoded_goal)
-    decoded_goal = self.goal_dec(skill, 2)
+    decoded_goal = self.goal_dec(
+        skill['skill'] if isinstance(skill, dict) else skill, 2)
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
     goal_rec_loss = decoded_goal.loss(sg(deter_feat))
     goal_dist = encoded_goal.output
@@ -363,32 +657,43 @@ class Agent(embodied.jax.Agent):
       K_repl = K_cap
     H = self.config.imag_length  # imagined steps after the start state (H+1 states).
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
-    # TODO check in director if we sample here or use mode
-    manager_policyfn = lambda feat: self.goal_dec(sample(self.manager_pol(self.feat2tensor(feat), 1)), 2) # TODO change to only sample every K steps, otherwise keep previous sampled manager_act
-    
-    policyfn = lambda feat: sample(self.pol(self.feat_goal2tensor(feat, sg(manager_policyfn(feat))), 1))
-    _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
+    imgfeat, imgprevact, _ = self._imagine_with_manager(starts, H, training)
     # Prefix replay states to imagined chain so AC sees grounded first step.
     first = jax.tree.map(
         lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
     imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat)], 1)
-    lastact = policyfn(jax.tree.map(lambda x: x[:, -1], imgfeat))
+    mgr_skills = self._manager_skills_on_sequence(imgfeat)
+    last_feat = jax.tree.map(lambda x: x[:, -1], imgfeat)
+    last_goal = sg(self._goal_from_skill(
+        jax.tree.map(lambda x: x[:, -1], mgr_skills)))
+    lastact = sample(self.pol(self._feat_goal2tensor(last_feat, last_goal), 1))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
     inp = self.feat2tensor(imgfeat)
-    feat_goal = self.feat_goal2tensor(imgfeat, sg(self.goal_dec(sample(self.manager_pol(inp, 1)), 2))) # TODO check in director if we sample here or use mode
+    goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
+    feat_goal = self._feat_goal2tensor(imgfeat, goals)
+    mgr_policy = mgr_as_dict(self.manager_pol(inp, 2))
+    con = self.con(inp, 2).prob(1)
+    rew_step = self.rew(inp, 2).pred()
+    mgr_extr_rew = self._mgr_extr_rew(rew_step, con)
+    mgr_expl_rew = self._mgr_expl_reward(imgfeat)
+    wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
+
     los, imgloss_out, mets = imag_loss(
         imgact,
-        # TODO add mgr policy actions (skills)
-        self.rew(inp, 2).pred(),
-        self.con(inp, 2).prob(1),
-        self.manager_pol(inp, 2),
+        mgr_skills,
+        mgr_extr_rew,
+        mgr_expl_rew,
+        wkr_goal_rew,
+        con,
+        mgr_policy,
         self.pol(feat_goal, 2),
         self.mgr_extr_val(inp, 2),
         self.mgr_extr_slowval(inp, 2),
         self.mgr_expl_val(inp, 2),
+        self.mgr_expl_slowval(inp, 2),
         self.wkr_goal_val(feat_goal, 2),
         self.wkr_goal_slowval(feat_goal, 2),
         self.mgr_extr_retnorm, self.mgr_expl_retnorm, self.wkr_goal_retnorm, 
@@ -405,16 +710,30 @@ class Agent(embodied.jax.Agent):
     # --- Optional replay value loss (tail of real sequence + imag bootstrap) ---
     if self.config.repval_loss:
       feat = sg(repfeat, skip=self.config.repval_grad)
-      last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]
-      boot = imgloss_out['ret'][:, 0].reshape(B, K_imag)
+      last, term = [obs[k] for k in ('is_last', 'is_terminal')]
+      boot_extr = imgloss_out['ret'][:, 0].reshape(B, K_imag)
+      boot_expl = imgloss_out['mgr_expl_ret'][:, 0].reshape(B, K_imag)
+      boot_goal = imgloss_out['wkr_goal_ret'][:, 0].reshape(B, K_imag)
       if K_repl != K_imag:
-        boot = jnp.broadcast_to(boot[:, -1:], (B, K_repl))
-      feat, last, term, rew, boot = jax.tree.map(
-          lambda x: x[:, -K_repl:], (feat, last, term, rew, boot))
+        boot_extr = jnp.broadcast_to(boot_extr[:, -1:], (B, K_repl))
+        boot_expl = jnp.broadcast_to(boot_expl[:, -1:], (B, K_repl))
+        boot_goal = jnp.broadcast_to(boot_goal[:, -1:], (B, K_repl))
+      feat, last, term, boot_extr, boot_expl, boot_goal = jax.tree.map(
+          lambda x: x[:, -K_repl:],
+          (feat, last, term, boot_extr, boot_expl, boot_goal))
       inp = self.feat2tensor(feat)
-      feat_goal = self.feat_goal2tensor(feat, sg(self.goal_dec(sample(self.manager_pol(inp, 1)), 2))) # TODO check in director if we sample here or use mode
+      repl_skills = jax.tree.map(
+          lambda x: x[:, -K_repl:],
+          self._manager_skills_on_sequence(feat))
+      repl_goals = sg(self._goals_from_skills(repl_skills, bdims=2))
+      feat_goal = self._feat_goal2tensor(feat, repl_goals)
+      repl_con = self.con(inp, 2).prob(1)
+      repl_mgr_extr_rew = self._mgr_extr_rew(self.rew(inp, 2).pred(), repl_con)
+      repl_mgr_expl_rew = self._mgr_expl_reward(feat)
+      repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat)
+
       los, reploss_out, mets = repl_loss(
-          last, term, rew, boot,
+          last, term, repl_mgr_extr_rew, boot_extr,
           self.mgr_extr_val(inp, 2),
           self.mgr_extr_slowval(inp, 2),
           self.mgr_extr_valnorm,
@@ -426,7 +745,7 @@ class Agent(embodied.jax.Agent):
       metrics.update(prefix(mets, 'reploss'))
 
       los, reploss_out, mets = repl_loss(
-          last, term, rew, boot,
+          last, term, repl_mgr_expl_rew, boot_expl,
           self.mgr_expl_val(inp, 2),
           self.mgr_expl_slowval(inp, 2),
           self.mgr_expl_valnorm,
@@ -438,7 +757,7 @@ class Agent(embodied.jax.Agent):
       metrics.update(prefix(mets, 'reploss'))
 
       los, reploss_out, mets = repl_loss(
-          last, term, rew, boot,
+          last, term, repl_wkr_goal_rew, boot_goal,
           self.wkr_goal_val(feat_goal, 2),
           self.wkr_goal_slowval(feat_goal, 2),
           self.wkr_goal_valnorm,
@@ -465,109 +784,116 @@ class Agent(embodied.jax.Agent):
     return loss, (carry, entries, aux_outs, metrics)
 
   def report(self, carry, data):
-    """Eval-style forward, optional grad norms, open-loop video, and goal panels.
-
-    ``report/goal/*`` TensorBoard videos: ``deter_feat``, ``decoded_deter``, sampled
-    skill grid, per-image truth, and ``[truth | decoder(goal) | error]`` where the
-    decoder uses ``deter=decoded_goal`` and prior ``stoch`` from ``deter`` (Director
-    ``get_stoch`` pattern in ``hierarchy.py``).
-    """
+    """Eval metrics, open-loop video, goal VAE panels, and Director goal-proposal videos."""
     if not self.config.report:
       return carry, {}
 
     carry, obs, prevact, _ = self._apply_replay_context(carry, data)
-    (enc_carry, dyn_carry, dec_carry) = carry
+    enc_carry, dyn_carry, dec_carry, _, mgr_skill, mgr_step = self._unpack_carry(
+        carry)
+    wm_carry = (enc_carry, dyn_carry, dec_carry)
     B, T = obs['is_first'].shape
     RB = min(6, B)
     metrics = {}
 
-    # Train metrics
     _, (new_carry, entries, outs, mets) = self.loss(
-        carry, obs, prevact, training=False)
+        wm_carry, obs, prevact, training=False)
     metrics.update(mets)
+    rep = jax.tree.map(lambda x: x[:RB, :T], outs['repfeat'])
+    reset_s = obs['is_first'][:RB, :T]
+    dec_carry = jax.tree.map(lambda x: x[:RB], dec_carry)
+    dyn_carry = jax.tree.map(lambda x: x[:RB], dyn_carry)
 
-    # Per-loss-key gradient norm (expensive: extra backward per key).
     if self.config.report_gradnorms:
       for key in self.scales:
         try:
-          lossfn = lambda data, carry: self.loss(
-              carry, obs, prevact, training=False)[1][2]['losses'][key].mean()
-          grad = nj.grad(lossfn, self.modules)(data, carry)[-1]
+          lossfn = lambda data, c: self.loss(
+              c, obs, prevact, training=False)[1][2]['losses'][key].mean()
+          grad = nj.grad(lossfn, self.modules)(data, wm_carry)[-1]
           metrics[f'gradnorm/{key}'] = optax.global_norm(grad)
         except KeyError:
           print(f'Skipping gradnorm summary for missing loss: {key}')
 
-    # Open loop: first half from real tokens; second half imagined from that state.
-    firsthalf = lambda xs: jax.tree.map(lambda x: x[:RB, :T // 2], xs)
-    secondhalf = lambda xs: jax.tree.map(lambda x: x[:RB, T // 2:], xs)
-    dyn_carry = jax.tree.map(lambda x: x[:RB], dyn_carry)
-    dec_carry = jax.tree.map(lambda x: x[:RB], dec_carry)
+    # Open loop: observe first half, imagine second half (baseline Dreamer report).
+    obs_rb = jax.tree.map(lambda x: x[:RB], obs)
+    prevact_rb = jax.tree.map(lambda x: x[:RB], prevact)
+    tokens_rb = jax.tree.map(lambda x: x[:RB], outs['tokens'])
+    firsthalf = lambda xs: jax.tree.map(lambda x: x[:, :T // 2], xs)
+    secondhalf = lambda xs: jax.tree.map(lambda x: x[:, T // 2:], xs)
     dyn_carry, _, obsfeat = self.dyn.observe(
-        dyn_carry, firsthalf(outs['tokens']), firsthalf(prevact),
-        firsthalf(obs['is_first']), training=False)
+        dyn_carry, firsthalf(tokens_rb), firsthalf(prevact_rb),
+        firsthalf(obs_rb['is_first']), training=False)
     _, imgfeat, _ = self.dyn.imagine(
-        dyn_carry, secondhalf(prevact), length=T - T // 2, training=False)
+        dyn_carry, secondhalf(prevact_rb), length=T - T // 2, training=False)
     dec_carry, _, obsrecons = self.dec(
-        dec_carry, obsfeat, firsthalf(obs['is_first']), training=False)
+        dec_carry, obsfeat, firsthalf(obs_rb['is_first']), training=False)
     dec_carry, _, imgrecons = self.dec(
-        dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs['is_first'])),
+        dec_carry, imgfeat, jnp.zeros_like(secondhalf(obs_rb['is_first'])),
         training=False)
-
-    # Stack [truth | pred | abs error] with a time border for TensorBoard video.
     for key in self.dec.imgkeys:
-      assert obs[key].dtype == jnp.uint8
-      true = obs[key][:RB]
+      assert obs_rb[key].dtype == jnp.uint8
+      true = obs_rb[key]
       pred = jnp.concatenate([obsrecons[key].pred(), imgrecons[key].pred()], 1)
       pred = jnp.clip(pred * 255, 0, 255).astype(jnp.uint8)
       error = ((i32(pred) - i32(true) + 255) / 2).astype(np.uint8)
       video = jnp.concatenate([true, pred, error], 2)
-
       video = jnp.pad(video, [[0, 0], [0, 0], [2, 2], [2, 2], [0, 0]])
       mask = jnp.zeros(video.shape, bool).at[:, :, 2:-2, 2:-2, :].set(True)
       border = jnp.full((T, 3), jnp.array([0, 255, 0]), jnp.uint8)
       border = border.at[T // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
       video = jnp.where(mask, video, border[None, :, None, None, :])
       video = jnp.concatenate([video, 0 * video[:, :10]], 1)
+      metrics[f'openloop/{key}'] = _tb_video_grid(video)
 
-      B, T, H, W, C = video.shape
-      grid = video.transpose((1, 2, 0, 3, 4)).reshape((T, H, B * W, C))
-      metrics[f'openloop/{key}'] = grid
-
-    # Goal autoencoder + image decode (Director: ``decoder({deter: goal, stoch: rssm.get_stoch(goal)})``).
-    rep = jax.tree.map(lambda x: x[:RB, :T], outs['repfeat'])
-    reset_s = obs['is_first'][:RB, :T]
+    # Goal VAE on replay features (train-time encoder path).
     deter_feat = sg(self.feat2deter(rep))
     encoded_goal = self.goal_enc(deter_feat, 2)
     skill_s = sample(encoded_goal)
-    dec_goal = self.goal_dec(skill_s, 2)
-    pred_deter = nn.cast(dec_goal.pred())
-    logit_p = self.dyn._prior(pred_deter)
-    stoch_p = nn.cast(self.dyn._dist(logit_p).pred())
-    feat_goal = {**rep, 'deter': pred_deter, 'stoch': stoch_p, 'logit': logit_p}
+    pred_deter = nn.cast(self.goal_dec(
+        skill_s['skill'] if isinstance(skill_s, dict) else skill_s, 2).pred())
+    feat_goal = self._feat_from_goal(pred_deter)
     _, _, recons_goal = self.dec(dec_carry, feat_goal, reset_s, training=False)
 
     metrics['goal/deter_feat'] = _tb_video_grid(_vec_to_tb_rgb(deter_feat))
     metrics['goal/decoded_deter'] = _tb_video_grid(_vec_to_tb_rgb(pred_deter))
-    # (RB, T, L, C) sparse one-hot matrix -> 8×8 RGB panel per frame.
-    sk_u8 = (skill_s * 255).astype(jnp.uint8)
-    sk_rgb = jnp.repeat(sk_u8[..., None], 3, axis=-1)
-    metrics['goal/skill_sampled'] = _tb_video_grid(sk_rgb)
+    sk = skill_s['skill'] if isinstance(skill_s, dict) else skill_s
+    metrics['goal/skill_sampled'] = _tb_video_grid(
+        jnp.repeat((sk * 255).astype(jnp.uint8)[..., None], 3, axis=-1))
 
+    # Manager-proposed goals over the report sequence (K-step skill hold).
+    mgr_skills = self._manager_skills_on_sequence(rep)
+    mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
+    metrics['goal/mgr_skill'] = _tb_video_grid(
+        jnp.repeat((mgr_skills['skill'] * 255).astype(jnp.uint8)[..., None], 3, -1))
+    metrics['goal/mgr_proposed_deter'] = _tb_video_grid(_vec_to_tb_rgb(mgr_goals))
+    mgr_goal_feat = self._feat_from_goal(mgr_goals)
+    _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)
     for key in self.dec.imgkeys:
-      assert obs[key].dtype == jnp.uint8
       true = obs[key][:RB, :T]
       metrics[f'goal/image_{key}'] = _tb_video_grid(true)
       pred_g = jnp.clip(recons_goal[key].pred() * 255, 0, 255).astype(jnp.uint8)
-      err = ((i32(pred_g) - i32(true) + 255) / 2).astype(np.uint8)
-      video = jnp.concatenate([true, pred_g, err], 2)
-      metrics[f'goal/recon_{key}'] = _tb_video_grid(video)
+      pred_m = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
+      metrics[f'goal/recon_{key}'] = _tb_video_grid(
+          jnp.concatenate([true, pred_g, ((i32(pred_g) - i32(true) + 255) // 2).astype(np.uint8)], 2))
+      metrics[f'goal/mgr_recon_{key}'] = _tb_video_grid(
+          jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
 
-    carry = (*new_carry, {k: data[k][:, -1] for k in self.act_space})
+    # Director-style: [initial | proposed goal | worker rollout] per proposal mode.
+    for impl in ('manager', 'prior', 'replay'):
+      metrics.update(self._report_impl_videos(
+          rep, prevact, dec_carry, impl, RB, T))
+
+    enc_carry, dyn_carry, dec_carry = new_carry
+    carry = self._pack_carry(
+        enc_carry, dyn_carry, dec_carry,
+        {k: data[k][:, -1] for k in self.act_space},
+        mgr_skill, mgr_step)
     return carry, metrics
 
   def _apply_replay_context(self, carry, data):
     """If replay_context: first K steps recompute carries from stored entries; else identity."""
-    (enc_carry, dyn_carry, dec_carry, prevact) = carry
+    enc_carry, dyn_carry, dec_carry, prevact, mgr_skill, mgr_step = (
+        self._unpack_carry(carry))
     carry = (enc_carry, dyn_carry, dec_carry)
     stepid = data['stepid']
     obs = {k: data[k] for k in self.obs_space}
@@ -575,7 +901,10 @@ class Agent(embodied.jax.Agent):
     prepend = lambda x, y: jnp.concatenate([x[:, None], y[:, :-1]], 1)
     prevact = {k: prepend(prevact[k], data[k]) for k in self.act_space}
     if not self.config.replay_context:
-      return carry, obs, prevact, stepid
+      return (
+          self._pack_carry(
+              enc_carry, dyn_carry, dec_carry, prevact, mgr_skill, mgr_step),
+          obs, prevact, stepid)
 
     K = self.config.replay_context
     nested = elements.tree.nestdict(data)
@@ -592,11 +921,15 @@ class Agent(embodied.jax.Agent):
 
     # New trajectory chunk (consec==0): use replay-derived carry/obs; else online path.
     first_chunk = (data['consec'][:, 0] == 0)
-    carry, obs, prevact, stepid = jax.tree.map(
+    carry_wm, obs, prevact, stepid = jax.tree.map(
         lambda normal, replay: nn.where(first_chunk, replay, normal),
         (carry, rhs(obs), rhs(prevact), rhs(stepid)),
         (rep_carry, rep_obs, rep_prevact, rep_stepid))
-    return carry, obs, prevact, stepid
+    enc_carry, dyn_carry, dec_carry = carry_wm
+    return (
+        self._pack_carry(
+            enc_carry, dyn_carry, dec_carry, prevact, mgr_skill, mgr_step),
+        obs, prevact, stepid)
 
   def _make_opt(
       self,
@@ -639,11 +972,55 @@ class Agent(embodied.jax.Agent):
     return optax.chain(*chain)
 
 
+def align_skill_events(skills, policy):
+  """Match skill samples to policy head ``pred()`` shape for ``logp`` / ``entropy``."""
+  events = {}
+  for k, v in policy.items():
+    ref = v.pred()
+    e = skills[k] if isinstance(skills, dict) else skills
+    e = sg(e)
+    if e.shape == ref.shape:
+      events[k] = e
+    elif e.ndim + 1 == ref.ndim and e.shape == ref.shape[:e.ndim]:
+      events[k] = jnp.broadcast_to(e[:, None], ref.shape)
+    elif e.ndim == ref.ndim and e.shape[0] == ref.shape[1] and e.shape[1] == ref.shape[0]:
+      events[k] = jnp.swapaxes(e, 0, 1)
+    else:
+      events[k] = jnp.broadcast_to(e, ref.shape)
+  return events
+
+
+def _head_inner(head):
+  """Unwrap ``outs.Agg`` so skill axes are not confused with time."""
+  return head.output if isinstance(head, outs.Agg) else head
+
+
+def head_logp_time(head, event):
+  """Policy log-prob with leading axes ``(batch, time)``."""
+  lp = _head_inner(head).logp(sg(event))
+  return policy_time_slice(lp)
+
+
+def head_entropy_time(head):
+  """Policy entropy with leading axes ``(batch, time)``."""
+  return policy_time_slice(_head_inner(head).entropy())
+
+
+def policy_time_slice(x):
+  """Reduce head outputs to ``(batch, time - 1)`` for AC losses."""
+  while x.ndim > 2:
+    x = x.sum(-1)
+  if x.ndim == 1:
+    x = x[:, None]
+  return x[:, :-1]
+
+
 def policy_behavior_kl(policy):
   """KL(policy || prior) with prior = stop-grad behavioral copy."""
   total = None
   for v in policy.values():
-    inner = v.output
+    head = v
+    inner = _head_inner(v)
     if isinstance(inner, outs.OneHot):
       d = inner.dist
       logits = d.logits
@@ -662,7 +1039,9 @@ def policy_behavior_kl(policy):
       kl = inner.kl(ref)
     else:
       raise NotImplementedError(type(inner))
-    kl = v.agg(kl, v.axes)
+  # Reduce skill axes only; do not use ``Agg.axes`` on tensors that include time.
+    while kl.ndim > 2:
+      kl = kl.sum(-1)
     total = kl if total is None else total + kl
   return total
 
@@ -670,7 +1049,9 @@ def policy_behavior_kl(policy):
 def imag_loss(
     act,
     skills,
-    rew,
+    mgr_extr_rew,
+    mgr_expl_rew,
+    wkr_goal_rew,
     con,
     manager_policy,
     policy,
@@ -709,8 +1090,10 @@ def imag_loss(
   Args:
     act: Imagined actions (``imgact``): pytree aligned with ``act_space``; each
       leaf ``(B_imag, H + 1, *action_dims)``.
-    rew: Predicted rewards from the world-model head on imagined feats; scalar
-      per step, shape ``(B_imag, H + 1)``.
+    mgr_extr_rew: Manager extrinsic reward, ``(B_imag, H + 1)``; nonzero at skill
+      boundaries with ``mean(rew * cumprod(con))`` over each ``K``-step block.
+    mgr_expl_rew: Manager exploration reward (VAE squared recon), same shape.
+    wkr_goal_rew: Worker goal reward (``cosine_max``), same shape.
     con: Predicted continuation probabilities (Bernoulli mean); shape
       ``(B_imag, H + 1)``.
     manager_policy: Manager policy head outputs (``self.manager_pol(...)``): dict keyed like ``act``;
@@ -765,9 +1148,12 @@ def imag_loss(
   last = jnp.zeros_like(con)
   term = 1 - con
 
-  mgr_extr_ret = lambda_return(last, term, rew, mgr_extr_tarval, mgr_extr_tarval, disc, lam)
-  mgr_expl_ret = lambda_return(last, term, rew, mgr_expl_tarval, mgr_expl_tarval, disc, lam)
-  wkr_goal_ret = lambda_return(last, term, rew, wkr_goal_tarval, wkr_goal_tarval, disc, lam)
+  mgr_extr_ret = lambda_return(
+      last, term, mgr_extr_rew, mgr_extr_tarval, mgr_extr_tarval, disc, lam)
+  mgr_expl_ret = lambda_return(
+      last, term, mgr_expl_rew, mgr_expl_tarval, mgr_expl_tarval, disc, lam)
+  wkr_goal_ret = lambda_return(
+      last, term, wkr_goal_rew, wkr_goal_tarval, wkr_goal_tarval, disc, lam)
 
   mgr_extr_roffset, mgr_extr_rscale = mgr_extr_retnorm(mgr_extr_ret, update)
   mgr_expl_roffset, mgr_expl_rscale = mgr_expl_retnorm(mgr_expl_ret, update)
@@ -788,8 +1174,10 @@ def imag_loss(
   wkr_logpi = sum([v.logp(sg(act[k]))[:, :-1] for k, v in policy.items()])
   wkr_ents = {k: v.entropy()[:, :-1] for k, v in policy.items()}
 
-  mgr_logpi = sum([v.logp(sg(skills[k]))[:, :-1] for k, v in manager_policy.items()])
-  mgr_ents = {k: v.entropy()[:, :-1] for k, v in manager_policy.items()}
+  skill_events = align_skill_events(skills, manager_policy)
+  mgr_logpi = sum([
+      head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
+  mgr_ents = {k: head_entropy_time(v) for k, v in manager_policy.items()}
 
   w = sg(weight[:, :-1])
 
@@ -821,8 +1209,8 @@ def imag_loss(
     wkr_goal_pos_coeff = pmpo_alpha * wkr_goal_pos / wkr_goal_den_p
     wkr_goal_neg_coeff = (1.0 - pmpo_alpha) * wkr_goal_neg / wkr_goal_den_n
 
-    wkr_kl_t = policy_behavior_kl(policy)[:, :-1]
-    mgr_kl_t = policy_behavior_kl(manager_policy)[:, :-1]
+    wkr_kl_t = policy_time_slice(policy_behavior_kl(policy))
+    mgr_kl_t = policy_time_slice(policy_behavior_kl(manager_policy))
 
     mgr_extr_policy_loss = (mgr_extr_neg_coeff - mgr_extr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
     mgr_expl_policy_loss = (mgr_expl_neg_coeff - mgr_expl_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
@@ -837,8 +1225,8 @@ def imag_loss(
         mgr_logpi * sg(mgr_extr_adv_normed) + actent * sum(mgr_ents.values()))
     mgr_expl_policy_loss = w * -(
         mgr_logpi * sg(mgr_expl_adv_normed) + actent * sum(mgr_ents.values()))
-    wkr_policy_loss = w * -(
-        wkr_logpi * sg(wkr_adv_normed) + actent * sum(wkr_ents.values()))
+    wkr_goal_policy_loss = w * -(
+        wkr_logpi * sg(wkr_goal_adv_normed) + actent * sum(wkr_ents.values()))
 
   losses['mgr_policy'] = mgr_extr_policy_loss + mgr_expl_weight * mgr_expl_policy_loss
   losses['wkr_policy'] = wkr_goal_policy_loss
@@ -846,6 +1234,11 @@ def imag_loss(
   metrics['mgr_extr_policy_loss'] = mgr_extr_policy_loss.mean()
   metrics['mgr_expl_policy_loss'] = mgr_expl_policy_loss.mean()
   metrics['wkr_goal_policy_loss'] = wkr_goal_policy_loss.mean()
+  metrics['mgr_extr_rew'] = mgr_extr_rew.mean()
+  nz = jnp.maximum((jnp.abs(mgr_extr_rew[:, 1:]) > 0).sum(), 1)
+  metrics['mgr_extr_rew_block'] = mgr_extr_rew[:, 1:].sum() / nz
+  metrics['mgr_expl_rew'] = mgr_expl_rew.mean()
+  metrics['wkr_goal_rew'] = wkr_goal_rew.mean()
 
   # NLL of value distribution against λ-returns (padded for length match to head API).
   mgr_extr_voffset, mgr_extr_vscale = mgr_extr_valnorm(mgr_extr_ret, update)
@@ -861,16 +1254,16 @@ def imag_loss(
   wkr_goal_tar_padded = jnp.concatenate([wkr_goal_tar_normed, 0 * wkr_goal_tar_normed[:, -1:]], 1)
 
   losses['mgr_extr_value'] = sg(weight[:, :-1]) * (
-      mgr_extr_val.loss(sg(mgr_extr_tar_padded)) +
-      slowreg * mgr_extr_val.loss(sg(mgr_extr_slowval.pred())))[:, :-1]
+      mgr_extr_value.loss(sg(mgr_extr_tar_padded)) +
+      slowreg * mgr_extr_value.loss(sg(mgr_extr_slowvalue.pred())))[:, :-1]
 
   losses['mgr_expl_value'] = sg(weight[:, :-1]) * (
-      mgr_expl_val.loss(sg(mgr_expl_tar_padded)) +
-      slowreg * mgr_expl_val.loss(sg(mgr_expl_slowval.pred())))[:, :-1]
+      mgr_expl_value.loss(sg(mgr_expl_tar_padded)) +
+      slowreg * mgr_expl_value.loss(sg(mgr_expl_slowvalue.pred())))[:, :-1]
 
   losses['wkr_goal_value'] = sg(weight[:, :-1]) * (
-      wkr_goal_val.loss(sg(wkr_goal_tar_padded)) +
-      slowreg * wkr_goal_val.loss(sg(wkr_goal_slowval.pred())))[:, :-1]
+      wkr_goal_value.loss(sg(wkr_goal_tar_padded)) +
+      slowreg * wkr_goal_value.loss(sg(wkr_goal_slowvalue.pred())))[:, :-1]
 
   mgr_extr_ret_normed = (mgr_extr_ret - mgr_extr_roffset) / mgr_extr_rscale
   mgr_expl_ret_normed = (mgr_expl_ret - mgr_expl_roffset) / mgr_expl_rscale
@@ -888,7 +1281,6 @@ def imag_loss(
   metrics['mgr_expl_adv_mag'] = jnp.abs(mgr_expl_adv_normed).mean()
   metrics['wkr_goal_adv_mag'] = jnp.abs(wkr_goal_adv_normed).mean()
 
-  metrics['rew'] = rew.mean()
   metrics['con'] = con.mean()
   metrics['mgr_extr_ret'] = mgr_extr_ret_normed.mean()
   metrics['mgr_expl_ret'] = mgr_expl_ret_normed.mean()
@@ -927,7 +1319,9 @@ def imag_loss(
       metrics[f'mgr_rand/{k}'] = (mgr_ents[k].mean() - lo) / (hi - lo)
 
   outs = {}
-  outs['ret'] = ret  # Used as bootstrap for optional replay value loss.
+  outs['ret'] = mgr_extr_ret
+  outs['mgr_expl_ret'] = mgr_expl_ret
+  outs['wkr_goal_ret'] = wkr_goal_ret
   return losses, outs, metrics
 
 
