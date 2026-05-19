@@ -111,6 +111,13 @@ class Agent(embodied.jax.Agent):
         nn.cast(x['deter']),
         nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1)))], -1)
 
+    # x is WM feat, y is goal
+    self.feat_goal2tensor = lambda x, y: jnp.concatenate([
+        nn.cast(x['deter']),
+        nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1))),
+        nn.cast(y.reshape((*y.shape[:-2], -1))),
+    ], -1)
+
     self.feat2deter = lambda x: nn.cast(x['deter'])
 
     scalar = elements.Space(np.float32, ())
@@ -124,15 +131,39 @@ class Agent(embodied.jax.Agent):
     self.pol = embodied.jax.MLPHead(
         act_space, policy_outs, **config.policy, name='pol')
 
-    # Value and EMA target for bootstrapping / slow regularizer in ``imag_loss``.
-    self.val = embodied.jax.MLPHead(scalar, **config.value, name='val')
-    self.slowval = embodied.jax.SlowModel(
-        embodied.jax.MLPHead(scalar, **config.value, name='slowval'),
-        source=self.val, **config.slowvalue)
+    self.manager_pol = embodied.jax.MLPHead(
+        self.goal_code_space, **config.manager_policy, name='manager_pol')
+    self.manager_sample_freq = config.manager_sample_freq
 
-    self.retnorm = embodied.jax.Normalize(**config.retnorm, name='retnorm')
-    self.valnorm = embodied.jax.Normalize(**config.valnorm, name='valnorm')
-    self.advnorm = embodied.jax.Normalize(**config.advnorm, name='advnorm')
+    # Value and EMA target for bootstrapping / slow regularizer in ``imag_loss``.
+    self.mgr_extr_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_val')
+    self.mgr_extr_slowval = embodied.jax.SlowModel(
+        embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_slowval'),
+        source=self.mgr_extr_val, **config.slowvalue)
+
+    self.mgr_expl_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_val')
+    self.mgr_expl_slowval = embodied.jax.SlowModel(
+        embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_slowval'),
+        source=self.mgr_expl_val, **config.slowvalue)
+
+    self.wkr_goal_val = embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_val')
+    self.wkr_goal_slowval = embodied.jax.SlowModel(
+        embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
+        source=self.wkr_goal_val, **config.slowvalue)
+
+    self.mgr_extr_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_extr_retnorm')
+    self.mgr_expl_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_expl_retnorm')
+    self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
+
+    self.mgr_extr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_extr_valnorm')
+    self.mgr_expl_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_expl_valnorm')
+    self.wkr_goal_valnorm = embodied.jax.Normalize(**config.valnorm, name='wkr_goal_valnorm')
+
+    self.mgr_extr_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_extr_advnorm')
+    self.mgr_expl_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_expl_advnorm')
+    self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
+
+    self.mgr_expl_weight = config.mgr_expl_weight
 
     # Modules updated by the single ``self.opt`` step in ``train``.
     self.modules = [
@@ -143,8 +174,11 @@ class Agent(embodied.jax.Agent):
         self.goal_dec,
         self.rew,
         self.con,
+        self.manager_pol,
         self.pol,
-        self.val,
+        self.mgr_extr_val,
+        self.mgr_expl_val,
+        self.wkr_goal_val,
     ]
     self.opt = embodied.jax.Optimizer(
         self.modules, self._make_opt(**config.opt), summary_depth=1,
@@ -210,8 +244,13 @@ class Agent(embodied.jax.Agent):
     dec_entry = {}
     if dec_carry:
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
+
+    manager_policy = self.manager_pol(self.feat2tensor(feat), bdims=1)
+    manager_act = sample(manager_policy) # TODO change to only sample every K steps, otherwise keep previous sampled manager_act
+    goal = self.goal_dec(manager_act, 2)
+
     # Policy reads representation only (decoder used for logging / replay context).
-    policy = self.pol(self.feat2tensor(feat), bdims=1)
+    policy = self.pol(self.feat_goal2tensor(feat, sg(goal)), bdims=1)
     act = sample(policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
@@ -229,7 +268,7 @@ class Agent(embodied.jax.Agent):
     metrics, (carry, entries, outs, mets) = self.opt(
         self.loss, carry, obs, prevact, training=True, has_aux=True)
     metrics.update(mets)
-    self.slowval.update()
+    self.mgr_extr_slowval.update()
     outs = {}
     if self.config.replay_context:
       updates = elements.tree.flatdict(dict(
@@ -324,7 +363,10 @@ class Agent(embodied.jax.Agent):
       K_repl = K_cap
     H = self.config.imag_length  # imagined steps after the start state (H+1 states).
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
-    policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
+    # TODO check in director if we sample here or use mode
+    manager_policyfn = lambda feat: self.goal_dec(sample(self.manager_pol(self.feat2tensor(feat), 1)), 2) # TODO change to only sample every K steps, otherwise keep previous sampled manager_act
+    
+    policyfn = lambda feat: sample(self.pol(self.feat_goal2tensor(feat, sg(manager_policyfn(feat))), 1))
     _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
     # Prefix replay states to imagined chain so AC sees grounded first step.
     first = jax.tree.map(
@@ -336,17 +378,26 @@ class Agent(embodied.jax.Agent):
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
     inp = self.feat2tensor(imgfeat)
+    feat_goal = self.feat_goal2tensor(imgfeat, sg(self.goal_dec(sample(self.manager_pol(inp, 1)), 2))) # TODO check in director if we sample here or use mode
     los, imgloss_out, mets = imag_loss(
         imgact,
+        # TODO add mgr policy actions (skills)
         self.rew(inp, 2).pred(),
         self.con(inp, 2).prob(1),
-        self.pol(inp, 2),
-        self.val(inp, 2),
-        self.slowval(inp, 2),
-        self.retnorm, self.valnorm, self.advnorm,
+        self.manager_pol(inp, 2),
+        self.pol(feat_goal, 2),
+        self.mgr_extr_val(inp, 2),
+        self.mgr_extr_slowval(inp, 2),
+        self.mgr_expl_val(inp, 2),
+        self.wkr_goal_val(feat_goal, 2),
+        self.wkr_goal_slowval(feat_goal, 2),
+        self.mgr_extr_retnorm, self.mgr_expl_retnorm, self.wkr_goal_retnorm, 
+        self.mgr_extr_valnorm, self.mgr_expl_valnorm, self.wkr_goal_valnorm, 
+        self.mgr_extr_advnorm, self.mgr_expl_advnorm, self.wkr_goal_advnorm,
         update=training,
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
+        mgr_expl_weight=self.mgr_expl_weight,
         **self.config.imag_loss)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los.items()})
     metrics.update(mets)
@@ -361,13 +412,39 @@ class Agent(embodied.jax.Agent):
       feat, last, term, rew, boot = jax.tree.map(
           lambda x: x[:, -K_repl:], (feat, last, term, rew, boot))
       inp = self.feat2tensor(feat)
+      feat_goal = self.feat_goal2tensor(feat, sg(self.goal_dec(sample(self.manager_pol(inp, 1)), 2))) # TODO check in director if we sample here or use mode
       los, reploss_out, mets = repl_loss(
           last, term, rew, boot,
-          self.val(inp, 2),
-          self.slowval(inp, 2),
-          self.valnorm,
+          self.mgr_extr_val(inp, 2),
+          self.mgr_extr_slowval(inp, 2),
+          self.mgr_extr_valnorm,
           update=training,
           horizon=self.config.horizon,
+          value_head='mgr_extr',
+          **self.config.repl_loss)
+      losses.update(los)
+      metrics.update(prefix(mets, 'reploss'))
+
+      los, reploss_out, mets = repl_loss(
+          last, term, rew, boot,
+          self.mgr_expl_val(inp, 2),
+          self.mgr_expl_slowval(inp, 2),
+          self.mgr_expl_valnorm,
+          update=training,
+          horizon=self.config.horizon,
+          value_head='mgr_expl',
+          **self.config.repl_loss)
+      losses.update(los)
+      metrics.update(prefix(mets, 'reploss'))
+
+      los, reploss_out, mets = repl_loss(
+          last, term, rew, boot,
+          self.wkr_goal_val(feat_goal, 2),
+          self.wkr_goal_slowval(feat_goal, 2),
+          self.wkr_goal_valnorm,
+          update=training,
+          horizon=self.config.horizon,
+          value_head='wkr_goal',
           **self.config.repl_loss)
       losses.update(los)
       metrics.update(prefix(mets, 'reploss'))
@@ -592,14 +669,26 @@ def policy_behavior_kl(policy):
 
 def imag_loss(
     act,
+    skills,
     rew,
     con,
+    manager_policy,
     policy,
-    value,
-    slowvalue,
-    retnorm,
-    valnorm,
-    advnorm,
+    mgr_extr_value,
+    mgr_extr_slowvalue,
+    mgr_expl_value,
+    mgr_expl_slowvalue,
+    wkr_goal_value,
+    wkr_goal_slowvalue,
+    mgr_extr_retnorm,
+    mgr_expl_retnorm,
+    wkr_goal_retnorm,
+    mgr_extr_valnorm,
+    mgr_expl_valnorm,
+    wkr_goal_valnorm,
+    mgr_extr_advnorm,
+    mgr_expl_advnorm,
+    wkr_goal_advnorm,
     update,
     contdisc=True,
     slowtar=True,
@@ -610,6 +699,7 @@ def imag_loss(
     use_pmpo_actor=False,
     pmpo_beta=0.3,
     pmpo_alpha=0.5,
+    mgr_expl_weight=0.1,
 ):
   """Actor-critic losses on imagined trajectories.
 
@@ -623,6 +713,8 @@ def imag_loss(
       per step, shape ``(B_imag, H + 1)``.
     con: Predicted continuation probabilities (Bernoulli mean); shape
       ``(B_imag, H + 1)``.
+    manager_policy: Manager policy head outputs (``self.manager_pol(...)``): dict keyed like ``act``;
+      ``.logp`` / ``.entropy`` reduce to leading axes ``(B_imag, H + 1)``.
     policy: Policy head outputs (``self.pol(...)``): dict keyed like ``act``;
       ``.logp`` / ``.entropy`` reduce to leading axes ``(B_imag, H + 1)``.
     value: Online value head outputs; ``.pred()`` shape ``(B_imag, H + 1)``.
@@ -650,70 +742,189 @@ def imag_loss(
   metrics = {}
 
   # Unnormalize critic predictions for bootstrapping and advantage baseline.
-  voffset, vscale = valnorm.stats()
-  val = value.pred() * vscale + voffset
-  slowval = slowvalue.pred() * vscale + voffset
-  tarval = slowval if slowtar else val
+  mgr_extr_voffset, mgr_extr_vscale = mgr_extr_valnorm.stats()
+  mgr_expl_voffset, mgr_expl_vscale = mgr_expl_valnorm.stats()
+  wkr_goal_voffset, wkr_goal_vscale = wkr_goal_valnorm.stats()
+
+  mgr_extr_val = mgr_extr_value.pred() * mgr_extr_vscale + mgr_extr_voffset
+  mgr_expl_val = mgr_expl_value.pred() * mgr_expl_vscale + mgr_expl_voffset
+  wkr_goal_val = wkr_goal_value.pred() * wkr_goal_vscale + wkr_goal_voffset
+
+  mgr_extr_slowval = mgr_extr_slowvalue.pred() * mgr_extr_vscale + mgr_extr_voffset
+  mgr_expl_slowval = mgr_expl_slowvalue.pred() * mgr_expl_vscale + mgr_expl_voffset
+  wkr_goal_slowval = wkr_goal_slowvalue.pred() * wkr_goal_vscale + wkr_goal_voffset
+
+  mgr_extr_tarval = mgr_extr_slowval if slowtar else mgr_extr_val
+  mgr_expl_tarval = mgr_expl_slowval if slowtar else mgr_expl_val
+  wkr_goal_tarval = wkr_goal_slowval if slowtar else wkr_goal_val
+
   # Discount per step: either γ or finite-horizon (1 - 1/horizon) when not contdisc.
   disc = 1 if contdisc else 1 - 1 / horizon
   # Discounted continuation weights from predicted continue probs ``con``.
   weight = jnp.cumprod(disc * con, 1) / disc
   last = jnp.zeros_like(con)
   term = 1 - con
-  ret = lambda_return(last, term, rew, tarval, tarval, disc, lam)
 
-  roffset, rscale = retnorm(ret, update)
-  adv = (ret - tarval[:, :-1]) / rscale
-  aoffset, ascale = advnorm(adv, update)
-  adv_normed = (adv - aoffset) / ascale
-  logpi = sum([v.logp(sg(act[k]))[:, :-1] for k, v in policy.items()])
-  ents = {k: v.entropy()[:, :-1] for k, v in policy.items()}
+  mgr_extr_ret = lambda_return(last, term, rew, mgr_extr_tarval, mgr_extr_tarval, disc, lam)
+  mgr_expl_ret = lambda_return(last, term, rew, mgr_expl_tarval, mgr_expl_tarval, disc, lam)
+  wkr_goal_ret = lambda_return(last, term, rew, wkr_goal_tarval, wkr_goal_tarval, disc, lam)
+
+  mgr_extr_roffset, mgr_extr_rscale = mgr_extr_retnorm(mgr_extr_ret, update)
+  mgr_expl_roffset, mgr_expl_rscale = mgr_expl_retnorm(mgr_expl_ret, update)
+  wkr_goal_roffset, wkr_goal_rscale = wkr_goal_retnorm(wkr_goal_ret, update)
+
+  mgr_extr_adv = (mgr_extr_ret - mgr_extr_tarval[:, :-1]) / mgr_extr_rscale
+  mgr_expl_adv = (mgr_expl_ret - mgr_expl_tarval[:, :-1]) / mgr_expl_rscale
+  wkr_goal_adv = (wkr_goal_ret - wkr_goal_tarval[:, :-1]) / wkr_goal_rscale
+
+  mgr_extr_aoffset, mgr_extr_ascale = mgr_extr_advnorm(mgr_extr_adv, update)
+  mgr_expl_aoffset, mgr_expl_ascale = mgr_expl_advnorm(mgr_expl_adv, update)
+  wkr_goal_aoffset, wkr_goal_ascale = wkr_goal_advnorm(wkr_goal_adv, update)
+
+  mgr_extr_adv_normed = (mgr_extr_adv - mgr_extr_aoffset) / mgr_extr_ascale
+  mgr_expl_adv_normed = (mgr_expl_adv - mgr_expl_aoffset) / mgr_expl_ascale
+  wkr_goal_adv_normed = (wkr_goal_adv - wkr_goal_aoffset) / wkr_goal_ascale
+
+  wkr_logpi = sum([v.logp(sg(act[k]))[:, :-1] for k, v in policy.items()])
+  wkr_ents = {k: v.entropy()[:, :-1] for k, v in policy.items()}
+
+  mgr_logpi = sum([v.logp(sg(skills[k]))[:, :-1] for k, v in manager_policy.items()])
+  mgr_ents = {k: v.entropy()[:, :-1] for k, v in manager_policy.items()}
+
   w = sg(weight[:, :-1])
+
   if use_pmpo_actor:
-    # PMPO target formula provided by user:
+    # PMPO target formula:
     # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
-    adv_raw = ret - tarval[:, :-1]
-    pos = (adv_raw >= 0).astype(f32)
-    neg = (adv_raw < 0).astype(f32)
-    den_p = jnp.maximum(jnp.sum(pos, axis=-1, keepdims=True), 1.0)
-    den_n = jnp.maximum(jnp.sum(neg, axis=-1, keepdims=True), 1.0)
-    pos_coeff = pmpo_alpha * pos / den_p
-    neg_coeff = (1.0 - pmpo_alpha) * neg / den_n
-    kl_t = policy_behavior_kl(policy)[:, :-1]
-    policy_loss = (neg_coeff - pos_coeff) * logpi + pmpo_beta * kl_t
-    metrics['kl_behavior'] = kl_t.mean()
+    mgr_extr_adv_raw = mgr_extr_adv - mgr_extr_tarval[:, :-1]
+    mgr_expl_adv_raw = mgr_expl_adv - mgr_expl_tarval[:, :-1]
+    wkr_goal_adv_raw = wkr_goal_adv - wkr_goal_tarval[:, :-1]
+
+    mgr_extr_pos = (mgr_extr_adv_raw >= 0).astype(f32)
+    mgr_extr_neg = (mgr_extr_adv_raw < 0).astype(f32)
+    mgr_expl_pos = (mgr_expl_adv_raw >= 0).astype(f32)
+    mgr_expl_neg = (mgr_expl_adv_raw < 0).astype(f32)
+    wkr_goal_pos = (wkr_goal_adv_raw >= 0).astype(f32)
+    wkr_goal_neg = (wkr_goal_adv_raw < 0).astype(f32)
+
+    mgr_extr_den_p = jnp.maximum(jnp.sum(mgr_extr_pos, axis=-1, keepdims=True), 1.0)
+    mgr_extr_den_n = jnp.maximum(jnp.sum(mgr_extr_neg, axis=-1, keepdims=True), 1.0)
+    mgr_expl_den_p = jnp.maximum(jnp.sum(mgr_expl_pos, axis=-1, keepdims=True), 1.0)
+    mgr_expl_den_n = jnp.maximum(jnp.sum(mgr_expl_neg, axis=-1, keepdims=True), 1.0)
+    wkr_goal_den_p = jnp.maximum(jnp.sum(wkr_goal_pos, axis=-1, keepdims=True), 1.0)
+    wkr_goal_den_n = jnp.maximum(jnp.sum(wkr_goal_neg, axis=-1, keepdims=True), 1.0)
+
+    mgr_extr_pos_coeff = pmpo_alpha * mgr_extr_pos / mgr_extr_den_p
+    mgr_extr_neg_coeff = (1.0 - pmpo_alpha) * mgr_extr_neg / mgr_extr_den_n
+    mgr_expl_pos_coeff = pmpo_alpha * mgr_expl_pos / mgr_expl_den_p
+    mgr_expl_neg_coeff = (1.0 - pmpo_alpha) * mgr_expl_neg / mgr_expl_den_n
+    wkr_goal_pos_coeff = pmpo_alpha * wkr_goal_pos / wkr_goal_den_p
+    wkr_goal_neg_coeff = (1.0 - pmpo_alpha) * wkr_goal_neg / wkr_goal_den_n
+
+    wkr_kl_t = policy_behavior_kl(policy)[:, :-1]
+    mgr_kl_t = policy_behavior_kl(manager_policy)[:, :-1]
+
+    mgr_extr_policy_loss = (mgr_extr_neg_coeff - mgr_extr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
+    mgr_expl_policy_loss = (mgr_expl_neg_coeff - mgr_expl_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
+
+    wkr_goal_policy_loss = (wkr_goal_neg_coeff - wkr_goal_pos_coeff) * wkr_logpi + pmpo_beta * wkr_kl_t
+
+    metrics['mgr_extr_kl_behavior'] = mgr_kl_t.mean()
+    metrics['mgr_expl_kl_behavior'] = mgr_kl_t.mean()
+    metrics['wkr_goal_kl_behavior'] = wkr_kl_t.mean()
   else:
-    policy_loss = w * -(
-        logpi * sg(adv_normed) + actent * sum(ents.values()))
-  losses['policy'] = policy_loss
+    mgr_extr_policy_loss = w * -(
+        mgr_logpi * sg(mgr_extr_adv_normed) + actent * sum(mgr_ents.values()))
+    mgr_expl_policy_loss = w * -(
+        mgr_logpi * sg(mgr_expl_adv_normed) + actent * sum(mgr_ents.values()))
+    wkr_policy_loss = w * -(
+        wkr_logpi * sg(wkr_adv_normed) + actent * sum(wkr_ents.values()))
+
+  losses['mgr_policy'] = mgr_extr_policy_loss + mgr_expl_weight * mgr_expl_policy_loss
+  losses['wkr_policy'] = wkr_goal_policy_loss
+
+  metrics['mgr_extr_policy_loss'] = mgr_extr_policy_loss.mean()
+  metrics['mgr_expl_policy_loss'] = mgr_expl_policy_loss.mean()
+  metrics['wkr_goal_policy_loss'] = wkr_goal_policy_loss.mean()
 
   # NLL of value distribution against λ-returns (padded for length match to head API).
-  voffset, vscale = valnorm(ret, update)
-  tar_normed = (ret - voffset) / vscale
-  tar_padded = jnp.concatenate([tar_normed, 0 * tar_normed[:, -1:]], 1)
-  losses['value'] = sg(weight[:, :-1]) * (
-      value.loss(sg(tar_padded)) +
-      slowreg * value.loss(sg(slowvalue.pred())))[:, :-1]
+  mgr_extr_voffset, mgr_extr_vscale = mgr_extr_valnorm(mgr_extr_ret, update)
+  mgr_expl_voffset, mgr_expl_vscale = mgr_expl_valnorm(mgr_expl_ret, update)
+  wkr_goal_voffset, wkr_goal_vscale = wkr_goal_valnorm(wkr_goal_ret, update)
 
-  ret_normed = (ret - roffset) / rscale
-  metrics['adv'] = adv.mean()
-  metrics['adv_std'] = adv.std()
-  metrics['adv_mag'] = jnp.abs(adv).mean()
+  mgr_extr_tar_normed = (mgr_extr_ret - mgr_extr_voffset) / mgr_extr_vscale
+  mgr_expl_tar_normed = (mgr_expl_ret - mgr_expl_voffset) / mgr_expl_vscale
+  wkr_goal_tar_normed = (wkr_goal_ret - wkr_goal_voffset) / wkr_goal_vscale
+
+  mgr_extr_tar_padded = jnp.concatenate([mgr_extr_tar_normed, 0 * mgr_extr_tar_normed[:, -1:]], 1)
+  mgr_expl_tar_padded = jnp.concatenate([mgr_expl_tar_normed, 0 * mgr_expl_tar_normed[:, -1:]], 1)
+  wkr_goal_tar_padded = jnp.concatenate([wkr_goal_tar_normed, 0 * wkr_goal_tar_normed[:, -1:]], 1)
+
+  losses['mgr_extr_value'] = sg(weight[:, :-1]) * (
+      mgr_extr_val.loss(sg(mgr_extr_tar_padded)) +
+      slowreg * mgr_extr_val.loss(sg(mgr_extr_slowval.pred())))[:, :-1]
+
+  losses['mgr_expl_value'] = sg(weight[:, :-1]) * (
+      mgr_expl_val.loss(sg(mgr_expl_tar_padded)) +
+      slowreg * mgr_expl_val.loss(sg(mgr_expl_slowval.pred())))[:, :-1]
+
+  losses['wkr_goal_value'] = sg(weight[:, :-1]) * (
+      wkr_goal_val.loss(sg(wkr_goal_tar_padded)) +
+      slowreg * wkr_goal_val.loss(sg(wkr_goal_slowval.pred())))[:, :-1]
+
+  mgr_extr_ret_normed = (mgr_extr_ret - mgr_extr_roffset) / mgr_extr_rscale
+  mgr_expl_ret_normed = (mgr_expl_ret - mgr_expl_roffset) / mgr_expl_rscale
+  wkr_goal_ret_normed = (wkr_goal_ret - wkr_goal_roffset) / wkr_goal_rscale
+
+  metrics['mgr_extr_adv'] = mgr_extr_adv.mean()
+  metrics['mgr_expl_adv'] = mgr_expl_adv.mean()
+  metrics['wkr_goal_adv'] = wkr_goal_adv.mean()
+
+  metrics['mgr_extr_adv_std'] = mgr_extr_adv.std()
+  metrics['mgr_expl_adv_std'] = mgr_expl_adv.std()
+  metrics['wkr_goal_adv_std'] = wkr_goal_adv.std()
+
+  metrics['mgr_extr_adv_mag'] = jnp.abs(mgr_extr_adv_normed).mean()
+  metrics['mgr_expl_adv_mag'] = jnp.abs(mgr_expl_adv_normed).mean()
+  metrics['wkr_goal_adv_mag'] = jnp.abs(wkr_goal_adv_normed).mean()
+
   metrics['rew'] = rew.mean()
   metrics['con'] = con.mean()
-  metrics['ret'] = ret_normed.mean()
-  metrics['val'] = val.mean()
-  metrics['tar'] = tar_normed.mean()
+  metrics['mgr_extr_ret'] = mgr_extr_ret_normed.mean()
+  metrics['mgr_expl_ret'] = mgr_expl_ret_normed.mean()
+  metrics['wkr_goal_ret'] = wkr_goal_ret_normed.mean()
+  metrics['mgr_extr_val'] = mgr_extr_val.mean()
+  metrics['mgr_expl_val'] = mgr_expl_val.mean()
+  metrics['wkr_goal_val'] = wkr_goal_val.mean()
+  metrics['mgr_extr_tar'] = mgr_extr_tar_normed.mean()
+  metrics['mgr_expl_tar'] = mgr_expl_tar_normed.mean()
+  metrics['wkr_goal_tar'] = wkr_goal_tar_normed.mean()
   metrics['weight'] = weight.mean()
-  metrics['slowval'] = slowval.mean()
-  metrics['ret_min'] = ret_normed.min()
-  metrics['ret_max'] = ret_normed.max()
-  metrics['ret_rate'] = (jnp.abs(ret_normed) >= 1.0).mean()
+
+  metrics['mgr_extr_slowval'] = mgr_extr_slowval.mean()
+  metrics['mgr_expl_slowval'] = mgr_expl_slowval.mean()
+  metrics['wkr_goal_slowval'] = wkr_goal_slowval.mean()
+
+  metrics['mgr_extr_ret_min'] = mgr_extr_ret_normed.min()
+  metrics['mgr_expl_ret_min'] = mgr_expl_ret_normed.min()
+  metrics['wkr_goal_ret_min'] = wkr_goal_ret_normed.min()
+  metrics['mgr_extr_ret_max'] = mgr_extr_ret_normed.max()
+  metrics['mgr_expl_ret_max'] = mgr_expl_ret_normed.max()
+  metrics['wkr_goal_ret_max'] = wkr_goal_ret_normed.max()
+  metrics['mgr_extr_ret_rate'] = (jnp.abs(mgr_extr_ret_normed) >= 1.0).mean()
+  metrics['mgr_expl_ret_rate'] = (jnp.abs(mgr_expl_ret_normed) >= 1.0).mean()
+  metrics['wkr_goal_ret_rate'] = (jnp.abs(wkr_goal_ret_normed) >= 1.0).mean()
   for k in act:
-    metrics[f'ent/{k}'] = ents[k].mean()
+    metrics[f'wkr_ent/{k}'] = wkr_ents[k].mean()
     if hasattr(policy[k], 'minent'):
       lo, hi = policy[k].minent, policy[k].maxent
-      metrics[f'rand/{k}'] = (ents[k].mean() - lo) / (hi - lo)
+      metrics[f'wkr_rand/{k}'] = (wkr_ents[k].mean() - lo) / (hi - lo)
+
+  for k in skills:
+    metrics[f'mgr_ent/{k}'] = mgr_ents[k].mean()
+    if hasattr(manager_policy[k], 'minent'):
+      lo, hi = manager_policy[k].minent, manager_policy[k].maxent
+      metrics[f'mgr_rand/{k}'] = (mgr_ents[k].mean() - lo) / (hi - lo)
 
   outs = {}
   outs['ret'] = ret  # Used as bootstrap for optional replay value loss.
@@ -728,6 +939,7 @@ def repl_loss(
     slowtar=True,
     horizon=333,
     lam=0.95,
+    value_head='mgr_extr',
 ):
   """Value loss on real replay tail; ``boot`` is return from imagination at slice boundary.
 
@@ -736,8 +948,8 @@ def repl_loss(
   """
   losses = {}
   if last.shape[1] < 2:
-    losses['repval'] = jnp.zeros_like(f32(last))
-    outs = {'ret': jnp.zeros((last.shape[0], 0), f32)}
+    losses[f'rep{value_head}_value'] = jnp.zeros_like(f32(last))
+    outs = {f'rep{value_head}_ret': jnp.zeros((last.shape[0], 0), f32)}
     return losses, outs, {}
 
   voffset, vscale = valnorm.stats()
@@ -751,12 +963,12 @@ def repl_loss(
   voffset, vscale = valnorm(ret, update)
   ret_normed = (ret - voffset) / vscale
   ret_padded = jnp.concatenate([ret_normed, 0 * ret_normed[:, -1:]], 1)
-  losses['repval'] = weight[:, :-1] * (
+  losses[f'rep{value_head}_value'] = weight[:, :-1] * (
       value.loss(sg(ret_padded)) +
       slowreg * value.loss(sg(slowvalue.pred())))[:, :-1]
 
   outs = {}
-  outs['ret'] = ret
+  outs[f'rep{value_head}_ret'] = ret
   metrics = {}
 
   return losses, outs, metrics
