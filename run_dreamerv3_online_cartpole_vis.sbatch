@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH -J dreamerv3_vis1m32e1
 #SBATCH -p gpu
-#SBATCH -t 0-4:00:00
+#SBATCH -t 0-8:00:00
 #SBATCH -c 4
 #SBATCH --gres=gpu:v100:1
 #SBATCH --mem=96G
@@ -32,7 +32,7 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --online_learning True \
   --online_actor_cpu True \
   --run.envs 1 \
-  --run.steps 1100000 \
+  --run.steps 2200000 \
   --logger.outputs jsonl,scope,tensorboard \
   --jax.platform cuda \
   --jax.prealloc False
