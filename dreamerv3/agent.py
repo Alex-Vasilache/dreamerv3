@@ -771,7 +771,7 @@ class Agent(embodied.jax.Agent):
     # Prefix replay states to imagined chain so AC sees grounded first step.
     first = jax.tree.map(
         lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
-    imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat)], 1)
+    imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat, skip=self.config.ac_grads)], 1)
     mgr_skills = self._manager_skills_on_sequence(imgfeat)
     mgr_skills_downsampled = self._manager_skills_on_sequence(imgfeat, downsample=True)
     last_feat = jax.tree.map(lambda x: x[:, -1], imgfeat)
