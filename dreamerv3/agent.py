@@ -802,7 +802,8 @@ class Agent(embodied.jax.Agent):
         update=training,
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
-        mgr_expl_weight=self.mgr_expl_weight)
+        mgr_expl_weight=self.mgr_expl_weight,
+        actent=self.config.manager_actent)
     los_mgr, imgloss_mgr_out, mets_mgr = imag_loss_mgr(
         mgr_skills_downsampled,
         mgr_extr_rew,
