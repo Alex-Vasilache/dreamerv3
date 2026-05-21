@@ -151,6 +151,26 @@ def aggregate_mgr_cont(con, k, without_zeros=False):
     # Only return the concatenated block products (and remainder if any), not the sparse tensor
     return jnp.concatenate([con[:, :1], block_prod_full], axis=1)
   return out
+
+
+def downsample_manager_states(feat, k):
+  """Extract the boundary states of the manager skill blocks.
+
+  Selects index 0, boundaries of blocks, and the final state.
+  """
+  T = jax.tree.leaves(feat)[0].shape[1]
+  Tm = T - 1
+  n = Tm // k
+  rem = Tm - n * k
+  idx = [0] + [int(1 + i * k - 1) for i in range(1, n + 1)]
+  if rem > 0:
+    idx.append(int(n * k))
+    idx.append(int(Tm))
+  else:
+    idx.append(int(Tm))
+  idx = sorted(list(set(idx)))
+  return jax.tree.map(lambda x: x[:, idx], feat)
+
   
 # Concatenate pytrees along axis ``a`` (e.g. time) for feat/action sequences.
 concat = lambda xs, a: jax.tree.map(lambda *x: jnp.concatenate(x, a), *xs)
@@ -514,12 +534,12 @@ class Agent(embodied.jax.Agent):
       metrics[f'impl_{impl}/{key}'] = _tb_video_grid(video)
     return metrics
 
-  def _mgr_expl_reward(self, imgfeat, k_manager_sample_freq=1):
+  def _mgr_expl_reward(self, imgfeat):
     """Manager exploration reward: ``elbo_reward`` with ``adver_impl=squared``.
 
     Uses per-step goal VAE recon ``((dec.mode() - feat)^2).mean(-1)``; our
     encoder/decoder do not take a separate ``context`` input like Director.
-    Only every k_manager_sample_freq timestep is used.
+    Returns dense rewards of shape (B, T).
     """
     deter = sg(self.feat2deter(imgfeat))
     encoded = self.goal_enc(deter, 2)
@@ -527,9 +547,7 @@ class Agent(embodied.jax.Agent):
     s = skill['skill'] if isinstance(skill, dict) else skill
     pred = self.goal_dec(s, 2).pred()
     sq = ((pred - deter) ** 2).mean(-1)
-    # Only take every k_manager_sample_freq timestep (after t=0 for consistent slicing)
-    sq_sampled = sq[:, 1::k_manager_sample_freq]
-    return imag_reward_pad(sq_sampled)
+    return sq
 
   def _imagine_with_manager(self, starts, H, training):
     """Imagine with manager skill resampled every ``manager_sample_freq`` steps."""
@@ -766,15 +784,24 @@ class Agent(embodied.jax.Agent):
     inp_downsampled = self.feat2tensor(jax.tree.map(lambda x: x[:, ::self.manager_sample_freq], imgfeat))
     goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
     feat_goal = self._feat_goal2tensor(imgfeat, goals)
-    mgr_policy = mgr_as_dict(self.manager_pol(inp, 2))
+    mgr_policy = mgr_as_dict(self.manager_pol(inp_downsampled, 2))
     con = self.con(inp, 2).prob(1)
     mgr_cont = self._mgr_cont(con, without_zeros=True)
     rew_step = self.rew(inp, 2).pred()
     mgr_extr_rew = self._mgr_extr_rew(rew_step, con, without_zeros=True)
-    mgr_expl_rew = self._mgr_expl_reward(imgfeat, k_manager_sample_freq=self.manager_sample_freq)
+    mgr_extr_rew = imag_reward_pad(mgr_extr_rew)
+    expl_step = self._mgr_expl_reward(imgfeat)
+    mgr_expl_rew = self._mgr_extr_rew(expl_step, con, without_zeros=True)
+    mgr_expl_rew = imag_reward_pad(mgr_expl_rew)
     wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
 
-    los, imgloss_out, mets = imag_loss_mgr(
+    kwargs_mgr = {**self.config.imag_loss}
+    kwargs_mgr.update(
+        update=training,
+        contdisc=self.config.contdisc,
+        horizon=self.config.horizon,
+        mgr_expl_weight=self.mgr_expl_weight)
+    los_mgr, imgloss_mgr_out, mets_mgr = imag_loss_mgr(
         mgr_skills_downsampled,
         mgr_extr_rew,
         mgr_expl_rew,
@@ -784,93 +811,142 @@ class Agent(embodied.jax.Agent):
         self.mgr_extr_slowval(inp_downsampled, 2),
         self.mgr_expl_val(inp_downsampled, 2),
         self.mgr_expl_slowval(inp_downsampled, 2),
-        self.mgr_extr_retnorm, self.mgr_expl_retnorm, 
-        self.mgr_extr_valnorm, self.mgr_expl_valnorm, 
-        self.mgr_extr_advnorm, self.mgr_expl_advnorm, self.wkr_goal_advnorm,
+        self.mgr_extr_retnorm,
+        self.mgr_expl_retnorm,
+        self.mgr_extr_valnorm,
+        self.mgr_expl_valnorm,
+        self.mgr_extr_advnorm,
+        self.mgr_expl_advnorm,
+        **kwargs_mgr)
+    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
+    metrics.update(mets_mgr)
+
+    kwargs_wkr = {**self.config.imag_loss}
+    kwargs_wkr.update(
         update=training,
         contdisc=self.config.contdisc,
-        horizon=self.config.horizon,
-        mgr_expl_weight=self.mgr_expl_weight,
-        **self.config.imag_loss)
-    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los.items()})
-    metrics.update(mets)
-
-    los, imgloss_out, mets = imag_loss_wkr(
+        horizon=self.config.horizon)
+    los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
         imgact,
         wkr_goal_rew,
         con,
         self.pol(feat_goal, 2),
         self.wkr_goal_val(feat_goal, 2),
         self.wkr_goal_slowval(feat_goal, 2),
-        self.wkr_goal_retnorm, 
-        self.wkr_goal_valnorm, 
-        update=training,
-        contdisc=self.config.contdisc,
-        horizon=self.config.horizon,
-        **self.config.imag_loss)
-    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los.items()})
-    metrics.update(mets)
+        self.wkr_goal_retnorm,
+        self.wkr_goal_valnorm,
+        self.wkr_goal_advnorm,
+        **kwargs_wkr)
+    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_wkr.items()})
+    metrics.update(mets_wkr)
 
     # --- Optional replay value loss (tail of real sequence + imag bootstrap) ---
     if self.config.repval_loss:
       feat = sg(repfeat, skip=self.config.repval_grad)
       last, term = [obs[k] for k in ('is_last', 'is_terminal')]
-      boot_extr = imgloss_out['ret'][:, 0].reshape(B, K_imag)
-      boot_expl = imgloss_out['mgr_expl_ret'][:, 0].reshape(B, K_imag)
-      boot_goal = imgloss_out['wkr_goal_ret'][:, 0].reshape(B, K_imag)
+      boot_extr = imgloss_mgr_out['ret'][:, 0].reshape(B, K_imag)
+      boot_expl = imgloss_mgr_out['mgr_expl_ret'][:, 0].reshape(B, K_imag)
+      boot_goal = imgloss_wkr_out['wkr_goal_ret'][:, 0].reshape(B, K_imag)
       if K_repl != K_imag:
         boot_extr = jnp.broadcast_to(boot_extr[:, -1:], (B, K_repl))
         boot_expl = jnp.broadcast_to(boot_expl[:, -1:], (B, K_repl))
         boot_goal = jnp.broadcast_to(boot_goal[:, -1:], (B, K_repl))
-      feat, last, term, boot_extr, boot_expl, boot_goal = jax.tree.map(
+
+      # --- 1. Downsampled Replay sequence for Manager ---
+      feat_down = downsample_manager_states(feat, self.manager_sample_freq)
+      inp_down = self.feat2tensor(feat_down)
+
+      # Downsample flags
+      T_feat = jax.tree.leaves(feat)[0].shape[1]
+      Tm = T_feat - 1
+      n = Tm // self.manager_sample_freq
+      rem = Tm - n * self.manager_sample_freq
+      idx_down = [0] + [int(1 + i * self.manager_sample_freq - 1) for i in range(1, n + 1)]
+      if rem > 0:
+        idx_down.append(int(n * self.manager_sample_freq))
+        idx_down.append(int(Tm))
+      else:
+        idx_down.append(int(Tm))
+      idx_down = sorted(list(set(idx_down)))
+
+      last_down = last[:, idx_down]
+      term_down = term[:, idx_down]
+
+      # Compute aggregated continuation and rewards on full sequence
+      repl_con_full = self.con(self.feat2tensor(feat), 2).prob(1)
+      repl_mgr_cont = self._mgr_cont(repl_con_full, without_zeros=True)
+      repl_mgr_extr_rew = self._mgr_extr_rew(self.rew(self.feat2tensor(feat), 2).pred(), repl_con_full, without_zeros=True)
+      repl_mgr_extr_rew = imag_reward_pad(repl_mgr_extr_rew)
+      repl_expl_step = self._mgr_expl_reward(feat)
+      repl_mgr_expl_rew = self._mgr_extr_rew(repl_expl_step, repl_con_full, without_zeros=True)
+      repl_mgr_expl_rew = imag_reward_pad(repl_mgr_expl_rew)
+
+      # --- 2. Dense Replay sequence for Worker ---
+      feat_wkr, last_wkr, term_wkr, boot_goal_wkr = jax.tree.map(
           lambda x: x[:, -K_repl:],
-          (feat, last, term, boot_extr, boot_expl, boot_goal))
-      inp = self.feat2tensor(feat)
+          (feat, last, term, boot_goal))
+      inp_wkr = self.feat2tensor(feat_wkr)
       repl_skills = jax.tree.map(
           lambda x: x[:, -K_repl:],
           self._manager_skills_on_sequence(feat))
       repl_goals = sg(self._goals_from_skills(repl_skills, bdims=2))
-      feat_goal = self._feat_goal2tensor(feat, repl_goals)
-      repl_con = self.con(inp, 2).prob(1)
-      repl_mgr_extr_rew = self._mgr_extr_rew(self.rew(inp, 2).pred(), repl_con, without_zeros=True)
-      repl_mgr_expl_rew = self._mgr_expl_reward(feat, k_manager_sample_freq=self.manager_sample_freq)
-      repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat)
+      feat_goal_wkr = self._feat_goal2tensor(feat_wkr, repl_goals)
+      repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
 
+      # --- 3. Compute Value Losses ---
+      # Manager Extrinsic Replay Value Loss
+      kwargs_repmgr_extr = {**self.config.repl_loss}
+      kwargs_repmgr_extr.update(
+          update=training,
+          horizon=self.config.horizon,
+          value_head='mgr_extr')
       los, reploss_out, mets = repl_loss(
-          last, term, repl_mgr_extr_rew, boot_extr,
-          self.mgr_extr_val(inp, 2),
-          self.mgr_extr_slowval(inp, 2),
+          last_down,
+          term_down,
+          repl_mgr_extr_rew,
+          jnp.broadcast_to(boot_extr[:, -1:], repl_mgr_extr_rew.shape),
+          self.mgr_extr_val(inp_down, 2),
+          self.mgr_extr_slowval(inp_down, 2),
           self.mgr_extr_valnorm,
+          **kwargs_repmgr_extr)
+      losses.update(los)
+      metrics.update(prefix(mets, 'repmgr_extr'))
+
+      # Manager Exploration Replay Value Loss
+      kwargs_repmgr_expl = {**self.config.repl_loss}
+      kwargs_repmgr_expl.update(
           update=training,
           horizon=self.config.horizon,
-          value_head='mgr_extr',
-          **self.config.repl_loss)
-      losses.update(los)
-      metrics.update(prefix(mets, 'reploss'))
-
+          value_head='mgr_expl')
       los, reploss_out, mets = repl_loss(
-          last, term, repl_mgr_expl_rew, boot_expl,
-          self.mgr_expl_val(inp, 2),
-          self.mgr_expl_slowval(inp, 2),
+          last_down,
+          term_down,
+          repl_mgr_expl_rew,
+          jnp.broadcast_to(boot_expl[:, -1:], repl_mgr_expl_rew.shape),
+          self.mgr_expl_val(inp_down, 2),
+          self.mgr_expl_slowval(inp_down, 2),
           self.mgr_expl_valnorm,
-          update=training,
-          horizon=self.config.horizon,
-          value_head='mgr_expl',
-          **self.config.repl_loss)
+          **kwargs_repmgr_expl)
       losses.update(los)
-      metrics.update(prefix(mets, 'reploss'))
+      metrics.update(prefix(mets, 'repmgr_expl'))
 
-      los, reploss_out, mets = repl_loss(
-          last, term, repl_wkr_goal_rew, boot_goal,
-          self.wkr_goal_val(feat_goal, 2),
-          self.wkr_goal_slowval(feat_goal, 2),
-          self.wkr_goal_valnorm,
+      # Worker Goal Replay Value Loss
+      kwargs_repwkr_goal = {**self.config.repl_loss}
+      kwargs_repwkr_goal.update(
           update=training,
           horizon=self.config.horizon,
-          value_head='wkr_goal',
-          **self.config.repl_loss)
+          value_head='wkr_goal')
+      los, reploss_out, mets = repl_loss(
+          last_wkr,
+          term_wkr,
+          repl_wkr_goal_rew,
+          jnp.broadcast_to(boot_goal_wkr[:, -1:], repl_wkr_goal_rew.shape),
+          self.wkr_goal_val(feat_goal_wkr, 2),
+          self.wkr_goal_slowval(feat_goal_wkr, 2),
+          self.wkr_goal_valnorm,
+          **kwargs_repwkr_goal)
       losses.update(los)
-      metrics.update(prefix(mets, 'reploss'))
+      metrics.update(prefix(mets, 'repwkr_goal'))
 
     assert set(losses.keys()) == set(self.scales.keys()), (
         sorted(losses.keys()), sorted(self.scales.keys()))
@@ -1208,7 +1284,7 @@ def imag_loss_wkr(
   if use_pmpo_actor:
     # PMPO target formula:
     # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
-    wkr_goal_adv_raw = wkr_goal_adv - wkr_goal_tarval[:, :-1]
+    wkr_goal_adv_raw = wkr_goal_ret - wkr_goal_tarval[:, :-1]
     wkr_goal_pos = (wkr_goal_adv_raw >= 0).astype(f32)
     wkr_goal_neg = (wkr_goal_adv_raw < 0).astype(f32)
     wkr_goal_den_p = jnp.maximum(jnp.sum(wkr_goal_pos, axis=-1, keepdims=True), 1.0)
@@ -1350,8 +1426,8 @@ def imag_loss_mgr(
   if use_pmpo_actor:
     # PMPO target formula:
     # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
-    mgr_extr_adv_raw = mgr_extr_adv - mgr_extr_tarval[:, :-1]
-    mgr_expl_adv_raw = mgr_expl_adv - mgr_expl_tarval[:, :-1]
+    mgr_extr_adv_raw = mgr_extr_ret - mgr_extr_tarval[:, :-1]
+    mgr_expl_adv_raw = mgr_expl_ret - mgr_expl_tarval[:, :-1]
 
     mgr_extr_pos = (mgr_extr_adv_raw >= 0).astype(f32)
     mgr_extr_neg = (mgr_extr_adv_raw < 0).astype(f32)
