@@ -1419,6 +1419,8 @@ def imag_loss_mgr(
   mgr_extr_adv_normed = (mgr_extr_adv - mgr_extr_aoffset) / mgr_extr_ascale
   mgr_expl_adv_normed = (mgr_expl_adv - mgr_expl_aoffset) / mgr_expl_ascale
 
+  mgr_total_adv = mgr_extr_adv_normed + mgr_expl_weight * mgr_expl_adv_normed
+
   skill_events = align_skill_events(skills, manager_policy)
   mgr_logpi = sum([
       head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
@@ -1429,41 +1431,26 @@ def imag_loss_mgr(
   if use_pmpo_actor:
     # PMPO target formula:
     # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
-    mgr_extr_adv_raw = mgr_extr_ret - mgr_extr_tarval[:, :-1]
-    mgr_expl_adv_raw = mgr_expl_ret - mgr_expl_tarval[:, :-1]
+    mgr_total_adv_raw = mgr_extr_ret + mgr_expl_weight * mgr_expl_ret - (mgr_extr_tarval + mgr_expl_weight * mgr_expl_tarval)[:, :-1]
 
-    mgr_extr_pos = (mgr_extr_adv_raw >= 0).astype(f32)
-    mgr_extr_neg = (mgr_extr_adv_raw < 0).astype(f32)
-    mgr_expl_pos = (mgr_expl_adv_raw >= 0).astype(f32)
-    mgr_expl_neg = (mgr_expl_adv_raw < 0).astype(f32)
+    mgr_pos = (mgr_total_adv_raw >= 0).astype(f32)
+    mgr_neg = (mgr_total_adv_raw < 0).astype(f32)
 
-    mgr_extr_den_p = jnp.maximum(jnp.sum(mgr_extr_pos, axis=-1, keepdims=True), 1.0)
-    mgr_extr_den_n = jnp.maximum(jnp.sum(mgr_extr_neg, axis=-1, keepdims=True), 1.0)
-    mgr_expl_den_p = jnp.maximum(jnp.sum(mgr_expl_pos, axis=-1, keepdims=True), 1.0)
-    mgr_expl_den_n = jnp.maximum(jnp.sum(mgr_expl_neg, axis=-1, keepdims=True), 1.0)  
+    mgr_den_p = jnp.maximum(jnp.sum(mgr_pos, axis=-1, keepdims=True), 1.0)
+    mgr_den_n = jnp.maximum(jnp.sum(mgr_neg, axis=-1, keepdims=True), 1.0)
 
-    mgr_extr_pos_coeff = pmpo_alpha * mgr_extr_pos / mgr_extr_den_p
-    mgr_extr_neg_coeff = (1.0 - pmpo_alpha) * mgr_extr_neg / mgr_extr_den_n
-    mgr_expl_pos_coeff = pmpo_alpha * mgr_expl_pos / mgr_expl_den_p
-    mgr_expl_neg_coeff = (1.0 - pmpo_alpha) * mgr_expl_neg / mgr_expl_den_n
+    mgr_pos_coeff = pmpo_alpha * mgr_pos / mgr_den_p
+    mgr_neg_coeff = (1.0 - pmpo_alpha) * mgr_neg / mgr_den_n
 
     mgr_kl_t = policy_time_slice(policy_behavior_kl(manager_policy))
+    losses['mgr_policy'] = (mgr_neg_coeff - mgr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
 
-    mgr_extr_policy_loss = (mgr_extr_neg_coeff - mgr_extr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
-    mgr_expl_policy_loss = (mgr_expl_neg_coeff - mgr_expl_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
-
-    metrics['mgr_extr_kl_behavior'] = mgr_kl_t.mean()
-    metrics['mgr_expl_kl_behavior'] = mgr_kl_t.mean()
+    metrics['mgr_kl_behavior'] = mgr_kl_t.mean()
   else:
-    mgr_extr_policy_loss = w * -(
-        mgr_logpi * sg(mgr_extr_adv_normed) + actent * sum(mgr_ents.values()))
-    mgr_expl_policy_loss = w * -(
-        mgr_logpi * sg(mgr_expl_adv_normed) + actent * sum(mgr_ents.values()))
+    losses['mgr_policy'] = w * -(
+        mgr_logpi * sg(mgr_total_adv) + actent * sum(mgr_ents.values()))
 
-  losses['mgr_policy'] = mgr_extr_policy_loss + mgr_expl_weight * mgr_expl_policy_loss
-
-  metrics['mgr_extr_policy_loss'] = mgr_extr_policy_loss.mean()
-  metrics['mgr_expl_policy_loss'] = mgr_expl_policy_loss.mean()
+  metrics['mgr_policy_loss'] = losses['mgr_policy'].mean()
   metrics['mgr_extr_rew'] = mgr_extr_rew.mean()
   nz = jnp.maximum((jnp.abs(mgr_extr_rew[:, 1:]) > 0).sum(), 1)
   metrics['mgr_extr_rew_block'] = mgr_extr_rew[:, 1:].sum() / nz
