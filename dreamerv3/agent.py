@@ -669,6 +669,8 @@ class Agent(embodied.jax.Agent):
         self.loss, (enc, dyn, dec), obs, prevact, training=True, has_aux=True)
     metrics.update(mets)
     self.mgr_extr_slowval.update()
+    self.mgr_expl_slowval.update()
+    self.wkr_goal_slowval.update()
     outs = {}
     if self.config.replay_context:
       updates = elements.tree.flatdict(dict(

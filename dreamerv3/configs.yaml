@@ -130,7 +130,7 @@ defaults:
     imag_loss:
       slowtar: False
       lam: 0.95
-      actent: 3e-4
+      actent: 0.1
       slowreg: 1.0
       use_pmpo_actor: False
       pmpo_beta: 0.3
