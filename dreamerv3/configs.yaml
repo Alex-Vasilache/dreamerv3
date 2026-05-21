@@ -124,7 +124,7 @@ defaults:
     policy_dist_disc: categorical
     policy_dist_cont: bounded_normal
     imag_last: 0
-    imag_length: 15
+    imag_length: 16
     horizon: 333
     contdisc: True
     imag_loss:
