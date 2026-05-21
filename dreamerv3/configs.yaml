@@ -87,6 +87,7 @@ defaults:
     deterministic: False
     expect_devices: 0
     enable_policy: True
+    precompile: True
     coordinator_address: ''
 
   agent:
