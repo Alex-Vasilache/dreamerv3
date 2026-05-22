@@ -720,7 +720,7 @@ class Agent(embodied.jax.Agent):
         skill['skill'] if isinstance(skill, dict) else skill, 2)
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
     goal_rec_loss = decoded_goal.loss(sg(deter_feat))
-    goal_dist = encoded_goal
+    goal_dist = _head_inner(encoded_goal)
     skill_prior = outs.OneHot(
         jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)
     inner_kl = goal_dist.kl(skill_prior)
@@ -733,7 +733,7 @@ class Agent(embodied.jax.Agent):
 
     losses['goal_autoencoder'] = goal_rec_loss + goal_kl_loss
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
-    ent = goal_dist.entropy()
+    ent = encoded_goal.entropy()
     goal_ent_bt = ent
     metrics.update({
         'goal/rec_mean': goal_rec_loss.mean(),
@@ -1036,14 +1036,25 @@ class Agent(embodied.jax.Agent):
     metrics['goal/deter_feat'] = _tb_video_grid(_vec_to_tb_rgb(deter_feat))
     metrics['goal/decoded_deter'] = _tb_video_grid(_vec_to_tb_rgb(pred_deter))
     sk = skill_s['skill'] if isinstance(skill_s, dict) else skill_s
-    metrics['goal/skill_sampled'] = _tb_video_grid(
-        jnp.repeat((sk * 255).astype(jnp.uint8)[..., None], 3, axis=-1))
+    sk_u8 = (sk * 255).astype(jnp.uint8)
+    if sk_u8.ndim == 3:
+      # (RB, T, D) -> (RB, T, H, W, 3)
+      metrics['goal/skill_sampled'] = _tb_video_grid(_vec_to_tb_rgb(sk))
+    else:
+      # (RB, T, L, C) -> (RB, T, L, C, 3)
+      metrics['goal/skill_sampled'] = _tb_video_grid(
+          jnp.repeat(sk_u8[..., None], 3, axis=-1))
 
     # Manager-proposed goals over the report sequence (K-step skill hold).
     mgr_skills = self._manager_skills_on_sequence(rep)
     mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
-    metrics['goal/mgr_skill'] = _tb_video_grid(
-        jnp.repeat((mgr_skills['skill'] * 255).astype(jnp.uint8)[..., None], 3, -1))
+    m_sk = mgr_skills['skill']
+    m_sk_u8 = (m_sk * 255).astype(jnp.uint8)
+    if m_sk_u8.ndim == 3:
+      metrics['goal/mgr_skill'] = _tb_video_grid(_vec_to_tb_rgb(m_sk))
+    else:
+      metrics['goal/mgr_skill'] = _tb_video_grid(
+          jnp.repeat(m_sk_u8[..., None], 3, -1))
     metrics['goal/mgr_proposed_deter'] = _tb_video_grid(_vec_to_tb_rgb(mgr_goals))
     mgr_goal_feat = self._feat_from_goal(mgr_goals)
     _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)
