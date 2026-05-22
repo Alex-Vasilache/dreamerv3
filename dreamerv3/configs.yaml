@@ -111,7 +111,7 @@ defaults:
     goal_enc: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in}
     goal_dec: {layers: 3, units: 1024, act: silu, norm: rms, output: mse, outscale: 0.1, winit: trunc_normal_in}
     # Director-style factorized codes: L categoricals × C classes (L×C logits, L×C one-hot).
-    skill_shape: [8, 8]
+    skill_shape: [8]
     skill_classes: 8
     goal_autoencoder_beta: 1.0
     # If false, KL term inside ``goal_autoencoder`` is zero (rec still trained).
@@ -120,7 +120,7 @@ defaults:
     manager_sample_freq: 8
     worker_report_horizon: 32
     mgr_expl_weight: 0.1
-    manager_actent: 0.1
+    manager_actent: 3e-3
     policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
     value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
     policy_dist_disc: categorical

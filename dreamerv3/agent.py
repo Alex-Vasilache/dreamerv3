@@ -69,7 +69,7 @@ def aggregate_mgr_extr_rew(rew, con, k, without_zeros=False):
   k = max(1, int(k))
   B, T = rew.shape
   r = rew[:, 1:]
-  c = con[:, 1:]
+  c = con[:, :-1]
   Tm = r.shape[1]
   n = Tm // k
   result_blocks = []
@@ -578,12 +578,8 @@ class Agent(embodied.jax.Agent):
         body, (starts, mgr_skill, jnp.int32(0)), (), H,
         unroll=unroll, axis=1)
 
-    def _pad_skill_time(s):
-      if s.ndim < 2:
-        return s[:, None]
-      return jnp.concatenate([s, s[:, -1:]], axis=1)
-
-    img_skills = jax.tree.map(_pad_skill_time, img_skills)
+    img_skills = concat([
+        jax.tree.map(lambda x: x[:, None], mgr_skill), img_skills], 1)
     return imgfeat, imgact, img_skills
 
   def _manager_skills_on_sequence(self, repfeat, downsample=False):
@@ -729,7 +725,7 @@ class Agent(embodied.jax.Agent):
         jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)
     inner_kl = goal_dist.kl(skill_prior)
     # OneHot.kl on [..., L, C] logits already sums classes -> [..., L]; sum L -> [B, T].
-    goal_kl_bt = inner_kl.sum(-1) if self._skill_factorized else inner_kl
+    goal_kl_bt = inner_kl
     goal_kl_loss = (
         f32(self.config.goal_autoencoder_beta) * goal_kl_bt
         if self.config.goal_kl
@@ -738,7 +734,7 @@ class Agent(embodied.jax.Agent):
     losses['goal_autoencoder'] = goal_rec_loss + goal_kl_loss
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
     ent = goal_dist.dist.entropy()
-    goal_ent_bt = ent.sum(-1) if self._skill_factorized else ent
+    goal_ent_bt = ent
     metrics.update({
         'goal/rec_mean': goal_rec_loss.mean(),
         'goal/rec_std': goal_rec_loss.std(),

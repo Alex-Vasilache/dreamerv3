@@ -93,7 +93,11 @@ class Head(nj.Module):
     x = nets.ensure_dtypes(x)
     output = getattr(self, self.impl)(x)
     if self.space.shape:
-      output = outs.Agg(output, len(self.space.shape), jnp.sum)
+      dims = len(self.space.shape)
+      if self.impl in ('onehot', 'categorical'):
+        dims -= 1
+      if dims > 0:
+        output = outs.Agg(output, dims, jnp.sum)
     assert output.pred().shape[x.ndim - 1:] == self.space.shape, (
         self.space, self.impl, x.shape, output.pred().shape)
     return output
