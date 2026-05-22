@@ -724,8 +724,10 @@ class Agent(embodied.jax.Agent):
     skill_prior = outs.OneHot(
         jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)
     inner_kl = goal_dist.kl(skill_prior)
-    # OneHot.kl on [..., L, C] logits already sums classes -> [..., L]; sum L -> [B, T].
+    # OneHot.kl on [..., L, C] logits sums classes -> [..., L]; reduce remaining L dims -> [B, T].
     goal_kl_bt = inner_kl
+    while goal_kl_bt.ndim > 2:
+      goal_kl_bt = goal_kl_bt.sum(-1)
     goal_kl_loss = (
         f32(self.config.goal_autoencoder_beta) * goal_kl_bt
         if self.config.goal_kl
@@ -735,6 +737,8 @@ class Agent(embodied.jax.Agent):
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
     ent = encoded_goal.entropy()
     goal_ent_bt = ent
+    while goal_ent_bt.ndim > 2:
+      goal_ent_bt = goal_ent_bt.sum(-1)
     metrics.update({
         'goal/rec_mean': goal_rec_loss.mean(),
         'goal/rec_std': goal_rec_loss.std(),
