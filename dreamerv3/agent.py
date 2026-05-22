@@ -720,7 +720,7 @@ class Agent(embodied.jax.Agent):
         skill['skill'] if isinstance(skill, dict) else skill, 2)
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
     goal_rec_loss = decoded_goal.loss(sg(deter_feat))
-    goal_dist = encoded_goal.output
+    goal_dist = encoded_goal
     skill_prior = outs.OneHot(
         jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)
     inner_kl = goal_dist.kl(skill_prior)
@@ -733,7 +733,7 @@ class Agent(embodied.jax.Agent):
 
     losses['goal_autoencoder'] = goal_rec_loss + goal_kl_loss
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
-    ent = goal_dist.dist.entropy()
+    ent = goal_dist.entropy()
     goal_ent_bt = ent
     metrics.update({
         'goal/rec_mean': goal_rec_loss.mean(),
