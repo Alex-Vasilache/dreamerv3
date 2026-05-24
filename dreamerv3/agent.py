@@ -425,7 +425,8 @@ class Agent(embodied.jax.Agent):
     new_skill = sample(mgr_as_dict(
         self.manager_pol(self.feat2tensor(feat), bdims=1)))
     mgr_skill = skill_switch(update, new_skill, mgr_skill)
-    goal = sg(self._goal_from_skill(mgr_skill))
+    # Manager skill must be stopped before decoding goal for worker.
+    goal = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill)))
     mgr_step = mgr_step + 1
     return mgr_skill, goal, mgr_step
 
@@ -563,7 +564,8 @@ class Agent(embodied.jax.Agent):
       new_skill = sample(mgr_as_dict(
           self.manager_pol(self.feat2tensor(feat), 1)))
       mgr_skill = skill_switch(update, new_skill, mgr_skill)
-      goal = sg(self._goal_from_skill(mgr_skill))
+      # Match skill to state: apply goal from mgr_skill *after* resampling.
+      goal = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill)))
       act = sample(self.pol(self._feat_goal2tensor(feat, goal), 1))
       dyn_carry, (feat_next, act_out) = self.dyn.imagine(
           dyn_carry, act, 1, training, single=True)
@@ -775,8 +777,8 @@ class Agent(embodied.jax.Agent):
     mgr_skills = self._manager_skills_on_sequence(imgfeat)
     mgr_skills_downsampled = self._manager_skills_on_sequence(imgfeat, downsample=True)
     last_feat = jax.tree.map(lambda x: x[:, -1], imgfeat)
-    last_goal = sg(self._goal_from_skill(
-        jax.tree.map(lambda x: x[:, -1], mgr_skills)))
+    last_mgr_skill = jax.tree.map(lambda x: x[:, -1], mgr_skills)
+    last_goal = sg(self._goal_from_skill(jax.tree.map(sg, last_mgr_skill)))
     lastact = sample(self.pol(self._feat_goal2tensor(last_feat, last_goal), 1))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
@@ -784,7 +786,8 @@ class Agent(embodied.jax.Agent):
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
     inp = self.feat2tensor(imgfeat)
     inp_downsampled = self.feat2tensor(jax.tree.map(lambda x: x[:, ::self.manager_sample_freq], imgfeat))
-    goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
+    # Detach manager-produced goals from worker actor/critic.
+    goals = sg(self._goals_from_skills(jax.tree.map(sg, mgr_skills), bdims=2))
     feat_goal = self._feat_goal2tensor(imgfeat, goals)
     mgr_policy = mgr_as_dict(self.manager_pol(inp_downsampled, 2))
     con = self.con(inp, 2).prob(1)
@@ -892,7 +895,8 @@ class Agent(embodied.jax.Agent):
       repl_skills = jax.tree.map(
           lambda x: x[:, -K_repl:],
           self._manager_skills_on_sequence(feat))
-      repl_goals = sg(self._goals_from_skills(repl_skills, bdims=2))
+      # Detach manager goals in replay value path.
+      repl_goals = sg(self._goals_from_skills(jax.tree.map(sg, repl_skills), bdims=2))
       feat_goal_wkr = self._feat_goal2tensor(feat_wkr, repl_goals)
       repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
 
