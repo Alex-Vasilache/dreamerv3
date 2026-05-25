@@ -1391,9 +1391,9 @@ def imag_loss_mgr(
   term = 1 - con
 
   mgr_extr_ret = lambda_return(
-      last, term, mgr_extr_rew, mgr_tarval, mgr_tarval, disc, lam)
+      last, term, mgr_extr_rew, mgr_tarval, jnp.zeros_like(mgr_extr_rew), disc, lam)
   mgr_expl_ret = lambda_return(
-      last, term, mgr_expl_rew, mgr_tarval, mgr_tarval, disc, lam)
+      last, term, mgr_expl_rew, mgr_expl_tarval, jnp.zeros_like(mgr_expl_rew), disc, lam)
 
   voff_extr, vscale_extr = mgr_extr_retnorm(mgr_extr_ret, update)
   voff_expl, vscale_expl = mgr_expl_retnorm(mgr_expl_ret, update)
