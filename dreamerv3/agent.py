@@ -553,9 +553,10 @@ class Agent(embodied.jax.Agent):
   def _imagine_with_manager(self, starts, H, training):
     """Imagine with manager skill resampled every ``manager_sample_freq`` steps."""
     K = max(1, int(self.manager_sample_freq))
-    feat0 = dict(deter=starts['deter'], stoch=starts['stoch'])
-    mgr_skill = sample(mgr_as_dict(
-        self.manager_pol(self.feat2tensor(feat0), 1)))
+    B = jax.tree.leaves(starts)[0].shape[0]
+    skill_shape = tuple(int(x) for x in self.skill_shape)
+    # Start with a dummy skill that will be replaced in first step
+    mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
 
     def body(carry, _):
       dyn_carry, mgr_skill, step_i = carry
@@ -576,12 +577,19 @@ class Agent(embodied.jax.Agent):
     unroll = H if self.dyn.unroll else 1
     # ``nj.scan(..., axis=1)`` requires ``xs`` with rank >= 2 (it swapaxes 0/1).
     # Match ``rssm.imagine``: empty ``xs``, explicit ``length``, step in carry.
-    _, (imgfeat, imgact, img_skills) = nj.scan(
+    (last_dyn, last_mgr_skill, _), (imgfeat, imgact, img_skills) = nj.scan(
         body, (starts, mgr_skill, jnp.int32(0)), (), H,
         unroll=unroll, axis=1)
 
-    img_skills = concat([
-        jax.tree.map(lambda x: x[:, None], mgr_skill), img_skills], 1)
+    # imgfeat is [s1...sH]. imgact is [a0...aH-1]. img_skills is [skill0...skillH-1].
+    # We need to sample one more skill at last_dyn (sH) to align with imgfeat prefix starts (s0).
+    feat_last = dict(deter=last_dyn['deter'], stoch=last_dyn['stoch'])
+    update_last = jnp.equal(H % K, 0)
+    new_skill_last = sample(mgr_as_dict(
+        self.manager_pol(self.feat2tensor(feat_last), 1)))
+    last_mgr_skill = skill_switch(update_last, new_skill_last, last_mgr_skill)
+
+    img_skills = concat([img_skills, jax.tree.map(lambda x: x[:, None], last_mgr_skill)], 1)
     return imgfeat, imgact, img_skills
 
   def _manager_skills_on_sequence(self, repfeat, downsample=False):
@@ -769,13 +777,13 @@ class Agent(embodied.jax.Agent):
       K_repl = K_cap
     H = self.config.imag_length  # imagined steps after the start state (H+1 states).
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
-    imgfeat, imgprevact, _ = self._imagine_with_manager(starts, H, training)
+    imgfeat, imgprevact, img_skills = self._imagine_with_manager(starts, H, training)
     # Prefix replay states to imagined chain so AC sees grounded first step.
     first = jax.tree.map(
         lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
     imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat, skip=self.config.ac_grads)], 1)
-    mgr_skills = self._manager_skills_on_sequence(imgfeat)
-    mgr_skills_downsampled = self._manager_skills_on_sequence(imgfeat, downsample=True)
+    mgr_skills = img_skills
+    mgr_skills_downsampled = jax.tree.map(lambda s: s[:, ::self.manager_sample_freq], mgr_skills)
     last_feat = jax.tree.map(lambda x: x[:, -1], imgfeat)
     last_mgr_skill = jax.tree.map(lambda x: x[:, -1], mgr_skills)
     last_goal = sg(self._goal_from_skill(jax.tree.map(sg, last_mgr_skill)))
