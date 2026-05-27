@@ -13,6 +13,7 @@ import elements
 import embodied.jax
 import embodied.jax.nets as nn
 import embodied.jax.outs as outs
+from embodied.jax import internal as jaxinternal
 import jax
 import jax.numpy as jnp
 import ninjax as nj
@@ -27,6 +28,8 @@ i32 = jnp.int32
 sg = lambda xs, skip=False: xs if skip else jax.lax.stop_gradient(xs)
 # Sample from a tree of distribution-like outputs (policy heads).
 sample = lambda xs: jax.tree.map(lambda x: x.sample(nj.seed()), xs)
+# Deterministic mode (argmax / mean) of a tree of distribution-like outputs.
+mode = lambda xs: jax.tree.map(lambda x: x.pred(), xs)
 prefix = lambda xs, p: {f'{p}/{k}': v for k, v in xs.items()}
 
 
@@ -271,6 +274,18 @@ class Agent(embodied.jax.Agent):
     self.manager_pol = embodied.jax.MLPHead(
         self.goal_code_space, **config.manager_policy, name='manager_pol')
     self.manager_sample_freq = config.manager_sample_freq
+
+    # Slow (EMA) behavioral priors for the PMPO reverse-KL term (Bug A). These
+    # are separate stop-grad copies of the policies (not optimized), so the KL
+    # KL(π || π_slow) is non-zero; only evaluated/updated when PMPO is active.
+    self.use_pmpo_actor = config.imag_loss.use_pmpo_actor
+    if self.use_pmpo_actor:
+      self.pol_slow = embodied.jax.SlowModel(
+          embodied.jax.MLPHead(act_space, policy_outs, **config.policy, name='pol_slow'),
+          source=self.pol, **config.slowvalue)
+      self.manager_pol_slow = embodied.jax.SlowModel(
+          embodied.jax.MLPHead(self.goal_code_space, **config.manager_policy, name='manager_pol_slow'),
+          source=self.manager_pol, **config.slowvalue)
 
     # Value and EMA target for bootstrapping / slow regularizer in ``imag_loss``.
     self.mgr_extr_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_val')
@@ -592,13 +607,15 @@ class Agent(embodied.jax.Agent):
     img_skills = concat([img_skills, jax.tree.map(lambda x: x[:, None], last_mgr_skill)], 1)
     return imgfeat, imgact, img_skills
 
-  def _manager_skills_on_sequence(self, repfeat, downsample=False):
+  def _manager_skills_on_sequence(self, repfeat, downsample=False, deterministic=False):
     """K-step manager skills along a ``(B, T)`` feature sequence (replay tail).
 
     Args:
       repfeat: Feature dict with shape keys, including 'deter': (B, T, ...).
       downsample: If True, only return the skills at every K'th step (i.e., one per K steps),
         instead of repeating them for every timestep.
+      deterministic: If True, take the manager's mode (argmax skill) instead of sampling.
+        Used by the replay value path so the worker target is not fit against random goals.
 
     Returns:
       If downsample=False (default): Pytree of (B, T, ...) manager skills; skill held for K timesteps.
@@ -607,14 +624,15 @@ class Agent(embodied.jax.Agent):
     """
     K = max(1, int(self.manager_sample_freq))
     T = repfeat['deter'].shape[1]
+    pick = mode if deterministic else sample
     feat0 = jax.tree.map(lambda x: x[:, 0], repfeat)
-    mgr_skill = sample(mgr_as_dict(
+    mgr_skill = pick(mgr_as_dict(
         self.manager_pol(self.feat2tensor(feat0), 1)))
 
     def body(mgr_skill, t):
       feat = jax.tree.map(lambda x: x[:, t], repfeat)
       update = jnp.equal(t % K, 0)
-      new_skill = sample(mgr_as_dict(
+      new_skill = pick(mgr_as_dict(
           self.manager_pol(self.feat2tensor(feat), 1)))
       mgr_skill = skill_switch(update, new_skill, mgr_skill)
       return mgr_skill, mgr_skill
@@ -677,6 +695,9 @@ class Agent(embodied.jax.Agent):
     self.mgr_extr_slowval.update()
     self.mgr_expl_slowval.update()
     self.wkr_goal_slowval.update()
+    if self.use_pmpo_actor:
+      self.pol_slow.update()
+      self.manager_pol_slow.update()
     outs = {}
     if self.config.replay_context:
       updates = elements.tree.flatdict(dict(
@@ -796,8 +817,10 @@ class Agent(embodied.jax.Agent):
     inp_downsampled = self.feat2tensor(jax.tree.map(lambda x: x[:, ::self.manager_sample_freq], imgfeat))
     # Detach manager-produced goals from worker actor/critic.
     goals = sg(self._goals_from_skills(jax.tree.map(sg, mgr_skills), bdims=2))
-    feat_goal = self._feat_goal2tensor(imgfeat, goals)
     mgr_policy = mgr_as_dict(self.manager_pol(inp_downsampled, 2))
+    mgr_policy_prior = (
+        mgr_as_dict(self.manager_pol_slow(inp_downsampled, 2))
+        if self.use_pmpo_actor else None)
     con = self.con(inp, 2).prob(1)
     mgr_cont = self._mgr_cont(con, without_zeros=True)
     rew_step = sg(self.rew(inp, 2).pred())
@@ -806,7 +829,6 @@ class Agent(embodied.jax.Agent):
     expl_step = sg(self._mgr_expl_reward(imgfeat))
     mgr_expl_rew = self._mgr_extr_rew(expl_step, con, without_zeros=True)
     mgr_expl_rew = imag_reward_pad(mgr_expl_rew)
-    wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
 
     kwargs_mgr = {**self.config.imag_loss}
     kwargs_mgr.update(
@@ -814,7 +836,9 @@ class Agent(embodied.jax.Agent):
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
         mgr_expl_weight=self.mgr_expl_weight,
-        actent=self.config.manager_actent)
+        actent=self.config.manager_actent,
+        slowtar=self.config.manager_slowtar)
+
     los_mgr, imgloss_mgr_out, mets_mgr = imag_loss_mgr(
         mgr_skills_downsampled,
         mgr_extr_rew,
@@ -831,27 +855,70 @@ class Agent(embodied.jax.Agent):
         self.mgr_expl_valnorm,
         self.mgr_extr_advnorm,
         self.mgr_expl_advnorm,
+        manager_policy_prior=mgr_policy_prior,
         **kwargs_mgr)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
 
+    # --- Worker actor-critic (Director ``split_traj``: per-skill-window fixed goal) ---
+    K = self.manager_sample_freq
+    M = B * K_imag
     kwargs_wkr = {**self.config.imag_loss}
     kwargs_wkr.update(
         update=training,
         contdisc=self.config.contdisc,
         horizon=self.config.horizon)
-    los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
-        imgact,
-        wkr_goal_rew,
-        con,
-        self.pol(feat_goal, 2),
-        self.wkr_goal_val(feat_goal, 2),
-        self.wkr_goal_slowval(feat_goal, 2),
-        self.wkr_goal_retnorm,
-        self.wkr_goal_valnorm,
-        self.wkr_goal_advnorm,
-        **kwargs_wkr)
-    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_wkr.items()})
+    if self.config.worker_split_traj and H >= K and H % K == 0:
+      # Reshape the rollout into overlapping windows of length K+1. Each window uses
+      # the goal decoded at its *start* state for all K+1 steps (incl. the shared
+      # boundary), so the worker reward, value, and lambda-return bootstrap stay
+      # within a single goal — no leak across goal switches (Director ``split_traj``).
+      n_win = H // K
+      win_starts = jnp.arange(n_win) * K
+      win_idx = win_starts[:, None] + jnp.arange(K + 1)        # (n_win, K+1)
+      merge = lambda x: x.reshape((M * n_win,) + x.shape[2:])
+      win = lambda x: merge(x[:, win_idx])                     # (M, H+1, ..) -> (M*n_win, K+1, ..)
+      win_feat = jax.tree.map(win, imgfeat)
+      win_act = jax.tree.map(win, imgact)
+      win_con = win(con)
+      win_goal = merge(jnp.broadcast_to(
+          goals[:, win_starts][:, :, None],
+          (M, n_win, K + 1) + goals.shape[2:]))             # window goal held constant
+      win_feat_goal = self._feat_goal2tensor(win_feat, win_goal)
+      win_goal_rew = self._wkr_goal_reward(win_goal, win_feat)
+      kwargs_wkr.update(skill_window=0)                         # each window is its own segment
+      win_policy_prior = (
+          self.pol_slow(win_feat_goal, 2) if self.use_pmpo_actor else None)
+      los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
+          win_act, win_goal_rew, win_con,
+          self.pol(win_feat_goal, 2),
+          self.wkr_goal_val(win_feat_goal, 2),
+          self.wkr_goal_slowval(win_feat_goal, 2),
+          self.wkr_goal_retnorm, self.wkr_goal_valnorm, self.wkr_goal_advnorm,
+          policy_prior=win_policy_prior,
+          **kwargs_wkr)
+      losses.update({k: v.mean(1).reshape((B, -1)) for k, v in los_wkr.items()})
+      # Repval bootstrap: first window's return at the imagination start, per start state.
+      boot_goal_full = imgloss_wkr_out['wkr_goal_ret'].reshape(
+          M, n_win, -1)[:, 0, 0].reshape(B, K_imag)
+    else:
+      # Fallback (e.g. H not a multiple of K): dense rollout with the lambda-return
+      # reset at window boundaries via the ``skill_window`` mask.
+      feat_goal = self._feat_goal2tensor(imgfeat, goals)
+      wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
+      kwargs_wkr.update(skill_window=K)
+      feat_policy_prior = (
+          self.pol_slow(feat_goal, 2) if self.use_pmpo_actor else None)
+      los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
+          imgact, wkr_goal_rew, con,
+          self.pol(feat_goal, 2),
+          self.wkr_goal_val(feat_goal, 2),
+          self.wkr_goal_slowval(feat_goal, 2),
+          self.wkr_goal_retnorm, self.wkr_goal_valnorm, self.wkr_goal_advnorm,
+          policy_prior=feat_policy_prior,
+          **kwargs_wkr)
+      losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_wkr.items()})
+      boot_goal_full = imgloss_wkr_out['wkr_goal_ret'][:, 0].reshape(B, K_imag)
     metrics.update(mets_wkr)
 
     # --- Optional replay value loss (tail of real sequence + imag bootstrap) ---
@@ -860,7 +927,7 @@ class Agent(embodied.jax.Agent):
       last, term = [obs[k] for k in ('is_last', 'is_terminal')]
       boot_extr = imgloss_mgr_out['ret'][:, 0].reshape(B, K_imag)
       boot_expl = imgloss_mgr_out['mgr_expl_ret'][:, 0].reshape(B, K_imag)
-      boot_goal = imgloss_wkr_out['wkr_goal_ret'][:, 0].reshape(B, K_imag)
+      boot_goal = boot_goal_full
       if K_repl != K_imag:
         boot_extr = jnp.broadcast_to(boot_extr[:, -1:], (B, K_repl))
         boot_expl = jnp.broadcast_to(boot_expl[:, -1:], (B, K_repl))
@@ -902,7 +969,7 @@ class Agent(embodied.jax.Agent):
       inp_wkr = self.feat2tensor(feat_wkr)
       repl_skills = jax.tree.map(
           lambda x: x[:, -K_repl:],
-          self._manager_skills_on_sequence(feat))
+          self._manager_skills_on_sequence(feat, deterministic=True))
       # Detach manager goals in replay value path.
       repl_goals = sg(self._goals_from_skills(jax.tree.map(sg, repl_skills), bdims=2))
       feat_goal_wkr = self._feat_goal2tensor(feat_wkr, repl_goals)
@@ -1221,31 +1288,43 @@ def policy_time_slice(x):
   return x[:, :-1]
 
 
-def policy_behavior_kl(policy):
-  """KL(policy || prior) with prior = stop-grad behavioral copy."""
+def pmpo_global_sum(x):
+  """Sum over all local (batch x time) elements, all-reduced across data axes.
+
+  PMPO partitions imagined states into D+/D- over the *full* (batch x time)
+  population (DreamerV4 eq. 11), so the |D+|/|D-| counts must pool globally, not
+  per trajectory row. For multi-device, all-reduce over the data axes.
+  """
+  s = jnp.sum(x)
+  axes = jaxinternal.get_data_axes()
+  if axes:
+    s = jax.lax.psum(s, axes)
+  return s
+
+
+def policy_behavior_kl(policy, prior=None):
+  """KL(policy || prior) reduced over skill axes to ``(batch, time)``.
+
+  ``prior`` is a separate stop-grad behavioral policy (e.g. a slow/EMA copy).
+  If ``prior`` is None, falls back to the same-forward-pass copy (KL == 0).
+  """
   total = None
-  for v in policy.values():
-    head = v
+  for k, v in policy.items():
     inner = _head_inner(v)
-    if isinstance(inner, outs.OneHot):
-      d = inner.dist
-      logits = d.logits
+    pri = _head_inner(prior[k]) if prior is not None else inner
+    if isinstance(inner, (outs.OneHot, outs.Categorical)):
+      logits = inner.dist.logits if isinstance(inner, outs.OneHot) else inner.logits
+      prilogits = pri.dist.logits if isinstance(pri, outs.OneHot) else pri.logits
       logp = jax.nn.log_softmax(logits, -1)
       p = jax.nn.softmax(logits, -1)
-      logpref = jax.nn.log_softmax(sg(logits), -1)
-      kl = (p * (logp - logpref)).sum(-1)
-    elif isinstance(inner, outs.Categorical):
-      logits = inner.logits
-      logp = jax.nn.log_softmax(logits, -1)
-      p = jax.nn.softmax(logits, -1)
-      logpref = jax.nn.log_softmax(sg(logits), -1)
+      logpref = jax.nn.log_softmax(sg(prilogits), -1)
       kl = (p * (logp - logpref)).sum(-1)
     elif isinstance(inner, outs.Normal):
-      ref = outs.Normal(sg(inner.mean), sg(inner.stddev))
+      ref = outs.Normal(sg(pri.mean), sg(pri.stddev))
       kl = inner.kl(ref)
     else:
       raise NotImplementedError(type(inner))
-  # Reduce skill axes only; do not use ``Agg.axes`` on tensors that include time.
+    # Reduce skill axes only; do not use ``Agg.axes`` on tensors that include time.
     while kl.ndim > 2:
       kl = kl.sum(-1)
     total = kl if total is None else total + kl
@@ -1272,6 +1351,8 @@ def imag_loss_wkr(
     use_pmpo_actor=False,
     pmpo_beta=0.3,
     pmpo_alpha=0.5,
+    skill_window=0,
+    policy_prior=None,
 ):
   """Worker actor-critic losses on imagined trajectories."""
   losses = {}
@@ -1288,7 +1369,15 @@ def imag_loss_wkr(
   disc = 1 if contdisc else 1 - 1 / horizon
   # Discounted continuation weights from predicted continue probs ``con``.
   weight = jnp.cumprod(disc * con, 1) / disc
-  last = jnp.zeros_like(con)
+  # Reset the lambda-return at goal-window boundaries (every ``skill_window`` steps)
+  # so V(s, g) bootstraps within its own skill window instead of across goal switches
+  # (Director ``split_traj``). ``skill_window <= 1`` keeps the full-horizon return.
+  if skill_window and skill_window > 1:
+    pos = jnp.arange(con.shape[1])
+    boundary = (pos % skill_window == 0) & (pos > 0)
+    last = jnp.broadcast_to(boundary.astype(f32), con.shape)
+  else:
+    last = jnp.zeros_like(con)
   term = 1 - con
 
   wkr_goal_ret = lambda_return(
@@ -1308,21 +1397,23 @@ def imag_loss_wkr(
   w = sg(weight[:, :-1])
 
   if use_pmpo_actor:
-    # PMPO target formula:
-    # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
+    # PMPO (DreamerV4 eq. 11) as a global mean over all imagined states (Bug C):
+    #   (1-α) mean_{D-} ln π - α mean_{D+} ln π + β mean KL(π || prior).
     wkr_goal_adv_raw = wkr_goal_ret - wkr_goal_tarval[:, :-1]
     wkr_goal_pos = (wkr_goal_adv_raw >= 0).astype(f32)
     wkr_goal_neg = (wkr_goal_adv_raw < 0).astype(f32)
-    wkr_goal_den_p = jnp.maximum(jnp.sum(wkr_goal_pos, axis=-1, keepdims=True), 1.0)
-    wkr_goal_den_n = jnp.maximum(jnp.sum(wkr_goal_neg, axis=-1, keepdims=True), 1.0)
+    wkr_n_tot = jnp.maximum(pmpo_global_sum(jnp.ones_like(wkr_goal_pos)), 1.0)
+    wkr_goal_den_p = jnp.maximum(pmpo_global_sum(wkr_goal_pos), 1.0)
+    wkr_goal_den_n = jnp.maximum(pmpo_global_sum(wkr_goal_neg), 1.0)
 
-    wkr_goal_pos_coeff = pmpo_alpha * wkr_goal_pos / wkr_goal_den_p
-    wkr_goal_neg_coeff = (1.0 - pmpo_alpha) * wkr_goal_neg / wkr_goal_den_n
+    wkr_goal_pos_coeff = pmpo_alpha * (wkr_n_tot / wkr_goal_den_p) * wkr_goal_pos
+    wkr_goal_neg_coeff = (1.0 - pmpo_alpha) * (wkr_n_tot / wkr_goal_den_n) * wkr_goal_neg
 
-    wkr_kl_t = policy_time_slice(policy_behavior_kl(policy))
+    wkr_kl_t = policy_time_slice(policy_behavior_kl(policy, policy_prior))
     wkr_goal_policy_loss = (wkr_goal_neg_coeff - wkr_goal_pos_coeff) * wkr_logpi + pmpo_beta * wkr_kl_t
 
     metrics['wkr_goal_kl_behavior'] = wkr_kl_t.mean()
+    metrics['wkr_pmpo_frac_pos'] = wkr_goal_den_p / wkr_n_tot
   else:
     wkr_goal_policy_loss = w * -(
         wkr_logpi * sg(wkr_goal_adv_normed) + actent * sum(wkr_ents.values()))
@@ -1400,6 +1491,7 @@ def imag_loss_mgr(
     pmpo_beta=0.3,
     pmpo_alpha=0.5,
     mgr_expl_weight=0.1,
+    manager_policy_prior=None,
 ):
   """Manager actor-critic losses on imagined trajectories."""
   losses = {}
@@ -1452,23 +1544,28 @@ def imag_loss_mgr(
   w = sg(weight[:, :-1])
 
   if use_pmpo_actor:
-    # PMPO target formula:
-    # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
+    # PMPO (DreamerV4 eq. 11), as a single global mean over all imagined states:
+    #   (1-α) mean_{D-} ln π  -  α mean_{D+} ln π  +  β mean KL(π || prior).
+    # D+/D- are partitioned over the FULL (batch x time) population (Bug C); the
+    # n_tot/|D±| factor turns the outer per-element mean into the D±-population
+    # mean (otherwise global pooling would shrink the loss by ~1/N).
     mgr_total_adv_raw = mgr_extr_ret + mgr_expl_weight * mgr_expl_ret - (mgr_extr_tarval + mgr_expl_weight * mgr_expl_tarval)[:, :-1]
 
     mgr_pos = (mgr_total_adv_raw >= 0).astype(f32)
     mgr_neg = (mgr_total_adv_raw < 0).astype(f32)
 
-    mgr_den_p = jnp.maximum(jnp.sum(mgr_pos, axis=-1, keepdims=True), 1.0)
-    mgr_den_n = jnp.maximum(jnp.sum(mgr_neg, axis=-1, keepdims=True), 1.0)
+    mgr_n_tot = jnp.maximum(pmpo_global_sum(jnp.ones_like(mgr_pos)), 1.0)
+    mgr_den_p = jnp.maximum(pmpo_global_sum(mgr_pos), 1.0)
+    mgr_den_n = jnp.maximum(pmpo_global_sum(mgr_neg), 1.0)
 
-    mgr_pos_coeff = pmpo_alpha * mgr_pos / mgr_den_p
-    mgr_neg_coeff = (1.0 - pmpo_alpha) * mgr_neg / mgr_den_n
+    mgr_pos_coeff = pmpo_alpha * (mgr_n_tot / mgr_den_p) * mgr_pos
+    mgr_neg_coeff = (1.0 - pmpo_alpha) * (mgr_n_tot / mgr_den_n) * mgr_neg
 
-    mgr_kl_t = policy_time_slice(policy_behavior_kl(manager_policy))
+    mgr_kl_t = policy_time_slice(policy_behavior_kl(manager_policy, manager_policy_prior))
     losses['mgr_policy'] = (mgr_neg_coeff - mgr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
 
     metrics['mgr_kl_behavior'] = mgr_kl_t.mean()
+    metrics['mgr_pmpo_frac_pos'] = mgr_den_p / mgr_n_tot
   else:
     losses['mgr_policy'] = w * -(
         mgr_logpi * sg(mgr_total_adv) + actent * sum(mgr_ents.values()))

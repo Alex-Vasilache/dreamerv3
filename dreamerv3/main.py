@@ -210,8 +210,16 @@ def make_logger(config):
       outputs.append(elements.logger.ExpaOutput(
           exp, run, proj, config.logger.user, config.flat))
     elif output == 'wandb':
-      name = '/'.join(logdir.split('/')[-4:])
-      outputs.append(elements.logger.WandBOutput(name))
+      name = '/'.join(logdir.split('/')[-3:])
+      kwargs = dict(
+          mode=config.logger.wandb_mode,
+          config=config.flat,
+      )
+      if config.logger.wandb_project:
+        kwargs['project'] = config.logger.wandb_project
+      if config.logger.wandb_entity:
+        kwargs['entity'] = config.logger.wandb_entity
+      outputs.append(elements.logger.WandBOutput(name, **kwargs))
     elif output == 'scope':
       outputs.append(elements.logger.ScopeOutput(elements.Path(logdir)))
     else:
