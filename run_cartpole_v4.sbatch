@@ -35,7 +35,7 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --agent.dec.simple.outer True \
   --online_learning False \
   --online_actor_cpu False \
-  --run.envs 1 \
+  --run.envs 16 \
   --run.steps 4000000 \
   --logger.outputs jsonl,scope,wandb \
   --logger.wandb_mode online \
