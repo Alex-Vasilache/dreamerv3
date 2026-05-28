@@ -210,16 +210,23 @@ def make_logger(config):
       outputs.append(elements.logger.ExpaOutput(
           exp, run, proj, config.logger.user, config.flat))
     elif output == 'wandb':
+      import hashlib
       name = '/'.join(logdir.split('/')[-3:])
+      run_id = hashlib.md5(logdir.encode()).hexdigest()[:8]
       kwargs = dict(
           mode=config.logger.wandb_mode,
           config=config.flat,
+          id=run_id,
+          resume='allow',
       )
       if config.logger.wandb_project:
         kwargs['project'] = config.logger.wandb_project
       if config.logger.wandb_entity:
         kwargs['entity'] = config.logger.wandb_entity
-      outputs.append(elements.logger.WandBOutput(name, **kwargs))
+      try:
+        outputs.append(elements.logger.WandBOutput(name, **kwargs))
+      except Exception as e:
+        print(f'WandB init failed, skipping WandB output: {e}')
     elif output == 'scope':
       outputs.append(elements.logger.ScopeOutput(elements.Path(logdir)))
     else:

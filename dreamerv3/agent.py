@@ -287,11 +287,15 @@ class Agent(embodied.jax.Agent):
           embodied.jax.MLPHead(self.goal_code_space, **config.manager_policy, name='manager_pol_slow'),
           source=self.manager_pol, **config.slowvalue)
 
-    # Value and EMA target for bootstrapping / slow regularizer in ``imag_loss``.
-    self.mgr_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_val')
-    self.mgr_slowval = embodied.jax.SlowModel(
-        embodied.jax.MLPHead(scalar, **config.value, name='mgr_slowval'),
-        source=self.mgr_val, **config.slowvalue)
+    # Separate extrinsic and exploratory value heads (+ EMA targets).
+    self.mgr_extr_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_val')
+    self.mgr_extr_slowval = embodied.jax.SlowModel(
+        embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_slowval'),
+        source=self.mgr_extr_val, **config.slowvalue)
+    self.mgr_expl_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_val')
+    self.mgr_expl_slowval = embodied.jax.SlowModel(
+        embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_slowval'),
+        source=self.mgr_expl_val, **config.slowvalue)
 
     self.wkr_goal_val = embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_val')
     self.wkr_goal_slowval = embodied.jax.SlowModel(
@@ -321,7 +325,8 @@ class Agent(embodied.jax.Agent):
         self.con,
         self.manager_pol,
         self.pol,
-        self.mgr_val,
+        self.mgr_extr_val,
+        self.mgr_expl_val,
         self.wkr_goal_val,
     ]
     self.opt = embodied.jax.Optimizer(
@@ -336,11 +341,13 @@ class Agent(embodied.jax.Agent):
     value_scale = scales.pop('value', 1.0)
     scales['mgr_policy'] = policy_scale
     scales['wkr_policy'] = policy_scale
-    scales['mgr_value'] = value_scale
+    scales['mgr_extr_value'] = value_scale
+    scales['mgr_expl_value'] = value_scale
     scales['wkr_goal_value'] = value_scale
     if 'repval' in scales:
       repval_scale = scales.pop('repval')
-      scales['repmgr_value'] = repval_scale
+      scales['repmgr_extr_value'] = repval_scale
+      scales['repmgr_expl_value'] = repval_scale
       scales['repwkr_goal_value'] = repval_scale
     self.scales = scales
 
@@ -815,6 +822,7 @@ class Agent(embodied.jax.Agent):
     mgr_cont = self._mgr_cont(con, without_zeros=True)
     rew_step = sg(self.rew(inp, 2).pred())
     mgr_extr_rew = self._mgr_extr_rew(rew_step, con, without_zeros=True)
+    mgr_extr_rew = imag_reward_pad(mgr_extr_rew)
     expl_step = sg(self._mgr_expl_reward(imgfeat))
     mgr_expl_rew = self._mgr_extr_rew(expl_step, con, without_zeros=True)
     mgr_expl_rew = imag_reward_pad(mgr_expl_rew)
@@ -834,8 +842,10 @@ class Agent(embodied.jax.Agent):
         mgr_expl_rew,
         mgr_cont,
         mgr_policy,
-        self.mgr_val(inp_downsampled, 2),
-        self.mgr_slowval(inp_downsampled, 2),
+        self.mgr_extr_val(inp_downsampled, 2),
+        self.mgr_extr_slowval(inp_downsampled, 2),
+        self.mgr_expl_val(inp_downsampled, 2),
+        self.mgr_expl_slowval(inp_downsampled, 2),
         self.mgr_extr_retnorm,
         self.mgr_expl_retnorm,
         self.mgr_valnorm,
@@ -943,9 +953,9 @@ class Agent(embodied.jax.Agent):
       # Compute aggregated continuation and rewards on full sequence
       repl_con_full = self.con(self.feat2tensor(feat), 2).prob(1)
       repl_mgr_cont = self._mgr_cont(repl_con_full, without_zeros=True)
-      repl_mgr_extr_rew = self._mgr_extr_rew(self.rew(self.feat2tensor(feat), 2).pred(), repl_con_full, without_zeros=True)
+      repl_mgr_extr_rew = imag_reward_pad(self._mgr_extr_rew(self.rew(self.feat2tensor(feat), 2).pred(), repl_con_full, without_zeros=True))
       repl_expl_step = self._mgr_expl_reward(feat)
-      repl_mgr_expl_rew = self._mgr_extr_rew(repl_expl_step, repl_con_full, without_zeros=True)
+      repl_mgr_expl_rew = imag_reward_pad(self._mgr_extr_rew(repl_expl_step, repl_con_full, without_zeros=True))
 
       # --- 2. Dense Replay sequence for Worker ---
       feat_wkr, last_wkr, term_wkr, boot_goal_wkr = jax.tree.map(
@@ -976,16 +986,21 @@ class Agent(embodied.jax.Agent):
       weight_down = f32(~last_down)
       disc = 1 - 1 / self.config.horizon
       lam = 0.95 # matches repl_loss default
-      ret_extr = lambda_return(last_down, term_down, repl_mgr_extr_rew, jnp.zeros_like(repl_mgr_extr_rew), boot_extr, disc, lam)
-      ret_expl = lambda_return(last_down, term_down, repl_mgr_expl_rew, jnp.zeros_like(repl_mgr_expl_rew), boot_expl, disc, lam)
+      boot_extr_down = jnp.broadcast_to(boot_extr[:, -1:], repl_mgr_extr_rew.shape)
+      boot_expl_down = jnp.broadcast_to(boot_expl[:, -1:], repl_mgr_expl_rew.shape)
+      ret_extr = lambda_return(last_down, term_down, repl_mgr_extr_rew, jnp.zeros_like(repl_mgr_extr_rew), boot_extr_down, disc, lam)
+      ret_expl = lambda_return(last_down, term_down, repl_mgr_expl_rew, jnp.zeros_like(repl_mgr_expl_rew), boot_expl_down, disc, lam)
 
-      ret_total = (ret_extr - voff_extr) / vscale_extr + self.mgr_expl_weight * (ret_expl - voff_expl) / vscale_expl
-
-      voff, vscale = self.mgr_valnorm(ret_total, training)
-      ret_padded = jnp.concatenate([(ret_total - voff) / vscale, jnp.zeros_like(ret_total[:, -1:])], 1)
-      losses['repmgr_value'] = weight_down[:, :-1] * (
-          self.mgr_val(inp_down, 2).loss(sg(ret_padded)) +
-          1.0 * self.mgr_val(inp_down, 2).loss(sg(self.mgr_slowval(inp_down, 2).pred())))[:, :-1]
+      ret_extr_normed = (ret_extr - voff_extr) / vscale_extr
+      ret_extr_padded = jnp.concatenate([ret_extr_normed, jnp.zeros_like(ret_extr_normed[:, -1:])], 1)
+      losses['repmgr_extr_value'] = weight_down[:, :-1] * (
+          self.mgr_extr_val(inp_down, 2).loss(sg(ret_extr_padded)) +
+          1.0 * self.mgr_extr_val(inp_down, 2).loss(sg(self.mgr_extr_slowval(inp_down, 2).pred())))[:, :-1]
+      ret_expl_normed = (ret_expl - voff_expl) / vscale_expl
+      ret_expl_padded = jnp.concatenate([ret_expl_normed, jnp.zeros_like(ret_expl_normed[:, -1:])], 1)
+      losses['repmgr_expl_value'] = weight_down[:, :-1] * (
+          self.mgr_expl_val(inp_down, 2).loss(sg(ret_expl_padded)) +
+          1.0 * self.mgr_expl_val(inp_down, 2).loss(sg(self.mgr_expl_slowval(inp_down, 2).pred())))[:, :-1]
       metrics.update(prefix({}, 'repmgr')) # TODO add metrics if needed
 
       # Worker Goal Replay Value Loss
@@ -1446,8 +1461,10 @@ def imag_loss_mgr(
     mgr_expl_rew,
     con,
     manager_policy,
-    mgr_value,
-    mgr_slowvalue,
+    mgr_extr_value,
+    mgr_extr_slowvalue,
+    mgr_expl_value,
+    mgr_expl_slowvalue,
     mgr_extr_retnorm,
     mgr_expl_retnorm,
     mgr_valnorm,
@@ -1469,12 +1486,16 @@ def imag_loss_mgr(
   losses = {}
   metrics = {}
 
-  # Unnormalize critic predictions for bootstrapping and advantage baseline.
+  # Separate extrinsic and exploratory critic predictions.
   mgr_voffset, mgr_vscale = mgr_valnorm.stats()
 
-  mgr_val = mgr_value.pred() * mgr_vscale + mgr_voffset
-  mgr_slowval = mgr_slowvalue.pred() * mgr_vscale + mgr_voffset
-  mgr_tarval = mgr_slowval if slowtar else mgr_val
+  mgr_extr_val = mgr_extr_value.pred() * mgr_vscale + mgr_voffset
+  mgr_extr_slowval = mgr_extr_slowvalue.pred() * mgr_vscale + mgr_voffset
+  mgr_extr_tarval = mgr_extr_slowval if slowtar else mgr_extr_val
+
+  mgr_expl_val = mgr_expl_value.pred() * mgr_vscale + mgr_voffset
+  mgr_expl_slowval = mgr_expl_slowvalue.pred() * mgr_vscale + mgr_voffset
+  mgr_expl_tarval = mgr_expl_slowval if slowtar else mgr_expl_val
 
   # Discount per step: either γ or finite-horizon (1 - 1/horizon) when not contdisc.
   disc = 1 if contdisc else 1 - 1 / horizon
@@ -1484,7 +1505,7 @@ def imag_loss_mgr(
   term = 1 - con
 
   mgr_extr_ret = lambda_return(
-      last, term, mgr_extr_rew, mgr_tarval, jnp.zeros_like(mgr_extr_rew), disc, lam)
+      last, term, mgr_extr_rew, mgr_extr_tarval, jnp.zeros_like(mgr_extr_rew), disc, lam)
   mgr_expl_ret = lambda_return(
       last, term, mgr_expl_rew, mgr_expl_tarval, jnp.zeros_like(mgr_expl_rew), disc, lam)
 
@@ -1496,7 +1517,12 @@ def imag_loss_mgr(
 
   mgr_total_ret = mgr_extr_ret_normed + mgr_expl_weight * mgr_expl_ret_normed
 
-  mgr_adv = (mgr_total_ret - mgr_tarval[:, :-1])
+  # Normalize tarvals to return space for consistent advantage baseline.
+  mgr_extr_tarval_normed = (mgr_extr_tarval - voff_extr) / vscale_extr
+  mgr_expl_tarval_normed = (mgr_expl_tarval - voff_expl) / vscale_expl
+  mgr_extr_adv = mgr_extr_ret_normed - mgr_extr_tarval_normed[:, :-1]
+  mgr_expl_adv = mgr_expl_ret_normed - mgr_expl_tarval_normed[:, :-1]
+  mgr_adv = mgr_extr_adv + mgr_expl_weight * mgr_expl_adv
   mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 
@@ -1510,7 +1536,7 @@ def imag_loss_mgr(
   if use_pmpo_actor:
     # PMPO target formula:
     # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
-    mgr_adv_raw = mgr_total_ret - mgr_tarval[:, :-1]
+    mgr_adv_raw = mgr_total_ret - (mgr_extr_tarval_normed + mgr_expl_weight * mgr_expl_tarval_normed)[:, :-1]
 
     mgr_pos = (mgr_adv_raw >= 0).astype(f32)
     mgr_neg = (mgr_adv_raw < 0).astype(f32)
@@ -1537,28 +1563,34 @@ def imag_loss_mgr(
   metrics['mgr_extr_rew_block'] = mgr_extr_rew[:, 1:].sum() / nz
   metrics['mgr_expl_rew'] = mgr_expl_rew.mean()
 
-  # NLL of value distribution against combined standardized λ-returns
-  mgr_voffset, mgr_vscale = mgr_valnorm(mgr_total_ret, update)
-  mgr_tar_normed = (mgr_total_ret - mgr_voffset) / mgr_vscale
-  mgr_tar_padded = jnp.concatenate([mgr_tar_normed, 0 * mgr_tar_normed[:, -1:]], 1)
+  # Separate NLL losses for each critic.
+  mgr_extr_tar_padded = jnp.concatenate([mgr_extr_ret_normed, 0 * mgr_extr_ret_normed[:, -1:]], 1)
+  losses['mgr_extr_value'] = sg(weight[:, :-1]) * (
+      mgr_extr_value.loss(sg(mgr_extr_tar_padded)) +
+      slowreg * mgr_extr_value.loss(sg(mgr_extr_slowvalue.pred())))[:, :-1]
 
-  losses['mgr_value'] = sg(weight[:, :-1]) * (
-      mgr_value.loss(sg(mgr_tar_padded)) +
-      slowreg * mgr_value.loss(sg(mgr_slowvalue.pred())))[:, :-1]
+  mgr_expl_tar_padded = jnp.concatenate([mgr_expl_ret_normed, 0 * mgr_expl_ret_normed[:, -1:]], 1)
+  losses['mgr_expl_value'] = sg(weight[:, :-1]) * (
+      mgr_expl_value.loss(sg(mgr_expl_tar_padded)) +
+      slowreg * mgr_expl_value.loss(sg(mgr_expl_slowvalue.pred())))[:, :-1]
 
   metrics['mgr_adv'] = mgr_adv.mean()
   metrics['mgr_adv_std'] = mgr_adv.std()
   metrics['mgr_adv_mag'] = jnp.abs(mgr_adv_normed).mean()
+  metrics['mgr_extr_adv'] = mgr_extr_adv.mean()
+  metrics['mgr_expl_adv'] = mgr_expl_adv.mean()
 
   metrics['mgr_con'] = con.mean()
   metrics['mgr_total_ret'] = mgr_total_ret.mean()
   metrics['mgr_extr_ret'] = mgr_extr_ret_normed.mean()
   metrics['mgr_expl_ret'] = mgr_expl_ret_normed.mean()
-  metrics['mgr_val'] = mgr_val.mean()
-  metrics['mgr_tar'] = mgr_tar_normed.mean()
+  metrics['mgr_extr_val'] = mgr_extr_val.mean()
+  metrics['mgr_expl_val'] = mgr_expl_val.mean()
+  metrics['mgr_extr_tar'] = mgr_extr_ret_normed.mean()
+  metrics['mgr_expl_tar'] = mgr_expl_ret_normed.mean()
   metrics['mgr_weight'] = weight.mean()
-
-  metrics['mgr_slowval'] = mgr_slowval.mean()
+  metrics['mgr_extr_slowval'] = mgr_extr_slowval.mean()
+  metrics['mgr_expl_slowval'] = mgr_expl_slowval.mean()
 
   for k in skills:
     metrics[f'mgr_ent/{k}'] = mgr_ents[k].mean()

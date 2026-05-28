@@ -32,8 +32,8 @@ defaults:
     fps: 15
     user: ''
     wandb_project: dreamerv3
-    wandb_entity: alexandru-vasilache
-    wandb_mode: offline
+    wandb_entity: vasilache
+    wandb_mode: online
 
   env:
     atari: {size: [96, 96], repeat: 4, sticky: True, gray: True, actions: all, lives: unused, noops: 30, autostart: False, pooling: 2, aggregate: max, resize: pillow, clip_reward: False}
