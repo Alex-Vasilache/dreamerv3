@@ -121,7 +121,12 @@ class Head(nj.Module):
   def onehot(self, x):
     assert not self.space.discrete
     logits = self.sub('logits', nets.Linear, self.space.shape, **self.kw)(x)
-    return outs.OneHot(logits, self.unimix)
+    output = outs.OneHot(logits, self.unimix)
+    classes = self.space.shape[-1]
+    outer = int(np.prod(self.space.shape[:-1])) if len(self.space.shape) > 1 else 1
+    output.minent = 0.0
+    output.maxent = float(outer * np.log(classes))
+    return output
 
   def mse(self, x):
     assert not self.space.discrete

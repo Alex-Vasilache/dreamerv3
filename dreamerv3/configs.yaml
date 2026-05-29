@@ -115,17 +115,35 @@ defaults:
     goal_enc: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in}
     goal_dec: {layers: 3, units: 1024, act: silu, norm: rms, output: mse, outscale: 0.1, winit: trunc_normal_in}
     # Director-style factorized codes: L categoricals × C classes (L×C logits, L×C one-hot).
+    # Master HRL switch. When False, the agent collapses to the v4-online flat AC:
+    # single ``pol``/``val`` over WM features, no manager/goal-VAE, no skill aggregation.
+    use_hrl: True
     skill_shape: [8, 8]
     skill_classes: 8
     goal_autoencoder_beta: 1.0
     # If false, KL term inside ``goal_autoencoder`` is zero (rec still trained).
     goal_kl: True
+    # Director ``encdec_kl`` adaptive scale: holds KL(enc||uniform) near target nats.
+    goal_kl_impl: mult
+    goal_kl_target: 10.0
+    goal_kl_min: 1e-5
+    goal_kl_max: 1.0
+    goal_kl_vel: 0.1
+    goal_kl_init: 1.0
     manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in}
     manager_sample_freq: 8
     worker_report_horizon: 32
     worker_split_traj: True
     mgr_expl_weight: 0.1
     manager_actent: 3e-4
+    # Director ``actent`` adaptive scale on per-dim normalized manager entropy.
+    manager_actent_impl: mult
+    manager_actent_target: 0.5
+    manager_actent_min: 1e-5
+    manager_actent_max: 1e2
+    manager_actent_vel: 0.1
+    manager_actent_init: 1.0
+    manager_actent_perdim: True
     manager_slowtar: False
     policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
     value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
@@ -153,6 +171,15 @@ defaults:
     repval_grad: True
     report: True
     report_gradnorms: False
+    # Subset of HRL goal-proposal modes to render videos for. Director's original
+    # list was ['manager','prior','replay']; ['manager'] keeps the most useful one
+    # and drops two redundant video panels per imgkey.
+    report_impl_videos: [manager]
+    # Limit number of replay rows visualised in report() videos (was hardcoded 6).
+    report_max_rows: 4
+    # Render the per-step vec-to-rgb summary of deter/skill tensors. These are
+    # debug visualisations and dominate report() time on small models; default off.
+    report_vec_viz: False
 
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}

@@ -216,6 +216,7 @@ class Agent(embodied.jax.Agent):
     self.obs_space = obs_space
     self.act_space = act_space
     self.config = config
+    self.use_hrl = bool(getattr(config, 'use_hrl', True))
 
     self.skill_shape = config.skill_shape
     skill_shape_t = tuple(int(x) for x in self.skill_shape)
@@ -243,15 +244,17 @@ class Agent(embodied.jax.Agent):
 
     # Goal autoencoder (Director): L×C logits, straight-through one-hot sample,
     # flatten to sparse L*C vector for the decoder. ``skill_shape`` is (L, C).
-    self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
-    self.goal_enc = embodied.jax.MLPHead(
-        self.goal_code_space, **config.goal_enc, name='goal_enc')
-    self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
-    self.goal_autoencoder_beta = config.goal_autoencoder_beta
-    # Uniform prior metadata only: built inside ``loss`` with ``zeros_like`` encoder
-    # logits so arrays stay on-device (``jnp.zeros`` here breaks sharded init).
-    self._skill_prior_unimix = float(config.goal_enc.unimix)
-    self._skill_factorized = len(skill_shape_t) > 1
+    # Only built when HRL is enabled — flat mode has no goals.
+    if self.use_hrl:
+      self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
+      self.goal_enc = embodied.jax.MLPHead(
+          self.goal_code_space, **config.goal_enc, name='goal_enc')
+      self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
+      self.goal_autoencoder_beta = config.goal_autoencoder_beta
+      # Uniform prior metadata only: built inside ``loss`` with ``zeros_like`` encoder
+      # logits so arrays stay on-device (``jnp.zeros`` here breaks sharded init).
+      self._skill_prior_unimix = float(config.goal_enc.unimix)
+      self._skill_factorized = len(skill_shape_t) > 1
 
     # Flat RSSM state for MLP heads: deterministic dim + flattened stochastic samples.
     self.feat2tensor = lambda x: jnp.concatenate([
@@ -271,64 +274,106 @@ class Agent(embodied.jax.Agent):
     self.pol = embodied.jax.MLPHead(
         act_space, policy_outs, **config.policy, name='pol')
 
-    self.manager_pol = embodied.jax.MLPHead(
-        self.goal_code_space, **config.manager_policy, name='manager_pol')
-    self.manager_sample_freq = config.manager_sample_freq
+    if self.use_hrl:
+      self.manager_pol = embodied.jax.MLPHead(
+          self.goal_code_space, **config.manager_policy, name='manager_pol')
+      self.manager_sample_freq = config.manager_sample_freq
 
-    # Slow (EMA) behavioral priors for the PMPO reverse-KL term (Bug A). These
-    # are separate stop-grad copies of the policies (not optimized), so the KL
-    # KL(π || π_slow) is non-zero; only evaluated/updated when PMPO is active.
+    # Slow (EMA) behavioral priors for the PMPO reverse-KL term. ``pol_slow`` is
+    # built in both modes when PMPO is on; ``manager_pol_slow`` is HRL-only.
     self.use_pmpo_actor = config.imag_loss.use_pmpo_actor
     if self.use_pmpo_actor:
       self.pol_slow = embodied.jax.SlowModel(
           embodied.jax.MLPHead(act_space, policy_outs, **config.policy, name='pol_slow'),
           source=self.pol, **config.slowvalue)
-      self.manager_pol_slow = embodied.jax.SlowModel(
-          embodied.jax.MLPHead(self.goal_code_space, **config.manager_policy, name='manager_pol_slow'),
-          source=self.manager_pol, **config.slowvalue)
+      if self.use_hrl:
+        self.manager_pol_slow = embodied.jax.SlowModel(
+            embodied.jax.MLPHead(self.goal_code_space, **config.manager_policy, name='manager_pol_slow'),
+            source=self.manager_pol, **config.slowvalue)
 
-    # Separate extrinsic and exploratory value heads (+ EMA targets).
-    self.mgr_extr_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_val')
-    self.mgr_extr_slowval = embodied.jax.SlowModel(
-        embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_slowval'),
-        source=self.mgr_extr_val, **config.slowvalue)
-    self.mgr_expl_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_val')
-    self.mgr_expl_slowval = embodied.jax.SlowModel(
-        embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_slowval'),
-        source=self.mgr_expl_val, **config.slowvalue)
+    if self.use_hrl:
+      # Separate extrinsic and exploratory value heads (+ EMA targets).
+      self.mgr_extr_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_val')
+      self.mgr_extr_slowval = embodied.jax.SlowModel(
+          embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_slowval'),
+          source=self.mgr_extr_val, **config.slowvalue)
+      self.mgr_expl_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_val')
+      self.mgr_expl_slowval = embodied.jax.SlowModel(
+          embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_slowval'),
+          source=self.mgr_expl_val, **config.slowvalue)
 
-    self.wkr_goal_val = embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_val')
-    self.wkr_goal_slowval = embodied.jax.SlowModel(
-        embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
-        source=self.wkr_goal_val, **config.slowvalue)
+      self.wkr_goal_val = embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_val')
+      self.wkr_goal_slowval = embodied.jax.SlowModel(
+          embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
+          source=self.wkr_goal_val, **config.slowvalue)
 
-    self.mgr_extr_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_extr_retnorm')
-    self.mgr_expl_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_expl_retnorm')
-    self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
+      self.mgr_extr_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_extr_retnorm')
+      self.mgr_expl_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_expl_retnorm')
+      self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
 
-    self.mgr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_valnorm')
-    self.wkr_goal_valnorm = embodied.jax.Normalize(**config.valnorm, name='wkr_goal_valnorm')
+      self.mgr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_valnorm')
+      self.wkr_goal_valnorm = embodied.jax.Normalize(**config.valnorm, name='wkr_goal_valnorm')
 
-    self.mgr_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_advnorm')
-    self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
+      self.mgr_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_advnorm')
+      self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
 
-    self.mgr_expl_weight = config.mgr_expl_weight
+      self.mgr_expl_weight = config.mgr_expl_weight
+
+      # Director-style adaptive Lagrange multipliers (``tfutils.AutoAdapt``).
+      self.manager_actent_perdim = bool(config.manager_actent_perdim)
+      mgr_actent_shape = (skill_shape_t[0],) if self.manager_actent_perdim else ()
+      self.mgr_actent = embodied.jax.AutoAdapt(
+          shape=mgr_actent_shape,
+          impl=config.manager_actent_impl,
+          target=float(config.manager_actent_target),
+          min=float(config.manager_actent_min),
+          max=float(config.manager_actent_max),
+          vel=float(config.manager_actent_vel),
+          inverse=True,
+          init=float(config.manager_actent_init),
+          name='mgr_actent')
+      self.goal_kl_adapter = embodied.jax.AutoAdapt(
+          shape=(),
+          impl=config.goal_kl_impl,
+          target=float(config.goal_kl_target),
+          min=float(config.goal_kl_min),
+          max=float(config.goal_kl_max),
+          vel=float(config.goal_kl_vel),
+          inverse=False,
+          init=float(config.goal_kl_init),
+          name='goal_kl_adapter')
+    else:
+      # Flat AC heads (v4-online): single value/critic over WM features.
+      self.val = embodied.jax.MLPHead(scalar, **config.value, name='val')
+      self.slowval = embodied.jax.SlowModel(
+          embodied.jax.MLPHead(scalar, **config.value, name='slowval'),
+          source=self.val, **config.slowvalue)
+      self.retnorm = embodied.jax.Normalize(**config.retnorm, name='retnorm')
+      self.valnorm = embodied.jax.Normalize(**config.valnorm, name='valnorm')
+      self.advnorm = embodied.jax.Normalize(**config.advnorm, name='advnorm')
 
     # Modules updated by the single ``self.opt`` step in ``train``.
-    self.modules = [
-        self.dyn,
-        self.enc,
-        self.dec,
-        self.goal_enc,
-        self.goal_dec,
-        self.rew,
-        self.con,
-        self.manager_pol,
-        self.pol,
-        self.mgr_extr_val,
-        self.mgr_expl_val,
-        self.wkr_goal_val,
-    ]
+    if self.use_hrl:
+      self.modules = [
+          self.dyn,
+          self.enc,
+          self.dec,
+          self.goal_enc,
+          self.goal_dec,
+          self.rew,
+          self.con,
+          self.manager_pol,
+          self.pol,
+          self.mgr_extr_val,
+          self.mgr_expl_val,
+          self.wkr_goal_val,
+      ]
+    else:
+      self.modules = [
+          self.dyn, self.enc, self.dec,
+          self.rew, self.con,
+          self.pol, self.val,
+      ]
     self.opt = embodied.jax.Optimizer(
         self.modules, self._make_opt(**config.opt), summary_depth=1,
         name='opt')
@@ -337,18 +382,24 @@ class Agent(embodied.jax.Agent):
     scales = self.config.loss_scales.copy()
     rec = scales.pop('rec')
     scales.update({k: rec for k in dec_space})
-    policy_scale = scales.pop('policy', 1.0)
-    value_scale = scales.pop('value', 1.0)
-    scales['mgr_policy'] = policy_scale
-    scales['wkr_policy'] = policy_scale
-    scales['mgr_extr_value'] = value_scale
-    scales['mgr_expl_value'] = value_scale
-    scales['wkr_goal_value'] = value_scale
-    if 'repval' in scales:
-      repval_scale = scales.pop('repval')
-      scales['repmgr_extr_value'] = repval_scale
-      scales['repmgr_expl_value'] = repval_scale
-      scales['repwkr_goal_value'] = repval_scale
+    if self.use_hrl:
+      policy_scale = scales.pop('policy', 1.0)
+      value_scale = scales.pop('value', 1.0)
+      scales['mgr_policy'] = policy_scale
+      scales['wkr_policy'] = policy_scale
+      scales['mgr_extr_value'] = value_scale
+      scales['mgr_expl_value'] = value_scale
+      scales['wkr_goal_value'] = value_scale
+      if 'repval' in scales:
+        repval_scale = scales.pop('repval')
+        scales['repmgr_extr_value'] = repval_scale
+        scales['repmgr_expl_value'] = repval_scale
+        scales['repwkr_goal_value'] = repval_scale
+    else:
+      # Flat mode: keep ``policy``/``value``/``repval`` (default keys), drop HRL-only.
+      scales.pop('goal_autoencoder', None)
+      if not self.config.repval_loss:
+        scales.pop('repval', None)
     self.scales = scales
 
     if self.config.use_rms_loss_norm:
@@ -362,8 +413,9 @@ class Agent(embodied.jax.Agent):
   @property
   def policy_keys(self):
     # Regex for checkpoint / param groups synced to the actor process.
-    # Include manager + goal decoder used in ``policy()`` (not only worker ``pol``).
-    return '^(enc|dyn|dec|pol|manager_pol|goal_dec)/'
+    if self.use_hrl:
+      return '^(enc|dyn|dec|pol|manager_pol|goal_dec)/'
+    return '^(enc|dyn|dec|pol)/'
 
   @property
   def ext_space(self):
@@ -379,18 +431,19 @@ class Agent(embodied.jax.Agent):
     return spaces
 
   def init_policy(self, batch_size):
-    """RNN carries for enc/dyn/dec, prev action, and manager skill hold state."""
+    """RNN carries for enc/dyn/dec, prev action, and (HRL) manager skill state."""
     zeros = lambda x: jnp.zeros((batch_size, *x.shape), x.dtype)
-    skill_shape = tuple(int(x) for x in self.skill_shape)
-    mgr_skill = {'skill': jnp.zeros((batch_size, *skill_shape), f32)}
-    mgr_step = jnp.zeros((batch_size,), i32)
-    return (
+    base = (
         self.enc.initial(batch_size),
         self.dyn.initial(batch_size),
         self.dec.initial(batch_size),
-        jax.tree.map(zeros, self.act_space),
-        mgr_skill,
-        mgr_step)
+        jax.tree.map(zeros, self.act_space))
+    if not self.use_hrl:
+      return base
+    skill_shape = tuple(int(x) for x in self.skill_shape)
+    mgr_skill = {'skill': jnp.zeros((batch_size, *skill_shape), f32)}
+    mgr_step = jnp.zeros((batch_size,), i32)
+    return (*base, mgr_skill, mgr_step)
 
   def init_train(self, batch_size):
     """Same carry shape as policy (training reuses the same state layout)."""
@@ -401,7 +454,7 @@ class Agent(embodied.jax.Agent):
     return self.init_policy(batch_size)
 
   def _unpack_carry(self, carry):
-    """``(enc, dyn, dec, prevact, mgr_skill, mgr_step)``; tolerate legacy 4-tuples."""
+    """``(enc, dyn, dec, prevact, mgr_skill, mgr_step)``; tolerate 4-tuples (flat mode)."""
     if len(carry) == 6:
       return carry
     enc, dyn, dec, prevact = carry[:4]
@@ -412,6 +465,8 @@ class Agent(embodied.jax.Agent):
     return enc, dyn, dec, prevact, mgr_skill, mgr_step
 
   def _pack_carry(self, enc, dyn, dec, prevact, mgr_skill, mgr_step):
+    if not self.use_hrl:
+      return (enc, dyn, dec, prevact)
     return (enc, dyn, dec, prevact, mgr_skill, mgr_step)
 
   def _feat_goal2tensor(self, x, y):
@@ -657,7 +712,10 @@ class Agent(embodied.jax.Agent):
 
   def policy(self, carry, obs, mode='train'):
     """One env step: encode obs, RSSM observe, sample policy action, update carry."""
-    (enc_carry, dyn_carry, dec_carry, prevact, mgr_skill, mgr_step) = carry
+    if self.use_hrl:
+      (enc_carry, dyn_carry, dec_carry, prevact, mgr_skill, mgr_step) = carry
+    else:
+      (enc_carry, dyn_carry, dec_carry, prevact) = carry
     kw = dict(training=False, single=True)
     reset = obs['is_first']
     enc_carry, enc_entry, tokens = self.enc(enc_carry, obs, reset, **kw)
@@ -667,16 +725,21 @@ class Agent(embodied.jax.Agent):
     if dec_carry:
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
 
-    mgr_skill, goal, mgr_step = self._manager_skill_step(
-        feat, mgr_skill, mgr_step, reset)
-
-    policy = self.pol(self._feat_goal2tensor(feat, goal), bdims=1)
+    if self.use_hrl:
+      mgr_skill, goal, mgr_step = self._manager_skill_step(
+          feat, mgr_skill, mgr_step, reset)
+      policy = self.pol(self._feat_goal2tensor(feat, goal), bdims=1)
+    else:
+      policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
     out = {}
     out['finite'] = elements.tree.flatdict(jax.tree.map(
         lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
         dict(obs=obs, carry=carry, tokens=tokens, feat=feat, act=act)))
-    carry = (enc_carry, dyn_carry, dec_carry, act, mgr_skill, mgr_step)
+    if self.use_hrl:
+      carry = (enc_carry, dyn_carry, dec_carry, act, mgr_skill, mgr_step)
+    else:
+      carry = (enc_carry, dyn_carry, dec_carry, act)
     if self.config.replay_context:
       out.update(elements.tree.flatdict(dict(
           enc=enc_entry, dyn=dyn_entry, dec=dec_entry)))
@@ -689,12 +752,16 @@ class Agent(embodied.jax.Agent):
     metrics, ((enc, dyn, dec), entries, outs, mets) = self.opt(
         self.loss, (enc, dyn, dec), obs, prevact, training=True, has_aux=True)
     metrics.update(mets)
-    self.mgr_extr_slowval.update()
-    self.mgr_expl_slowval.update()
-    self.wkr_goal_slowval.update()
+    if self.use_hrl:
+      self.mgr_extr_slowval.update()
+      self.mgr_expl_slowval.update()
+      self.wkr_goal_slowval.update()
+    else:
+      self.slowval.update()
     if self.use_pmpo_actor:
       self.pol_slow.update()
-      self.manager_pol_slow.update()
+      if self.use_hrl:
+        self.manager_pol_slow.update()
     outs = {}
     if self.config.replay_context:
       updates = elements.tree.flatdict(dict(
@@ -740,6 +807,82 @@ class Agent(embodied.jax.Agent):
       target = f32(value) / 255 if isimage(space) else value
       losses[key] = recon.loss(sg(target))
 
+    if not self.use_hrl:
+      # ---- Flat AC path (v4-online): single ``pol``/``val`` over WM features. ----
+      shapes_bt = {k: v.shape for k, v in losses.items()}
+      assert all(x == (B, T) for x in shapes_bt.values()), ((B, T), shapes_bt)
+      K_cap = min(self.config.imag_last or T, T)
+      if self.config.use_single_rollout:
+        K_imag = 1
+        K_repl = max(K_cap, 2) if self.config.repval_loss else K_cap
+        K_repl = min(K_repl, T)
+      else:
+        K_imag = K_cap
+        K_repl = K_cap
+      H = self.config.imag_length
+      starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
+      policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
+      _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
+      first = jax.tree.map(
+          lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
+      imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat, skip=self.config.ac_grads)], 1)
+      lastact = policyfn(jax.tree.map(lambda x: x[:, -1], imgfeat))
+      lastact = jax.tree.map(lambda x: x[:, None], lastact)
+      imgact = concat([imgprevact, lastact], 1)
+      inp = self.feat2tensor(imgfeat)
+      policy_prior = (
+          self.pol_slow(inp, 2) if self.use_pmpo_actor else None)
+      los_flat, imgloss_out, mets = imag_loss(
+          imgact,
+          self.rew(inp, 2).pred(),
+          self.con(inp, 2).prob(1),
+          self.pol(inp, 2),
+          self.val(inp, 2),
+          self.slowval(inp, 2),
+          self.retnorm, self.valnorm, self.advnorm,
+          update=training,
+          contdisc=self.config.contdisc,
+          horizon=self.config.horizon,
+          policy_prior=policy_prior,
+          **self.config.imag_loss)
+      losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_flat.items()})
+      metrics.update(mets)
+      if self.config.repval_loss:
+        feat = sg(repfeat, skip=self.config.repval_grad)
+        last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]
+        boot = imgloss_out['ret'][:, 0].reshape(B, K_imag)
+        if K_repl != K_imag:
+          boot = jnp.broadcast_to(boot[:, -1:], (B, K_repl))
+        feat, last, term, rew, boot = jax.tree.map(
+            lambda x: x[:, -K_repl:], (feat, last, term, rew, boot))
+        inp = self.feat2tensor(feat)
+        los_rep, _, mets = repl_loss(
+            last, term, rew, boot,
+            self.val(inp, 2),
+            self.slowval(inp, 2),
+            self.valnorm,
+            update=training,
+            horizon=self.config.horizon,
+            value_head='val',
+            **self.config.repl_loss)
+        # ``repl_loss(value_head='val')`` emits key ``repval_value`` — keep that key,
+        # but rename to ``repval`` so it matches the existing loss-scale entry.
+        losses['repval'] = los_rep['repval_value']
+        metrics.update({f'reploss/{k}': v for k, v in mets.items()})
+      assert set(losses.keys()) == set(self.scales.keys()), (
+          sorted(losses.keys()), sorted(self.scales.keys()))
+      metrics.update({f'loss/{k}': v.mean() for k, v in losses.items()})
+      if self.config.use_rms_loss_norm:
+        losses = {
+            k: v / sg(self.lossrms[k](v, training))
+            for k, v in losses.items()}
+        metrics.update({f'loss_rms/{k}': v.mean() for k, v in losses.items()})
+      loss = sum([v.mean() * self.scales[k] for k, v in losses.items()])
+      carry = (enc_carry, dyn_carry, dec_carry)
+      entries = (enc_entries, dyn_entries, dec_entries)
+      aux_outs = {'tokens': tokens, 'repfeat': repfeat, 'losses': losses}
+      return loss, (carry, entries, aux_outs, metrics)
+
     # --- Goal Autoencoder ---
     deter_feat = sg(self.feat2deter(repfeat))
     encoded_goal = self.goal_enc(deter_feat, 2)
@@ -756,10 +899,12 @@ class Agent(embodied.jax.Agent):
     goal_kl_bt = inner_kl
     while goal_kl_bt.ndim > 2:
       goal_kl_bt = goal_kl_bt.sum(-1)
-    goal_kl_loss = (
-        f32(self.config.goal_autoencoder_beta) * goal_kl_bt
-        if self.config.goal_kl
-        else jnp.zeros((B, T), f32))
+    if self.config.goal_kl:
+      # Director ``encdec_kl`` AutoAdapt: scales total summed KL toward a target.
+      goal_kl_loss, goal_kl_mets = self.goal_kl_adapter(goal_kl_bt, update=training)
+    else:
+      goal_kl_loss = jnp.zeros((B, T), f32)
+      goal_kl_mets = {}
 
     losses['goal_autoencoder'] = goal_rec_loss + goal_kl_loss
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
@@ -776,6 +921,7 @@ class Agent(embodied.jax.Agent):
         'goal/entropy_mean': goal_ent_bt.mean(),
         'goal/entropy_std': goal_ent_bt.std(),
     })
+    metrics.update({f'goal/kl_adapt_{k}': v for k, v in goal_kl_mets.items()})
 
     shapes_bt = {k: v.shape for k, v in losses.items()}
     assert all(x == (B, T) for x in shapes_bt.values()), ((B, T), shapes_bt)
@@ -851,6 +997,8 @@ class Agent(embodied.jax.Agent):
         self.mgr_valnorm,
         self.mgr_advnorm,
         manager_policy_prior=mgr_policy_prior,
+        mgr_actent_adapter=self.mgr_actent,
+        mgr_actent_perdim=self.manager_actent_perdim,
         **kwargs_mgr)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
@@ -1046,7 +1194,7 @@ class Agent(embodied.jax.Agent):
         carry)
     wm_carry = (enc_carry, dyn_carry, dec_carry)
     B, T = obs['is_first'].shape
-    RB = min(6, B)
+    RB = min(int(getattr(self.config, 'report_max_rows', 6)), B)
     metrics = {}
 
     _, (new_carry, entries, outs, mets) = self.loss(
@@ -1098,6 +1246,14 @@ class Agent(embodied.jax.Agent):
       video = jnp.concatenate([video, 0 * video[:, :10]], 1)
       metrics[f'openloop/{key}'] = _tb_video_grid(video)
 
+    if not self.use_hrl:
+      enc_carry_n, dyn_carry_n, dec_carry_n = new_carry
+      carry = self._pack_carry(
+          enc_carry_n, dyn_carry_n, dec_carry_n,
+          {k: data[k][:, -1] for k in self.act_space},
+          mgr_skill, mgr_step)
+      return carry, metrics
+
     # Goal VAE on replay features (train-time encoder path).
     deter_feat = sg(self.feat2deter(rep))
     encoded_goal = self.goal_enc(deter_feat, 2)
@@ -1107,34 +1263,35 @@ class Agent(embodied.jax.Agent):
     feat_goal = self._feat_from_goal(pred_deter)
     _, _, recons_goal = self.dec(dec_carry, feat_goal, reset_s, training=False)
 
-    metrics['goal/deter_feat'] = _tb_video_grid(_vec_to_tb_rgb(deter_feat))
-    metrics['goal/decoded_deter'] = _tb_video_grid(_vec_to_tb_rgb(pred_deter))
-    sk = skill_s['skill'] if isinstance(skill_s, dict) else skill_s
-    sk_u8 = (sk * 255).astype(jnp.uint8)
-    if sk_u8.ndim == 3:
-      # (RB, T, D) -> (RB, T, H, W, 3)
-      metrics['goal/skill_sampled'] = _tb_video_grid(_vec_to_tb_rgb(sk))
-    else:
-      # (RB, T, L, C) -> (RB, T, L, C, 3)
-      metrics['goal/skill_sampled'] = _tb_video_grid(
-          jnp.repeat(sk_u8[..., None], 3, axis=-1))
-
     # Manager-proposed goals over the report sequence (K-step skill hold).
     mgr_skills = self._manager_skills_on_sequence(rep)
     mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
-    m_sk = mgr_skills['skill']
-    m_sk_u8 = (m_sk * 255).astype(jnp.uint8)
-    if m_sk_u8.ndim == 3:
-      metrics['goal/mgr_skill'] = _tb_video_grid(_vec_to_tb_rgb(m_sk))
-    else:
-      metrics['goal/mgr_skill'] = _tb_video_grid(
-          jnp.repeat(m_sk_u8[..., None], 3, -1))
-    metrics['goal/mgr_proposed_deter'] = _tb_video_grid(_vec_to_tb_rgb(mgr_goals))
     mgr_goal_feat = self._feat_from_goal(mgr_goals)
     _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)
+
+    # Optional dense vec→RGB visualisations of latent vectors and skills.
+    # Off by default — they are debug-grade and slow down the video pipeline.
+    if bool(getattr(self.config, 'report_vec_viz', False)):
+      metrics['goal/deter_feat'] = _tb_video_grid(_vec_to_tb_rgb(deter_feat))
+      metrics['goal/decoded_deter'] = _tb_video_grid(_vec_to_tb_rgb(pred_deter))
+      sk = skill_s['skill'] if isinstance(skill_s, dict) else skill_s
+      if sk.ndim == 3:
+        metrics['goal/skill_sampled'] = _tb_video_grid(_vec_to_tb_rgb(sk))
+      else:
+        metrics['goal/skill_sampled'] = _tb_video_grid(
+            jnp.repeat((sk * 255).astype(jnp.uint8)[..., None], 3, axis=-1))
+      m_sk = mgr_skills['skill']
+      if m_sk.ndim == 3:
+        metrics['goal/mgr_skill'] = _tb_video_grid(_vec_to_tb_rgb(m_sk))
+      else:
+        metrics['goal/mgr_skill'] = _tb_video_grid(
+            jnp.repeat((m_sk * 255).astype(jnp.uint8)[..., None], 3, axis=-1))
+      metrics['goal/mgr_proposed_deter'] = _tb_video_grid(_vec_to_tb_rgb(mgr_goals))
+
+    # VAE / manager goal reconstruction panels. ``goal/image_{key}`` (true frames
+    # only) was a duplicate of the leftmost column here — dropped.
     for key in self.dec.imgkeys:
       true = obs[key][:RB, :T]
-      metrics[f'goal/image_{key}'] = _tb_video_grid(true)
       pred_g = jnp.clip(recons_goal[key].pred() * 255, 0, 255).astype(jnp.uint8)
       pred_m = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
       metrics[f'goal/recon_{key}'] = _tb_video_grid(
@@ -1143,7 +1300,10 @@ class Agent(embodied.jax.Agent):
           jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
 
     # Director-style: [initial | proposed goal | worker rollout] per proposal mode.
-    for impl in ('manager', 'prior', 'replay'):
+    # Defaults to just ``manager`` (config ``report_impl_videos``) — dropping
+    # ``prior`` and ``replay`` halves the GIF count per report by default.
+    impls = getattr(self.config, 'report_impl_videos', ['manager'])
+    for impl in tuple(impls):
       metrics.update(self._report_impl_videos(
           rep, prevact, dec_carry, impl, RB, T))
 
@@ -1268,6 +1428,22 @@ def head_logp_time(head, event):
 def head_entropy_time(head):
   """Policy entropy with leading axes ``(batch, time)``."""
   return policy_time_slice(_head_inner(head).entropy())
+
+
+def head_entropy_perdim_time(head):
+  """Per-categorical entropy sliced to ``(batch, time-1, ...)`` (no outer-dim sum).
+
+  For a OneHot head with logits ``(B, T, L, C)``, ``entropy()`` returns
+  ``(B, T, L)`` (Categorical entropy already summed over the class axis).
+  We slice the trailing time step so it aligns with the AC-style ``[:-1]``
+  convention but otherwise leave the outer dims intact so AutoAdapt can adapt
+  one Lagrange multiplier per categorical (Director ``actent_perdim=True``).
+  """
+  ent = _head_inner(head).entropy()
+  if ent.ndim < 2:
+    # Defensive fallback; shouldn't trigger for standard manager heads.
+    ent = ent[None, :]
+  return ent[:, :-1]
 
 
 def policy_time_slice(x):
@@ -1433,14 +1609,10 @@ def imag_loss_wkr(
 
   metrics['wkr_goal_adv_mag'] = jnp.abs(wkr_goal_adv_normed).mean()
 
-  metrics['wkr_con'] = con.mean()
   metrics['wkr_goal_ret'] = wkr_goal_ret_normed.mean()
-
   metrics['wkr_goal_val'] = wkr_goal_val.mean()
-  metrics['wkr_goal_tar'] = wkr_goal_tar_normed.mean()
-  metrics['wkr_weight'] = weight.mean()
-
-  metrics['wkr_goal_slowval'] = wkr_goal_slowval.mean()
+  # Removed: ``wkr_goal_tar`` (== ret_normed), ``wkr_goal_slowval`` (≈ val),
+  # ``wkr_weight``/``wkr_con`` (≈ 1 in non-terminal imagined rollouts).
 
   metrics['wkr_goal_ret_min'] = wkr_goal_ret_normed.min()
   metrics['wkr_goal_ret_max'] = wkr_goal_ret_normed.max()
@@ -1481,6 +1653,8 @@ def imag_loss_mgr(
     pmpo_alpha=0.5,
     mgr_expl_weight=0.1,
     manager_policy_prior=None,
+    mgr_actent_adapter=None,
+    mgr_actent_perdim=True,
 ):
   """Manager actor-critic losses on imagined trajectories."""
   losses = {}
@@ -1531,6 +1705,35 @@ def imag_loss_mgr(
       head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
   mgr_ents = {k: head_entropy_time(v) for k, v in manager_policy.items()}
 
+  # Director-style adaptive normalized entropy regularizer. Computed for both
+  # PMPO and REINFORCE branches so the manager always has an entropy floor.
+  mgr_ent_loss_bt = jnp.zeros_like(mgr_logpi)
+  mgr_actent_mets = {}
+  if mgr_actent_adapter is not None:
+    ent_loss_terms = []
+    for k, head in manager_policy.items():
+      inner = _head_inner(head)
+      if not hasattr(inner, 'minent') or not hasattr(inner, 'maxent'):
+        continue
+      ent_perdim = head_entropy_perdim_time(head)  # (B, T-1, ...)
+      L = ent_perdim.shape[-1] if ent_perdim.ndim > 2 else 1
+      lo = inner.minent / L
+      hi = inner.maxent / L
+      denom = jnp.maximum(hi - lo, 1e-8)
+      ent_norm = (ent_perdim - lo) / denom
+      if mgr_actent_perdim and ent_perdim.ndim > 2:
+        loss_perdim, mets = mgr_actent_adapter(ent_norm, update=update)
+        ent_loss_terms.append(loss_perdim.sum(-1))
+      else:
+        ent_scalar = ent_norm.mean(-1) if ent_norm.ndim > 2 else ent_norm
+        loss_scalar, mets = mgr_actent_adapter(ent_scalar, update=update)
+        ent_loss_terms.append(loss_scalar)
+      mgr_actent_mets.update(
+          {f'mgr_actent_{k}_{mk}': mv for mk, mv in mets.items()})
+      mgr_actent_mets[f'mgr_ent_norm_{k}_mean'] = ent_norm.mean()
+    if ent_loss_terms:
+      mgr_ent_loss_bt = sum(ent_loss_terms)
+
   w = sg(weight[:, :-1])
 
   if use_pmpo_actor:
@@ -1549,15 +1752,24 @@ def imag_loss_mgr(
     mgr_neg_coeff = (1.0 - pmpo_alpha) * (mgr_n_tot / mgr_den_n) * mgr_neg
 
     mgr_kl_t = policy_time_slice(policy_behavior_kl(manager_policy, manager_policy_prior))
-    losses['mgr_policy'] = (mgr_neg_coeff - mgr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t
+    losses['mgr_policy'] = (
+        (mgr_neg_coeff - mgr_pos_coeff) * mgr_logpi
+        + pmpo_beta * mgr_kl_t
+        + w * mgr_ent_loss_bt)
 
     metrics['mgr_kl_behavior'] = mgr_kl_t.mean()
     metrics['mgr_pmpo_frac_pos'] = mgr_den_p / mgr_n_tot
   else:
-    losses['mgr_policy'] = w * -(
-        mgr_logpi * sg(mgr_adv_normed) + actent * sum(mgr_ents.values()))
+    if mgr_actent_adapter is not None:
+      # Adaptive normalized actent already in mgr_ent_loss_bt; drop fixed scalar.
+      losses['mgr_policy'] = w * (-mgr_logpi * sg(mgr_adv_normed) + mgr_ent_loss_bt)
+    else:
+      losses['mgr_policy'] = w * -(
+          mgr_logpi * sg(mgr_adv_normed) + actent * sum(mgr_ents.values()))
 
   metrics['mgr_policy_loss'] = losses['mgr_policy'].mean()
+  metrics['mgr_ent_loss'] = mgr_ent_loss_bt.mean()
+  metrics.update(mgr_actent_mets)
   metrics['mgr_extr_rew'] = mgr_extr_rew.mean()
   nz = jnp.maximum((jnp.abs(mgr_extr_rew[:, 1:]) > 0).sum(), 1)
   metrics['mgr_extr_rew_block'] = mgr_extr_rew[:, 1:].sum() / nz
@@ -1580,17 +1792,14 @@ def imag_loss_mgr(
   metrics['mgr_extr_adv'] = mgr_extr_adv.mean()
   metrics['mgr_expl_adv'] = mgr_expl_adv.mean()
 
-  metrics['mgr_con'] = con.mean()
   metrics['mgr_total_ret'] = mgr_total_ret.mean()
   metrics['mgr_extr_ret'] = mgr_extr_ret_normed.mean()
   metrics['mgr_expl_ret'] = mgr_expl_ret_normed.mean()
   metrics['mgr_extr_val'] = mgr_extr_val.mean()
   metrics['mgr_expl_val'] = mgr_expl_val.mean()
-  metrics['mgr_extr_tar'] = mgr_extr_ret_normed.mean()
-  metrics['mgr_expl_tar'] = mgr_expl_ret_normed.mean()
-  metrics['mgr_weight'] = weight.mean()
-  metrics['mgr_extr_slowval'] = mgr_extr_slowval.mean()
-  metrics['mgr_expl_slowval'] = mgr_expl_slowval.mean()
+  # Removed: ``mgr_extr_tar``/``mgr_expl_tar`` (== ret_normed already logged),
+  # ``mgr_extr_slowval``/``mgr_expl_slowval`` (≈ ``*_val`` up to EMA lag),
+  # ``mgr_con``/``mgr_weight`` (≈ 1 in non-terminal imagined rollouts).
 
   for k in skills:
     metrics[f'mgr_ent/{k}'] = mgr_ents[k].mean()
@@ -1602,6 +1811,91 @@ def imag_loss_mgr(
   outs['ret'] = mgr_total_ret
   outs['mgr_extr_ret'] = mgr_extr_ret
   outs['mgr_expl_ret'] = mgr_expl_ret
+  return losses, outs, metrics
+
+
+def imag_loss(
+    act, rew, con,
+    policy, value, slowvalue,
+    retnorm, valnorm, advnorm,
+    update,
+    contdisc=True,
+    slowtar=True,
+    horizon=333,
+    lam=0.95,
+    actent=3e-4,
+    slowreg=1.0,
+    use_pmpo_actor=False,
+    pmpo_beta=0.3,
+    pmpo_alpha=0.5,
+    policy_prior=None,
+):
+  """Flat actor-critic loss (v4-online), used when ``use_hrl=False``."""
+  losses = {}
+  metrics = {}
+
+  voffset, vscale = valnorm.stats()
+  val = value.pred() * vscale + voffset
+  slowval = slowvalue.pred() * vscale + voffset
+  tarval = slowval if slowtar else val
+  disc = 1 if contdisc else 1 - 1 / horizon
+  weight = jnp.cumprod(disc * con, 1) / disc
+  last = jnp.zeros_like(con)
+  term = 1 - con
+  ret = lambda_return(last, term, rew, tarval, tarval, disc, lam)
+
+  roffset, rscale = retnorm(ret, update)
+  adv = (ret - tarval[:, :-1]) / rscale
+  aoffset, ascale = advnorm(adv, update)
+  adv_normed = (adv - aoffset) / ascale
+  logpi = sum([v.logp(sg(act[k]))[:, :-1] for k, v in policy.items()])
+  ents = {k: v.entropy()[:, :-1] for k, v in policy.items()}
+  w = sg(weight[:, :-1])
+  if use_pmpo_actor:
+    adv_raw = ret - tarval[:, :-1]
+    pos = (adv_raw >= 0).astype(f32)
+    neg = (adv_raw < 0).astype(f32)
+    n_tot = jnp.maximum(pmpo_global_sum(jnp.ones_like(pos)), 1.0)
+    den_p = jnp.maximum(pmpo_global_sum(pos), 1.0)
+    den_n = jnp.maximum(pmpo_global_sum(neg), 1.0)
+    pos_coeff = pmpo_alpha * (n_tot / den_p) * pos
+    neg_coeff = (1.0 - pmpo_alpha) * (n_tot / den_n) * neg
+    kl_t = policy_time_slice(policy_behavior_kl(policy, policy_prior))
+    policy_loss = (neg_coeff - pos_coeff) * logpi + pmpo_beta * kl_t
+    metrics['kl_behavior'] = kl_t.mean()
+    metrics['pmpo_frac_pos'] = den_p / n_tot
+  else:
+    policy_loss = w * -(
+        logpi * sg(adv_normed) + actent * sum(ents.values()))
+  losses['policy'] = policy_loss
+
+  voffset, vscale = valnorm(ret, update)
+  tar_normed = (ret - voffset) / vscale
+  tar_padded = jnp.concatenate([tar_normed, 0 * tar_normed[:, -1:]], 1)
+  losses['value'] = sg(weight[:, :-1]) * (
+      value.loss(sg(tar_padded)) +
+      slowreg * value.loss(sg(slowvalue.pred())))[:, :-1]
+
+  ret_normed = (ret - roffset) / rscale
+  metrics['adv'] = adv.mean()
+  metrics['adv_std'] = adv.std()
+  metrics['adv_mag'] = jnp.abs(adv).mean()
+  metrics['rew'] = rew.mean()
+  metrics['con'] = con.mean()
+  metrics['ret'] = ret_normed.mean()
+  metrics['val'] = val.mean()
+  metrics['tar'] = tar_normed.mean()
+  metrics['weight'] = weight.mean()
+  metrics['slowval'] = slowval.mean()
+  metrics['ret_min'] = ret_normed.min()
+  metrics['ret_max'] = ret_normed.max()
+  metrics['ret_rate'] = (jnp.abs(ret_normed) >= 1.0).mean()
+  for k in act:
+    metrics[f'ent/{k}'] = ents[k].mean()
+    if hasattr(policy[k], 'minent'):
+      lo, hi = policy[k].minent, policy[k].maxent
+      metrics[f'rand/{k}'] = (ents[k].mean() - lo) / (hi - lo)
+  outs = {'ret': ret}
   return losses, outs, metrics
 
 

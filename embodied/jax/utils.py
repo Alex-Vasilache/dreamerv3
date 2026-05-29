@@ -91,6 +91,90 @@ class Normalize(nj.Module):
     var.write((1 - self.rate) * var.read() + self.rate * sg(x))
 
 
+class AutoAdapt(nj.Module):
+  """Adaptive Lagrange multiplier (Director ``tfutils.AutoAdapt``).
+
+  Holds a scalar/per-dim scale that grows when the regulated quantity (``reg``)
+  is below ``target`` and shrinks when above (or vice versa if ``inverse``).
+  Use ``inverse=True`` for entropy-style regularizers (we want loss to push up
+  on entropy when it falls below target). ``inverse=False`` for KL-style
+  regularizers (we want stronger push when KL is above target).
+  """
+
+  vel: float = 0.1
+  thres: float = 0.1
+
+  def __init__(self, shape, impl, target, min, max, inverse=False, init=1.0):
+    self.shape = tuple(shape)
+    self.impl = impl
+    self.target = float(target)
+    self.min = float(min)
+    self.max = float(max)
+    self.inverse = bool(inverse)
+    if impl in ('mult', 'prop'):
+      init_val = float(init)
+      self.scale_var = nj.Variable(
+          lambda s: jnp.full(s, init_val, f32), self.shape, name='scale')
+    elif impl == 'fixed':
+      self.fixed_scale = float(init)
+    else:
+      raise NotImplementedError(impl)
+
+  def __call__(self, reg, update=True):
+    reg = f32(reg)
+    if update:
+      self.update(reg)
+    scale = self.scale()
+    # Broadcast scale over leading reduction dims of reg.
+    while scale.ndim < reg.ndim:
+      scale = scale[None]
+    loss = scale * (-reg if self.inverse else reg)
+    metrics = {
+        'mean': reg.mean(),
+        'std': reg.std(),
+        'scale_mean': self.scale().mean(),
+        'scale_std': self.scale().std(),
+    }
+    return loss, metrics
+
+  def scale(self):
+    if self.impl == 'fixed':
+      return jnp.full(self.shape, self.fixed_scale, f32)
+    return sg(self.scale_var.read())
+
+  def update(self, reg):
+    if self.impl == 'fixed':
+      return
+    # Reduce all leading dims that are not part of self.shape.
+    reduce_ndim = reg.ndim - len(self.shape)
+    if reduce_ndim > 0:
+      avg = reg.mean(tuple(range(reduce_ndim)))
+    else:
+      avg = reg
+    # Aggregate across data axes for multi-device runs.
+    axes = internal.get_data_axes()
+    if axes:
+      avg = jax.lax.pmean(avg, axes)
+    below = avg < (1.0 / (1.0 + self.thres)) * self.target
+    above = avg > (1.0 + self.thres) * self.target
+    if self.inverse:
+      below, above = above, below
+    s = self.scale_var.read()
+    if self.impl == 'mult':
+      adjusted = jnp.where(
+          above, s * (1.0 + self.vel),
+          jnp.where(below, s / (1.0 + self.vel), s))
+    elif self.impl == 'prop':
+      direction = avg - self.target
+      if self.inverse:
+        direction = -direction
+      adjusted = s + self.vel * direction
+    else:
+      raise NotImplementedError(self.impl)
+    adjusted = jnp.clip(adjusted, self.min, self.max)
+    self.scale_var.write(adjusted)
+
+
 class RmsTracker(nj.Module):
 
   """EMA of batch mean(loss**2); read() returns sqrt for per-term RMS scaling."""
