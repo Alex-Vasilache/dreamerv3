@@ -1329,10 +1329,14 @@ class Agent(embodied.jax.Agent):
             jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
 
     # Director-style: [initial | proposed goal | worker rollout] per proposal
-    # mode. Empty by default (lowest-value-per-encoding-cost panel); set
-    # ``report_impl_videos: [manager]`` to re-enable.
-    impls = getattr(self.config, 'report_impl_videos', [])
-    for impl in tuple(impls):
+    # mode. Disabled by default (lowest-value-per-encoding-cost panel); set
+    # ``report_impl_videos_enabled: True`` to render the impls listed in
+    # ``report_impl_videos``.
+    if bool(getattr(self.config, 'report_impl_videos_enabled', False)):
+      impls = tuple(getattr(self.config, 'report_impl_videos', ['manager']))
+    else:
+      impls = ()
+    for impl in impls:
       metrics.update(self._report_impl_videos(
           rep, prevact, dec_carry, impl, RB, T))
 

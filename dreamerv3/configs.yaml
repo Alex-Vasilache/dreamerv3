@@ -177,9 +177,11 @@ defaults:
     report: True
     report_gradnorms: False
     # Subset of HRL goal-proposal modes to render videos for. Director's original
-    # list was ['manager','prior','replay']. Default is empty — impl videos are
-    # the least informative panel per encoding cost. Re-enable with eg. [manager].
-    report_impl_videos: []
+    # list was ['manager','prior','replay']. Per-impl gating is via the bool
+    # flag below — the list type just stays non-empty so elements.Config can
+    # infer its element type.
+    report_impl_videos: [manager]
+    report_impl_videos_enabled: False
     # Limit number of replay rows visualised in report() videos (was hardcoded 6).
     report_max_rows: 4
     # Render the per-step vec-to-rgb summary of deter/skill tensors. These are
