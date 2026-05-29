@@ -1283,10 +1283,19 @@ class Agent(embodied.jax.Agent):
     _, _, recons_goal = self.dec(dec_carry, feat_goal, reset_s, training=False)
 
     # Manager-proposed goals over the report sequence (K-step skill hold).
-    mgr_skills = self._manager_skills_on_sequence(rep)
-    mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
-    mgr_goal_feat = self._feat_from_goal(mgr_goals)
-    _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)
+    # Only run the decoder pass when the corresponding panel is enabled.
+    want_mgr_recon = bool(getattr(self.config, 'report_mgr_recon', False))
+    if want_mgr_recon or bool(getattr(self.config, 'report_vec_viz', False)):
+      mgr_skills = self._manager_skills_on_sequence(rep)
+      mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
+      mgr_goal_feat = self._feat_from_goal(mgr_goals)
+    else:
+      mgr_skills = None
+      mgr_goals = None
+    if want_mgr_recon:
+      _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)
+    else:
+      recons_mgr = None
 
     # Optional dense vec→RGB visualisations of latent vectors and skills.
     # Off by default — they are debug-grade and slow down the video pipeline.
@@ -1312,16 +1321,17 @@ class Agent(embodied.jax.Agent):
     for key in self.dec.imgkeys:
       true = obs[key][:RB, :T]
       pred_g = jnp.clip(recons_goal[key].pred() * 255, 0, 255).astype(jnp.uint8)
-      pred_m = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
       metrics[f'goal/recon_{key}'] = self._video(
           jnp.concatenate([true, pred_g, ((i32(pred_g) - i32(true) + 255) // 2).astype(np.uint8)], 2))
-      metrics[f'goal/mgr_recon_{key}'] = self._video(
-          jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
+      if want_mgr_recon:
+        pred_m = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
+        metrics[f'goal/mgr_recon_{key}'] = self._video(
+            jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
 
-    # Director-style: [initial | proposed goal | worker rollout] per proposal mode.
-    # Defaults to just ``manager`` (config ``report_impl_videos``) — dropping
-    # ``prior`` and ``replay`` halves the GIF count per report by default.
-    impls = getattr(self.config, 'report_impl_videos', ['manager'])
+    # Director-style: [initial | proposed goal | worker rollout] per proposal
+    # mode. Empty by default (lowest-value-per-encoding-cost panel); set
+    # ``report_impl_videos: [manager]`` to re-enable.
+    impls = getattr(self.config, 'report_impl_videos', [])
     for impl in tuple(impls):
       metrics.update(self._report_impl_videos(
           rep, prevact, dec_carry, impl, RB, T))

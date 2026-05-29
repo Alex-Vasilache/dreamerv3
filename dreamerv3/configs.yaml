@@ -59,7 +59,7 @@ defaults:
     duration: 0
     train_ratio: 32.0
     log_every: 120
-    report_every: 300
+    report_every: 1000
     save_every: 900
     envs: 16
     eval_envs: 4
@@ -177,18 +177,23 @@ defaults:
     report: True
     report_gradnorms: False
     # Subset of HRL goal-proposal modes to render videos for. Director's original
-    # list was ['manager','prior','replay']; ['manager'] keeps the most useful one
-    # and drops two redundant video panels per imgkey.
-    report_impl_videos: [manager]
+    # list was ['manager','prior','replay']. Default is empty — impl videos are
+    # the least informative panel per encoding cost. Re-enable with eg. [manager].
+    report_impl_videos: []
     # Limit number of replay rows visualised in report() videos (was hardcoded 6).
     report_max_rows: 4
     # Render the per-step vec-to-rgb summary of deter/skill tensors. These are
     # debug visualisations and dominate report() time on small models; default off.
     report_vec_viz: False
-    # Subsample report videos before W&B/TB encoding. ``time_stride: 4`` keeps
-    # every 4th frame and ~quarters the per-video encode cost; combined with
-    # the impl-video / vec-viz trims it brings overall GIF cost down ~10×.
-    report_video_time_stride: 4
+    # Render the goal-VAE-reconstruction panel from manager-proposed goals. Same
+    # information as the openloop ``goal/recon`` panel just via a different goal
+    # source; off by default to halve the goal/* video count.
+    report_mgr_recon: False
+    # Subsample report videos before W&B/TB encoding. ``time_stride: 8`` keeps
+    # every 8th frame and roughly 8×s the per-video encode cost; combined with
+    # the impl/mgr_recon/vec-viz trims and the bumped ``report_every`` it brings
+    # overall GIF cost down ~10× relative to the original defaults.
+    report_video_time_stride: 8
     report_video_space_stride: 1
 
 size1m: &size1m
