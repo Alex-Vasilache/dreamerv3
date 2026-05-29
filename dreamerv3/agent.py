@@ -1705,11 +1705,12 @@ def imag_loss_mgr(
       head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
   mgr_ents = {k: head_entropy_time(v) for k, v in manager_policy.items()}
 
-  # Director-style adaptive normalized entropy regularizer. Computed for both
-  # PMPO and REINFORCE branches so the manager always has an entropy floor.
+  # Director-style adaptive normalized entropy regularizer. PMPO does not get
+  # an entropy term (DreamerV4: the reverse KL to the slow behavioral prior is
+  # the only regularizer); REINFORCE uses the adaptive actent.
   mgr_ent_loss_bt = jnp.zeros_like(mgr_logpi)
   mgr_actent_mets = {}
-  if mgr_actent_adapter is not None:
+  if mgr_actent_adapter is not None and not use_pmpo_actor:
     ent_loss_terms = []
     for k, head in manager_policy.items():
       inner = _head_inner(head)
@@ -1752,10 +1753,10 @@ def imag_loss_mgr(
     mgr_neg_coeff = (1.0 - pmpo_alpha) * (mgr_n_tot / mgr_den_n) * mgr_neg
 
     mgr_kl_t = policy_time_slice(policy_behavior_kl(manager_policy, manager_policy_prior))
+    # PMPO (DreamerV4): no entropy term — the reverse KL to the slow behavioral
+    # prior is the sole regularizer.
     losses['mgr_policy'] = (
-        (mgr_neg_coeff - mgr_pos_coeff) * mgr_logpi
-        + pmpo_beta * mgr_kl_t
-        + w * mgr_ent_loss_bt)
+        (mgr_neg_coeff - mgr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t)
 
     metrics['mgr_kl_behavior'] = mgr_kl_t.mean()
     metrics['mgr_pmpo_frac_pos'] = mgr_den_p / mgr_n_tot
