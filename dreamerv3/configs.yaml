@@ -166,6 +166,11 @@ defaults:
     retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
     valnorm: {impl: none, rate: 0.01, limit: 1e-8}
     advnorm: {impl: none, rate: 0.01, limit: 1e-8}
+    # Manager-only normalizers (Director uses ``meanstd`` so the policy gradient
+    # has roughly unit variance regardless of K-step reward scale). Worker keeps
+    # the DreamerV3-flat ``perc`` / ``none`` defaults above.
+    mgr_retnorm: {impl: meanstd, rate: 0.001, limit: 1e-8, debias: True}
+    mgr_advnorm: {impl: meanstd, rate: 0.01, limit: 1e-8, debias: True}
     reward_grad: True
     repval_loss: True
     repval_grad: True
@@ -180,6 +185,11 @@ defaults:
     # Render the per-step vec-to-rgb summary of deter/skill tensors. These are
     # debug visualisations and dominate report() time on small models; default off.
     report_vec_viz: False
+    # Subsample report videos before W&B/TB encoding. ``time_stride: 4`` keeps
+    # every 4th frame and ~quarters the per-video encode cost; combined with
+    # the impl-video / vec-viz trims it brings overall GIF cost down ~10×.
+    report_video_time_stride: 4
+    report_video_space_stride: 1
 
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}

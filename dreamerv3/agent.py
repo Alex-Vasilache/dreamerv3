@@ -180,8 +180,17 @@ concat = lambda xs, a: jax.tree.map(lambda *x: jnp.concatenate(x, a), *xs)
 isimage = lambda s: s.dtype == np.uint8 and len(s.shape) == 3
 
 
-def _tb_video_grid(video_bthwc):
-  """(batch, time, H, W, C) uint8 -> (time, H, batch*W, C) for TensorBoard video."""
+def _tb_video_grid(video_bthwc, time_stride=1, space_stride=1):
+  """(batch, time, H, W, C) uint8 -> (time, H, batch*W, C) for TensorBoard video.
+
+  ``time_stride``/``space_stride`` subsample frames and pixels before the grid
+  reshape — both default to 1 (no-op). Encoding cost scales with output
+  pixel count, so a 4× time stride drops report video work ~4×.
+  """
+  if time_stride > 1:
+    video_bthwc = video_bthwc[:, ::time_stride]
+  if space_stride > 1:
+    video_bthwc = video_bthwc[:, :, ::space_stride, ::space_stride]
   rb, t, h, w, c = video_bthwc.shape
   return video_bthwc.transpose(1, 2, 0, 3, 4).reshape(t, h, rb * w, c)
 
@@ -307,14 +316,18 @@ class Agent(embodied.jax.Agent):
           embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
           source=self.wkr_goal_val, **config.slowvalue)
 
-      self.mgr_extr_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_extr_retnorm')
-      self.mgr_expl_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_expl_retnorm')
+      # Manager uses ``meanstd`` (Director-style); worker keeps the DreamerV3
+      # ``perc`` retnorm and ``none`` advnorm so its goal reward stays raw.
+      mgr_retnorm_cfg = getattr(config, 'mgr_retnorm', config.retnorm)
+      mgr_advnorm_cfg = getattr(config, 'mgr_advnorm', config.advnorm)
+      self.mgr_extr_retnorm = embodied.jax.Normalize(**mgr_retnorm_cfg, name='mgr_extr_retnorm')
+      self.mgr_expl_retnorm = embodied.jax.Normalize(**mgr_retnorm_cfg, name='mgr_expl_retnorm')
       self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
 
       self.mgr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_valnorm')
       self.wkr_goal_valnorm = embodied.jax.Normalize(**config.valnorm, name='wkr_goal_valnorm')
 
-      self.mgr_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_advnorm')
+      self.mgr_advnorm = embodied.jax.Normalize(**mgr_advnorm_cfg, name='mgr_advnorm')
       self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
 
       self.mgr_expl_weight = config.mgr_expl_weight
@@ -469,6 +482,12 @@ class Agent(embodied.jax.Agent):
       return (enc, dyn, dec, prevact)
     return (enc, dyn, dec, prevact, mgr_skill, mgr_step)
 
+  def _video(self, video_bthwc):
+    """Apply config-driven time/space stride before flattening for video logs."""
+    ts = int(getattr(self.config, 'report_video_time_stride', 1))
+    ss = int(getattr(self.config, 'report_video_space_stride', 1))
+    return _tb_video_grid(video_bthwc, time_stride=ts, space_stride=ss)
+
   def _feat_goal2tensor(self, x, y):
     """Concatenate WM features with goal; supports ``(B, D)`` and ``(B, T, D)`` goals."""
     deter = nn.cast(x['deter'])
@@ -599,7 +618,7 @@ class Agent(embodied.jax.Agent):
       if roll_u8.ndim == 4:
         roll_u8 = jnp.repeat(roll_u8[:, None], length, axis=1)
       video = jnp.concatenate([init_u8, targ_u8, roll_u8], axis=3)
-      metrics[f'impl_{impl}/{key}'] = _tb_video_grid(video)
+      metrics[f'impl_{impl}/{key}'] = self._video(video)
     return metrics
 
   def _mgr_expl_reward(self, imgfeat):
@@ -1244,7 +1263,7 @@ class Agent(embodied.jax.Agent):
       border = border.at[T // 2:].set(jnp.array([255, 0, 0], jnp.uint8))
       video = jnp.where(mask, video, border[None, :, None, None, :])
       video = jnp.concatenate([video, 0 * video[:, :10]], 1)
-      metrics[f'openloop/{key}'] = _tb_video_grid(video)
+      metrics[f'openloop/{key}'] = self._video(video)
 
     if not self.use_hrl:
       enc_carry_n, dyn_carry_n, dec_carry_n = new_carry
@@ -1272,21 +1291,21 @@ class Agent(embodied.jax.Agent):
     # Optional dense vec→RGB visualisations of latent vectors and skills.
     # Off by default — they are debug-grade and slow down the video pipeline.
     if bool(getattr(self.config, 'report_vec_viz', False)):
-      metrics['goal/deter_feat'] = _tb_video_grid(_vec_to_tb_rgb(deter_feat))
-      metrics['goal/decoded_deter'] = _tb_video_grid(_vec_to_tb_rgb(pred_deter))
+      metrics['goal/deter_feat'] = self._video(_vec_to_tb_rgb(deter_feat))
+      metrics['goal/decoded_deter'] = self._video(_vec_to_tb_rgb(pred_deter))
       sk = skill_s['skill'] if isinstance(skill_s, dict) else skill_s
       if sk.ndim == 3:
-        metrics['goal/skill_sampled'] = _tb_video_grid(_vec_to_tb_rgb(sk))
+        metrics['goal/skill_sampled'] = self._video(_vec_to_tb_rgb(sk))
       else:
-        metrics['goal/skill_sampled'] = _tb_video_grid(
+        metrics['goal/skill_sampled'] = self._video(
             jnp.repeat((sk * 255).astype(jnp.uint8)[..., None], 3, axis=-1))
       m_sk = mgr_skills['skill']
       if m_sk.ndim == 3:
-        metrics['goal/mgr_skill'] = _tb_video_grid(_vec_to_tb_rgb(m_sk))
+        metrics['goal/mgr_skill'] = self._video(_vec_to_tb_rgb(m_sk))
       else:
-        metrics['goal/mgr_skill'] = _tb_video_grid(
+        metrics['goal/mgr_skill'] = self._video(
             jnp.repeat((m_sk * 255).astype(jnp.uint8)[..., None], 3, axis=-1))
-      metrics['goal/mgr_proposed_deter'] = _tb_video_grid(_vec_to_tb_rgb(mgr_goals))
+      metrics['goal/mgr_proposed_deter'] = self._video(_vec_to_tb_rgb(mgr_goals))
 
     # VAE / manager goal reconstruction panels. ``goal/image_{key}`` (true frames
     # only) was a duplicate of the leftmost column here — dropped.
@@ -1294,9 +1313,9 @@ class Agent(embodied.jax.Agent):
       true = obs[key][:RB, :T]
       pred_g = jnp.clip(recons_goal[key].pred() * 255, 0, 255).astype(jnp.uint8)
       pred_m = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
-      metrics[f'goal/recon_{key}'] = _tb_video_grid(
+      metrics[f'goal/recon_{key}'] = self._video(
           jnp.concatenate([true, pred_g, ((i32(pred_g) - i32(true) + 255) // 2).astype(np.uint8)], 2))
-      metrics[f'goal/mgr_recon_{key}'] = _tb_video_grid(
+      metrics[f'goal/mgr_recon_{key}'] = self._video(
           jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
 
     # Director-style: [initial | proposed goal | worker rollout] per proposal mode.
