@@ -1679,15 +1679,18 @@ def imag_loss_mgr(
   losses = {}
   metrics = {}
 
-  # Separate extrinsic and exploratory critic predictions.
-  mgr_voffset, mgr_vscale = mgr_valnorm.stats()
+  # v4-online pattern: use the retnorm stats (frozen for this iteration) to map
+  # the value head's pred — which was trained on (raw_ret - voff)/vscale — back
+  # to raw scale, so ``lambda_return`` mixes raw rew + raw tarval consistently.
+  voff_extr_prev, vscale_extr_prev = mgr_extr_retnorm.stats()
+  voff_expl_prev, vscale_expl_prev = mgr_expl_retnorm.stats()
 
-  mgr_extr_val = mgr_extr_value.pred() * mgr_vscale + mgr_voffset
-  mgr_extr_slowval = mgr_extr_slowvalue.pred() * mgr_vscale + mgr_voffset
+  mgr_extr_val = mgr_extr_value.pred() * vscale_extr_prev + voff_extr_prev
+  mgr_extr_slowval = mgr_extr_slowvalue.pred() * vscale_extr_prev + voff_extr_prev
   mgr_extr_tarval = mgr_extr_slowval if slowtar else mgr_extr_val
 
-  mgr_expl_val = mgr_expl_value.pred() * mgr_vscale + mgr_voffset
-  mgr_expl_slowval = mgr_expl_slowvalue.pred() * mgr_vscale + mgr_voffset
+  mgr_expl_val = mgr_expl_value.pred() * vscale_expl_prev + voff_expl_prev
+  mgr_expl_slowval = mgr_expl_slowvalue.pred() * vscale_expl_prev + voff_expl_prev
   mgr_expl_tarval = mgr_expl_slowval if slowtar else mgr_expl_val
 
   # Discount per step: either γ or finite-horizon (1 - 1/horizon) when not contdisc.
@@ -1697,11 +1700,14 @@ def imag_loss_mgr(
   last = jnp.zeros_like(con)
   term = 1 - con
 
+  # Raw λ-returns from raw rewards + raw tarval bootstraps.
   mgr_extr_ret = lambda_return(
       last, term, mgr_extr_rew, mgr_extr_tarval, jnp.zeros_like(mgr_extr_rew), disc, lam)
   mgr_expl_ret = lambda_return(
       last, term, mgr_expl_rew, mgr_expl_tarval, jnp.zeros_like(mgr_expl_rew), disc, lam)
 
+  # Now update retnorm with the *raw* λ-return and use its scale to convert the
+  # raw advantage into the policy-gradient signal.
   voff_extr, vscale_extr = mgr_extr_retnorm(mgr_extr_ret, update)
   voff_expl, vscale_expl = mgr_expl_retnorm(mgr_expl_ret, update)
 
@@ -1710,11 +1716,10 @@ def imag_loss_mgr(
 
   mgr_total_ret = mgr_extr_ret_normed + mgr_expl_weight * mgr_expl_ret_normed
 
-  # Normalize tarvals to return space for consistent advantage baseline.
-  mgr_extr_tarval_normed = (mgr_extr_tarval - voff_extr) / vscale_extr
-  mgr_expl_tarval_normed = (mgr_expl_tarval - voff_expl) / vscale_expl
-  mgr_extr_adv = mgr_extr_ret_normed - mgr_extr_tarval_normed[:, :-1]
-  mgr_expl_adv = mgr_expl_ret_normed - mgr_expl_tarval_normed[:, :-1]
+  # Adv computed in raw space (rew + raw tarval), scaled to ~unit variance by
+  # the retnorm std. Matches v4-online ``adv = (ret - tarval) / rscale``.
+  mgr_extr_adv = (mgr_extr_ret - mgr_extr_tarval[:, :-1]) / vscale_extr
+  mgr_expl_adv = (mgr_expl_ret - mgr_expl_tarval[:, :-1]) / vscale_expl
   mgr_adv = mgr_extr_adv + mgr_expl_weight * mgr_expl_adv
   mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
