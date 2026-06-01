@@ -95,11 +95,13 @@ defaults:
     profiler: False
 
   agent:
-    use_single_rollout: False
-    use_rms_loss_norm: False
-    loss_rms_rate: 0.01
     loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0}
+    # Three independent optimizers (Director-style): the world model + heads, the
+    # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
+    # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    goal_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    ac_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
       typ: rssm
@@ -158,19 +160,17 @@ defaults:
       lam: 0.95
       actent: 3e-4
       slowreg: 1.0
-      use_pmpo_actor: False
-      pmpo_beta: 0.3
-      pmpo_alpha: 0.5
     repl_loss: {slowtar: False, lam: 0.95, slowreg: 1.0}
     slowvalue: {rate: 0.02, every: 1}
+    # Manager and worker actor-critics both use these DreamerV3 defaults: the
+    # ``perc`` retnorm scales the advantage by the 5-95 percentile return range,
+    # ``valnorm: none`` trains the symexp_twohot critic on RAW returns (the head's
+    # symlog transform handles scale), and ``advnorm: none`` leaves the advantage
+    # at that perc scale. This is the proven flat-v3 normalization, applied
+    # identically to every AC head so the default v3 hyperparameters transfer.
     retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
     valnorm: {impl: none, rate: 0.01, limit: 1e-8}
     advnorm: {impl: none, rate: 0.01, limit: 1e-8}
-    # Manager-only normalizers (Director uses ``meanstd`` so the policy gradient
-    # has roughly unit variance regardless of K-step reward scale). Worker keeps
-    # the DreamerV3-flat ``perc`` / ``none`` defaults above.
-    mgr_retnorm: {impl: meanstd, rate: 0.001, limit: 1e-8, debias: True}
-    mgr_advnorm: {impl: meanstd, rate: 0.01, limit: 1e-8, debias: True}
     reward_grad: True
     repval_loss: True
     repval_grad: True

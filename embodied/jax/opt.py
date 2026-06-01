@@ -106,6 +106,89 @@ class Optimizer(nj.Module):
     return '\n'.join(lines)
 
 
+class MultiOptimizer(nj.Module):
+  """Several independent optimizers sharing a single backward pass.
+
+  ``groups`` maps a group name to ``(modules, optax_transformation)``. A single
+  ``nj.grad`` over the union of all modules computes every gradient in one
+  backward pass; each group's gradients are then routed to its own optax state.
+  Because the groups are disjoint parameter sets, the per-group gradients are
+  exactly what differentiating each group separately would give, but every group
+  keeps its own momentum / RMS / AGC / learning-rate schedule. This is the JAX
+  equivalent of Director's per-component optimizers driven by one persistent
+  ``GradientTape`` -- one forward+backward, multiple optimizers.
+  """
+
+  summary_depth: int = 2
+
+  def __init__(self, groups):
+    self.groups = {k: (tuple(ms), opt) for k, (ms, opt) in groups.items()}
+    self.allmods = tuple(m for ms, _ in self.groups.values() for m in ms)
+    self.step = nj.Variable(jnp.array, 0, i32, name='step')
+    # float16 loss scaling (Optimizer's ``scaling`` path) is not supported here;
+    # this codebase computes in bfloat16, so it is never needed.
+    assert nets.COMPUTE_DTYPE != jnp.float16, (
+        'MultiOptimizer does not implement float16 loss scaling.')
+
+  def __call__(self, lossfn, *args, has_aux=False, **kwargs):
+    metrics = {}
+
+    def lossfn2(*args, **kwargs):
+      outs = lossfn(*args, **kwargs)
+      loss, aux = outs if has_aux else (outs, None)
+      assert loss.dtype == f32, (self.name, loss.dtype)
+      assert loss.shape == (), (self.name, loss.shape)
+      return loss, aux
+
+    loss, params, grads, aux = nj.grad(
+        lossfn2, self.allmods, has_aux=True)(*args, **kwargs)
+
+    axes = internal.get_data_axes()
+    if axes:
+      grads = jax.tree.map(lambda x: jax.lax.pmean(x, axes), grads)
+
+    if nj.creating():
+      counts = {k: math.prod(v.shape) for k, v in params.items()}
+      print(self._summarize_params(counts, self.summary_depth))
+
+    total_count = 0
+    for gname, (modules, opt) in self.groups.items():
+      prefixes = tuple(m.path + '/' for m in modules)
+      gparams = {k: v for k, v in params.items() if k.startswith(prefixes)}
+      ggrads = {k: v for k, v in grads.items() if k.startswith(prefixes)}
+      assert gparams, (gname, prefixes, sorted(params.keys())[:4])
+      state = self.sub(f'state_{gname}', nj.Tree, opt.init, gparams)
+      updates, new_state = opt.update(ggrads, state.read(), gparams)
+      nj.context().update(optax.apply_updates(gparams, updates))
+      state.write(new_state)
+      metrics[f'{gname}_grad_norm'] = optax.global_norm(ggrads)
+      metrics[f'{gname}_grad_rms'] = nets.rms(ggrads)
+      metrics[f'{gname}_update_rms'] = nets.rms(updates)
+      metrics[f'{gname}_param_rms'] = nets.rms([x.values for x in modules])
+      total_count += sum(math.prod(v.shape) for v in gparams.values())
+
+    self.step.write(self.step.read() + 1)
+    metrics['loss'] = loss.mean()
+    metrics['updates'] = self.step.read()
+    metrics['grad_norm'] = optax.global_norm(grads)
+    metrics['param_count'] = jnp.array(float(total_count), f32)
+    metrics = {f'{self.name}/{k}': v for k, v in metrics.items()}
+    return (metrics, aux) if has_aux else metrics
+
+  def _summarize_params(self, counts, depth):
+    pfxs = []
+    for key in counts:
+      parts = key.split('/')
+      pfxs += ['/'.join(parts[: i + 1]) for i in range(min(len(parts), depth))]
+    subcounts = {
+        prefix: sum(v for k, v in counts.items() if k.startswith(prefix))
+        for prefix in set(pfxs)}
+    lines = [f'Optimizer {self.name} has {sum(counts.values()):,} params:']
+    for prefix, count in sorted(subcounts.items(), key=lambda x: -x[1]):
+      lines.append(f'{count:>14,} {prefix}')
+    return '\n'.join(lines)
+
+
 def clip_by_agc(clip=0.3, pmin=1e-3):
 
   def init_fn(params):

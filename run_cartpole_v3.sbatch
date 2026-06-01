@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH -J dreamerv3_offline_v3
+#SBATCH -J v3_cartpole_adaptive_entropy
 #SBATCH -p gpu
 #SBATCH -t 0-24:00:00
 #SBATCH -c 4
@@ -12,17 +12,17 @@ set -euo pipefail
 
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 
-RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir dreamerv3_offline_v3)}"
+RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir v3_cartpole_adaptive_entropy)}"
 mkdir -p "$RUN_DIR"
 echo "RUN_DIR=$RUN_DIR" > "$RUN_DIR/job.env"
 
 export MUJOCO_GL=egl
 
 cd "$RUN_DIR"
+# DreamerV4 toggles (PMPO / RMS loss-norm / single-rollout) were removed on this
+# branch; the agent is plain DreamerV3 + HRL. Per-component optimizers can be
+# tuned via --agent.opt.* / --agent.goal_opt.* / --agent.ac_opt.* here.
 AGENT_FLAGS=(
-  --agent.use_single_rollout False
-  --agent.use_rms_loss_norm False
-  --agent.imag_loss.use_pmpo_actor False 
 )
 
 python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
@@ -30,12 +30,13 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --configs size1m \
   --task dmc_cartpole_swingup \
   --env.dmc.image True \
+  --env.dmc.proprio True \
   --env.dmc.size 32 32 \
   --agent.enc.simple.outer True \
   --agent.dec.simple.outer True \
-  --online_learning False \
+  --online_learning True \
   --online_actor_cpu False \
-  --run.envs 16 \
+  --run.envs 1 \
   --run.steps 4000000 \
   --logger.outputs jsonl,scope,wandb \
   --logger.wandb_mode online \

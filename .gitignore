@@ -5,3 +5,4 @@ __pycache__/
 *.egg-info
 MUJOCO_LOG.TXT
 ;
+hrl_director_fixes_todo.md

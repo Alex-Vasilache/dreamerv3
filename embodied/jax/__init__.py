@@ -11,6 +11,7 @@ from .utils import RmsTracker
 from .utils import SlowModel
 
 from .opt import Optimizer
+from .opt import MultiOptimizer
 
 from . import nets
 from . import outs

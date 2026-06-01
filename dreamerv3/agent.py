@@ -13,7 +13,6 @@ import elements
 import embodied.jax
 import embodied.jax.nets as nn
 import embodied.jax.outs as outs
-from embodied.jax import internal as jaxinternal
 import jax
 import jax.numpy as jnp
 import ninjax as nj
@@ -288,18 +287,6 @@ class Agent(embodied.jax.Agent):
           self.goal_code_space, **config.manager_policy, name='manager_pol')
       self.manager_sample_freq = config.manager_sample_freq
 
-    # Slow (EMA) behavioral priors for the PMPO reverse-KL term. ``pol_slow`` is
-    # built in both modes when PMPO is on; ``manager_pol_slow`` is HRL-only.
-    self.use_pmpo_actor = config.imag_loss.use_pmpo_actor
-    if self.use_pmpo_actor:
-      self.pol_slow = embodied.jax.SlowModel(
-          embodied.jax.MLPHead(act_space, policy_outs, **config.policy, name='pol_slow'),
-          source=self.pol, **config.slowvalue)
-      if self.use_hrl:
-        self.manager_pol_slow = embodied.jax.SlowModel(
-            embodied.jax.MLPHead(self.goal_code_space, **config.manager_policy, name='manager_pol_slow'),
-            source=self.manager_pol, **config.slowvalue)
-
     if self.use_hrl:
       # Separate extrinsic and exploratory value heads (+ EMA targets).
       self.mgr_extr_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_extr_val')
@@ -316,18 +303,20 @@ class Agent(embodied.jax.Agent):
           embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
           source=self.wkr_goal_val, **config.slowvalue)
 
-      # Manager uses ``meanstd`` (Director-style); worker keeps the DreamerV3
-      # ``perc`` retnorm and ``none`` advnorm so its goal reward stays raw.
-      mgr_retnorm_cfg = getattr(config, 'mgr_retnorm', config.retnorm)
-      mgr_advnorm_cfg = getattr(config, 'mgr_advnorm', config.advnorm)
-      self.mgr_extr_retnorm = embodied.jax.Normalize(**mgr_retnorm_cfg, name='mgr_extr_retnorm')
-      self.mgr_expl_retnorm = embodied.jax.Normalize(**mgr_retnorm_cfg, name='mgr_expl_retnorm')
+      # Manager and worker both use the DreamerV3 actor-critic normalization
+      # (``perc`` retnorm / ``none`` valnorm / ``none`` advnorm). The critics are
+      # symexp_twohot heads trained on RAW returns; the advantage is scaled by the
+      # percentile return range. Each critic owns its own valnorm (no-op under
+      # ``none`` but kept so the unnorm/norm path mirrors flat v3 exactly).
+      self.mgr_extr_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_extr_retnorm')
+      self.mgr_expl_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_expl_retnorm')
       self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
 
-      self.mgr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_valnorm')
+      self.mgr_extr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_extr_valnorm')
+      self.mgr_expl_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_expl_valnorm')
       self.wkr_goal_valnorm = embodied.jax.Normalize(**config.valnorm, name='wkr_goal_valnorm')
 
-      self.mgr_advnorm = embodied.jax.Normalize(**mgr_advnorm_cfg, name='mgr_advnorm')
+      self.mgr_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_advnorm')
       self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
 
       self.mgr_expl_weight = config.mgr_expl_weight
@@ -365,31 +354,35 @@ class Agent(embodied.jax.Agent):
       self.valnorm = embodied.jax.Normalize(**config.valnorm, name='valnorm')
       self.advnorm = embodied.jax.Normalize(**config.advnorm, name='advnorm')
 
-    # Modules updated by the single ``self.opt`` step in ``train``.
+    # Three independent optimizers (Director-style). The world-model + heads, the
+    # goal autoencoder (VAE), and the actor-critic each get their own optax state
+    # (separate momentum / RMS / AGC / lr). ``MultiOptimizer`` does a single
+    # backward pass over the union of modules, then routes each module group's
+    # gradients to its own optimizer — gradients are identical to one combined
+    # optimizer (stop-gradients already isolate the groups) but the optimization
+    # dynamics decouple, so each component can use the default v3 settings or be
+    # tuned independently.
+    model_modules = [self.dyn, self.enc, self.dec, self.rew, self.con]
     if self.use_hrl:
-      self.modules = [
-          self.dyn,
-          self.enc,
-          self.dec,
-          self.goal_enc,
-          self.goal_dec,
-          self.rew,
-          self.con,
-          self.manager_pol,
-          self.pol,
-          self.mgr_extr_val,
-          self.mgr_expl_val,
-          self.wkr_goal_val,
+      goal_modules = [self.goal_enc, self.goal_dec]
+      ac_modules = [
+          self.manager_pol, self.pol,
+          self.mgr_extr_val, self.mgr_expl_val, self.wkr_goal_val,
       ]
+      groups = {
+          'model': (model_modules, self._make_opt(**config.opt)),
+          'goal': (goal_modules, self._make_opt(**config.goal_opt)),
+          'ac': (ac_modules, self._make_opt(**config.ac_opt)),
+      }
     else:
-      self.modules = [
-          self.dyn, self.enc, self.dec,
-          self.rew, self.con,
-          self.pol, self.val,
-      ]
-    self.opt = embodied.jax.Optimizer(
-        self.modules, self._make_opt(**config.opt), summary_depth=1,
-        name='opt')
+      ac_modules = [self.pol, self.val]
+      groups = {
+          'model': (model_modules, self._make_opt(**config.opt)),
+          'ac': (ac_modules, self._make_opt(**config.ac_opt)),
+      }
+    self.modules = [m for ms, _ in groups.values() for m in ms]
+    self.opt = embodied.jax.MultiOptimizer(
+        groups, summary_depth=1, name='opt')
 
     # One ``rec`` scale is expanded to every reconstruction key in ``dec_space``.
     scales = self.config.loss_scales.copy()
@@ -414,14 +407,6 @@ class Agent(embodied.jax.Agent):
       if not self.config.repval_loss:
         scales.pop('repval', None)
     self.scales = scales
-
-    if self.config.use_rms_loss_norm:
-      self.lossrms = {
-          k: embodied.jax.RmsTracker(
-              rate=self.config.loss_rms_rate, name=f'lossrms_{k.replace("/", "_")}')
-          for k in self.scales}
-    else:
-      self.lossrms = None
 
   @property
   def policy_keys(self):
@@ -777,10 +762,6 @@ class Agent(embodied.jax.Agent):
       self.wkr_goal_slowval.update()
     else:
       self.slowval.update()
-    if self.use_pmpo_actor:
-      self.pol_slow.update()
-      if self.use_hrl:
-        self.manager_pol_slow.update()
     outs = {}
     if self.config.replay_context:
       updates = elements.tree.flatdict(dict(
@@ -830,14 +811,8 @@ class Agent(embodied.jax.Agent):
       # ---- Flat AC path (v4-online): single ``pol``/``val`` over WM features. ----
       shapes_bt = {k: v.shape for k, v in losses.items()}
       assert all(x == (B, T) for x in shapes_bt.values()), ((B, T), shapes_bt)
-      K_cap = min(self.config.imag_last or T, T)
-      if self.config.use_single_rollout:
-        K_imag = 1
-        K_repl = max(K_cap, 2) if self.config.repval_loss else K_cap
-        K_repl = min(K_repl, T)
-      else:
-        K_imag = K_cap
-        K_repl = K_cap
+      K_imag = min(self.config.imag_last or T, T)
+      K_repl = K_imag
       H = self.config.imag_length
       starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
       policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
@@ -849,8 +824,6 @@ class Agent(embodied.jax.Agent):
       lastact = jax.tree.map(lambda x: x[:, None], lastact)
       imgact = concat([imgprevact, lastact], 1)
       inp = self.feat2tensor(imgfeat)
-      policy_prior = (
-          self.pol_slow(inp, 2) if self.use_pmpo_actor else None)
       los_flat, imgloss_out, mets = imag_loss(
           imgact,
           self.rew(inp, 2).pred(),
@@ -862,7 +835,6 @@ class Agent(embodied.jax.Agent):
           update=training,
           contdisc=self.config.contdisc,
           horizon=self.config.horizon,
-          policy_prior=policy_prior,
           **self.config.imag_loss)
       losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_flat.items()})
       metrics.update(mets)
@@ -870,8 +842,6 @@ class Agent(embodied.jax.Agent):
         feat = sg(repfeat, skip=self.config.repval_grad)
         last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]
         boot = imgloss_out['ret'][:, 0].reshape(B, K_imag)
-        if K_repl != K_imag:
-          boot = jnp.broadcast_to(boot[:, -1:], (B, K_repl))
         feat, last, term, rew, boot = jax.tree.map(
             lambda x: x[:, -K_repl:], (feat, last, term, rew, boot))
         inp = self.feat2tensor(feat)
@@ -891,11 +861,6 @@ class Agent(embodied.jax.Agent):
       assert set(losses.keys()) == set(self.scales.keys()), (
           sorted(losses.keys()), sorted(self.scales.keys()))
       metrics.update({f'loss/{k}': v.mean() for k, v in losses.items()})
-      if self.config.use_rms_loss_norm:
-        losses = {
-            k: v / sg(self.lossrms[k](v, training))
-            for k, v in losses.items()}
-        metrics.update({f'loss_rms/{k}': v.mean() for k, v in losses.items()})
       loss = sum([v.mean() * self.scales[k] for k, v in losses.items()])
       carry = (enc_carry, dyn_carry, dec_carry)
       entries = (enc_entries, dyn_entries, dec_entries)
@@ -946,18 +911,11 @@ class Agent(embodied.jax.Agent):
     assert all(x == (B, T) for x in shapes_bt.values()), ((B, T), shapes_bt)
 
     # --- Imagination length K_imag vs replay value window K_repl ---
-    # B,T = batch and time from replay. K_cap upper-bounds how many start states
-    # we slice from the end of the sequence for imagination.
-    # Single-rollout uses K_imag=1 but K_repl>=2 when repval_loss is on, else
-    # lambda_return gets an empty term[:, 1:] slice and jnp.stack fails.
-    K_cap = min(self.config.imag_last or T, T)
-    if self.config.use_single_rollout:
-      K_imag = 1
-      K_repl = max(K_cap, 2) if self.config.repval_loss else K_cap
-      K_repl = min(K_repl, T)
-    else:
-      K_imag = K_cap
-      K_repl = K_cap
+    # B,T = batch and time from replay. ``imag_last`` upper-bounds how many start
+    # states we slice from the end of the sequence for imagination (standard
+    # DreamerV3 multi-branch imagination).
+    K_imag = min(self.config.imag_last or T, T)
+    K_repl = K_imag
     H = self.config.imag_length  # imagined steps after the start state (H+1 states).
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
     imgfeat, imgprevact, img_skills = self._imagine_with_manager(starts, H, training)
@@ -980,9 +938,6 @@ class Agent(embodied.jax.Agent):
     # Detach manager-produced goals from worker actor/critic.
     goals = sg(self._goals_from_skills(jax.tree.map(sg, mgr_skills), bdims=2))
     mgr_policy = mgr_as_dict(self.manager_pol(inp_downsampled, 2))
-    mgr_policy_prior = (
-        mgr_as_dict(self.manager_pol_slow(inp_downsampled, 2))
-        if self.use_pmpo_actor else None)
     con = self.con(inp, 2).prob(1)
     mgr_cont = self._mgr_cont(con, without_zeros=True)
     rew_step = sg(self.rew(inp, 2).pred())
@@ -1013,9 +968,9 @@ class Agent(embodied.jax.Agent):
         self.mgr_expl_slowval(inp_downsampled, 2),
         self.mgr_extr_retnorm,
         self.mgr_expl_retnorm,
-        self.mgr_valnorm,
+        self.mgr_extr_valnorm,
+        self.mgr_expl_valnorm,
         self.mgr_advnorm,
-        manager_policy_prior=mgr_policy_prior,
         mgr_actent_adapter=self.mgr_actent,
         mgr_actent_perdim=self.manager_actent_perdim,
         **kwargs_mgr)
@@ -1049,15 +1004,12 @@ class Agent(embodied.jax.Agent):
       win_feat_goal = self._feat_goal2tensor(win_feat, win_goal)
       win_goal_rew = self._wkr_goal_reward(win_goal, win_feat)
       kwargs_wkr.update(skill_window=0)                         # each window is its own segment
-      win_policy_prior = (
-          self.pol_slow(win_feat_goal, 2) if self.use_pmpo_actor else None)
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
           win_act, win_goal_rew, win_con,
           self.pol(win_feat_goal, 2),
           self.wkr_goal_val(win_feat_goal, 2),
           self.wkr_goal_slowval(win_feat_goal, 2),
           self.wkr_goal_retnorm, self.wkr_goal_valnorm, self.wkr_goal_advnorm,
-          policy_prior=win_policy_prior,
           **kwargs_wkr)
       losses.update({k: v.mean(1).reshape((B, -1)) for k, v in los_wkr.items()})
       # Repval bootstrap: first window's return at the imagination start, per start state.
@@ -1069,15 +1021,12 @@ class Agent(embodied.jax.Agent):
       feat_goal = self._feat_goal2tensor(imgfeat, goals)
       wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
       kwargs_wkr.update(skill_window=K)
-      feat_policy_prior = (
-          self.pol_slow(feat_goal, 2) if self.use_pmpo_actor else None)
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
           imgact, wkr_goal_rew, con,
           self.pol(feat_goal, 2),
           self.wkr_goal_val(feat_goal, 2),
           self.wkr_goal_slowval(feat_goal, 2),
           self.wkr_goal_retnorm, self.wkr_goal_valnorm, self.wkr_goal_advnorm,
-          policy_prior=feat_policy_prior,
           **kwargs_wkr)
       losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_wkr.items()})
       boot_goal_full = imgloss_wkr_out['wkr_goal_ret'][:, 0].reshape(B, K_imag)
@@ -1145,10 +1094,6 @@ class Agent(embodied.jax.Agent):
           horizon=self.config.horizon,
           value_head='mgr')
 
-      # For manager replay, we need to compute combined return of normalized signals
-      voff_extr, vscale_extr = self.mgr_extr_retnorm.stats()
-      voff_expl, vscale_expl = self.mgr_expl_retnorm.stats()
-
       # Manager Trajectory is short
       weight_down = f32(~last_down)
       disc = 1 - 1 / self.config.horizon
@@ -1157,6 +1102,12 @@ class Agent(embodied.jax.Agent):
       boot_expl_down = jnp.broadcast_to(boot_expl[:, -1:], repl_mgr_expl_rew.shape)
       ret_extr = lambda_return(last_down, term_down, repl_mgr_extr_rew, jnp.zeros_like(repl_mgr_extr_rew), boot_extr_down, disc, lam)
       ret_expl = lambda_return(last_down, term_down, repl_mgr_expl_rew, jnp.zeros_like(repl_mgr_expl_rew), boot_expl_down, disc, lam)
+
+      # Train the critics on RAW returns (``valnorm: none`` -> offset 0, scale 1),
+      # matching the imagination critic target and flat-v3 ``repl_loss``. The
+      # symexp_twohot head handles the raw return scale internally.
+      voff_extr, vscale_extr = self.mgr_extr_valnorm(ret_extr, update=training)
+      voff_expl, vscale_expl = self.mgr_expl_valnorm(ret_expl, update=training)
 
       ret_extr_normed = (ret_extr - voff_extr) / vscale_extr
       ret_extr_padded = jnp.concatenate([ret_extr_normed, jnp.zeros_like(ret_extr_normed[:, -1:])], 1)
@@ -1191,11 +1142,6 @@ class Agent(embodied.jax.Agent):
     assert set(losses.keys()) == set(self.scales.keys()), (
         sorted(losses.keys()), sorted(self.scales.keys()))
     metrics.update({f'loss/{k}': v.mean() for k, v in losses.items()})
-    if self.config.use_rms_loss_norm:
-      losses = {
-          k: v / sg(self.lossrms[k](v, training))
-          for k, v in losses.items()}
-      metrics.update({f'loss_rms/{k}': v.mean() for k, v in losses.items()})
     loss = sum([v.mean() * self.scales[k] for k, v in losses.items()])
 
     carry = (enc_carry, dyn_carry, dec_carry)
@@ -1488,49 +1434,6 @@ def policy_time_slice(x):
   return x[:, :-1]
 
 
-def pmpo_global_sum(x):
-  """Sum over all local (batch x time) elements, all-reduced across data axes.
-
-  PMPO partitions imagined states into D+/D- over the *full* (batch x time)
-  population (DreamerV4 eq. 11), so the |D+|/|D-| counts must pool globally, not
-  per trajectory row. For multi-device, all-reduce over the data axes.
-  """
-  s = jnp.sum(x)
-  axes = jaxinternal.get_data_axes()
-  if axes:
-    s = jax.lax.psum(s, axes)
-  return s
-
-
-def policy_behavior_kl(policy, prior=None):
-  """KL(policy || prior) reduced over skill axes to ``(batch, time)``.
-
-  ``prior`` is a separate stop-grad behavioral policy (e.g. a slow/EMA copy).
-  If ``prior`` is None, falls back to the same-forward-pass copy (KL == 0).
-  """
-  total = None
-  for k, v in policy.items():
-    inner = _head_inner(v)
-    pri = _head_inner(prior[k]) if prior is not None else inner
-    if isinstance(inner, (outs.OneHot, outs.Categorical)):
-      logits = inner.dist.logits if isinstance(inner, outs.OneHot) else inner.logits
-      prilogits = pri.dist.logits if isinstance(pri, outs.OneHot) else pri.logits
-      logp = jax.nn.log_softmax(logits, -1)
-      p = jax.nn.softmax(logits, -1)
-      logpref = jax.nn.log_softmax(sg(prilogits), -1)
-      kl = (p * (logp - logpref)).sum(-1)
-    elif isinstance(inner, outs.Normal):
-      ref = outs.Normal(sg(pri.mean), sg(pri.stddev))
-      kl = inner.kl(ref)
-    else:
-      raise NotImplementedError(type(inner))
-    # Reduce skill axes only; do not use ``Agg.axes`` on tensors that include time.
-    while kl.ndim > 2:
-      kl = kl.sum(-1)
-    total = kl if total is None else total + kl
-  return total
-
-
 def imag_loss_wkr(
     act,
     wkr_goal_rew,
@@ -1548,13 +1451,15 @@ def imag_loss_wkr(
     lam=0.95,
     actent=3e-4,
     slowreg=1.0,
-    use_pmpo_actor=False,
-    pmpo_beta=0.3,
-    pmpo_alpha=0.5,
     skill_window=0,
-    policy_prior=None,
 ):
-  """Worker actor-critic losses on imagined trajectories."""
+  """Worker actor-critic losses on imagined trajectories.
+
+  Uses the standard DreamerV3 actor-critic normalization: the critic is a
+  symexp_twohot head trained on RAW goal-returns (``wkr_goal_valnorm`` is
+  ``none``), the advantage is scaled by the percentile return range
+  (``wkr_goal_retnorm`` = ``perc``), and ``wkr_goal_advnorm`` is ``none``.
+  """
   losses = {}
   metrics = {}
 
@@ -1596,27 +1501,10 @@ def imag_loss_wkr(
 
   w = sg(weight[:, :-1])
 
-  if use_pmpo_actor:
-    # PMPO (DreamerV4 eq. 11) as a global mean over all imagined states (Bug C):
-    #   (1-α) mean_{D-} ln π - α mean_{D+} ln π + β mean KL(π || prior).
-    wkr_goal_adv_raw = wkr_goal_ret - wkr_goal_tarval[:, :-1]
-    wkr_goal_pos = (wkr_goal_adv_raw >= 0).astype(f32)
-    wkr_goal_neg = (wkr_goal_adv_raw < 0).astype(f32)
-    wkr_n_tot = jnp.maximum(pmpo_global_sum(jnp.ones_like(wkr_goal_pos)), 1.0)
-    wkr_goal_den_p = jnp.maximum(pmpo_global_sum(wkr_goal_pos), 1.0)
-    wkr_goal_den_n = jnp.maximum(pmpo_global_sum(wkr_goal_neg), 1.0)
-
-    wkr_goal_pos_coeff = pmpo_alpha * (wkr_n_tot / wkr_goal_den_p) * wkr_goal_pos
-    wkr_goal_neg_coeff = (1.0 - pmpo_alpha) * (wkr_n_tot / wkr_goal_den_n) * wkr_goal_neg
-
-    wkr_kl_t = policy_time_slice(policy_behavior_kl(policy, policy_prior))
-    wkr_goal_policy_loss = (wkr_goal_neg_coeff - wkr_goal_pos_coeff) * wkr_logpi + pmpo_beta * wkr_kl_t
-
-    metrics['wkr_goal_kl_behavior'] = wkr_kl_t.mean()
-    metrics['wkr_pmpo_frac_pos'] = wkr_goal_den_p / wkr_n_tot
-  else:
-    wkr_goal_policy_loss = w * -(
-        wkr_logpi * sg(wkr_goal_adv_normed) + actent * sum(wkr_ents.values()))
+  # REINFORCE with the percentile-scaled advantage and a fixed entropy bonus
+  # (DreamerV3 actor loss).
+  wkr_goal_policy_loss = w * -(
+      wkr_logpi * sg(wkr_goal_adv_normed) + actent * sum(wkr_ents.values()))
 
   losses['wkr_policy'] = wkr_goal_policy_loss
 
@@ -1672,7 +1560,8 @@ def imag_loss_mgr(
     mgr_expl_slowvalue,
     mgr_extr_retnorm,
     mgr_expl_retnorm,
-    mgr_valnorm,
+    mgr_extr_valnorm,
+    mgr_expl_valnorm,
     mgr_advnorm,
     update,
     contdisc=True,
@@ -1681,23 +1570,27 @@ def imag_loss_mgr(
     lam=0.95,
     actent=3e-4,
     slowreg=1.0,
-    use_pmpo_actor=False,
-    pmpo_beta=0.3,
-    pmpo_alpha=0.5,
     mgr_expl_weight=0.1,
-    manager_policy_prior=None,
     mgr_actent_adapter=None,
     mgr_actent_perdim=True,
 ):
-  """Manager actor-critic losses on imagined trajectories."""
+  """Manager actor-critic losses on imagined (downsampled K-step) trajectories.
+
+  Mirrors the flat DreamerV3 actor-critic (``imag_loss``) per critic: each
+  critic is a symexp_twohot head trained on RAW λ-returns (``valnorm: none``),
+  and the per-critic advantage is scaled by its percentile return range
+  (``retnorm: perc``). The extrinsic and exploratory advantages are combined
+  with ``mgr_expl_weight`` and left at that scale (``advnorm: none``), so the
+  default v3 actor hyperparameters apply directly.
+  """
   losses = {}
   metrics = {}
 
-  # v4-online pattern: use the retnorm stats (frozen for this iteration) to map
-  # the value head's pred — which was trained on (raw_ret - voff)/vscale — back
-  # to raw scale, so ``lambda_return`` mixes raw rew + raw tarval consistently.
-  voff_extr_prev, vscale_extr_prev = mgr_extr_retnorm.stats()
-  voff_expl_prev, vscale_expl_prev = mgr_expl_retnorm.stats()
+  # Unnormalize the critic preds back to raw return scale. Under ``valnorm: none``
+  # this is the identity (offset 0, scale 1), so the symexp_twohot critic's raw
+  # prediction is used directly as the λ-return bootstrap (matches flat v3).
+  voff_extr_prev, vscale_extr_prev = mgr_extr_valnorm.stats()
+  voff_expl_prev, vscale_expl_prev = mgr_expl_valnorm.stats()
 
   mgr_extr_val = mgr_extr_value.pred() * vscale_extr_prev + voff_extr_prev
   mgr_extr_slowval = mgr_extr_slowvalue.pred() * vscale_extr_prev + voff_extr_prev
@@ -1714,26 +1607,22 @@ def imag_loss_mgr(
   last = jnp.zeros_like(con)
   term = 1 - con
 
-  # Raw λ-returns from raw rewards + raw tarval bootstraps.
+  # Raw λ-returns from raw rewards + raw tarval bootstraps (the critic bootstraps
+  # off its own value, like flat v3 ``imag_loss``).
   mgr_extr_ret = lambda_return(
-      last, term, mgr_extr_rew, mgr_extr_tarval, jnp.zeros_like(mgr_extr_rew), disc, lam)
+      last, term, mgr_extr_rew, mgr_extr_tarval, mgr_extr_tarval, disc, lam)
   mgr_expl_ret = lambda_return(
-      last, term, mgr_expl_rew, mgr_expl_tarval, jnp.zeros_like(mgr_expl_rew), disc, lam)
+      last, term, mgr_expl_rew, mgr_expl_tarval, mgr_expl_tarval, disc, lam)
 
-  # Now update retnorm with the *raw* λ-return and use its scale to convert the
-  # raw advantage into the policy-gradient signal.
-  voff_extr, vscale_extr = mgr_extr_retnorm(mgr_extr_ret, update)
-  voff_expl, vscale_expl = mgr_expl_retnorm(mgr_expl_ret, update)
+  mgr_total_ret = mgr_extr_ret + mgr_expl_weight * mgr_expl_ret
 
-  mgr_extr_ret_normed = (mgr_extr_ret - voff_extr) / vscale_extr
-  mgr_expl_ret_normed = (mgr_expl_ret - voff_expl) / vscale_expl
-
-  mgr_total_ret = mgr_extr_ret_normed + mgr_expl_weight * mgr_expl_ret_normed
-
-  # Adv computed in raw space (rew + raw tarval), scaled to ~unit variance by
-  # the retnorm std. Matches v4-online ``adv = (ret - tarval) / rscale``.
-  mgr_extr_adv = (mgr_extr_ret - mgr_extr_tarval[:, :-1]) / vscale_extr
-  mgr_expl_adv = (mgr_expl_ret - mgr_expl_tarval[:, :-1]) / vscale_expl
+  # Advantage: per critic ``(ret - tarval) / rscale`` with ``rscale`` the
+  # percentile return range (retnorm = perc), exactly as flat v3. Combine the two
+  # already-scaled advantages with ``mgr_expl_weight`` and leave at that scale.
+  roff_extr, rscale_extr = mgr_extr_retnorm(mgr_extr_ret, update)
+  roff_expl, rscale_expl = mgr_expl_retnorm(mgr_expl_ret, update)
+  mgr_extr_adv = (mgr_extr_ret - mgr_extr_tarval[:, :-1]) / rscale_extr
+  mgr_expl_adv = (mgr_expl_ret - mgr_expl_tarval[:, :-1]) / rscale_expl
   mgr_adv = mgr_extr_adv + mgr_expl_weight * mgr_expl_adv
   mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
@@ -1743,12 +1632,12 @@ def imag_loss_mgr(
       head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
   mgr_ents = {k: head_entropy_time(v) for k, v in manager_policy.items()}
 
-  # Director-style adaptive normalized entropy regularizer. PMPO does not get
-  # an entropy term (DreamerV4: the reverse KL to the slow behavioral prior is
-  # the only regularizer); REINFORCE uses the adaptive actent.
+  # Director-style adaptive normalized entropy regularizer (per-categorical
+  # entropy held near ``manager_actent_target`` of the max via AutoAdapt). When
+  # the adapter is absent the policy loss falls back to the fixed v3 ``actent``.
   mgr_ent_loss_bt = jnp.zeros_like(mgr_logpi)
   mgr_actent_mets = {}
-  if mgr_actent_adapter is not None and not use_pmpo_actor:
+  if mgr_actent_adapter is not None:
     ent_loss_terms = []
     for k, head in manager_policy.items():
       inner = _head_inner(head)
@@ -1775,36 +1664,14 @@ def imag_loss_mgr(
 
   w = sg(weight[:, :-1])
 
-  if use_pmpo_actor:
-    # PMPO target formula:
-    # (1-α)/|D-| * Σ_{D-} ln π - α/|D+| * Σ_{D+} ln π + β * mean(KL(π||prior)).
-    mgr_adv_raw = mgr_total_ret - (mgr_extr_tarval_normed + mgr_expl_weight * mgr_expl_tarval_normed)[:, :-1]
-
-    mgr_pos = (mgr_adv_raw >= 0).astype(f32)
-    mgr_neg = (mgr_adv_raw < 0).astype(f32)
-
-    mgr_n_tot = jnp.maximum(pmpo_global_sum(jnp.ones_like(mgr_pos)), 1.0)
-    mgr_den_p = jnp.maximum(pmpo_global_sum(mgr_pos), 1.0)
-    mgr_den_n = jnp.maximum(pmpo_global_sum(mgr_neg), 1.0)
-
-    mgr_pos_coeff = pmpo_alpha * (mgr_n_tot / mgr_den_p) * mgr_pos
-    mgr_neg_coeff = (1.0 - pmpo_alpha) * (mgr_n_tot / mgr_den_n) * mgr_neg
-
-    mgr_kl_t = policy_time_slice(policy_behavior_kl(manager_policy, manager_policy_prior))
-    # PMPO (DreamerV4): no entropy term — the reverse KL to the slow behavioral
-    # prior is the sole regularizer.
-    losses['mgr_policy'] = (
-        (mgr_neg_coeff - mgr_pos_coeff) * mgr_logpi + pmpo_beta * mgr_kl_t)
-
-    metrics['mgr_kl_behavior'] = mgr_kl_t.mean()
-    metrics['mgr_pmpo_frac_pos'] = mgr_den_p / mgr_n_tot
+  # REINFORCE manager actor. With the adaptive entropy adapter the per-dim
+  # normalized-entropy loss is already in ``mgr_ent_loss_bt``; otherwise fall
+  # back to the fixed v3 ``actent`` on summed per-categorical entropy.
+  if mgr_actent_adapter is not None:
+    losses['mgr_policy'] = w * (-mgr_logpi * sg(mgr_adv_normed) + mgr_ent_loss_bt)
   else:
-    if mgr_actent_adapter is not None:
-      # Adaptive normalized actent already in mgr_ent_loss_bt; drop fixed scalar.
-      losses['mgr_policy'] = w * (-mgr_logpi * sg(mgr_adv_normed) + mgr_ent_loss_bt)
-    else:
-      losses['mgr_policy'] = w * -(
-          mgr_logpi * sg(mgr_adv_normed) + actent * sum(mgr_ents.values()))
+    losses['mgr_policy'] = w * -(
+        mgr_logpi * sg(mgr_adv_normed) + actent * sum(mgr_ents.values()))
 
   metrics['mgr_policy_loss'] = losses['mgr_policy'].mean()
   metrics['mgr_ent_loss'] = mgr_ent_loss_bt.mean()
@@ -1814,7 +1681,14 @@ def imag_loss_mgr(
   metrics['mgr_extr_rew_block'] = mgr_extr_rew[:, 1:].sum() / nz
   metrics['mgr_expl_rew'] = mgr_expl_rew.mean()
 
-  # Separate NLL losses for each critic.
+  # Critic NLL against RAW λ-returns (``valnorm: none`` -> target == raw return).
+  # The symexp_twohot head handles the return scale; plus a slow-value regression
+  # term (DreamerV3 ``imag_loss``).
+  voff_extr, vscale_extr = mgr_extr_valnorm(mgr_extr_ret, update)
+  voff_expl, vscale_expl = mgr_expl_valnorm(mgr_expl_ret, update)
+  mgr_extr_ret_normed = (mgr_extr_ret - voff_extr) / vscale_extr
+  mgr_expl_ret_normed = (mgr_expl_ret - voff_expl) / vscale_expl
+
   mgr_extr_tar_padded = jnp.concatenate([mgr_extr_ret_normed, 0 * mgr_extr_ret_normed[:, -1:]], 1)
   losses['mgr_extr_value'] = sg(weight[:, :-1]) * (
       mgr_extr_value.loss(sg(mgr_extr_tar_padded)) +
@@ -1864,12 +1738,8 @@ def imag_loss(
     lam=0.95,
     actent=3e-4,
     slowreg=1.0,
-    use_pmpo_actor=False,
-    pmpo_beta=0.3,
-    pmpo_alpha=0.5,
-    policy_prior=None,
 ):
-  """Flat actor-critic loss (v4-online), used when ``use_hrl=False``."""
+  """Flat DreamerV3 actor-critic loss, used when ``use_hrl=False``."""
   losses = {}
   metrics = {}
 
@@ -1890,22 +1760,8 @@ def imag_loss(
   logpi = sum([v.logp(sg(act[k]))[:, :-1] for k, v in policy.items()])
   ents = {k: v.entropy()[:, :-1] for k, v in policy.items()}
   w = sg(weight[:, :-1])
-  if use_pmpo_actor:
-    adv_raw = ret - tarval[:, :-1]
-    pos = (adv_raw >= 0).astype(f32)
-    neg = (adv_raw < 0).astype(f32)
-    n_tot = jnp.maximum(pmpo_global_sum(jnp.ones_like(pos)), 1.0)
-    den_p = jnp.maximum(pmpo_global_sum(pos), 1.0)
-    den_n = jnp.maximum(pmpo_global_sum(neg), 1.0)
-    pos_coeff = pmpo_alpha * (n_tot / den_p) * pos
-    neg_coeff = (1.0 - pmpo_alpha) * (n_tot / den_n) * neg
-    kl_t = policy_time_slice(policy_behavior_kl(policy, policy_prior))
-    policy_loss = (neg_coeff - pos_coeff) * logpi + pmpo_beta * kl_t
-    metrics['kl_behavior'] = kl_t.mean()
-    metrics['pmpo_frac_pos'] = den_p / n_tot
-  else:
-    policy_loss = w * -(
-        logpi * sg(adv_normed) + actent * sum(ents.values()))
+  policy_loss = w * -(
+      logpi * sg(adv_normed) + actent * sum(ents.values()))
   losses['policy'] = policy_loss
 
   voffset, vscale = valnorm(ret, update)
