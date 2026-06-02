@@ -9,11 +9,49 @@ sys.path.insert(0, str(folder.parent))
 sys.path.insert(1, str(folder.parent.parent))
 __package__ = folder.name
 
+import collections
+
 import elements
 import embodied
 import numpy as np
 import portal
 import ruamel.yaml as yaml
+
+
+class WandBOutputWithFPS(elements.logger.WandBOutput):
+  """WandBOutput that passes a configurable fps to wandb.Video for faster gifs."""
+
+  def __init__(self, name, video_fps=4, **kwargs):
+    super().__init__(name, **kwargs)
+    self._video_fps = video_fps
+
+  def __call__(self, summaries):
+    import wandb
+    bystep = collections.defaultdict(dict)
+    for step, name, value in summaries:
+      if not self._pattern.search(name):
+        continue
+      if isinstance(value, str):
+        bystep[step][name] = value
+      elif len(value.shape) == 0:
+        bystep[step][name] = float(value)
+      elif len(value.shape) == 1:
+        bystep[step][name] = wandb.Histogram(value)
+      elif len(value.shape) in (2, 3):
+        value = value[..., None] if len(value.shape) == 2 else value
+        assert value.shape[3] in [1, 3, 4], value.shape
+        if value.dtype != np.uint8:
+          value = (255 * np.clip(value, 0, 1)).astype(np.uint8)
+        value = np.transpose(value, [2, 0, 1])
+        bystep[step][name] = wandb.Image(value)
+      elif len(value.shape) == 4:
+        assert value.shape[3] in [1, 3, 4], value.shape
+        value = np.transpose(value, [0, 3, 1, 2])
+        if value.dtype != np.uint8:
+          value = (255 * np.clip(value, 0, 1)).astype(np.uint8)
+        bystep[step][name] = wandb.Video(value, fps=self._video_fps, format='gif')
+    for step, metrics in bystep.items():
+      self._wandb.log(metrics, step=step)
 
 
 def main(argv=None):
@@ -210,21 +248,47 @@ def make_logger(config):
       outputs.append(elements.logger.ExpaOutput(
           exp, run, proj, config.logger.user, config.flat))
     elif output == 'wandb':
-      import hashlib
+      import hashlib, os as _os
+      # In online-learning mode (actor + learner in separate processes), both
+      # processes call make_logger() → wandb.init().  Sharing the same run_id
+      # creates two competing WandB connections: the learner's report metrics
+      # and videos end up in a local run-dir that is "shadowed" by the actor's
+      # resumed connection, so they never appear on the dashboard.
+      #
+      # Fix: give each role its own run_id within a shared WandB group so both
+      # actor (epstats) and learner (train/report) metrics appear, without
+      # conflicts.  Non-online runs use the original single run_id (no group).
+      is_online = (
+          config.online_learning or
+          config.script in ('online_actor', 'online_learner'))
+      is_actor = (
+          _os.environ.get('DREAMERV3_ACTOR_PROCESS') or
+          config.script == 'online_actor')
       name = '/'.join(logdir.split('/')[-3:])
-      run_id = hashlib.md5(logdir.encode()).hexdigest()[:8]
+      group_id = hashlib.md5(logdir.encode()).hexdigest()[:8]
+      if is_online:
+        role = 'actor' if is_actor else 'learner'
+        run_id = group_id + f'_{role}'
+        run_name = name + f'/{role}'
+      else:
+        run_id = group_id
+        run_name = name
       kwargs = dict(
           mode=config.logger.wandb_mode,
           config=config.flat,
           id=run_id,
           resume='allow',
       )
+      if is_online:
+        kwargs['group'] = group_id
+        kwargs['job_type'] = 'actor' if is_actor else 'learner'
       if config.logger.wandb_project:
         kwargs['project'] = config.logger.wandb_project
       if config.logger.wandb_entity:
         kwargs['entity'] = config.logger.wandb_entity
+      wandb_fps = int(getattr(config.logger, 'wandb_fps', 4))
       try:
-        outputs.append(elements.logger.WandBOutput(name, **kwargs))
+        outputs.append(WandBOutputWithFPS(run_name, video_fps=wandb_fps, **kwargs))
       except Exception as e:
         print(f'WandB init failed, skipping WandB output: {e}')
     elif output == 'scope':

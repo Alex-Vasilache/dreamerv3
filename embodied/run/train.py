@@ -37,7 +37,9 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
     for key, value in tran.items():
       if value.dtype == np.uint8 and value.ndim == 3:
         if worker == 0:
-          episode.add(f'policy_{key}', value, agg='stack')
+          # Strip log/ prefix: policy extras injected as log/ to avoid replay storage.
+          vis_key = key[4:] if key.startswith('log/') else key
+          episode.add(f'policy_{vis_key}', value, agg='stack')
       elif key.startswith('log/'):
         assert value.ndim == 0, (key, value.shape, value.dtype)
         episode.add(key + '/avg', value, agg='avg')

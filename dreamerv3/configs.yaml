@@ -30,6 +30,7 @@ defaults:
     filter: 'score|length|fps|ratio|train/loss/|train/rand/'
     timer: True
     fps: 15
+    wandb_fps: 40
     user: ''
     wandb_project: dreamerv3
     wandb_entity: vasilache
@@ -66,6 +67,7 @@ defaults:
     eval_eps: 1
     report_batches: 1
     from_checkpoint: ''
+    from_checkpoint_regex: '.*'
     episode_timeout: 180
     actor_addr: 'localhost:{auto}'
     replay_addr: 'localhost:{auto}'
@@ -100,7 +102,7 @@ defaults:
     # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
     # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
-    goal_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    goal_opt: {lr: 1e-4, agc: 0.3, eps: 1e-6, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
     ac_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -122,7 +124,7 @@ defaults:
     use_hrl: True
     skill_shape: [8, 8]
     skill_classes: 8
-    goal_autoencoder_beta: 1.0
+    goal_autoencoder_beta: 0.25
     # If false, KL term inside ``goal_autoencoder`` is zero (rec still trained).
     goal_kl: True
     # Director ``encdec_kl`` adaptive scale: holds KL(enc||uniform) near target nats.
@@ -136,11 +138,11 @@ defaults:
     manager_sample_freq: 8
     worker_report_horizon: 32
     worker_split_traj: True
-    mgr_expl_weight: 0.1
+    mgr_expl_weight: 0.5
     manager_actent: 3e-4
     # Director ``actent`` adaptive scale on per-dim normalized manager entropy.
     manager_actent_impl: mult
-    manager_actent_target: 0.5
+    manager_actent_target: 0.1
     manager_actent_min: 1e-5
     manager_actent_max: 1e2
     manager_actent_vel: 0.1
@@ -169,6 +171,12 @@ defaults:
     # at that perc scale. This is the proven flat-v3 normalization, applied
     # identically to every AC head so the default v3 hyperparameters transfer.
     retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
+    # Manager-only retnorm override. ``meanstd`` scales the manager advantage by
+    # the running return std (Director's original ``retnorm: std``); the mean
+    # offset it returns is unused by the manager advantage path (``roff_*`` is
+    # discarded), so this is std-only scaling. Worker and flat heads keep the
+    # ``perc`` retnorm above.
+    mgr_retnorm: {impl: meanstd, rate: 0.01, limit: 1e-8, perclo: 5.0, perchi: 95.0, debias: False}
     valnorm: {impl: none, rate: 0.01, limit: 1e-8}
     advnorm: {impl: none, rate: 0.01, limit: 1e-8}
     reward_grad: True
@@ -197,11 +205,28 @@ defaults:
     # overall GIF cost down ~10× relative to the original defaults.
     report_video_time_stride: 8
     report_video_space_stride: 1
+    # 3-row skill viz [skill heatmap | deter heatmap | decoded goal image] and
+    # 5-row goal encoder viz [og | enc_deter | enc_goal | dec_deter | dec_image].
+    # Both appear under skill_viz/ and goal_enc_viz/ in WandB.
+    report_skill_viz: True
+    report_goal_enc_viz: True
+    # Decode goal image at every policy step and stack with obs for episode rollout.
+    # Logged as epstats/policy_image_with_goal. Adds one decoder forward pass per step.
+    policy_goal_image: True
 
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}
   .*\.depth: 4
   .*\.units: 64
+  batch_size: 16
+  batch_length: 64
+
+size6m: &size6m
+  .*\.rssm: {deter: 1024, hidden: 128, classes: 8}
+  .*\.depth: 8
+  .*\.units: 128
+  batch_size: 8
+  batch_length: 32
 
 size12m: &size12m
   .*\.rssm: {deter: 2048, hidden: 256, classes: 16}

@@ -209,6 +209,16 @@ def _vec_to_tb_rgb(vec_bt_d):
   return jnp.repeat(u8, 3, axis=-1)
 
 
+def _resize_frames(frames_bthwc, target_h, target_w):
+  """Nearest-neighbor resize (B, T, H, W, C) uint8 to (B, T, target_h, target_w, C)."""
+  B, T, H, W, C = frames_bthwc.shape
+  if H == target_h and W == target_w:
+    return frames_bthwc
+  flat = frames_bthwc.reshape(B * T, H, W, C).astype(jnp.float32)
+  resized = jax.image.resize(flat, (B * T, target_h, target_w, C), method='nearest')
+  return jnp.clip(resized, 0, 255).reshape(B, T, target_h, target_w, C).astype(jnp.uint8)
+
+
 class Agent(embodied.jax.Agent):
   """World model + policy/value; ``loss`` composes model ELBO and imag AC."""
 
@@ -303,13 +313,14 @@ class Agent(embodied.jax.Agent):
           embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
           source=self.wkr_goal_val, **config.slowvalue)
 
-      # Manager and worker both use the DreamerV3 actor-critic normalization
-      # (``perc`` retnorm / ``none`` valnorm / ``none`` advnorm). The critics are
-      # symexp_twohot heads trained on RAW returns; the advantage is scaled by the
-      # percentile return range. Each critic owns its own valnorm (no-op under
-      # ``none`` but kept so the unnorm/norm path mirrors flat v3 exactly).
-      self.mgr_extr_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_extr_retnorm')
-      self.mgr_expl_retnorm = embodied.jax.Normalize(**config.retnorm, name='mgr_expl_retnorm')
+      # DreamerV3 actor-critic normalization (``none`` valnorm / ``none`` advnorm).
+      # The critics are symexp_twohot heads trained on RAW returns. The worker and
+      # flat heads scale the advantage by the percentile return range (``perc``
+      # retnorm); the manager instead uses ``mgr_retnorm`` (``meanstd``), i.e.
+      # Director's std-based return scaling. Each critic owns its own valnorm
+      # (no-op under ``none`` but kept so the unnorm/norm path mirrors flat v3).
+      self.mgr_extr_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_extr_retnorm')
+      self.mgr_expl_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_expl_retnorm')
       self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
 
       self.mgr_extr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_extr_valnorm')
@@ -740,6 +751,19 @@ class Agent(embodied.jax.Agent):
     out['finite'] = elements.tree.flatdict(jax.tree.map(
         lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
         dict(obs=obs, carry=carry, tokens=tokens, feat=feat, act=act)))
+    # Episode policy_image_with_goal: stack obs image with decoded goal image vertically.
+    # Stored under log/ prefix so replay filters it out (avoids doubling replay memory).
+    # Enabled by default only when image decoder keys exist; adds one decoder forward pass.
+    if (self.use_hrl and self.dec.imgkeys and
+        bool(getattr(self.config, 'policy_goal_image', True))):
+      goal_feat = self._feat_from_goal(jax.lax.stop_gradient(goal))
+      _, _, goal_recons = self.dec({}, goal_feat, reset, training=False)
+      for k in self.dec.imgkeys:
+        if k in obs:
+          obs_u8 = obs[k]  # (B, H, W, C) uint8
+          goal_u8 = jnp.clip(goal_recons[k].pred() * 255, 0, 255).astype(jnp.uint8)
+          # Stack observation (top) and decoded goal (bottom) for episode composite.
+          out[f'log/{k}_with_goal'] = jnp.concatenate([obs_u8, goal_u8], axis=1)
     if self.use_hrl:
       carry = (enc_carry, dyn_carry, dec_carry, act, mgr_skill, mgr_step)
     else:
@@ -890,7 +914,7 @@ class Agent(embodied.jax.Agent):
       goal_kl_loss = jnp.zeros((B, T), f32)
       goal_kl_mets = {}
 
-    losses['goal_autoencoder'] = goal_rec_loss + goal_kl_loss
+    losses['goal_autoencoder'] = goal_rec_loss + self.config.goal_autoencoder_beta * goal_kl_loss
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
     ent = encoded_goal.entropy()
     goal_ent_bt = ent
@@ -1229,19 +1253,18 @@ class Agent(embodied.jax.Agent):
     _, _, recons_goal = self.dec(dec_carry, feat_goal, reset_s, training=False)
 
     # Manager-proposed goals over the report sequence (K-step skill hold).
-    # Only run the decoder pass when the corresponding panel is enabled.
     want_mgr_recon = bool(getattr(self.config, 'report_mgr_recon', False))
-    if want_mgr_recon or bool(getattr(self.config, 'report_vec_viz', False)):
+    want_skill_viz = bool(getattr(self.config, 'report_skill_viz', True))
+    want_goal_enc_viz = bool(getattr(self.config, 'report_goal_enc_viz', True))
+    need_mgr = (want_mgr_recon or want_skill_viz or
+                bool(getattr(self.config, 'report_vec_viz', False)))
+    if need_mgr:
       mgr_skills = self._manager_skills_on_sequence(rep)
       mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
       mgr_goal_feat = self._feat_from_goal(mgr_goals)
-    else:
-      mgr_skills = None
-      mgr_goals = None
-    if want_mgr_recon:
       _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)
     else:
-      recons_mgr = None
+      mgr_skills = mgr_goals = mgr_goal_feat = recons_mgr = None
 
     # Optional dense vec→RGB visualisations of latent vectors and skills.
     # Off by default — they are debug-grade and slow down the video pipeline.
@@ -1269,10 +1292,53 @@ class Agent(embodied.jax.Agent):
       pred_g = jnp.clip(recons_goal[key].pred() * 255, 0, 255).astype(jnp.uint8)
       metrics[f'goal/recon_{key}'] = self._video(
           jnp.concatenate([true, pred_g, ((i32(pred_g) - i32(true) + 255) // 2).astype(np.uint8)], 2))
-      if want_mgr_recon:
+      if want_mgr_recon and recons_mgr is not None:
         pred_m = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
         metrics[f'goal/mgr_recon_{key}'] = self._video(
             jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
+
+    # 3-row manager skill video: skill heatmap | deter heatmap | decoded goal image.
+    if want_skill_viz and need_mgr and self.dec.imgkeys:
+      sk = mgr_skills['skill'] if isinstance(mgr_skills, dict) else mgr_skills
+      sk_flat = sk.reshape(*sk.shape[:2], -1)  # (RB, T, L*C)
+      skill_rgb = _vec_to_tb_rgb(sk_flat)  # (RB, T, h_sk, w_sk, 3) uint8
+      deter_rgb = _vec_to_tb_rgb(deter_feat)  # (RB, T, h_d, w_d, 3) uint8
+      for key in self.dec.imgkeys:
+        H_img, W_img = int(obs[key].shape[2]), int(obs[key].shape[3])
+        skill_row = _resize_frames(skill_rgb, H_img, W_img)   # (RB, T, H, W, 3)
+        deter_row = _resize_frames(deter_rgb, H_img, W_img)   # (RB, T, H, W, 3)
+        goal_row = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
+        C_img = int(obs[key].shape[4])
+        if C_img == 1:
+          goal_row = goal_row[..., :1]
+          skill_row = skill_row[..., :1]
+          deter_row = deter_row[..., :1]
+        panel = jnp.concatenate([skill_row, deter_row, goal_row], axis=2)
+        metrics[f'skill_viz/{key}'] = self._video(panel)
+
+    # 5-row goal encoder video: og image | encoded deter | encoded goal | decoded deter | decoded image.
+    if want_goal_enc_viz and self.dec.imgkeys:
+      sk_enc = skill_s['skill'] if isinstance(skill_s, dict) else skill_s
+      sk_flat_enc = (sk_enc.reshape(*sk_enc.shape[:2], -1)
+                     if sk_enc.ndim == 4 else sk_enc)  # (RB, T, L*C) or (RB, T, D)
+      enc_deter_rgb = _vec_to_tb_rgb(deter_feat)    # input to goal encoder
+      enc_goal_rgb = _vec_to_tb_rgb(sk_flat_enc)    # encoded skill
+      dec_deter_rgb = _vec_to_tb_rgb(pred_deter)    # decoded deter
+      for key in self.dec.imgkeys:
+        H_img, W_img = int(obs[key].shape[2]), int(obs[key].shape[3])
+        C_img = int(obs[key].shape[4])
+        og_u8 = obs[key][:RB, :T]
+        enc_deter_row = _resize_frames(enc_deter_rgb, H_img, W_img)
+        enc_goal_row = _resize_frames(enc_goal_rgb, H_img, W_img)
+        dec_deter_row = _resize_frames(dec_deter_rgb, H_img, W_img)
+        dec_img_row = jnp.clip(recons_goal[key].pred() * 255, 0, 255).astype(jnp.uint8)
+        if C_img == 1:
+          enc_deter_row = enc_deter_row[..., :1]
+          enc_goal_row = enc_goal_row[..., :1]
+          dec_deter_row = dec_deter_row[..., :1]
+        panel = jnp.concatenate(
+            [og_u8, enc_deter_row, enc_goal_row, dec_deter_row, dec_img_row], axis=2)
+        metrics[f'goal_enc_viz/{key}'] = self._video(panel)
 
     # Director-style: [initial | proposed goal | worker rollout] per proposal
     # mode. Disabled by default (lowest-value-per-encoding-cost panel); set

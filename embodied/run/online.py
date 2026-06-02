@@ -217,6 +217,7 @@ def standalone_learner(make_agent, make_logger, make_replay, make_stream, args):
 
 def _actor_process(make_agent, make_env, make_logger, make_replay, paths, args,
                    coordination):
+  os.environ['DREAMERV3_ACTOR_PROCESS'] = '1'
   _setup_process('actor', args)
   try:
     run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
@@ -292,7 +293,8 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
     for key, value in tran.items():
       if value.dtype == np.uint8 and value.ndim == 3:
         if worker == 0:
-          episode.add(f'policy_{key}', value, agg='stack')
+          vis_key = key[4:] if key.startswith('log/') else key
+          episode.add(f'policy_{vis_key}', value, agg='stack')
       elif key.startswith('log/'):
         assert value.ndim == 0, (key, value.shape, value.dtype)
         episode.add(key + '/avg', value, agg='avg')
