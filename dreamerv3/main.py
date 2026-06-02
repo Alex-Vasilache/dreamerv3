@@ -21,9 +21,12 @@ import ruamel.yaml as yaml
 class WandBOutputWithFPS(elements.logger.WandBOutput):
   """WandBOutput that passes a configurable fps to wandb.Video for faster gifs."""
 
-  def __init__(self, name, video_fps=4, **kwargs):
+  def __init__(self, name, video_fps=4, report_video_fps=None, **kwargs):
     super().__init__(name, **kwargs)
     self._video_fps = video_fps
+    # Report videos are subsampled by report_video_time_stride, so they need a
+    # proportionally lower fps to appear at the same speed as episode videos.
+    self._report_video_fps = report_video_fps if report_video_fps is not None else video_fps
 
   def __call__(self, summaries):
     import wandb
@@ -49,7 +52,10 @@ class WandBOutputWithFPS(elements.logger.WandBOutput):
         value = np.transpose(value, [0, 3, 1, 2])
         if value.dtype != np.uint8:
           value = (255 * np.clip(value, 0, 1)).astype(np.uint8)
-        bystep[step][name] = wandb.Video(value, fps=self._video_fps, format='gif')
+        # Episode rollout videos (epstats/) are 1 frame/step → use full fps.
+        # Report videos are stride-subsampled → use the lower report fps.
+        fps = self._video_fps if name.startswith('epstats/') else self._report_video_fps
+        bystep[step][name] = wandb.Video(value, fps=fps, format='gif')
     for step, metrics in bystep.items():
       self._wandb.log(metrics, step=step)
 
@@ -287,8 +293,11 @@ def make_logger(config):
       if config.logger.wandb_entity:
         kwargs['entity'] = config.logger.wandb_entity
       wandb_fps = int(getattr(config.logger, 'wandb_fps', 4))
+      time_stride = int(getattr(config.run, 'report_video_time_stride', 1))
+      report_video_fps = max(1, wandb_fps // time_stride)
       try:
-        outputs.append(WandBOutputWithFPS(run_name, video_fps=wandb_fps, **kwargs))
+        outputs.append(WandBOutputWithFPS(
+            run_name, video_fps=wandb_fps, report_video_fps=report_video_fps, **kwargs))
       except Exception as e:
         print(f'WandB init failed, skipping WandB output: {e}')
     elif output == 'scope':
