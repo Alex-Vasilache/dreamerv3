@@ -31,6 +31,7 @@ defaults:
     timer: True
     fps: 15
     wandb_fps: 40
+    report_wandb_fps: 5
     user: ''
     wandb_project: dreamerv3
     wandb_entity: vasilache
@@ -203,7 +204,7 @@ defaults:
     # every 8th frame and roughly 8×s the per-video encode cost; combined with
     # the impl/mgr_recon/vec-viz trims and the bumped ``report_every`` it brings
     # overall GIF cost down ~10× relative to the original defaults.
-    report_video_time_stride: 8
+    report_video_time_stride: 1
     report_video_space_stride: 1
     # 3-row skill viz [skill heatmap | deter heatmap | decoded goal image] and
     # 5-row goal encoder viz [og | enc_deter | enc_goal | dec_deter | dec_image].

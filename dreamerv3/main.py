@@ -293,8 +293,7 @@ def make_logger(config):
       if config.logger.wandb_entity:
         kwargs['entity'] = config.logger.wandb_entity
       wandb_fps = int(getattr(config.logger, 'wandb_fps', 4))
-      time_stride = int(getattr(config.run, 'report_video_time_stride', 1))
-      report_video_fps = max(1, wandb_fps // time_stride)
+      report_video_fps = int(getattr(config.logger, 'report_wandb_fps', 5))
       try:
         outputs.append(WandBOutputWithFPS(
             run_name, video_fps=wandb_fps, report_video_fps=report_video_fps, **kwargs))
