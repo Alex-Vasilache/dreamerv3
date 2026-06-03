@@ -143,7 +143,7 @@ defaults:
     manager_actent: 3e-4
     # Director ``actent`` adaptive scale on per-dim normalized manager entropy.
     manager_actent_impl: mult
-    manager_actent_target: 0.1
+    manager_actent_target: 0.5
     manager_actent_min: 1e-5
     manager_actent_max: 1e2
     manager_actent_vel: 0.1
