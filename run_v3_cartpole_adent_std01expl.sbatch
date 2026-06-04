@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH -J v3_cartpole_adent_std01expl_6m
+#SBATCH -J v3_cartpole_adent_std01expl_1m
 #SBATCH -p gpu
 #SBATCH -t 0-24:00:00
 #SBATCH -c 4
@@ -12,7 +12,7 @@ set -euo pipefail
 
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 
-RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir v3_cartpole_adent_std01expl_6m)}"
+RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir v3_cartpole_adent_std01expl_1m)}"
 mkdir -p "$RUN_DIR"
 echo "RUN_DIR=$RUN_DIR" > "$RUN_DIR/job.env"
 
@@ -27,7 +27,7 @@ AGENT_FLAGS=(
 
 python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --logdir "$RUN_DIR/logdir" \
-  --configs size6m \
+  --configs size1m \
   --task dmc_cartpole_swingup \
   --env.dmc.image True \
   --env.dmc.proprio True \
@@ -36,9 +36,9 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --agent.dec.simple.outer True \
   --agent.mgr_expl_weight 0.1 \
   --agent.mgr_retnorm.impl meanstd \
-  --online_learning True \
+  --online_learning False \
   --online_actor_cpu False \
-  --run.envs 1 \
+  --run.envs 16 \
   --run.steps 4000000 \
   --logger.outputs jsonl,scope,wandb \
   --logger.wandb_mode online \
