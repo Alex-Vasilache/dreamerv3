@@ -467,7 +467,9 @@ class Agent(embodied.jax.Agent):
     if len(carry) == 6:
       return carry
     enc, dyn, dec, prevact = carry[:4]
-    B = jax.tree.leaves(enc)[0].shape[0]
+    # ``enc`` carry can be empty (stateless encoder), so derive B from any
+    # non-empty carry leaf (dyn/prevact always have a leading batch dim).
+    B = jax.tree.leaves((enc, dyn, dec, prevact))[0].shape[0]
     skill_shape = tuple(int(x) for x in self.skill_shape)
     mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
     mgr_step = jnp.zeros((B,), i32)
