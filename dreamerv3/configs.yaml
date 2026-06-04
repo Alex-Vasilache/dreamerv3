@@ -31,7 +31,7 @@ defaults:
     timer: True
     fps: 15
     wandb_fps: 40
-    report_wandb_fps: 5
+    report_wandb_fps: 40 
     user: ''
     wandb_project: dreamerv3
     wandb_entity: vasilache
