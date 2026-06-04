@@ -103,7 +103,7 @@ defaults:
     # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
     # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
     opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
-    goal_opt: {lr: 1e-4, agc: 0.3, eps: 1e-6, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
+    goal_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
@@ -147,7 +147,7 @@ defaults:
     manager_sample_freq: 8
     worker_report_horizon: 32
     worker_split_traj: True
-    mgr_expl_weight: 0.5
+    mgr_expl_weight: 0.1
     manager_actent: 3e-4
     # Director ``actent`` adaptive scale on per-dim normalized manager entropy.
     manager_actent_impl: mult
