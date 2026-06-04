@@ -898,7 +898,18 @@ class Agent(embodied.jax.Agent):
     decoded_goal = self.goal_dec(
         skill['skill'] if isinstance(skill, dict) else skill, 2)
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
-    goal_rec_loss = decoded_goal.loss(sg(deter_feat))
+    # ``decoded_goal.loss`` sums squared error over ``deter`` (Director ``MSEDist('sum')``).
+    goal_rec_sum = decoded_goal.loss(sg(deter_feat))
+    goal_rec_agg = self.config.goal_rec_loss_agg
+    if goal_rec_agg == 'sum':
+      goal_rec_loss = goal_rec_sum
+    elif goal_rec_agg == 'mean':
+      # Per-dim mean rescaled by a fixed reference dim so the rec:kl balance is
+      # invariant to ``deter``; ref = current ``deter`` reproduces the sum exactly.
+      deter_dim = self.goal_shape[0]
+      goal_rec_loss = goal_rec_sum / deter_dim * float(self.config.goal_rec_dim_ref)
+    else:
+      raise NotImplementedError(goal_rec_agg)
     goal_dist = _head_inner(encoded_goal)
     skill_prior = outs.OneHot(
         jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)

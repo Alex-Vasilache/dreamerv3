@@ -126,6 +126,14 @@ defaults:
     skill_shape: [8, 8]
     skill_classes: 8
     goal_autoencoder_beta: 0.25
+    # Goal reconstruction reduction over the ``deter`` dim. ``sum`` (DreamerV3/
+    # Director default) sums squared error -> magnitude scales with ``deter`` and
+    # shifts the rec:kl balance across model sizes. ``mean`` averages per-dim then
+    # rescales by ``goal_rec_dim_ref`` (option 2): with ref = 1024 (6m deter) the
+    # 6m run is numerically unchanged while smaller sizes are mapped onto the same
+    # scale, removing the dimension-count term from cross-size comparisons.
+    goal_rec_loss_agg: sum
+    goal_rec_dim_ref: 1024
     # If false, KL term inside ``goal_autoencoder`` is zero (rec still trained).
     goal_kl: True
     # Director ``encdec_kl`` adaptive scale: holds KL(enc||uniform) near target nats.
