@@ -1554,8 +1554,12 @@ class Agent(embodied.jax.Agent):
             jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
 
     # 3-row manager skill video: skill heatmap | deter heatmap | decoded goal image.
+    # With masked goals the skill row is gated by the manager mask m_t (masked-out
+    # blocks -> black rows) and the decoded goal row is already the masked goal.
     if want_skill_viz and need_mgr and self.dec.imgkeys:
       sk = mgr_skills['skill'] if isinstance(mgr_skills, dict) else mgr_skills
+      if self.use_masked_goals and isinstance(mgr_skills, dict) and 'mask' in mgr_skills:
+        sk = sk * f32(mgr_skills['mask'])[..., None]  # gate masked-out blocks to black
       sk_flat = sk.reshape(*sk.shape[:2], -1)  # (RB, T, L*C)
       skill_rgb = _vec_to_tb_rgb(sk_flat)  # (RB, T, h_sk, w_sk, 3) uint8
       deter_rgb = _vec_to_tb_rgb(deter_feat)  # (RB, T, h_d, w_d, 3) uint8
@@ -1596,9 +1600,10 @@ class Agent(embodied.jax.Agent):
             [og_u8, enc_deter_row, enc_goal_row, dec_deter_row, dec_img_row], axis=2)
         metrics[f'goal_enc_viz/{key}'] = self._video(panel)
 
-    # Masked-goal panels: trace the discrete manager mask -> continuous subspace
-    # -> masked goal in deter space -> masked goal in pixel space, beside the
-    # unmasked (all-blocks-active) goal image, plus a per-block mask montage.
+    # Masked-goal panels. ``mask_viz`` rows (top->bottom): obs | gated skill code
+    # z_t*m_t (masked blocks black) | continuous subspace M_t | masked goal g_t in
+    # deter space | g_t decoded to image | unmasked all-blocks-active goal image.
+    # ``mask_blocks`` is an L-wide montage of the per-block continuous masks M^(i).
     want_mask_viz = bool(getattr(self.config, 'report_mask_viz', True))
     if (self.use_masked_goals and want_mask_viz and self.dec.imgkeys and
         mgr_skills is not None and recons_mgr is not None):
@@ -1607,38 +1612,48 @@ class Agent(embodied.jax.Agent):
       unmasked_goal = (mgr_blk_masks * mgr_protos).sum(-2)
       _, _, recons_unmasked = self.dec(
           dec_carry, self._feat_from_goal(unmasked_goal), reset_s, training=False)
-      disc_mask = mgr_skills['mask']                                  # (RB,T,L) in {0,1}
-      disc_rgb = _vec_to_tb_rgb(disc_mask)
+      # Skill code z_t (L×C) gated by the discrete mask m_t: masked-out blocks
+      # become all-zero rows -> black. Flattening (L, C) row-major makes
+      # _vec_to_tb_rgb render an L-row × C-col grid (one row per skill block, with
+      # masked-out blocks shown fully black).
+      gated_code = mgr_skills['skill'] * f32(mgr_skills['mask'])[..., None]  # (RB,T,L,C)
+      code_rgb = _vec_to_tb_rgb(gated_code.reshape(*gated_code.shape[:2], -1))
       cont_rgb = _vec_to_tb_rgb(mgr_cont_mask)                        # (RB,T,D)
       goal_rgb = _vec_to_tb_rgb(mgr_goals)                           # masked g_t deter
       for key in self.dec.imgkeys:
         H_img, W_img = int(obs[key].shape[2]), int(obs[key].shape[3])
         C_img = int(obs[key].shape[4])
         og_u8 = obs[key][:RB, :T]
-        disc_row = _resize_frames(disc_rgb, H_img, W_img)
+        code_row = _resize_frames(code_rgb, H_img, W_img)
         cont_row = _resize_frames(cont_rgb, H_img, W_img)
         goal_row = _resize_frames(goal_rgb, H_img, W_img)
         masked_img = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
         unmasked_img = jnp.clip(recons_unmasked[key].pred() * 255, 0, 255).astype(jnp.uint8)
         if C_img == 1:
-          disc_row, cont_row, goal_row = (
-              disc_row[..., :1], cont_row[..., :1], goal_row[..., :1])
+          code_row, cont_row, goal_row = (
+              code_row[..., :1], cont_row[..., :1], goal_row[..., :1])
         panel = jnp.concatenate(
-            [og_u8, disc_row, cont_row, goal_row, masked_img, unmasked_img], axis=2)
+            [og_u8, code_row, cont_row, goal_row, masked_img, unmasked_img], axis=2)
         metrics[f'mask_viz/{key}'] = self._video(panel)
 
-      # Per-block continuous masks M^(i): L-wide montage of heatmaps.
+      # Per-block continuous masks M^(i): exactly L heatmap tiles side by side,
+      # one per skill block, with a 1px separator between them.
       blk_rgb = _vec_to_tb_rgb(mgr_blk_masks)  # (RB, T, L, h, w, 3)
       RBn, Tn, Ln = blk_rgb.shape[:3]
       h_b, w_b = blk_rgb.shape[3], blk_rgb.shape[4]
-      # Tile the L blocks horizontally into one (h_b, L*w_b) frame.
-      montage = blk_rgb.transpose(0, 1, 3, 2, 4, 5).reshape(RBn, Tn, h_b, Ln * w_b, 3)
+      sep = jnp.full((RBn, Tn, Ln, h_b, 1, 3), 255, jnp.uint8)  # white column per tile
+      blk_sep = jnp.concatenate([blk_rgb, sep], axis=4)         # (RB,T,L,h,w+1,3)
+      montage = blk_sep.transpose(0, 1, 3, 2, 4, 5).reshape(RBn, Tn, h_b, Ln * (w_b + 1), 3)
       for key in self.dec.imgkeys:
         H_img, W_img = int(obs[key].shape[2]), int(obs[key].shape[3])
-        row = _resize_frames(montage, H_img, W_img * Ln)
+        row = _resize_frames(montage, H_img, W_img * Ln)        # (RB, T, H, L*W, 3)
         if int(obs[key].shape[4]) == 1:
           row = row[..., :1]
-        metrics[f'mask_blocks/{key}'] = self._video(row)
+        # Stack the RB report samples vertically (batch=1) so the TB grid keeps the
+        # frame exactly L blocks wide instead of tiling RB*L blocks horizontally.
+        stacked = row.transpose(1, 0, 2, 3, 4).reshape(
+            row.shape[1], RBn * row.shape[2], row.shape[3], row.shape[4])
+        metrics[f'mask_blocks/{key}'] = self._video(stacked[None])
 
     # Director-style: [initial | proposed goal | worker rollout] per proposal
     # mode. Disabled by default (lowest-value-per-encoding-cost panel); set

@@ -138,7 +138,9 @@ defaults:
     mask_sparsity_target: 0.3
     mask_sparsity_impl: mult
     mask_sparsity_min: 1e-5
-    mask_sparsity_max: 1.0
+    # Ceiling for the adaptive Lagrange multiplier. Must be well above ``init`` so
+    # the penalty can escalate until mask_frac reaches the target; ``1.0`` pinned it.
+    mask_sparsity_max: 100.0
     mask_sparsity_vel: 0.1
     mask_sparsity_init: 1.0
     skill_shape: [8, 8]
