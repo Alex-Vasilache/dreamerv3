@@ -202,7 +202,26 @@ class Binary(Output):
 
   def sample(self, seed, shape=()):
     prob = jax.nn.sigmoid(self.logit)
-    return jax.random.bernoulli(seed, prob, -1, shape + self.logit.shape)
+    # ``jax.random.bernoulli(key, p, shape)`` has no axis arg (unlike categorical).
+    return jax.random.bernoulli(seed, prob, shape + self.logit.shape)
+
+  def entropy(self):
+    # Per-dim Bernoulli entropy (no reduction): mirrors OneHot.entropy, which
+    # keeps the per-event axis and reduces only the class axis. The enclosing
+    # ``Agg`` (and ``policy_time_slice``) sums the event axis when a scalar is
+    # needed, so leaving it per-dim keeps the mask head consistent with skills.
+    logp = jax.nn.log_sigmoid(self.logit)
+    lognotp = jax.nn.log_sigmoid(-self.logit)
+    p = jax.nn.sigmoid(self.logit)
+    return -(p * logp + (1 - p) * lognotp)
+
+  def kl(self, other):
+    p = jax.nn.sigmoid(self.logit)
+    logp = jax.nn.log_sigmoid(self.logit)
+    lognotp = jax.nn.log_sigmoid(-self.logit)
+    logq = jax.nn.log_sigmoid(other.logit)
+    lognotq = jax.nn.log_sigmoid(-other.logit)
+    return p * (logp - logq) + (1 - p) * (lognotp - lognotq)
 
 
 class Categorical(Output):
