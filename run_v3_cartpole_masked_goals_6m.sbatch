@@ -19,10 +19,10 @@ echo "RUN_DIR=$RUN_DIR" > "$RUN_DIR/job.env"
 export MUJOCO_GL=egl
 
 cd "$RUN_DIR"
-# Masked goals on top of the Exp1 HRL baseline: manager emits a discrete block
-# mask, the goal decoder produces per-block prototypes + continuous masks, the
-# worker is rewarded inside the masked subspace M_t, with a per-block mask
-# orthogonality penalty and an adaptive mask-sparsity target (~0.3 active bits).
+# Overwrite goals on top of the Exp1 HRL baseline: the manager emits a discrete
+# block mask that edits a running goal *code* (block-overwrite of the skill code),
+# decoded by the standard goal autoencoder; the worker chases the full decoded
+# goal (plain cosine reward). Adaptive sparsity targets ~30% edited blocks/command.
 AGENT_FLAGS=(
   --agent.goal_autoencoder_beta 0.25
   --agent.goal_rec_loss_agg sum
@@ -31,7 +31,6 @@ AGENT_FLAGS=(
   --agent.goal_opt.eps 1e-20
   --agent.manager_actent_impl mult
   --agent.manager_actent_target 0.5
-  --agent.goal_ortho_weight 1.0
   --agent.mask_sparsity_target 0.3
 )
 

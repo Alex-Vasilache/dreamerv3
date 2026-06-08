@@ -58,56 +58,6 @@ def goal_reward_cosine_max(goal, feat):
   return jnp.sum((goal / norm) * (feat / norm), axis=-1)
 
 
-def goal_reward_cosine_max_masked(goal, feat, mask):
-  """``cosine_max`` evaluated strictly inside the subspace selected by ``mask``.
-
-  ``goal`` and ``feat`` are element-wise multiplied by ``mask`` (the continuous
-  attention mask ``M_t`` in ``[0, 1]^D``) before the normalize+dot, so dims where
-  ``mask == 0`` contribute zero to both the numerator and the ``max`` norm and
-  drop out of the worker gradient (masked-goals worker reward)."""
-  mg = goal * mask
-  mf = feat * mask
-  gnorm = jnp.linalg.norm(mg, axis=-1, keepdims=True) + 1e-12
-  fnorm = jnp.linalg.norm(mf, axis=-1, keepdims=True) + 1e-12
-  norm = jnp.maximum(gnorm, fnorm)
-  return jnp.sum((mg / norm) * (mf / norm), axis=-1)
-
-
-def aggregate_masked_goal(protos, masks, m):
-  """Compose per-block prototypes/masks under a discrete block mask ``m``.
-
-  Args:
-    protos: per-block feature prototypes ``g^(i)``, shape ``(..., L, D)``.
-    masks:  per-block continuous masks ``M^(i)`` in ``[0, 1]``, ``(..., L, D)``.
-    m:      discrete manager block mask ``m^(i)`` in ``{0, 1}``, ``(..., L)``.
-  Returns:
-    goal ``g_t = Σ_i m^(i) (M^(i) ⊙ g^(i))`` and continuous mask
-    ``M_t = min(1, Σ_i m^(i) M^(i))``, both ``(..., D)``.
-  """
-  me = m[..., None]  # (..., L, 1)
-  goal = (me * masks * protos).sum(-2)
-  cont_mask = jnp.clip((me * masks).sum(-2), 0.0, 1.0)
-  return goal, cont_mask
-
-
-def mask_orthogonality(masks):
-  """Mean pairwise overlap of the per-block continuous masks, ``(..., L, D) -> (...)``.
-
-  The raw cross-term sum ``Σ_{i≠j} (M^(i))^T M^(j) = Σ_D[(Σ_i M^(i))^2 − Σ_i (M^(i))^2]``
-  scales with ``L(L-1)·D`` (≈ 14k for L=8, D=1024 at init), which would swamp the
-  reconstruction/KL terms. We normalize by the number of ordered block pairs times
-  the dimensionality so the penalty is the *mean* per-(pair, dim) overlap — O(1) and
-  invariant to ``L`` and ``deter`` size, so ``goal_ortho_weight`` is meaningful and
-  transferable across model sizes."""
-  L = masks.shape[-2]
-  D = masks.shape[-1]
-  total = masks.sum(-2)                     # (..., D)
-  sq_of_sum = (total ** 2).sum(-1)          # (...)
-  sum_of_sq = (masks ** 2).sum((-2, -1))    # (...)
-  denom = max(1, L * (L - 1)) * D
-  return (sq_of_sum - sum_of_sq) / denom
-
-
 def aggregate_mgr_extr_rew(rew, con, k, without_zeros=False):
   """Pool per-step extrinsic reward into skill windows (Director ``abstract_traj``).
 
@@ -271,56 +221,6 @@ def _resize_frames(frames_bthwc, target_h, target_w):
   return jnp.clip(resized, 0, 255).reshape(B, T, target_h, target_w, C).astype(jnp.uint8)
 
 
-class MaskedGoalDecoder(nj.Module):
-  """Director goal decoder producing per-block prototypes and continuous masks.
-
-  Each skill block ``z^(i)`` (one categorical over ``C`` classes) is decoded into a
-  feature prototype ``g^(i)`` and a continuous attention mask ``M^(i) = sigmoid(.)``,
-  both in ``R^D`` (``deter`` space). Aggregation under a manager block mask is done by
-  ``aggregate_masked_goal``; the all-active reconstruction (manager mask = ones) is
-  ``(masks * protos).sum(-2)``.
-
-  Two decoder parameterizations (``shared`` flag):
-    * ``shared=False`` (independent): ``L`` separate MLP heads, one per block —
-      maximally expressive, ``L×`` the parameters.
-    * ``shared=True``: a single shared-weight MLP head applied to every block, with a
-      one-hot block id concatenated to the block's ``C``-vector to break symmetry —
-      parameter-light and scales to large ``L``.
-
-  Either way each head emits a width-``2D`` vector split into ``[proto | mask logit]``,
-  so it accepts the same ``config.goal_dec`` hyperparameters as the plain decoder.
-  """
-
-  def __init__(self, goal_shape, skill_shape, shared=False, **hkw):
-    self.L = int(skill_shape[0])
-    self.C = int(skill_shape[-1])
-    self.D = int(goal_shape[0])
-    self.shared = bool(shared)
-    self.hkw = hkw  # forwarded to each MLPHead (incl. ``output``)
-
-  def __call__(self, skill, bdims):
-    """``skill`` is ``(..., L, C)``; returns ``protos, masks`` both ``(..., L, D)``."""
-    bshape = skill.shape[:-2]
-    protos, masks = [], []
-    for i in range(self.L):
-      if self.shared:
-        # One head for all blocks; a one-hot block id breaks the weight-sharing
-        # symmetry so different blocks can specialize despite shared parameters.
-        head = self.sub('shared', embodied.jax.MLPHead, (2 * self.D,), **self.hkw)
-        bid = jnp.broadcast_to(
-            jax.nn.one_hot(i, self.L, dtype=skill.dtype), bshape + (self.L,))
-        x = jnp.concatenate([skill[..., i, :], bid], -1)  # (..., C+L)
-      else:
-        # One MLPHead per block under ``goal_dec/block{i}`` (ninjax repeated-submodule
-        # idiom, cf. ``nets.MLP``).
-        head = self.sub(f'block{i}', embodied.jax.MLPHead, (2 * self.D,), **self.hkw)
-        x = skill[..., i, :]                              # (..., C)
-      out = head(x, bdims).pred()                          # (..., 2D)
-      protos.append(out[..., :self.D])
-      masks.append(jax.nn.sigmoid(out[..., self.D:]))
-    return jnp.stack(protos, -2), jnp.stack(masks, -2)
-
-
 class Agent(embodied.jax.Agent):
   """World model + policy/value; ``loss`` composes model ELBO and imag AC."""
 
@@ -374,18 +274,10 @@ class Agent(embodied.jax.Agent):
       self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
       self.goal_enc = embodied.jax.MLPHead(
           self.goal_code_space, **config.goal_enc, name='goal_enc')
-      if self.use_masked_goals:
-        # Per-block decoder: each skill block -> (prototype g^(i), mask M^(i)).
-        # ``masked_goal_dec_shared`` picks independent (False) vs shared-weight
-        # + block-id (True) parameterization.
-        self.goal_dec = MaskedGoalDecoder(
-            self.goal_shape, skill_shape_t,
-            shared=bool(getattr(config, 'masked_goal_dec_shared', False)),
-            **config.goal_dec, name='goal_dec')
-        self.goal_ortho_weight = float(getattr(config, 'goal_ortho_weight', 1.0))
-        self.mask_sparsity_target = float(getattr(config, 'mask_sparsity_target', 0.3))
-      else:
-        self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
+      # Plain Director goal decoder (skill code -> deter). Masked goals reuse this
+      # unchanged: the mask now edits the running goal *code* (block-overwrite),
+      # not the decoder, so reconstruction is the standard goal autoencoder.
+      self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
       self.goal_autoencoder_beta = config.goal_autoencoder_beta
       # Uniform prior metadata only: built inside ``loss`` with ``zeros_like`` encoder
       # logits so arrays stay on-device (``jnp.zeros`` here breaks sharded init).
@@ -573,6 +465,10 @@ class Agent(embodied.jax.Agent):
   @property
   def policy_keys(self):
     # Regex for checkpoint / param groups synced to the actor process.
+    if self.use_masked_goals:
+      # Overwrite goals: the policy also encodes the current state (goal_enc) to
+      # seed the running goal code at episode boundaries.
+      return '^(enc|dyn|dec|pol|manager_pol|goal_dec|goal_enc)/'
     if self.use_hrl:
       return '^(enc|dyn|dec|pol|manager_pol|goal_dec)/'
     return '^(enc|dyn|dec|pol)/'
@@ -603,7 +499,9 @@ class Agent(embodied.jax.Agent):
     skill_shape = tuple(int(x) for x in self.skill_shape)
     mgr_skill = {'skill': jnp.zeros((batch_size, *skill_shape), f32)}
     if self.use_masked_goals:
+      # Discrete block mask (emitted edit) + persisted running goal code Z.
       mgr_skill['mask'] = jnp.zeros((batch_size, skill_shape[0]), f32)
+      mgr_skill['goal_code'] = jnp.zeros((batch_size, *skill_shape), f32)
     mgr_step = jnp.zeros((batch_size,), i32)
     return (*base, mgr_skill, mgr_step)
 
@@ -627,6 +525,7 @@ class Agent(embodied.jax.Agent):
     mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
     if self.use_masked_goals:
       mgr_skill['mask'] = jnp.zeros((B, skill_shape[0]), f32)
+      mgr_skill['goal_code'] = jnp.zeros((B, *skill_shape), f32)
     mgr_step = jnp.zeros((B,), i32)
     return enc, dyn, dec, prevact, mgr_skill, mgr_step
 
@@ -651,62 +550,83 @@ class Agent(embodied.jax.Agent):
       goal = nn.cast(y.reshape((*y.shape[:-2], -1)))
     return jnp.concatenate([deter, stoch, goal], -1)
 
-  def _feat_goal_mask2tensor(self, x, goal, mask):
-    """Worker input ``[deter | stoch | g_t | M_t]``; appends ``M_t`` only when masked.
+  def _running_goal_code(self, skills):
+    """The skill code that decodes to the worker goal.
 
-    With ``use_masked_goals=False`` this is byte-identical to ``_feat_goal2tensor``
-    (no mask channel), so the plain-goal worker input is unchanged."""
-    base = self._feat_goal2tensor(x, goal)
-    if not self.use_masked_goals:
-      return base
-    deter = nn.cast(x['deter'])
-    m = nn.cast(mask if mask.ndim == deter.ndim
-                else mask.reshape((*mask.shape[:-2], -1)))
-    return jnp.concatenate([base, m], -1)
+    Masked goals carry a persisted running goal code ``goal_code`` (Z) that the
+    manager edits block-by-block; plain goals decode the emitted skill directly."""
+    if isinstance(skills, dict) and 'goal_code' in skills:
+      return skills['goal_code']
+    return skills['skill'] if isinstance(skills, dict) else skills
 
-  def _goal_mask_from_skill(self, skills, bdims=1):
-    """Decode manager/VAE skills to ``(goal g_t, continuous mask M_t)``.
+  def _encode_goal_code(self, deter, bdims):
+    """Encode a ``deter`` vector into a sampled skill code (goal-VAE encoder)."""
+    enc = sample(self.goal_enc(sg(deter), bdims))
+    return sg(enc['skill'] if isinstance(enc, dict) else enc)
 
-    Plain goals: ``M_t = ones`` (worker sees the full feature space). Masked
-    goals: per-block prototypes/masks aggregated under the discrete block mask
-    ``skills['mask']``. Works for any number of batch dims (``bdims``)."""
-    s = skills['skill'] if isinstance(skills, dict) else skills
-    if not self.use_masked_goals:
-      goal = self.goal_dec(s, bdims).pred()
-      return goal, jnp.ones_like(goal)
-    protos, masks = self.goal_dec(s, bdims)  # (..., L, D)
-    if isinstance(skills, dict) and 'mask' in skills:
-      m = nn.cast(skills['mask'])            # (..., L) manager block mask
+  def _edit_running_goal(self, code_old, emit):
+    """Block-overwrite: replace blocks where the manager mask is on with ``z_new``.
+
+    ``Z_next[i] = m[i] ? z_new[i] : Z[i]`` over the ``L`` skill blocks. The mask is
+    the manager's *edit selector* (a value of 1 means "change this block"), so the
+    running goal accumulates the manager's edits across resamples."""
+    gate = (nn.cast(emit['mask']) > 0.5)[..., None]   # (..., L, 1)
+    return jnp.where(gate, emit['skill'], code_old)
+
+  def _advance_mgr_skill(self, mgr_skill, emit, update, base_code=None):
+    """Switch in the freshly emitted manager skill, threading the running goal.
+
+    For masked goals the carry's ``goal_code`` is block-overwritten by ``emit``
+    (optionally re-based on ``base_code``, e.g. the current-state encoding at an
+    episode boundary) before the Director window switch; plain goals just switch
+    the emitted skill."""
+    if self.use_masked_goals:
+      old_code = mgr_skill['goal_code'] if base_code is None else base_code
+      new_skill = {**emit, 'goal_code': self._edit_running_goal(old_code, emit)}
     else:
-      # No manager mask (VAE-encoded / prior skills): treat all blocks active.
-      m = jnp.ones(protos.shape[:-1], protos.dtype)
-    return aggregate_masked_goal(protos, masks, m)
+      new_skill = emit
+    return skill_switch(update, new_skill, mgr_skill)
+
+  def _goal_from_skill(self, skills, bdims=1):
+    """Decode the running goal code to a ``deter`` goal vector (single batch dim)."""
+    return self.goal_dec(self._running_goal_code(skills), bdims).pred()
+
+  def _goals_from_skills(self, skills, bdims=2):
+    """Batch-decode running goal codes to goal vectors (Director ``dec.mode()``)."""
+    s = self._running_goal_code(skills)
+    bshape = s.shape[:bdims]
+    flat = s.reshape((-1, *s.shape[bdims:]))
+    goals = self.goal_dec(flat, 1).pred()
+    return goals.reshape(bshape + goals.shape[1:])
 
   def _manager_skill_step(self, feat, mgr_skill, mgr_step, reset):
-    """Resample skill every ``manager_sample_freq`` steps (Director carry switch)."""
+    """Resample skill every ``manager_sample_freq`` steps (Director carry switch).
+
+    Masked goals: the manager emits skill+mask; the running goal code is re-based
+    on the current-state encoding at episode start (so the *first* command edits
+    the current state) and block-overwritten by the emitted edit."""
     K = max(1, int(self.manager_sample_freq))
     mgr_step = jnp.where(reset, 0, mgr_step)
     update = jnp.equal(mgr_step % K, 0)
-    new_skill = sample(mgr_as_dict(
+    emit = sample(mgr_as_dict(
         self.manager_pol(self.feat2tensor(feat), bdims=1)))
-    mgr_skill = skill_switch(update, new_skill, mgr_skill)
-    # Manager skill must be stopped before decoding goal/mask for worker.
-    goal, mask = self._goal_mask_from_skill(jax.tree.map(sg, mgr_skill), bdims=1)
-    goal, mask = sg(goal), sg(mask)
+    if self.use_masked_goals:
+      init_code = self._encode_goal_code(self.feat2deter(feat), 1)
+      r = reset.reshape(reset.shape + (1,) * (init_code.ndim - reset.ndim))
+      base_code = jnp.where(r, init_code, mgr_skill['goal_code'])
+      mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update, base_code)
+    else:
+      mgr_skill = skill_switch(update, emit, mgr_skill)
+    # Manager goal code must be stopped before decoding the goal for the worker.
+    goal = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
     mgr_step = mgr_step + 1
-    return mgr_skill, goal, mask, mgr_step
+    return mgr_skill, goal, mgr_step
 
-  def _wkr_goal_reward(self, goals, imgfeat, masks=None):
-    """Worker goal reward: ``cosine_max`` between ``goal`` and ``deter`` (Director).
-
-    With ``masks`` (continuous ``M_t``) the cosine is evaluated only inside the
-    selected subspace, so the worker is rewarded for matching the masked dims."""
+  def _wkr_goal_reward(self, goals, imgfeat):
+    """Worker goal reward: ``cosine_max`` between ``goal`` and ``deter`` (Director)."""
     feat = sg(self.feat2deter(imgfeat))
     goal = sg(goals)
-    if self.use_masked_goals and masks is not None:
-      cos = goal_reward_cosine_max_masked(goal, feat, sg(masks))
-    else:
-      cos = goal_reward_cosine_max(goal, feat)
+    cos = goal_reward_cosine_max(goal, feat)
     return imag_reward_pad(cos[:, 1:])
 
   def _mgr_extr_rew(self, rew, con, without_zeros=False):
@@ -725,37 +645,39 @@ class Agent(embodied.jax.Agent):
     return dict(deter=goal, stoch=stoch, logit=logit)
 
   def _propose_goal(self, feat, impl):
-    """Propose ``(goal, mask)`` from ``start`` state (Director ``propose_goal``).
+    """Propose a goal vector from ``start`` state (Director ``propose_goal``).
 
-    ``mask`` is ``M_t`` for masked goals (all blocks active for prior/replay
-    proposals, which have no manager block mask), else all-ones."""
+    For masked goals the ``manager`` proposal edits the current-state encoding by
+    the emitted block mask; ``prior``/``replay`` proposals decode their skill code
+    directly (they carry no edit mask)."""
     B = feat['deter'].shape[0]
     if impl == 'manager':
-      skill = sample(mgr_as_dict(
+      emit = sample(mgr_as_dict(
           self.manager_pol(self.feat2tensor(feat), bdims=1)))
-      goal, mask = self._goal_mask_from_skill(skill, bdims=1)
-      return sg(goal), sg(mask)
+      if self.use_masked_goals:
+        base = self._encode_goal_code(self.feat2deter(feat), 1)
+        code = self._edit_running_goal(base, emit)
+      else:
+        code = emit['skill'] if isinstance(emit, dict) else emit
+      return sg(self.goal_dec(code, 1).pred())
     if impl == 'prior':
       logits = jnp.zeros((B,) + tuple(int(x) for x in self.skill_shape), f32)
       prior = outs.OneHot(logits, self._skill_prior_unimix)
-      skill = {'skill': prior.sample(nj.seed())}
-      goal, mask = self._goal_mask_from_skill(skill, bdims=1)
-      return sg(goal), sg(mask)
+      code = prior.sample(nj.seed())
+      return sg(self.goal_dec(code, 1).pred())
     if impl == 'replay':
       deter = self.feat2deter(feat)
       perm = jax.random.permutation(nj.seed(), jnp.arange(B))
       target = deter[perm]
-      encoded = self.goal_enc(target, 1)
-      skill = sample(encoded)
-      goal, mask = self._goal_mask_from_skill(skill, bdims=1)
-      return sg(goal), sg(mask)
+      skill = sample(self.goal_enc(target, 1))
+      code = skill['skill'] if isinstance(skill, dict) else skill
+      return sg(self.goal_dec(code, 1).pred())
     raise NotImplementedError(impl)
 
-  def _worker_policy_fixed_goal(self, goal, mask=None):
+  def _worker_policy_fixed_goal(self, goal):
     goal = sg(goal)
-    mask = None if mask is None else sg(mask)
     return lambda feat: sample(
-        self.pol(self._feat_goal_mask2tensor(feat, goal, mask), bdims=1))
+        self.pol(self._feat_goal2tensor(feat, goal), bdims=1))
 
   def _decode_images_uint8(self, dec_carry, feat, reset):
     _, _, recons = self.dec(dec_carry, feat, reset, training=False)
@@ -774,12 +696,12 @@ class Agent(embodied.jax.Agent):
     length = 1 + horizon
 
     start_feat = jax.tree.map(lambda x: x[:, t0], repfeat)
-    goal, mask = self._propose_goal(start_feat, impl)
+    goal = self._propose_goal(start_feat, impl)
     dyn_start = dict(
         deter=nn.cast(start_feat['deter']),
         stoch=nn.cast(start_feat['stoch']))
     _, imgfeat, _ = self.dyn.imagine(
-        dyn_start, self._worker_policy_fixed_goal(goal, mask), horizon, training=False)
+        dyn_start, self._worker_policy_fixed_goal(goal), horizon, training=False)
 
     reset1 = jnp.zeros((RB, 1), bool)
     reset_len = jnp.zeros((RB, length), bool)
@@ -816,11 +738,7 @@ class Agent(embodied.jax.Agent):
     encoded = self.goal_enc(deter, 2)
     skill = sample(encoded)
     s = skill['skill'] if isinstance(skill, dict) else skill
-    if self.use_masked_goals:
-      protos, masks = self.goal_dec(s, 2)
-      pred = (masks * protos).sum(-2)  # all-active reconstruction
-    else:
-      pred = self.goal_dec(s, 2).pred()
+    pred = self.goal_dec(s, 2).pred()
     sq = ((pred - deter) ** 2).mean(-1)
     return sq
 
@@ -833,18 +751,20 @@ class Agent(embodied.jax.Agent):
     mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
     if self.use_masked_goals:
       mgr_skill['mask'] = jnp.zeros((B, skill_shape[0]), f32)
+      # Seed the running goal code with the start-state encoding so the first
+      # manager command (step 0) edits the current state, not a zero code.
+      mgr_skill['goal_code'] = self._encode_goal_code(starts['deter'], 1)
 
     def body(carry, _):
       dyn_carry, mgr_skill, step_i = carry
       feat = dict(deter=dyn_carry['deter'], stoch=dyn_carry['stoch'])
       update = jnp.equal(step_i % K, 0)
-      new_skill = sample(mgr_as_dict(
+      emit = sample(mgr_as_dict(
           self.manager_pol(self.feat2tensor(feat), 1)))
-      mgr_skill = skill_switch(update, new_skill, mgr_skill)
-      # Match skill to state: apply goal/mask from mgr_skill *after* resampling.
-      goal, mask = self._goal_mask_from_skill(jax.tree.map(sg, mgr_skill), bdims=1)
-      goal, mask = sg(goal), sg(mask)
-      act = sample(self.pol(self._feat_goal_mask2tensor(feat, goal, mask), 1))
+      mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update)
+      # Match skill to state: decode goal from mgr_skill *after* resampling.
+      goal = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
+      act = sample(self.pol(self._feat_goal2tensor(feat, goal), 1))
       dyn_carry, (feat_next, act_out) = self.dyn.imagine(
           dyn_carry, act, 1, training, single=True)
       return (dyn_carry, mgr_skill, step_i + 1), (feat_next, act_out, mgr_skill)
@@ -862,9 +782,9 @@ class Agent(embodied.jax.Agent):
     # We need to sample one more skill at last_dyn (sH) to align with imgfeat prefix starts (s0).
     feat_last = dict(deter=last_dyn['deter'], stoch=last_dyn['stoch'])
     update_last = jnp.equal(H % K, 0)
-    new_skill_last = sample(mgr_as_dict(
+    emit_last = sample(mgr_as_dict(
         self.manager_pol(self.feat2tensor(feat_last), 1)))
-    last_mgr_skill = skill_switch(update_last, new_skill_last, last_mgr_skill)
+    last_mgr_skill = self._advance_mgr_skill(last_mgr_skill, emit_last, update_last)
 
     img_skills = concat([img_skills, jax.tree.map(lambda x: x[:, None], last_mgr_skill)], 1)
     return imgfeat, imgact, img_skills
@@ -890,13 +810,17 @@ class Agent(embodied.jax.Agent):
     feat0 = jax.tree.map(lambda x: x[:, 0], repfeat)
     mgr_skill = pick(mgr_as_dict(
         self.manager_pol(self.feat2tensor(feat0), 1)))
+    if self.use_masked_goals:
+      # Seed running goal code with the first state's encoding; body's step-0
+      # edit (update True) then applies the first manager command on top of it.
+      mgr_skill['goal_code'] = self._encode_goal_code(self.feat2deter(feat0), 1)
 
     def body(mgr_skill, t):
       feat = jax.tree.map(lambda x: x[:, t], repfeat)
       update = jnp.equal(t % K, 0)
-      new_skill = pick(mgr_as_dict(
+      emit = pick(mgr_as_dict(
           self.manager_pol(self.feat2tensor(feat), 1)))
-      mgr_skill = skill_switch(update, new_skill, mgr_skill)
+      mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update)
       return mgr_skill, mgr_skill
 
     B = repfeat['deter'].shape[0]
@@ -936,9 +860,9 @@ class Agent(embodied.jax.Agent):
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
 
     if self.use_hrl:
-      mgr_skill, goal, mask, mgr_step = self._manager_skill_step(
+      mgr_skill, goal, mgr_step = self._manager_skill_step(
           feat, mgr_skill, mgr_step, reset)
-      policy = self.pol(self._feat_goal_mask2tensor(feat, goal, mask), bdims=1)
+      policy = self.pol(self._feat_goal2tensor(feat, goal), bdims=1)
     else:
       policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
@@ -1092,18 +1016,10 @@ class Agent(embodied.jax.Agent):
     skill = sample(encoded_goal)
     skill_code = skill['skill'] if isinstance(skill, dict) else skill
     # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
-    # Plain decoder: ``MSEDist('sum')`` over ``deter``. Masked decoder: reconstruct
-    # from the all-active per-block aggregate ``Σ_i M^(i)⊙g^(i)`` and add an
-    # orthogonality penalty pushing the per-block masks onto disjoint dims.
-    goal_ortho_bt = None
-    if self.use_masked_goals:
-      protos, blk_masks = self.goal_dec(skill_code, 2)   # (B, T, L, D)
-      recon = (blk_masks * protos).sum(-2)               # all blocks active
-      goal_rec_sum = ((recon - sg(deter_feat)) ** 2).sum(-1)
-      goal_ortho_bt = mask_orthogonality(blk_masks)      # (B, T)
-    else:
-      decoded_goal = self.goal_dec(skill_code, 2)
-      goal_rec_sum = decoded_goal.loss(sg(deter_feat))
+    # ``MSEDist('sum')`` over ``deter``; masked goals reuse this standard autoencoder
+    # (the mask edits the code, not the decoder).
+    decoded_goal = self.goal_dec(skill_code, 2)
+    goal_rec_sum = decoded_goal.loss(sg(deter_feat))
     goal_rec_agg = self.config.goal_rec_loss_agg
     if goal_rec_agg == 'sum':
       goal_rec_loss = goal_rec_sum
@@ -1130,11 +1046,6 @@ class Agent(embodied.jax.Agent):
       goal_kl_mets = {}
 
     losses['goal_autoencoder'] = goal_rec_loss + self.config.goal_autoencoder_beta * goal_kl_loss
-    if self.use_masked_goals:
-      losses['goal_autoencoder'] = (
-          losses['goal_autoencoder'] + self.goal_ortho_weight * goal_ortho_bt)
-      metrics['goal/ortho_mean'] = goal_ortho_bt.mean()
-      metrics['goal/ortho_std'] = goal_ortho_bt.std()
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
     ent = encoded_goal.entropy()
     goal_ent_bt = ent
@@ -1171,20 +1082,17 @@ class Agent(embodied.jax.Agent):
     mgr_skills_downsampled = jax.tree.map(lambda s: s[:, ::self.manager_sample_freq], mgr_skills)
     last_feat = jax.tree.map(lambda x: x[:, -1], imgfeat)
     last_mgr_skill = jax.tree.map(lambda x: x[:, -1], mgr_skills)
-    last_goal, last_mask = self._goal_mask_from_skill(
-        jax.tree.map(sg, last_mgr_skill), bdims=1)
-    last_goal, last_mask = sg(last_goal), sg(last_mask)
+    last_goal = sg(self._goal_from_skill(jax.tree.map(sg, last_mgr_skill), bdims=1))
     lastact = sample(self.pol(
-        self._feat_goal_mask2tensor(last_feat, last_goal, last_mask), 1))
+        self._feat_goal2tensor(last_feat, last_goal), 1))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgact))
     inp = self.feat2tensor(imgfeat)
     inp_downsampled = self.feat2tensor(jax.tree.map(lambda x: x[:, ::self.manager_sample_freq], imgfeat))
-    # Detach manager-produced goals/masks from worker actor/critic.
-    goals, masks = self._goal_mask_from_skill(jax.tree.map(sg, mgr_skills), bdims=2)
-    goals, masks = sg(goals), sg(masks)
+    # Detach manager-produced goals from worker actor/critic.
+    goals = sg(self._goals_from_skills(jax.tree.map(sg, mgr_skills), bdims=2))
     mgr_policy = mgr_as_dict(self.manager_pol(inp_downsampled, 2))
     con = self.con(inp, 2).prob(1)
     mgr_cont = self._mgr_cont(con, without_zeros=True)
@@ -1225,10 +1133,11 @@ class Agent(embodied.jax.Agent):
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
 
-    # --- Mask sparsity: keep the fraction of active manager-mask bits near target ---
+    # --- Edit sparsity: keep the fraction of edited blocks per command near target ---
     if self.use_masked_goals:
-      # ``mask`` here is the discrete block mask m_t at each manager resample
-      # (downsampled to one per K steps); penalize its mean active fraction.
+      # ``mask`` is the emitted edit mask m_t at each manager resample (a 1 means
+      # "overwrite this block of the running goal"); penalize the mean fraction of
+      # blocks edited so the manager makes minimal tweaks per command.
       mask_frac = mgr_skills_downsampled['mask'].mean(-1)           # (M, n_down)
       mask_frac_bt = mask_frac.mean(1).reshape((B, K_imag))         # (B, K_imag)
       mask_sparsity_loss, mask_sp_mets = self.mask_sparsity_adapter(
@@ -1261,11 +1170,8 @@ class Agent(embodied.jax.Agent):
       win_goal = merge(jnp.broadcast_to(
           goals[:, win_starts][:, :, None],
           (M, n_win, K + 1) + goals.shape[2:]))             # window goal held constant
-      win_mask = merge(jnp.broadcast_to(
-          masks[:, win_starts][:, :, None],
-          (M, n_win, K + 1) + masks.shape[2:]))             # window mask held constant
-      win_feat_goal = self._feat_goal_mask2tensor(win_feat, win_goal, win_mask)
-      win_goal_rew = self._wkr_goal_reward(win_goal, win_feat, win_mask)
+      win_feat_goal = self._feat_goal2tensor(win_feat, win_goal)
+      win_goal_rew = self._wkr_goal_reward(win_goal, win_feat)
       kwargs_wkr.update(skill_window=0)                         # each window is its own segment
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
           win_act, win_goal_rew, win_con,
@@ -1281,8 +1187,8 @@ class Agent(embodied.jax.Agent):
     else:
       # Fallback (e.g. H not a multiple of K): dense rollout with the lambda-return
       # reset at window boundaries via the ``skill_window`` mask.
-      feat_goal = self._feat_goal_mask2tensor(imgfeat, goals, masks)
-      wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat, masks)
+      feat_goal = self._feat_goal2tensor(imgfeat, goals)
+      wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
       kwargs_wkr.update(skill_window=K)
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
           imgact, wkr_goal_rew, con,
@@ -1344,12 +1250,10 @@ class Agent(embodied.jax.Agent):
       repl_skills = jax.tree.map(
           lambda x: x[:, -K_repl:],
           self._manager_skills_on_sequence(feat, deterministic=True))
-      # Detach manager goals/masks in replay value path.
-      repl_goals, repl_masks = self._goal_mask_from_skill(
-          jax.tree.map(sg, repl_skills), bdims=2)
-      repl_goals, repl_masks = sg(repl_goals), sg(repl_masks)
-      feat_goal_wkr = self._feat_goal_mask2tensor(feat_wkr, repl_goals, repl_masks)
-      repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr, repl_masks)
+      # Detach manager goals in replay value path.
+      repl_goals = sg(self._goals_from_skills(jax.tree.map(sg, repl_skills), bdims=2))
+      feat_goal_wkr = self._feat_goal2tensor(feat_wkr, repl_goals)
+      repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
 
       # --- 3. Compute Value Losses ---
       # Manager Replay Value Loss (predicts combined return)
@@ -1489,15 +1393,7 @@ class Agent(embodied.jax.Agent):
     encoded_goal = self.goal_enc(deter_feat, 2)
     skill_s = sample(encoded_goal)
     skill_code_s = skill_s['skill'] if isinstance(skill_s, dict) else skill_s
-    # Masked decoder: keep the per-block prototypes/masks for the mask panels and
-    # build the all-active reconstruction; plain decoder: single MSE prediction.
-    vae_protos = vae_blk_masks = vae_cont_mask = None
-    if self.use_masked_goals:
-      vae_protos, vae_blk_masks = self.goal_dec(skill_code_s, 2)   # (RB, T, L, D)
-      pred_deter = nn.cast((vae_blk_masks * vae_protos).sum(-2))
-      vae_cont_mask = jnp.clip(vae_blk_masks.sum(-2), 0.0, 1.0)     # (RB, T, D)
-    else:
-      pred_deter = nn.cast(self.goal_dec(skill_code_s, 2).pred())
+    pred_deter = nn.cast(self.goal_dec(skill_code_s, 2).pred())
     feat_goal = self._feat_from_goal(pred_deter)
     _, _, recons_goal = self.dec(dec_carry, feat_goal, reset_s, training=False)
 
@@ -1510,13 +1406,11 @@ class Agent(embodied.jax.Agent):
     if need_mgr or (self.use_masked_goals and bool(
         getattr(self.config, 'report_mask_viz', True)) and self.dec.imgkeys):
       mgr_skills = self._manager_skills_on_sequence(rep)
-      mgr_goals, mgr_cont_mask = self._goal_mask_from_skill(mgr_skills, bdims=2)
-      mgr_goals, mgr_cont_mask = sg(mgr_goals), sg(mgr_cont_mask)
+      mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
       mgr_goal_feat = self._feat_from_goal(mgr_goals)
       _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)
     else:
       mgr_skills = mgr_goals = mgr_goal_feat = recons_mgr = None
-      mgr_cont_mask = None
 
     # Optional dense vec→RGB visualisations of latent vectors and skills.
     # Off by default — they are debug-grade and slow down the video pipeline.
@@ -1536,10 +1430,6 @@ class Agent(embodied.jax.Agent):
         metrics['goal/mgr_skill'] = self._video(
             jnp.repeat((m_sk * 255).astype(jnp.uint8)[..., None], 3, axis=-1))
       metrics['goal/mgr_proposed_deter'] = self._video(_vec_to_tb_rgb(mgr_goals))
-      if self.use_masked_goals and mgr_cont_mask is not None:
-        metrics['goal/cont_mask'] = self._video(_vec_to_tb_rgb(mgr_cont_mask))
-        if vae_cont_mask is not None:
-          metrics['goal/vae_cont_mask'] = self._video(_vec_to_tb_rgb(vae_cont_mask))
 
     # VAE / manager goal reconstruction panels. ``goal/image_{key}`` (true frames
     # only) was a duplicate of the leftmost column here — dropped.
@@ -1554,12 +1444,10 @@ class Agent(embodied.jax.Agent):
             jnp.concatenate([true, pred_m, ((i32(pred_m) - i32(true) + 255) // 2).astype(np.uint8)], 2))
 
     # 3-row manager skill video: skill heatmap | deter heatmap | decoded goal image.
-    # With masked goals the skill row is gated by the manager mask m_t (masked-out
-    # blocks -> black rows) and the decoded goal row is already the masked goal.
+    # With masked goals the skill row is the *running* goal code Z (the accumulated
+    # command after block-overwrite); the decoded goal row is its decode.
     if want_skill_viz and need_mgr and self.dec.imgkeys:
-      sk = mgr_skills['skill'] if isinstance(mgr_skills, dict) else mgr_skills
-      if self.use_masked_goals and isinstance(mgr_skills, dict) and 'mask' in mgr_skills:
-        sk = sk * f32(mgr_skills['mask'])[..., None]  # gate masked-out blocks to black
+      sk = self._running_goal_code(mgr_skills)
       sk_flat = sk.reshape(*sk.shape[:2], -1)  # (RB, T, L*C)
       skill_rgb = _vec_to_tb_rgb(sk_flat)  # (RB, T, h_sk, w_sk, 3) uint8
       deter_rgb = _vec_to_tb_rgb(deter_feat)  # (RB, T, h_d, w_d, 3) uint8
@@ -1600,60 +1488,39 @@ class Agent(embodied.jax.Agent):
             [og_u8, enc_deter_row, enc_goal_row, dec_deter_row, dec_img_row], axis=2)
         metrics[f'goal_enc_viz/{key}'] = self._video(panel)
 
-    # Masked-goal panels. ``mask_viz`` rows (top->bottom): obs | gated skill code
-    # z_t*m_t (masked blocks black) | continuous subspace M_t | masked goal g_t in
-    # deter space | g_t decoded to image | unmasked all-blocks-active goal image.
-    # ``mask_blocks`` is an L-wide montage of the per-block continuous masks M^(i).
+    # Masked / overwrite-goal panel. ``mask_viz`` rows (top->bottom):
+    #   obs | edited blocks z_new*m (only the changed skill blocks; unedited -> black)
+    #   | full new running goal code Z_t | Z_t decoded to image (the new goal)
+    #   | image *change* vs the previous command's goal: decode(Z_t) - decode(Z_{t-1}).
+    # The last row isolates what the latest masked command actually changed in pixel
+    # space (zero/grey where the command left the goal unchanged within a window).
     want_mask_viz = bool(getattr(self.config, 'report_mask_viz', True))
     if (self.use_masked_goals and want_mask_viz and self.dec.imgkeys and
         mgr_skills is not None and recons_mgr is not None):
-      # Unmasked (m = ones) manager goal -> image, and per-block continuous masks.
-      mgr_protos, mgr_blk_masks = self.goal_dec(mgr_skills['skill'], 2)  # (RB,T,L,D)
-      unmasked_goal = (mgr_blk_masks * mgr_protos).sum(-2)
-      _, _, recons_unmasked = self.dec(
-          dec_carry, self._feat_from_goal(unmasked_goal), reset_s, training=False)
-      # Skill code z_t (L×C) gated by the discrete mask m_t: masked-out blocks
-      # become all-zero rows -> black. Flattening (L, C) row-major makes
-      # _vec_to_tb_rgb render an L-row × C-col grid (one row per skill block, with
-      # masked-out blocks shown fully black).
-      gated_code = mgr_skills['skill'] * f32(mgr_skills['mask'])[..., None]  # (RB,T,L,C)
-      code_rgb = _vec_to_tb_rgb(gated_code.reshape(*gated_code.shape[:2], -1))
-      cont_rgb = _vec_to_tb_rgb(mgr_cont_mask)                        # (RB,T,D)
-      goal_rgb = _vec_to_tb_rgb(mgr_goals)                           # masked g_t deter
+      running = self._running_goal_code(mgr_skills)                    # (RB,T,L,C) = Z_t
+      # Previous command's running goal (shift one step along time; pad first frame).
+      prev_code = jnp.concatenate([running[:, :1], running[:, :-1]], 1)
+      prev_goals = sg(self._goals_from_skills({'goal_code': prev_code}, bdims=2))
+      _, _, recons_prev = self.dec(
+          dec_carry, self._feat_from_goal(prev_goals), reset_s, training=False)
+      # Edited blocks only: emitted skill gated by the edit mask m (unedited -> black).
+      edited = mgr_skills['skill'] * f32(mgr_skills['mask'])[..., None]  # (RB,T,L,C)
+      edited_rgb = _vec_to_tb_rgb(edited.reshape(*edited.shape[:2], -1))
+      full_rgb = _vec_to_tb_rgb(running.reshape(*running.shape[:2], -1))
       for key in self.dec.imgkeys:
         H_img, W_img = int(obs[key].shape[2]), int(obs[key].shape[3])
         C_img = int(obs[key].shape[4])
         og_u8 = obs[key][:RB, :T]
-        code_row = _resize_frames(code_rgb, H_img, W_img)
-        cont_row = _resize_frames(cont_rgb, H_img, W_img)
-        goal_row = _resize_frames(goal_rgb, H_img, W_img)
-        masked_img = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
-        unmasked_img = jnp.clip(recons_unmasked[key].pred() * 255, 0, 255).astype(jnp.uint8)
+        edited_row = _resize_frames(edited_rgb, H_img, W_img)
+        full_row = _resize_frames(full_rgb, H_img, W_img)
+        new_img = jnp.clip(recons_mgr[key].pred() * 255, 0, 255).astype(jnp.uint8)
+        prev_img = jnp.clip(recons_prev[key].pred() * 255, 0, 255).astype(jnp.uint8)
+        change_img = ((i32(new_img) - i32(prev_img) + 255) // 2).astype(np.uint8)
         if C_img == 1:
-          code_row, cont_row, goal_row = (
-              code_row[..., :1], cont_row[..., :1], goal_row[..., :1])
+          edited_row, full_row = edited_row[..., :1], full_row[..., :1]
         panel = jnp.concatenate(
-            [og_u8, code_row, cont_row, goal_row, masked_img, unmasked_img], axis=2)
+            [og_u8, edited_row, full_row, new_img, change_img], axis=2)
         metrics[f'mask_viz/{key}'] = self._video(panel)
-
-      # Per-block continuous masks M^(i): exactly L heatmap tiles side by side,
-      # one per skill block, with a 1px separator between them.
-      blk_rgb = _vec_to_tb_rgb(mgr_blk_masks)  # (RB, T, L, h, w, 3)
-      RBn, Tn, Ln = blk_rgb.shape[:3]
-      h_b, w_b = blk_rgb.shape[3], blk_rgb.shape[4]
-      sep = jnp.full((RBn, Tn, Ln, h_b, 1, 3), 255, jnp.uint8)  # white column per tile
-      blk_sep = jnp.concatenate([blk_rgb, sep], axis=4)         # (RB,T,L,h,w+1,3)
-      montage = blk_sep.transpose(0, 1, 3, 2, 4, 5).reshape(RBn, Tn, h_b, Ln * (w_b + 1), 3)
-      for key in self.dec.imgkeys:
-        H_img, W_img = int(obs[key].shape[2]), int(obs[key].shape[3])
-        row = _resize_frames(montage, H_img, W_img * Ln)        # (RB, T, H, L*W, 3)
-        if int(obs[key].shape[4]) == 1:
-          row = row[..., :1]
-        # Stack the RB report samples vertically (batch=1) so the TB grid keeps the
-        # frame exactly L blocks wide instead of tiling RB*L blocks horizontally.
-        stacked = row.transpose(1, 0, 2, 3, 4).reshape(
-            row.shape[1], RBn * row.shape[2], row.shape[3], row.shape[4])
-        metrics[f'mask_blocks/{key}'] = self._video(stacked[None])
 
     # Director-style: [initial | proposed goal | worker rollout] per proposal
     # mode. Disabled by default (lowest-value-per-encoding-cost panel); set
@@ -2095,7 +1962,9 @@ def imag_loss_mgr(
   # ``mgr_extr_slowval``/``mgr_expl_slowval`` (≈ ``*_val`` up to EMA lag),
   # ``mgr_con``/``mgr_weight`` (≈ 1 in non-terminal imagined rollouts).
 
-  for k in skills:
+  # Iterate the policy heads (skill/mask), not the carried skills dict — the latter
+  # also holds the running goal code ``goal_code``, which has no policy/entropy.
+  for k in manager_policy:
     metrics[f'mgr_ent/{k}'] = mgr_ents[k].mean()
     if hasattr(manager_policy[k], 'minent'):
       lo, hi = manager_policy[k].minent, manager_policy[k].maxent

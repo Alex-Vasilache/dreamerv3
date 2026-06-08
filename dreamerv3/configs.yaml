@@ -123,23 +123,18 @@ defaults:
     # Master HRL switch. When False, the agent collapses to the v4-online flat AC:
     # single ``pol``/``val`` over WM features, no manager/goal-VAE, no skill aggregation.
     use_hrl: True
-    # Masked goals (opt-in): manager also emits a discrete block mask m_t, the goal
-    # decoder produces per-block prototypes + continuous attention masks M^(i), and
-    # the worker is rewarded only inside the aggregated subspace M_t. False = plain
+    # Masked / overwrite goals (opt-in): the manager additionally emits a discrete
+    # block mask m_t that *edits a running goal code* Z (block-overwrite of the
+    # skill code), which is decoded by the standard goal autoencoder. The worker
+    # always chases the full decoded goal (plain cosine reward). False = plain
     # Director goals (byte-for-byte unchanged). See ``masked_goals`` config block.
     use_masked_goals: False
-    # Goal decoder parameterization: False = L independent per-block heads (expressive),
-    # True = one shared-weight head + a one-hot block id input (parameter-light).
-    masked_goal_dec_shared: False
-    # Orthogonality penalty weight on the per-block continuous masks (disjoint dims).
-    # Penalty is normalized to mean per-(pair, dim) overlap, so 1.0 is size-invariant.
-    goal_ortho_weight: 1.0
-    # Adaptive sparsity: drive the mean active fraction of m_t toward this target.
+    # Adaptive sparsity: drive the mean fraction of *edited* blocks per command
+    # toward this target so the manager makes minimal tweaks to the running goal.
     mask_sparsity_target: 0.3
     mask_sparsity_impl: mult
     mask_sparsity_min: 1e-5
-    # Ceiling for the adaptive Lagrange multiplier. Must be well above ``init`` so
-    # the penalty can escalate until mask_frac reaches the target; ``1.0`` pinned it.
+    # Ceiling for the adaptive Lagrange multiplier; must be well above ``init``.
     mask_sparsity_max: 100.0
     mask_sparsity_vel: 0.1
     mask_sparsity_init: 1.0
@@ -239,9 +234,9 @@ defaults:
     # Both appear under skill_viz/ and goal_enc_viz/ in WandB.
     report_skill_viz: True
     report_goal_enc_viz: True
-    # Masked-goal panels (only when use_masked_goals): mask_viz/ traces
-    # [obs | discrete m_t | continuous M_t | masked goal deter | masked goal image |
-    # unmasked goal image]; mask_blocks/ shows the per-block continuous masks.
+    # Overwrite-goal panel (only when use_masked_goals): mask_viz/ traces
+    # [obs | edited blocks z_new*m | full running goal code Z | new goal image |
+    # image change vs previous command's goal].
     report_mask_viz: True
     # Decode goal image at every policy step and stack with obs for episode rollout.
     # Logged as epstats/policy_image_with_goal. Adds one decoder forward pass per step.
@@ -262,7 +257,7 @@ size6m: &size6m
   .*\.rssm: {deter: 1024, hidden: 128, classes: 8}
   .*\.depth: 8
   .*\.units: 128
-  batch_size: 8
+  batch_size: 4
   batch_length: 32
 
 size12m: &size12m
