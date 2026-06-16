@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH -J dreamerv3_vis1m32e1_og_cont
-#SBATCH -p gpu
+#SBATCH -p gpu-v100
 #SBATCH -t 0-24:00:00
 #SBATCH -c 4
 #SBATCH --gres=gpu:v100:1

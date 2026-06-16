@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH -J v3_cartpole_adent_exp5_std01_b025_1m_mean
-#SBATCH -p gpu
+#SBATCH -p gpu-v100
 #SBATCH -t 0-24:00:00
 #SBATCH -c 4
 #SBATCH --gres=gpu:v100:1

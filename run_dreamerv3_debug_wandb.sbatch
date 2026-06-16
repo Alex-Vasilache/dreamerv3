@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH -J dreamerv3_debug_wandb
-#SBATCH -p gpu
+#SBATCH -p gpu-v100
 #SBATCH -t 0-00:30:00
 #SBATCH -c 4
 #SBATCH --gres=gpu:v100:1

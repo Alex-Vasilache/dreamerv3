@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH -J v3_walker_adent_exp6_std01_b025_6m_mean
-#SBATCH -p gpu
+#SBATCH -p gpu-v100
 #SBATCH -t 0-24:00:00
 #SBATCH -c 4
 #SBATCH --gres=gpu:v100:1
@@ -41,14 +41,12 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --task dmc_walker_walk \
   --env.dmc.image True \
   --env.dmc.proprio True \
-  --env.dmc.size 32 32 \
-  --agent.enc.simple.outer True \
-  --agent.dec.simple.outer True \
+  --env.dmc.size 64 64 \
   --agent.mgr_expl_weight 0.1 \
   --agent.mgr_retnorm.impl meanstd \
   --online_learning False \
   --online_actor_cpu False \
-  --run.envs 16 \
+  --run.envs 4 \
   --run.steps 4000000 \
   --logger.outputs jsonl,scope,wandb \
   --logger.wandb_mode online \
