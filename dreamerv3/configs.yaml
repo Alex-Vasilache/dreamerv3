@@ -31,7 +31,7 @@ defaults:
     timer: True
     fps: 15
     wandb_fps: 40
-    report_wandb_fps: 40 
+    report_wandb_fps: 5 
     user: ''
     wandb_project: dreamerv3
     wandb_entity: vasilache
@@ -133,14 +133,43 @@ defaults:
     # toward this target so the manager makes minimal tweaks to the running goal.
     mask_sparsity_target: 0.3
     mask_sparsity_impl: mult
+    # How the soft sparsity penalty reaches the discrete mask head:
+    #   sample    = penalize mean of the HARD Bernoulli sample (legacy; the hard
+    #               sample has no gradient to the mask logits, so this is a no-op
+    #               and the adapter rails at ``mask_sparsity_max`` without effect).
+    #   prob (B2) = penalize mean of the sigmoid PROBABILITIES from the in-tape
+    #               manager mask head (differentiable; the adapter actually bites).
+    #   reinforce (C) = subtract sg(scale)*hard_frac from the manager extrinsic
+    #               reward so the mask logp is reinforced toward sparser masks.
+    mask_sparsity_mode: prob
+    # B2 ablation: >0 uses a FIXED sparsity multiplier at target 0 (constant
+    # pressure toward editing no blocks, i.e. frozen goal) instead of the adaptive
+    # adapter. Only applies in 'prob' mode. 0 = use the adaptive adapter below.
+    mask_sparsity_fixed_weight: 0.0
     mask_sparsity_min: 1e-5
     # Ceiling for the adaptive Lagrange multiplier; must be well above ``init``.
     mask_sparsity_max: 100.0
     mask_sparsity_vel: 0.1
     mask_sparsity_init: 1.0
+    # Hard edit budget: when > 0, force *exactly* this many blocks edited per
+    # manager command (Gumbel-top-k over the mask head), and drop the soft
+    # sparsity penalty entirely. 0 = use the adaptive sparsity penalty above.
+    mask_topk: 0
+    # Manager-policy input conditioning (masked goals only; all default off, so the
+    # manager input stays exactly feat2tensor(feat)). Each appends a stop-gradient'd
+    # channel built from the PRE-edit running code Z so the manager can see what it is
+    # editing / whether the standing goal was already reached. See agent._mgr_input.
+    mgr_cond_goalcode: False   # concat flattened pre-edit running code Z (L*C dims)
+    mgr_cond_achieve: False    # concat scalar cosine_max(decode(pre-edit Z), deter)
+    mgr_cond_decgoal: False    # (least preferred) concat decoded previous goal (deter dims)
     skill_shape: [8, 8]
     skill_classes: 8
     goal_autoencoder_beta: 0.25
+    # Geometry preservation: extra goal-AE term making code-space cosine_max
+    # distances match deter-space distances (far->far, near->near, proportional),
+    # so running-goal edits move the goal predictably. 0 = off. Folds into the
+    # goal_autoencoder loss (no separate scale). See pairwise_cosmax / goal/struct_*.
+    goal_struct_weight: 0.0
     # Goal reconstruction reduction over the ``deter`` dim. ``sum`` (DreamerV3/
     # Director default) sums squared error -> magnitude scales with ``deter`` and
     # shifts the rec:kl balance across model sizes. ``mean`` averages per-dim then
@@ -160,6 +189,22 @@ defaults:
     goal_kl_init: 1.0
     manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in}
     manager_sample_freq: 8
+    # Variable goal length (opt-in, HiPPO-style): the manager additionally emits a
+    # discrete duration p in {goal_duration_min..goal_duration_max}; the emitted
+    # goal is held for exactly p steps before the next manager decision (instead of
+    # the fixed ``manager_sample_freq`` window). When True, manager training drops
+    # the fixed-K downsampling and trains on the FULL-resolution rollout, masking
+    # the REINFORCE policy loss to the per-step manager-decision (``switch``) steps;
+    # the worker resets its goal-window lambda-return at the same switch boundaries.
+    # False = fixed-K Director behavior (byte-for-byte unchanged). Pair with a larger
+    # ``imag_length`` (e.g. 32) so several decisions fit per imagined rollout.
+    variable_goal_length: False
+    goal_duration_min: 1
+    goal_duration_max: 16
+    # Optional per-decision cost subtracted from the manager extrinsic reward at each
+    # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
+    # shapes the duration.
+    goal_switch_cost: 0.0
     worker_report_horizon: 32
     worker_split_traj: True
     mgr_expl_weight: 0.1
@@ -234,10 +279,17 @@ defaults:
     # Both appear under skill_viz/ and goal_enc_viz/ in WandB.
     report_skill_viz: True
     report_goal_enc_viz: True
-    # Overwrite-goal panel (only when use_masked_goals): mask_viz/ traces
-    # [obs | edited blocks z_new*m | full running goal code Z | new goal image |
-    # image change vs previous command's goal].
+    # Overwrite-goal panel (only when use_masked_goals): an entire-episode online
+    # composite logged as epstats/policy_mask_viz_{key}, 3 rows top->bottom (each
+    # upscaled 10x, e.g. 32->320 px) = [obs | goal code with the most-recently-edited
+    # blocks in yellow | active goal image]. Masked goals: running code Z with the
+    # sticky last-edit blocks yellow (held across empty/held goals). Plain goals: the
+    # emitted skill code, all yellow (whole code replaced each decision). Built in
+    # policy(), like policy_image_with_goal. Any HRL run with an image decoder.
     report_mask_viz: True
+    # Offline goal-code structure diagnostics (volatility + on-manifold splice test);
+    # off by default, enabled only by the diag driver. See Agent._code_diag.
+    report_code_diag: False
     # Decode goal image at every policy step and stack with obs for episode rollout.
     # Logged as epstats/policy_image_with_goal. Adds one decoder forward pass per step.
     policy_goal_image: True
@@ -245,6 +297,11 @@ defaults:
 masked_goals: &masked_goals
   agent.use_hrl: True
   agent.use_masked_goals: True
+
+variable_goals: &variable_goals
+  agent.use_hrl: True
+  agent.variable_goal_length: True
+  agent.imag_length: 32
 
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}
@@ -258,6 +315,13 @@ size6m: &size6m
   .*\.depth: 8
   .*\.units: 128
   batch_size: 4
+  batch_length: 32
+
+size6m_director: &size6m_director
+  .*\.rssm: {deter: 1024, hidden: 128, classes: 8}
+  .*\.depth: 8
+  .*\.units: 256
+  batch_size: 2
   batch_length: 32
 
 size12m: &size12m
