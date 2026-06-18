@@ -167,6 +167,163 @@ def aggregate_mgr_cont(con, k, without_zeros=False):
   return out
 
 
+def variable_segment_ids(switch_mask):
+  """Per-step segment index from a manager switch mask ``(B, T)`` or ``(B, T+1)``."""
+  sw = f32(switch_mask)
+  return jnp.cumsum(sw.astype(i32), axis=-1) - sw.astype(i32)
+
+
+def masked_cumprod(con, switch_mask):
+  """Continuation product over transitions, resetting at each manager switch."""
+  c = f32(con)
+  sw = f32(switch_mask)
+  if c.ndim == 1:
+    sw = sw[:c.shape[0]] if sw.shape[0] == c.shape[0] + 1 else sw
+
+    def body(carry, xt):
+      ct, swt = xt
+      cprod = jnp.where(swt > 0.5, 1.0, carry)
+      cprod = cprod * ct
+      return cprod, cprod
+
+    _, cprod = jax.lax.scan(body, 1.0, (c, sw))
+    return cprod
+
+  def row(c_row, sw_row):
+    sw_t = sw_row[:c_row.shape[0]] if sw_row.shape[0] == c_row.shape[0] + 1 else sw_row
+    return masked_cumprod(c_row, sw_t)
+
+  return jax.vmap(row)(c, sw)
+
+
+def aggregate_mgr_extr_rew_variable(rew, con, switch_mask, without_zeros=False):
+  """Pool per-step rewards between manager switches (variable segment lengths).
+
+  Boundaries come from ``switch_mask`` (1 wherever a manager decision occurs) instead
+  of a fixed ``k``. When ``without_zeros=True``, returns compact per-segment rewards
+  with shape ``(B, n_seg)`` (padded to the max switch count in the batch).
+  """
+  sw = f32(switch_mask)
+  r = f32(rew[:, 1:])
+  c = f32(con[:, :-1])
+  B, Tm = r.shape
+  max_seg = sw.shape[-1]  # static upper bound (≤ one switch per timestep)
+  seg = variable_segment_ids(sw)[:, :Tm]  # (B, Tm)
+  cprod = masked_cumprod(c, sw)
+  weighted = r * cprod
+
+  def pool_row(w_row, seg_row):
+    totals = jax.ops.segment_sum(w_row, seg_row, num_segments=max_seg)
+    counts = jax.ops.segment_sum(jnp.ones_like(w_row), seg_row, num_segments=max_seg)
+    return totals / jnp.maximum(counts, 1.0)
+
+  agg = jax.vmap(pool_row)(weighted, seg)  # (B, max_seg)
+  if without_zeros:
+    return agg
+  out = jnp.zeros_like(rew)
+  switch_idx = jnp.clip(jnp.cumsum(sw.astype(i32), axis=-1) - 1, 0, max_seg - 1)
+  placed = jnp.take_along_axis(agg, switch_idx[:, :Tm], axis=1)
+  out = out.at[:, 1:Tm + 1].set(jnp.where(sw[:, :Tm] > 0.5, placed, 0.0))
+  out = out.at[:, 0].set(rew[:, 0])
+  return out
+
+
+def aggregate_mgr_cont_variable(con, switch_mask, without_zeros=False):
+  """Pool continuation between manager switches (variable segment lengths)."""
+  sw = f32(switch_mask)
+  c = f32(con[:, 1:])
+  Tm = c.shape[1]
+  max_seg = sw.shape[-1]
+  seg = variable_segment_ids(sw)[:, :Tm]
+  cprod = masked_cumprod(c, sw)
+
+  def pool_row(cp_row, seg_row):
+    return jax.ops.segment_max(cp_row, seg_row, num_segments=max_seg)
+
+  block_prod = jax.vmap(pool_row)(cprod, seg)
+  if without_zeros:
+    return block_prod
+  out = jnp.zeros_like(con)
+  switch_idx = jnp.clip(jnp.cumsum(sw.astype(i32), axis=-1) - 1, 0, max_seg - 1)
+  placed = jnp.take_along_axis(block_prod, switch_idx[:, :Tm], axis=1)
+  out = out.at[:, 1:Tm + 1].set(jnp.where(sw[:, :Tm] > 0.5, placed, 0.0))
+  out = out.at[:, 0].set(con[:, 0])
+  return out
+
+
+def switch_valid_mask(switch_mask, n_cols):
+  """Mask for packed switch timelines: 1 on real switch rows, 0 on padding."""
+  counts = jnp.sum(f32(switch_mask), axis=-1, keepdims=True)
+  return f32(jnp.arange(n_cols)[None, :] < counts)
+
+
+def variable_block_director_tensors(rew, con, expl, switch_mask, horizon):
+  """Director ``abstract_traj`` manager tensors for variable switch boundaries.
+
+  Mirrors fixed-K ``_mgr_extr_rew`` / ``_mgr_cont`` + ``imag_reward_pad``: block-pooled
+  rewards with shape ``(B, n_blocks)``, continuation ``concat([con[:, :1], blocks])``,
+  and rewards padded to ``(B, n_blocks + 1)``. Only the first ``sum(switch_mask)``
+  downsampled switch rows are real manager decisions; the static tail is masked out.
+  """
+  sw = f32(switch_mask)
+  n_sw = jnp.sum(sw, axis=-1, keepdims=True)
+  n_blocks = jnp.maximum(n_sw - 1, 1)
+  block_mask = f32(jnp.arange(horizon - 1)[None, :] < n_blocks)
+
+  pooled_extr = aggregate_mgr_extr_rew_variable(
+      rew, con, switch_mask, without_zeros=True)[:, :horizon - 1] * block_mask
+  pooled_expl = aggregate_mgr_extr_rew_variable(
+      expl, con, switch_mask, without_zeros=True)[:, :horizon - 1] * block_mask
+  pooled_cont = aggregate_mgr_cont_variable(
+      con, switch_mask, without_zeros=True)[:, :horizon - 1] * block_mask
+
+  mgr_cont = jnp.concatenate([con[:, :1], pooled_cont], axis=1)[:, :horizon]
+  mgr_extr_rew = imag_reward_pad(pooled_extr)[:, :horizon]
+  mgr_expl_rew = imag_reward_pad(pooled_expl)[:, :horizon]
+  mgr_switch = f32(jnp.arange(horizon)[None, :] < n_sw)
+  return mgr_extr_rew, mgr_expl_rew, mgr_cont, mgr_switch
+
+
+def forward_fill_packed(buf, valid):
+  """Hold the last valid switch row into trailing padding slots (not zeros)."""
+  def row(buf_row, valid_row):
+    def body(last, xt):
+      bi, vi = xt
+      last = jnp.where(vi > 0.5, bi, last)
+      return last, last
+    _, filled = jax.lax.scan(body, buf_row[0], (buf_row, valid_row))
+    return filled
+  valid = switch_valid_mask(valid, buf.shape[1])
+  return jax.vmap(row)(buf, valid)
+
+
+def downsample_at_switch_mask(feat, switch_mask):
+  """Extract states at manager switch timesteps; pad to ``max switches`` per batch."""
+  sw = f32(switch_mask)
+  B, T = sw.shape
+  max_sw = T
+
+  def compact_row(x_row, sw_row):
+    def body(carry, xt):
+      buf, i = carry
+      val, swt = xt
+      buf = jax.lax.cond(
+          swt > 0.5,
+          lambda b: b.at[i].set(val),
+          lambda b: b,
+          buf)
+      i = i + jnp.where(swt > 0.5, 1, 0)
+      return (buf, i), None
+
+    buf = jnp.zeros((max_sw,) + x_row.shape[1:], dtype=x_row.dtype)
+    (buf, _), _ = jax.lax.scan(body, (buf, jnp.int32(0)), (x_row, sw_row))
+    return forward_fill_packed(buf[None], sw_row)[0]
+
+  return jax.tree.map(
+      lambda x: jax.vmap(compact_row)(x, sw),
+      feat)
+
+
 def downsample_manager_states(feat, k):
   """Extract the boundary states of the manager skill blocks.
 
@@ -288,6 +445,8 @@ class Agent(embodied.jax.Agent):
     self.goal_duration_min = int(getattr(config, 'goal_duration_min', 1))
     self.goal_duration_max = int(getattr(config, 'goal_duration_max', 16))
     self.goal_switch_cost = float(getattr(config, 'goal_switch_cost', 0.0))
+    self.variable_goal_block_rew = bool(getattr(
+        config, 'variable_goal_block_rew', False))
     self.n_duration_classes = max(
         1, self.goal_duration_max - self.goal_duration_min + 1)
     if len(skill_shape_t) > 1:
@@ -445,6 +604,20 @@ class Agent(embodied.jax.Agent):
           inverse=False,
           init=float(config.goal_kl_init),
           name='goal_kl_adapter')
+      if getattr(config, 'goal_struct_adapt', False):
+        # Adaptive struct weight: grows when the geometry-matching loss sits above
+        # ``goal_struct_adapt_target`` (codes not yet aligned), shrinks once below,
+        # auto-tuning the pressure instead of using a fixed ``goal_struct_weight``.
+        self.goal_struct_adapter = embodied.jax.AutoAdapt(
+            shape=(),
+            impl='mult',
+            target=float(config.goal_struct_adapt_target),
+            min=float(config.goal_struct_adapt_min),
+            max=float(config.goal_struct_adapt_max),
+            vel=float(config.goal_struct_adapt_vel),
+            inverse=False,
+            init=float(config.goal_struct_adapt_init),
+            name='goal_struct_adapter')
       if self.use_masked_goals and self.mask_topk <= 0:
         # Adaptive sparsity: drives the mean fraction of active manager-mask bits
         # toward ``mask_sparsity_target`` so the mask does not collapse to
@@ -579,6 +752,9 @@ class Agent(embodied.jax.Agent):
       mgr_skill['last_edit_mask'] = jnp.zeros((batch_size, skill_shape[0]), f32)
     if self.variable_goal_length:
       mgr_skill['duration'] = jnp.zeros((batch_size,), i32)
+    # Decoded worker goal (deter); refreshed on manager switch / episode reset and
+    # held constant between switches so rollout does not chase a moving decode.
+    mgr_skill['goal_deter'] = jnp.zeros((batch_size, int(self.goal_shape[0])), f32)
     # ``mgr_step`` is a per-element counter (fixed K: step index for ``% K``;
     # variable: remaining steps until the next manager decision, starts at 0 so
     # the first step switches).
@@ -609,6 +785,7 @@ class Agent(embodied.jax.Agent):
       mgr_skill['last_edit_mask'] = jnp.zeros((B, skill_shape[0]), f32)
     if self.variable_goal_length:
       mgr_skill['duration'] = jnp.zeros((B,), i32)
+    mgr_skill['goal_deter'] = jnp.zeros((B, int(self.goal_shape[0])), f32)
     mgr_step = jnp.zeros((B,), i32)
     return enc, dyn, dec, prevact, mgr_skill, mgr_step
 
@@ -751,6 +928,13 @@ class Agent(embodied.jax.Agent):
     """Decode the running goal code to a ``deter`` goal vector (single batch dim)."""
     return self.goal_dec(self._running_goal_code(skills), bdims).pred()
 
+  def _held_goal_deter(self, mgr_skill, update, reset, cached_goal):
+    """Decode Z to deter; refresh on manager switch or episode reset, else hold."""
+    fresh = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
+    refresh = jnp.logical_or(update, reset)
+    rshape = refresh.reshape(refresh.shape + (1,) * (fresh.ndim - refresh.ndim))
+    return jnp.where(rshape, fresh, cached_goal)
+
   def _goals_from_skills(self, skills, bdims=2):
     """Batch-decode running goal codes to goal vectors (Director ``dec.mode()``)."""
     s = self._running_goal_code(skills)
@@ -820,11 +1004,14 @@ class Agent(embodied.jax.Agent):
     Masked goals: the manager emits skill+mask; the running goal code is re-based
     on the current-state encoding at episode start (so the *first* command edits
     the current state) and block-overwritten by the emitted edit."""
-    # Pull the sticky mask_viz mask out of the carry before any switch tree-map
-    # (``emit``/``new_skill`` don't carry it, so it must not reach ``skill_switch``).
+    # Pull carry-only fields out before any switch tree-map (``emit``/``new_skill``
+    # don't carry them, so they must not reach ``skill_switch``).
     sticky = mgr_skill.get('last_edit_mask') if self.use_masked_goals else None
+    cached_goal = mgr_skill.get('goal_deter')
+    strip = {'goal_deter'}
     if sticky is not None:
-      mgr_skill = {k: v for k, v in mgr_skill.items() if k != 'last_edit_mask'}
+      strip.add('last_edit_mask')
+    mgr_skill = {k: v for k, v in mgr_skill.items() if k not in strip}
     K = max(1, int(self.manager_sample_freq))
     mgr_step = jnp.where(reset, 0, mgr_step)
     if self.variable_goal_length:
@@ -843,8 +1030,12 @@ class Agent(embodied.jax.Agent):
     else:
       emit = self._emit_manager(self.feat2tensor(feat), 1)
       mgr_skill = skill_switch(update, emit, mgr_skill)
-    # Manager goal code must be stopped before decoding the goal for the worker.
-    goal = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
+    # Hold the decoded deter across non-switch steps (Z is already held in carry).
+    goal = self._held_goal_deter(
+        mgr_skill, update, reset,
+        cached_goal if cached_goal is not None else jnp.zeros(
+            (mgr_skill['skill'].shape[0], int(self.goal_shape[0])), f32))
+    mgr_skill['goal_deter'] = goal
     if self.variable_goal_length:
       # On a switch, reload the countdown with the freshly emitted duration p;
       # otherwise tick the held goal down by one.
@@ -1128,6 +1319,29 @@ class Agent(embodied.jax.Agent):
       skills = jax.tree.map(lambda s: s[:, ::K], skills)
     return skills
 
+  def _switch_mask_from_skills(self, skills):
+    """Decision mask ``(B, T)`` consistent with a ``_manager_skills_on_sequence`` trace."""
+    T = skills['skill'].shape[1]
+    B = skills['skill'].shape[0]
+    if self.variable_goal_length:
+      p = (self.goal_duration_min + skills['duration'].astype(i32))  # (B, T)
+
+      def body(remaining, pt):
+        update = remaining <= 0
+        remaining = jnp.where(update, pt, remaining) - 1
+        return remaining, f32(update)
+
+      init = jnp.zeros((B,), i32)
+      if T <= 1:
+        _, switch = body(init, p[:, 0])
+        return switch[:, None]
+      _, switches = jax.lax.scan(body, init, jnp.swapaxes(p, 0, 1))
+      return jnp.swapaxes(switches, 0, 1)
+
+    K = max(1, int(self.manager_sample_freq))
+    pos = jnp.arange(T)
+    return jnp.broadcast_to(f32(jnp.equal(pos % K, 0)), (B, T))
+
   def policy(self, carry, obs, mode='train'):
     """One env step: encode obs, RSSM observe, sample policy action, update carry."""
     if self.use_hrl:
@@ -1197,8 +1411,12 @@ class Agent(embodied.jax.Agent):
         if mask_viz_on:
           to3 = lambda x: jnp.repeat(x, 3, -1) if x.shape[-1] == 1 else x[..., :3]
           Hi, Wi = int(obs_u8.shape[1]), int(obs_u8.shape[2])
-          # Upscale every row 10x (e.g. 32 -> 320 px) with nearest-neighbor.
-          up = lambda x: _resize_frames(x[:, None], 10 * Hi, 10 * Wi)[:, 0]
+          # Upscale every row (nearest-neighbor) by report_mask_viz_scale. The panel
+          # is stacked into an episode gif, so size grows ~scale^2; the default 4
+          # keeps it legible without overwhelming the WandB media sync (scale=10 made
+          # ~21 MB gifs that never synced online).
+          s = max(1, int(getattr(self.config, 'report_mask_viz_scale', 4)))
+          up = lambda x: _resize_frames(x[:, None], s * Hi, s * Wi)[:, 0]
           # 3 rows: obs | running code Z (edits in yellow) | active goal.
           out[f'log/mask_viz_{k}'] = jnp.concatenate(
               [up(to3(obs_u8)), up(code_u8), up(to3(goal_u8))], axis=1)
@@ -1370,20 +1588,48 @@ class Agent(embodied.jax.Agent):
     # mirror deter-space distances. Pairs of states far apart in deter (low
     # cosine_max) should map to far-apart codes, and nearby states to nearby
     # codes, so the running-goal overwrite moves the goal proportionally and
-    # predictably. The deter Gram matrix is stop-gradient (target); the gradient
-    # flows only into the encoder through the soft code probabilities. ---
-    if self.goal_struct_weight > 0.0:
-      d = sg(deter_feat).reshape((B * T, -1))                 # (N, D) target geom
+    # predictably. The target Gram matrix is stop-gradient; the gradient flows
+    # only into the encoder through the soft code probabilities. Variants:
+    #   goal_struct_target: 'deter' (default) | 'feat' (match the full deter+stoch
+    #     tensor the worker conditions on, not just deter).
+    #   goal_struct_loss:   'mse' (default squared Gram match) | 'margin'
+    #     (contrastive: pull similar-state codes together, push dissimilar-state
+    #     codes apart past a margin -- stronger separation of far-apart pairs).
+    #   goal_struct_adapt:  AutoAdapt the weight toward a struct-loss setpoint. ---
+    struct_on = (self.goal_struct_weight > 0.0) or bool(
+        getattr(self.config, 'goal_struct_adapt', False))
+    if struct_on:
+      if getattr(self.config, 'goal_struct_target', 'deter') == 'feat':
+        d = sg(self.feat2tensor(repfeat)).reshape((B * T, -1))  # full deter+stoch
+      else:
+        d = sg(deter_feat).reshape((B * T, -1))                 # (N, D) target geom
       probs = jax.nn.softmax(goal_dist.dist.logits, -1)       # (B, T, L, C)
       z = probs.reshape((B * T, -1))                          # (N, L*C) soft code
-      sd = pairwise_cosmax(d)                                 # fixed deter geometry
+      sd = pairwise_cosmax(d)                                 # fixed target geometry
       sz = pairwise_cosmax(z)                                 # differentiable code geometry
       offdiag = 1.0 - jnp.eye(B * T, dtype=f32)               # ignore self-similarity
       denom = offdiag.sum() + 1e-12
-      struct_loss = jnp.square(sz - sd) * offdiag
-      struct_loss = struct_loss.sum() / denom                 # scalar
-      losses['goal_autoencoder'] = (
-          losses['goal_autoencoder'] + self.goal_struct_weight * struct_loss)
+      if getattr(self.config, 'goal_struct_loss', 'mse') == 'margin':
+        # Contrastive: pull positive pairs (high sd) toward sd, push negative
+        # pairs (low sd) apart -- penalize code similarity above the margin,
+        # weighted by how dissimilar the states are (1 - sd emphasizes negatives).
+        margin = float(getattr(self.config, 'goal_struct_margin', 0.1))
+        pos_w = jnp.clip(sd, 0.0, 1.0)
+        neg_w = jnp.clip(1.0 - sd, 0.0, 1.0)
+        pull = pos_w * jnp.square(sd - sz)
+        push = neg_w * jnp.square(jnp.maximum(sz - margin, 0.0))
+        struct_err = pull + push
+      else:
+        struct_err = jnp.square(sz - sd)
+      struct_loss = (struct_err * offdiag).sum() / denom       # scalar
+      if getattr(self.config, 'goal_struct_adapt', False):
+        struct_scaled, struct_mets = self.goal_struct_adapter(
+            struct_loss, update=training)
+        losses['goal_autoencoder'] = losses['goal_autoencoder'] + struct_scaled
+        metrics['goal/struct_scale_mean'] = struct_mets['scale_mean']
+      else:
+        losses['goal_autoencoder'] = (
+            losses['goal_autoencoder'] + self.goal_struct_weight * struct_loss)
       # Diagnostic: Pearson correlation of the two geometries (should rise to ~1).
       sdf = (sd * offdiag).reshape((-1,))
       szf = (sz * offdiag).reshape((-1,))
@@ -1455,22 +1701,43 @@ class Agent(embodied.jax.Agent):
       # decision steps; the critic still trains on every step. Rewards are the raw
       # per-step WM rewards (lambda_return handles continuation via ``term=1-con``,
       # like the flat/worker AC) rather than the fixed-K block-pooled rewards.
-      mgr_skills_eff = mgr_skills
-      imgfeat_eff = imgfeat
-      inp_eff = inp
-      mgr_switch = switch_mask
-      if self._mgr_cond_any:
-        preedit_eff = {'goal_code': pre_code}
-        mgr_pol_inp = self._mgr_input(imgfeat, preedit_eff)
+      # Optional ``variable_goal_block_rew``: pool rewards over each realized
+      # duration segment and downsample to switch steps (Director-style credit).
+      if self.variable_goal_block_rew:
+        mgr_skills_eff = downsample_at_switch_mask(mgr_skills, switch_mask)
+        imgfeat_eff = downsample_at_switch_mask(imgfeat, switch_mask)
+        inp_eff = self.feat2tensor(imgfeat_eff)
+        n_mgr = imgfeat_eff['deter'].shape[1]
+        mgr_extr_rew, mgr_expl_rew, mgr_cont, mgr_switch = (
+            variable_block_director_tensors(
+                rew_step, con, expl_step, switch_mask, n_mgr))
+        if self._mgr_cond_any:
+          preedit_eff = {'goal_code': downsample_at_switch_mask(
+              {'goal_code': pre_code}, switch_mask)['goal_code']}
+          mgr_pol_inp = self._mgr_input(imgfeat_eff, preedit_eff)
+        else:
+          preedit_eff = None
+          mgr_pol_inp = inp_eff
       else:
-        preedit_eff = None
-        mgr_pol_inp = inp
-      mgr_cont = con
-      mgr_extr_rew = imag_reward_pad(rew_step[:, 1:])
-      mgr_expl_rew = imag_reward_pad(expl_step[:, 1:])
+        mgr_skills_eff = mgr_skills
+        imgfeat_eff = imgfeat
+        inp_eff = inp
+        mgr_switch = switch_mask
+        mgr_cont = con
+        mgr_extr_rew = imag_reward_pad(rew_step[:, 1:])
+        mgr_expl_rew = imag_reward_pad(expl_step[:, 1:])
+        if self._mgr_cond_any:
+          preedit_eff = {'goal_code': pre_code}
+          mgr_pol_inp = self._mgr_input(imgfeat, preedit_eff)
+        else:
+          preedit_eff = None
+          mgr_pol_inp = inp
       if self.goal_switch_cost:
         # HiTS-style per-decision cost: subtract a fixed cost at each switch step.
-        mgr_extr_rew = mgr_extr_rew - self.goal_switch_cost * switch_mask
+        if self.variable_goal_block_rew:
+          mgr_extr_rew = mgr_extr_rew - self.goal_switch_cost * mgr_switch
+        else:
+          mgr_extr_rew = mgr_extr_rew - self.goal_switch_cost * switch_mask
       # Per-decision mean duration (switch-weighted) and realized switch rate.
       dur = (self.goal_duration_min + mgr_skills['duration']).astype(f32)
       metrics['goal/mgr_duration_mean'] = (
@@ -1583,6 +1850,9 @@ class Agent(embodied.jax.Agent):
         mgr_dur_actent_adapter=(
             self.mgr_dur_actent if self.variable_goal_length else None),
         switch_mask=mgr_switch,
+        dur_reg_weight=float(getattr(self.config, 'goal_duration_reg', 0.0)),
+        dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
+        dur_min=self.goal_duration_min,
         **kwargs_mgr)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
@@ -1660,32 +1930,58 @@ class Agent(embodied.jax.Agent):
         boot_total = jnp.broadcast_to(boot_total[:, -1:], (B, K_repl))
         boot_goal = jnp.broadcast_to(boot_goal[:, -1:], (B, K_repl))
 
-      # --- 1. Downsampled Replay sequence for Manager ---
-      feat_down = downsample_manager_states(feat, self.manager_sample_freq)
-      inp_down = self.feat2tensor(feat_down)
-
-      # Downsample flags
-      T_feat = jax.tree.leaves(feat)[0].shape[1]
-      Tm = T_feat - 1
-      n = Tm // self.manager_sample_freq
-      rem = Tm - n * self.manager_sample_freq
-      idx_down = [0] + [int(1 + i * self.manager_sample_freq - 1) for i in range(1, n + 1)]
-      if rem > 0:
-        idx_down.append(int(n * self.manager_sample_freq))
-        idx_down.append(int(Tm))
-      else:
-        idx_down.append(int(Tm))
-      idx_down = sorted(list(set(idx_down)))
-
-      last_down = last[:, idx_down]
-      term_down = term[:, idx_down]
-
-      # Compute aggregated continuation and rewards on full sequence
+      # --- 1. Replay sequence for Manager ---
       repl_con_full = self.con(self.feat2tensor(feat), 2).prob(1)
-      repl_mgr_cont = self._mgr_cont(repl_con_full, without_zeros=True)
-      repl_mgr_extr_rew = imag_reward_pad(self._mgr_extr_rew(self.rew(self.feat2tensor(feat), 2).pred(), repl_con_full, without_zeros=True))
-      repl_expl_step = self._mgr_expl_reward(feat)
-      repl_mgr_expl_rew = imag_reward_pad(self._mgr_extr_rew(repl_expl_step, repl_con_full, without_zeros=True))
+      repl_rew_full = self.rew(self.feat2tensor(feat), 2).pred()
+      repl_expl_full = self._mgr_expl_reward(feat)
+
+      if self.variable_goal_length:
+        # Mirror the imagination manager path: use actual switch boundaries from
+        # the replay skill trace, not fixed-K ``downsample_manager_states``.
+        repl_skills_full = self._manager_skills_on_sequence(
+            feat, deterministic=True)
+        repl_switch = self._switch_mask_from_skills(repl_skills_full)
+        if self.variable_goal_block_rew:
+          feat_down = downsample_at_switch_mask(feat, repl_switch)
+          inp_down = self.feat2tensor(feat_down)
+          n_mgr = feat_down['deter'].shape[1]
+          repl_mgr_extr_rew, repl_mgr_expl_rew, repl_mgr_cont, valid_mgr = (
+              variable_block_director_tensors(
+                  repl_rew_full, repl_con_full, repl_expl_full,
+                  repl_switch, n_mgr))
+          last_down = downsample_at_switch_mask(
+              {'last': last.astype(f32)}, repl_switch)['last'].astype(last.dtype)
+          term_down = (1.0 - repl_mgr_cont).astype(term.dtype)
+        else:
+          feat_down = feat
+          inp_down = self.feat2tensor(feat_down)
+          repl_mgr_extr_rew = imag_reward_pad(repl_rew_full[:, 1:])
+          repl_mgr_expl_rew = imag_reward_pad(repl_expl_full[:, 1:])
+          last_down = last
+          term_down = term
+      else:
+        feat_down = downsample_manager_states(feat, self.manager_sample_freq)
+        inp_down = self.feat2tensor(feat_down)
+
+        # Downsample flags
+        T_feat = jax.tree.leaves(feat)[0].shape[1]
+        Tm = T_feat - 1
+        n = Tm // self.manager_sample_freq
+        rem = Tm - n * self.manager_sample_freq
+        idx_down = [0] + [int(1 + i * self.manager_sample_freq - 1) for i in range(1, n + 1)]
+        if rem > 0:
+          idx_down.append(int(n * self.manager_sample_freq))
+          idx_down.append(int(Tm))
+        else:
+          idx_down.append(int(Tm))
+        idx_down = sorted(list(set(idx_down)))
+
+        last_down = last[:, idx_down]
+        term_down = term[:, idx_down]
+        repl_mgr_extr_rew = imag_reward_pad(self._mgr_extr_rew(
+            repl_rew_full, repl_con_full, without_zeros=True))
+        repl_mgr_expl_rew = imag_reward_pad(self._mgr_extr_rew(
+            repl_expl_full, repl_con_full, without_zeros=True))
 
       # --- 2. Dense Replay sequence for Worker ---
       feat_wkr, last_wkr, term_wkr, boot_goal_wkr = jax.tree.map(
@@ -1710,12 +2006,22 @@ class Agent(embodied.jax.Agent):
 
       # Manager Trajectory is short
       weight_down = f32(~last_down)
+      if self.variable_goal_block_rew:
+        weight_down = weight_down * valid_mgr
       disc = 1 - 1 / self.config.horizon
       lam = 0.95 # matches repl_loss default
       boot_extr_down = jnp.broadcast_to(boot_extr[:, -1:], repl_mgr_extr_rew.shape)
       boot_expl_down = jnp.broadcast_to(boot_expl[:, -1:], repl_mgr_expl_rew.shape)
-      ret_extr = lambda_return(last_down, term_down, repl_mgr_extr_rew, jnp.zeros_like(repl_mgr_extr_rew), boot_extr_down, disc, lam)
-      ret_expl = lambda_return(last_down, term_down, repl_mgr_expl_rew, jnp.zeros_like(repl_mgr_expl_rew), boot_expl_down, disc, lam)
+      voff_extr_prev, vscale_extr_prev = self.mgr_extr_valnorm.stats()
+      voff_expl_prev, vscale_expl_prev = self.mgr_expl_valnorm.stats()
+      tarval_extr = (
+          self.mgr_extr_val(inp_down, 2).pred() * vscale_extr_prev + voff_extr_prev)
+      tarval_expl = (
+          self.mgr_expl_val(inp_down, 2).pred() * vscale_expl_prev + voff_expl_prev)
+      ret_extr = lambda_return(
+          last_down, term_down, repl_mgr_extr_rew, tarval_extr, boot_extr_down, disc, lam)
+      ret_expl = lambda_return(
+          last_down, term_down, repl_mgr_expl_rew, tarval_expl, boot_expl_down, disc, lam)
 
       # Train the critics on RAW returns (``valnorm: none`` -> offset 0, scale 1),
       # matching the imagination critic target and flat-v3 ``repl_loss``. The
@@ -2247,6 +2553,9 @@ def imag_loss_mgr(
     mgr_actent_perdim=True,
     mgr_dur_actent_adapter=None,
     switch_mask=None,
+    dur_reg_weight=0.0,
+    dur_reg_target=0.0,
+    dur_min=1,
 ):
   """Manager actor-critic losses on imagined trajectories.
 
@@ -2353,11 +2662,18 @@ def imag_loss_mgr(
       mgr_ent_loss_bt = sum(ent_loss_terms)
 
   w = sg(weight[:, :-1])
+  vw = sg(weight[:, :-1])
   if switch_mask is not None:
     # Variable goal length: only apply the REINFORCE update at the steps where a
     # manager decision was actually made (the duration/skill/mask log-probs and
-    # advantage are meaningless on held-goal steps).
-    w = w * sg(switch_mask[:, :-1])
+    # advantage are meaningless on held-goal steps). Also masks critic updates on
+    # padded switch timelines (``variable_goal_block_rew``).
+    m = sg(switch_mask[:, :-1])
+    # Zero masked advantages before weighting: ``0 * inf`` is NaN on padded block-rew
+    # slots where retnorm can divide by a near-zero scale.
+    mgr_adv_normed = jnp.where(m > 0, mgr_adv_normed, 0.0)
+    w = w * m
+    vw = vw * m
     metrics['mgr_switch_rate'] = switch_mask.mean()
 
   # REINFORCE manager actor. With the adaptive entropy adapter the per-dim
@@ -2368,6 +2684,20 @@ def imag_loss_mgr(
   else:
     losses['mgr_policy'] = w * -(
         mgr_logpi * sg(mgr_adv_normed) + actent * sum(mgr_ents.values()))
+
+  # Soft duration prior (``goal_duration_reg``): pull the manager's expected goal
+  # duration toward ``dur_reg_target`` directly through the duration logits (not via
+  # REINFORCE), applied at decision steps only (``w`` carries the switch mask).
+  if dur_reg_weight > 0.0 and 'duration' in manager_policy:
+    dur_inner = _head_inner(manager_policy['duration'])
+    dur_probs = jax.nn.softmax(dur_inner.logits, -1)         # (B, T, n_classes)
+    classes = jnp.arange(dur_probs.shape[-1], dtype=f32)
+    exp_p = dur_min + (dur_probs * classes).sum(-1)          # (B, T) expected steps
+    exp_p = policy_time_slice(exp_p)                         # (B, T-1)
+    dur_reg_bt = dur_reg_weight * jnp.square(exp_p - f32(dur_reg_target))
+    losses['mgr_policy'] = losses['mgr_policy'] + w * dur_reg_bt
+    metrics['mgr_duration_reg_loss'] = (w * dur_reg_bt).mean()
+    metrics['mgr_duration_exp_mean'] = exp_p.mean()
 
   metrics['mgr_policy_loss'] = losses['mgr_policy'].mean()
   metrics['mgr_ent_loss'] = mgr_ent_loss_bt.mean()
@@ -2386,12 +2716,12 @@ def imag_loss_mgr(
   mgr_expl_ret_normed = (mgr_expl_ret - voff_expl) / vscale_expl
 
   mgr_extr_tar_padded = jnp.concatenate([mgr_extr_ret_normed, 0 * mgr_extr_ret_normed[:, -1:]], 1)
-  losses['mgr_extr_value'] = sg(weight[:, :-1]) * (
+  losses['mgr_extr_value'] = vw * (
       mgr_extr_value.loss(sg(mgr_extr_tar_padded)) +
       slowreg * mgr_extr_value.loss(sg(mgr_extr_slowvalue.pred())))[:, :-1]
 
   mgr_expl_tar_padded = jnp.concatenate([mgr_expl_ret_normed, 0 * mgr_expl_ret_normed[:, -1:]], 1)
-  losses['mgr_expl_value'] = sg(weight[:, :-1]) * (
+  losses['mgr_expl_value'] = vw * (
       mgr_expl_value.loss(sg(mgr_expl_tar_padded)) +
       slowreg * mgr_expl_value.loss(sg(mgr_expl_slowvalue.pred())))[:, :-1]
 
