@@ -53,7 +53,73 @@ All seven are the **e25 base** (variable-K + masked goals: `size6m masked_goals 
 | e31_cartpole | **4634963** | K2 + K3: no sparsity target + no struct. | Compound: unconstrained mask and no structural alignment — goals could degrade fastest. | vs e27/e28 alone — interaction vs additive. | **LAUNCHED 06-16, RUNNING** (saion-gpu17). Script `run_v3_e31_cartpole_vargoal_masked_k2k3.sbatch`. |
 | e32_cartpole | **4634964** | K1 + K2 + K3: all off (full strip-down). | variable-K + masked goals with **none** of the e16–e25 scaffolding — lower bound on what masking+learned-K alone deliver. | If score/reaching survive, the scaffolding is optional; if they collapse, it pins how much the supports carried e25. | **LAUNCHED 06-16, RUNNING** on **gpu-a100** (saion-gpu24). Script `run_v3_e32_cartpole_vargoal_masked_k1k2k3.sbatch`. |
 
+**Outcome (06-17): e26–e31 hit the 24h walltime (`TIMEOUT`) at ~2.7M/4M steps; e32 finished at 4M.** Clean signal — **K2 (no target mask sparsity) is the destabilizer.** Every K2 run (e27/e29/e31/e32) collapsed or went unstable (last-5 score: 1 / 27 / 0 / 0), while the two stable runs are the ones *without* K2 (e26 K1 = 217, e28 K3 = 131). Sparsity metrics confirm the mechanism: removing the adaptive sparsity loss tripled spatial density — `mask_frac` jumps from ~0.22–0.28 (≈2 of 8 blocks edited) to **0.62–0.88** (≈5–7 of 8), and `mask_sparsity_scale` rails at the 5 ceiling but gradient-free, so combined edits/step go 0.09–0.13 (trackable) → 0.30–0.36 (untrackable) → return collapse. **K3 toggles `struct_corr` 0.92→0.00 cleanly and is sparsity-neutral** (e28 was the *sparsest* run at 0.22 and still stable) — i.e. the struct loss works but its removal alone doesn't destabilize. **K1 is sparsity-invariant.** Takeaway: the adaptive mask-sparsity loss is the single load-bearing support for both sparsity and stability; struct alignment is healthy but not yet pulling its weight on task score → motivates the e33–e40 struct-correlation improvements.
+
+### e33–e40: improving the structural correlation (06-17)
+
+All eight are the **e25 base** (`size6m masked_goals variable_goals`, duration 1–16, mask sparsity `prob` target 0.3, mgr_cond_goalcode True) varying only the **structural goal loss** (`goal/struct_*`). e25's struct loss already reaches corr ≈0.92 at fixed weight 200 yet didn't lift score over e8/e17, so these test whether *stronger / better-targeted / adaptively-tuned / contrastive* geometry alignment helps. New gated knobs (all default to the original deter/MSE/fixed behavior): `goal_struct_target` (deter|**feat**=full deter+stoch), `goal_struct_loss` (mse|**margin**=contrastive pull-pos/push-neg hinge), `goal_struct_adapt` (AutoAdapt the weight toward a struct-loss setpoint). Launched via `run_v3_struct_template.sbatch` (env-parametrized; resolved config saved per run). All **gpu-v100**.
+
+| Exp | Investigated knobs | Hypothesis |
+|---|---|---|
+| e33 | weight **400** (deter/mse) | More of the same pressure → higher corr; does it help or start hurting recon/score? |
+| e34 | weight **800** (deter/mse) | Push corr→1.0; find where over-constraining the code geometry degrades reconstruction. |
+| e35 | **adaptive** weight (deter/mse, init 200→target struct_loss 0.01) | Auto-tuned pressure reaches/holds a corr setpoint without manual weight search. |
+| e36 | **feat** target (mse, w200) | Aligning code geometry to the full deter+stoch tensor the worker conditions on (not deter-only) makes alignment actually useful → better tracking/score. |
+| e37 | **margin** loss (deter, w200) | Contrastive separation of far-apart states' codes improves goal distinctness over pure Gram-MSE. |
+| e38 | **feat + adaptive** | Combo: auto-tuned pressure on the richer geometry target. |
+| e39 | **feat + margin** (w200) | Combo: contrastive separation on the full-feature geometry. |
+| e40 | **margin + adaptive** (deter) | Combo: auto-tuned contrastive pressure. |
+
+### e41–e47: variable-K duration prior + fixed-K control + repval fix (06-17–06-18)
+
+| Exp | Job id | Investigated hyperparams | Hypothesis | Expected result | Status / outcome |
+|---|---|---|---|---|---|
+| e41_cartpole | **4635264** | e24 + **duration prior** (`goal_duration_reg=0.1`, `goal_duration_target=8`). Plain goals, struct=200, `variable_goals` (`imag_length=32`). | Variable-K score collapse (e24) was partly durations drifting off the good K=8 regime; pinning `E[duration]→8` should recover fixed-K=8 execution while keeping learned duration. | `mgr_duration_mean≈8`, `switch_rate≈1/8`, score approaches exp1 fixed-K=8 (~700). | **DONE** (4M). Duration prior **worked** (`mgr_duration_mean=8.00`, `switch_rate=0.14`). Score **peaked ~728 @1.33M** (near exp1's 767) then **collapsed to 119** while `wkr_goal_rew` rose 0.52→0.66 — reachable-but-useless goals (same pathology as e20). **Not a rollout bug**: execution timing matched K=8; gap vs fixed K is the different manager training graph (per-step vs block-pooled rewards, full-res critic, replay repval mismatch). Script `run_v3_e41_cartpole_vargoal_plain_durreg.sbatch`. |
+| e42_cartpole | 4635702 → **4635723** | **Fixed K=8 plain control** matched to e41: `variable_goal_length=False`, `manager_sample_freq=8`, struct=200, `imag_length=32`, same goal-AE recipe. | True fixed-K baseline under e41's struct/AE knobs — isolates training-graph differences from duration sampling. | Stable score ≥ exp1 (~700) without late collapse. | **RUNNING** gpu-v100 (`--agent.report False`; 4635702 segfaulted on report JIT). Script `run_v3_e42_cartpole_fixedk8_plain_struct.sbatch`. |
+| e43_cartpole | **4635701** | e41 **rerun** with **repval manager-path fix** (same duration prior `reg=0.1`, fresh scratch). | Repval/imagination alignment removes critic mismatch; score should stay near peak without late collapse. | Score ≥ e41 peak (~728) held through 4M; `mgr_duration_mean≈8`. | **RUNNING** gpu-a100. Script `run_v3_e43_cartpole_vargoal_plain_durreg.sbatch`. |
+| e44_cartpole | 4635710 → **4635736** | e41 + **`variable_goal_block_rew=True`** (Director-style block-pooled manager rewards on adaptive switches) + repval fix. | If credit assignment was the gap vs fixed K, block pooling on realized switch boundaries should close the score gap vs e43. | Score closes gap vs e42; duration mean ≈8. | **RUNNING** gpu-v100 (`--agent.report False`; code fix: `variable_block_director_tensors`). Script `run_v3_e44_cartpole_vargoal_plain_durreg_blockrew.sbatch`. |
+| e45_cartpole | **4635739** | **e33 rerun** (masked variable goals, `goal_struct_weight=400`, no duration prior) with **repval fix**. e25 base + struct w400, `mask_sparsity_mode=prob` 0.3, `mgr_cond_goalcode`. | Original e33 (4635247, TIMEOUT @~2.5M) ran pre-repval fix; rerun tests whether aligned replay critic lets struct-w400 masked var-K hold score. | `struct_corr` high; score/reaching vs e33 original; no late collapse from repval mismatch. | **RUNNING** gpu-v100 (`--agent.report False`). Script `run_v3_e45_cartpole_struct_w400_repval.sbatch`. |
+| e46_cartpole | **4635744** | e43 recipe but **softer duration prior**: `goal_duration_reg=0.01`, `goal_duration_target=8` (10× weaker than e41/e43). Plain goals, struct=200, repval fix. | Strong reg (0.1) pins `mgr_duration_mean≈8` but may over-constrain the manager; gentle pull keeps durations out of e24 short-K collapse while allowing more exploration. | `mgr_duration_mean` drifts slightly from 8 but stays >6; score ≥ e43 or less late collapse. | **RUNNING** gpu-v100 (`--agent.report False`). Script `run_v3_e46_cartpole_vargoal_plain_durreg_soft.sbatch`. |
+| e47_cartpole | **4635745** | e43 recipe but **ultra-soft duration prior**: `goal_duration_reg=0.001`, `goal_duration_target=8` (100× weaker than e43, 10× weaker than e46). Plain goals, struct=200, repval fix. | Duration prior as a light nudge only — map the reg-strength ↔ duration-mean ↔ score tradeoff vs e43/e46/e24. | Duration mean between e24 (~3) and e43 (~8); score vs duration pinning curve. | **RUNNING** gpu-v100 (`--agent.report False`). Script `run_v3_e47_cartpole_vargoal_plain_durreg_ultrasoft.sbatch`. |
+
+**Duration-prior sweep** (plain goals, struct=200, repval fix, target 8):
+
+| Exp | `goal_duration_reg` | Notes |
+|---|---|---|
+| e24 | 0 (off) | durations drift short |
+| e41 / e43 | **0.1** | strong pin → `mgr_duration_mean≈8.00` |
+| e46 | **0.01** | soft |
+| e47 | **0.001** | ultra-soft |
+
+**e41 vs exp1 config diffs** (fixed-K plain reference: `v3_cartpole_adent_exp1_std01_b025_6m_sum` in bucket):
+
+| Knob | exp1 (fixed K=8) | e41 (var-K + dur reg) |
+|---|---|---|
+| `variable_goal_length` | False | True |
+| `manager_sample_freq` | 8 | ignored (learned duration) |
+| `imag_length` | 16 | 32 (`variable_goals`) |
+| `goal_struct_weight` | 0 | 200 |
+| `batch_size` | 8 | 4 (`size6m`) |
+| `goal_duration_reg` | — | 0.1 → target 8 |
+
+**e41 vs exp1 metrics @4M:**
+
+| Metric | e41 final | e41 peak (~1.33M) | exp1 @4M | e24 var-K |
+|---|---|---|---|---|
+| `episode/score` | 119 | **728** | **704** | 13 |
+| `goal/mgr_duration_mean` | 8.00 | 8.00 | — | 3.1 |
+| `goal/mgr_switch_rate` | 0.14 | ~0.13 | — | 0.34 |
+| `wkr_goal_rew` | 0.66 | 0.52 | 0.68 | 0.73 |
+| `mgr_extr_ret` | 43 | 114 | 37 | — |
+
 ## Notes / open threads
+- **Variable-K repval mismatch (fixed 06-18):** when ``variable_goal_length=True``, the replay
+  manager value loss now mirrors imagination — per-step rewards on the full replay timeline
+  (or block-pooled + switch downsample when ``variable_goal_block_rew=True``), using
+  ``_switch_mask_from_skills`` instead of fixed-K ``downsample_manager_states``. New flag
+  ``agent.variable_goal_block_rew`` pools manager rewards over realized duration segments
+  (Director-style credit on adaptive boundaries). Tests: ``embodied/tests/test_variable_goals.py``;
+  smoke Leg 2b in ``run_smoke_variable_goals.sbatch``.
 - **Root cause of the e1/e3/e7 mask collapse (found 06-11):** the soft sparsity penalty
   was a **no-op on the mask head**. `mask_frac` was computed from the *hard* Bernoulli
   sample (`Binary.sample()` → `jax.random.bernoulli`, no straight-through, cf. `OneHot`

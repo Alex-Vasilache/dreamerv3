@@ -170,6 +170,23 @@ defaults:
     # so running-goal edits move the goal predictably. 0 = off. Folds into the
     # goal_autoencoder loss (no separate scale). See pairwise_cosmax / goal/struct_*.
     goal_struct_weight: 0.0
+    # Structural-correlation variants (all gated; defaults reproduce the original
+    # fixed-weight deter/MSE behavior exactly). target: geometry source the code is
+    # matched to -- ``deter`` (default) or ``feat`` (full deter+stoch tensor, the
+    # richer target the worker actually conditions on). kind: ``mse`` (squared
+    # Gram-matrix match) or ``margin`` (contrastive pull-positives / push-negatives
+    # hinge that separates far-apart states' codes more aggressively, margin width
+    # ``goal_struct_margin``). adapt: wrap the struct term in an AutoAdapt that tunes
+    # the weight toward a struct-loss setpoint instead of using the fixed weight.
+    goal_struct_target: deter   # deter | feat
+    goal_struct_loss: mse       # mse | margin
+    goal_struct_margin: 0.1
+    goal_struct_adapt: False
+    goal_struct_adapt_target: 0.01
+    goal_struct_adapt_min: 1.0
+    goal_struct_adapt_max: 2000.0
+    goal_struct_adapt_vel: 0.1
+    goal_struct_adapt_init: 200.0
     # Goal reconstruction reduction over the ``deter`` dim. ``sum`` (DreamerV3/
     # Director default) sums squared error -> magnitude scales with ``deter`` and
     # shifts the rec:kl balance across model sizes. ``mean`` averages per-dim then
@@ -201,10 +218,22 @@ defaults:
     variable_goal_length: False
     goal_duration_min: 1
     goal_duration_max: 16
+    # Soft prior pulling the manager's expected goal duration toward a setpoint
+    # (e.g. the fixed-K=8 regime that lifted worker reaching), independent of the
+    # REINFORCE advantage. Adds ``goal_duration_reg * (E[duration] -
+    # goal_duration_target)^2`` to the manager policy loss at each decision step.
+    # 0 = off (advantage alone shapes the duration, as before).
+    goal_duration_reg: 0.0
+    goal_duration_target: 8.0
     # Optional per-decision cost subtracted from the manager extrinsic reward at each
     # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
     # shapes the duration.
     goal_switch_cost: 0.0
+    # When True with ``variable_goal_length``, pool manager extrinsic/exploratory
+    # rewards over each realized duration segment (Director ``abstract_traj`` style)
+    # instead of per-step dense rewards. Downsamples the manager AC timeline to
+    # switch steps only, matching fixed-K credit assignment on adaptive boundaries.
+    variable_goal_block_rew: False
     worker_report_horizon: 32
     worker_split_traj: True
     mgr_expl_weight: 0.1
@@ -287,6 +316,12 @@ defaults:
     # emitted skill code, all yellow (whole code replaced each decision). Built in
     # policy(), like policy_image_with_goal. Any HRL run with an image decoder.
     report_mask_viz: True
+    # Nearest-neighbor upscale factor for the mask_viz rows (32 px -> scale*32 px).
+    # The panel is stacked into an episode-length gif, so the byte size grows with
+    # scale^2: scale=10 produced ~21 MB gifs that overwhelmed the WandB media sync
+    # (mask_viz then never appeared online). scale=4 (128 px) stays legible while
+    # keeping the gif ~1-3 MB, in line with the other episode videos.
+    report_mask_viz_scale: 4
     # Offline goal-code structure diagnostics (volatility + on-manifold splice test);
     # off by default, enabled only by the diag driver. See Agent._code_diag.
     report_code_diag: False

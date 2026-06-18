@@ -45,6 +45,13 @@ python -u "$MAIN" --logdir "$BASE/var_plain" --configs size6m debug "${COMMON[@]
   --agent.goal_duration_min 1 --agent.goal_duration_max 6
 echo "LEG 2 OK"
 
+echo "=================== LEG 2b: variable goal length + block manager rewards ======"
+python -u "$MAIN" --logdir "$BASE/var_plain_blockrew" --configs size6m debug "${COMMON[@]}" \
+  --agent.variable_goal_length True \
+  --agent.variable_goal_block_rew True \
+  --agent.goal_duration_min 1 --agent.goal_duration_max 6
+echo "LEG 2b OK"
+
 echo "=================== LEG 3: variable goal length, MASKED goals (e17 recipe) ====="
 python -u "$MAIN" --logdir "$BASE/var_masked" \
   --configs size6m debug masked_goals "${COMMON[@]}" \
