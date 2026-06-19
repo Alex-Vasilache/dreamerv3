@@ -96,6 +96,24 @@ All plain goals, struct=200, `--agent.report False`, gpu-v100, fresh scratch.
 | e50_cartpole | **4636085** | duration head bypassed to constant **K=8** (`goal_duration_fixed=8`, `reg=0`) | **(B/C)** — does the variable training graph at fixed K=8 fail where true fixed-K e42 (~700) succeeds? (Caveat: duration head still gets execution-irrelevant REINFORCE.) | **LAUNCHED 06-19** gpu-v100. Script `run_v3_e50_cartpole_vargoal_plain_fixed8.sbatch` |
 | e51_cartpole | **4636086** | `goal_duration_reg=0.03` (between e46 0.01✅ and e43 0.1❌) | dose-response — locate the reg cliff | **LAUNCHED 06-19** gpu-v100. Script `run_v3_e51_cartpole_vargoal_plain_durreg_mid.sbatch` |
 
+### e52–e56: fixed vs variable mask × duration prior (06-19)
+
+2×2 on **goal edit style** × **duration shaping**, all on post-repval-fix + goal-hold code
+(``--agent.report False``). Terminology: **fixed mask** = plain goals (full code overwrite each
+switch; viz shows all blocks edited). **Variable mask** = masked partial edits (e25 recipe:
+B2 prob sparsity 0.3, struct=200, ``mgr_cond_goalcode``). **No target duration** =
+``goal_duration_reg=0``, ``goal_duration_adapt=False``. **Adaptive longer holds** =
+``goal_duration_adapt=True``, ``goal_duration_target=16``, ``goal_duration_adapt_max=0.05``
+(capped AutoAdapt; avoids e41/e43 strong-reg collapse).
+
+| Exp | Job id | Config | Partition | Script |
+|---|---|---|---|---|
+| e52_cartpole | **4636111** | plain, var-K, no dur prior | gpu-v100 | `run_v3_e52_cartpole_vargoal_plain_notarget.sbatch` |
+| e53_cartpole | **4636112** | plain, var-K, adapt dur→16 | gpu-v100 | `run_v3_e53_cartpole_vargoal_plain_duradapt16.sbatch` |
+| e54_cartpole | **4636113** | masked, var-K, no dur prior | gpu-v100 | `run_v3_e54_cartpole_vargoal_masked_notarget.sbatch` |
+| e55_walker | **4636114** | masked, var-K, no dur prior | gpu-a100 | `run_v3_e55_walker_vargoal_masked_notarget.sbatch` |
+| e56_cartpole | **4636115** | masked, var-K, adapt dur→16 | gpu-v100 | `run_v3_e56_cartpole_vargoal_masked_duradapt16.sbatch` |
+
 **Duration-prior sweep** (plain goals, struct=200, repval fix, target 8):
 
 | Exp | `goal_duration_reg` | Notes |
