@@ -225,6 +225,20 @@ defaults:
     # 0 = off (advantage alone shapes the duration, as before).
     goal_duration_reg: 0.0
     goal_duration_target: 8.0
+    # Adaptive alternative to the fixed ``goal_duration_reg``: when True, an AutoAdapt
+    # Lagrange multiplier (like ``mask_sparsity``/``goal_struct``) auto-tunes the weight
+    # on ``(E[duration] - goal_duration_target)^2`` toward ``goal_duration_adapt_setpoint``
+    # instead of using the fixed ``goal_duration_reg``. ``goal_duration_adapt_max`` HARD-
+    # CAPS the multiplier so the prior can never dominate the manager REINFORCE objective
+    # (the suspected reason fixed reg=0.1 collapsed in e41/e43). 0/False = fixed behavior.
+    goal_duration_adapt: False
+    goal_duration_adapt_setpoint: 0.5
+    goal_duration_adapt_max: 0.05
+    goal_duration_adapt_init: 0.001
+    # Force a constant goal duration (in steps) through the variable-K machinery,
+    # bypassing the duration head sample. >0 enables; used as a control (variable
+    # training graph at a fixed K, no duration prior). 0 = use the emitted duration.
+    goal_duration_fixed: 0
     # Optional per-decision cost subtracted from the manager extrinsic reward at each
     # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
     # shapes the duration.

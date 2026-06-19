@@ -168,9 +168,17 @@ def aggregate_mgr_cont(con, k, without_zeros=False):
 
 
 def variable_segment_ids(switch_mask):
-  """Per-step segment index from a manager switch mask ``(B, T)`` or ``(B, T+1)``."""
+  """Per-step segment index from a manager switch mask ``(B, T)`` or ``(B, T+1)``.
+
+  Segment ``i`` is the goal held from the i-th manager decision onward: a switch at
+  position ``j`` STARTS segment ``cumsum(sw)[j]-1``, so each held window (switch +
+  the steps until the next switch) shares one id. This is ``cumsum(sw)-1`` (clamped
+  at 0 for any pre-first-switch prefix), matching the ``switch_idx = cumsum(sw)-1``
+  used when scattering pooled values back. (The earlier ``cumsum(sw)-sw`` put each
+  switch step in the *previous* segment -> a spurious singleton first segment and a
+  one-step shift of every block, so block-pooled credit did not match fixed-K.)"""
   sw = f32(switch_mask)
-  return jnp.cumsum(sw.astype(i32), axis=-1) - sw.astype(i32)
+  return jnp.maximum(jnp.cumsum(sw.astype(i32), axis=-1) - 1, 0)
 
 
 def masked_cumprod(con, switch_mask):
@@ -229,7 +237,17 @@ def aggregate_mgr_extr_rew_variable(rew, con, switch_mask, without_zeros=False):
 
 
 def aggregate_mgr_cont_variable(con, switch_mask, without_zeros=False):
-  """Pool continuation between manager switches (variable segment lengths)."""
+  """Pool continuation between manager switches (variable segment lengths).
+
+  The per-block continuation is the *product* of continuations over the segment
+  (Director ``abstract_traj``'s ``c_blk.prod(-1)``). ``masked_cumprod`` resets at
+  each switch, so its value at the segment's final step equals that product. Since
+  continuations are in [0, 1] the cumulative product is non-increasing within a
+  segment, so the product == ``segment_min``. (The earlier ``segment_max`` returned
+  the segment's *first* step instead -> under-discounted held goals; benign only when
+  cont≈1, e.g. non-terminating cartpole.) Empty trailing segments get 0, not the
+  ``+inf`` ``segment_min`` identity, so the ``* block_mask`` downstream stays finite.
+  """
   sw = f32(switch_mask)
   c = f32(con[:, 1:])
   Tm = c.shape[1]
@@ -238,7 +256,9 @@ def aggregate_mgr_cont_variable(con, switch_mask, without_zeros=False):
   cprod = masked_cumprod(c, sw)
 
   def pool_row(cp_row, seg_row):
-    return jax.ops.segment_max(cp_row, seg_row, num_segments=max_seg)
+    seg_min = jax.ops.segment_min(cp_row, seg_row, num_segments=max_seg)
+    counts = jax.ops.segment_sum(jnp.ones_like(cp_row), seg_row, num_segments=max_seg)
+    return jnp.where(counts > 0, seg_min, 0.0)
 
   block_prod = jax.vmap(pool_row)(cprod, seg)
   if without_zeros:
@@ -447,6 +467,11 @@ class Agent(embodied.jax.Agent):
     self.goal_switch_cost = float(getattr(config, 'goal_switch_cost', 0.0))
     self.variable_goal_block_rew = bool(getattr(
         config, 'variable_goal_block_rew', False))
+    self.goal_duration_fixed = int(getattr(config, 'goal_duration_fixed', 0))
+    # Set unconditionally so the manager loss call site can read it even in fixed-K
+    # mode; the adapter itself is only built under ``variable_goal_length`` below.
+    self.goal_duration_adapt = bool(
+        getattr(config, 'goal_duration_adapt', False)) and self.variable_goal_length
     self.n_duration_classes = max(
         1, self.goal_duration_max - self.goal_duration_min + 1)
     if len(skill_shape_t) > 1:
@@ -594,6 +619,22 @@ class Agent(embodied.jax.Agent):
             inverse=True,
             init=float(config.manager_actent_init),
             name='mgr_dur_actent')
+        # Optional adaptive duration prior: auto-tunes the weight on the squared
+        # duration error toward ``goal_duration_adapt_setpoint``, capped at
+        # ``goal_duration_adapt_max`` so it can never dominate the manager REINFORCE
+        # objective (inverse=False: multiplier grows while the error sits above the
+        # setpoint, shrinks below). Only built when enabled.
+        if self.goal_duration_adapt:
+          adapt_init = float(getattr(config, 'goal_duration_adapt_init', 0.001))
+          self.mgr_dur_reg_adapter = embodied.jax.AutoAdapt(
+              shape=(),
+              impl='mult',
+              target=float(getattr(config, 'goal_duration_adapt_setpoint', 0.5)),
+              min=adapt_init,
+              max=float(getattr(config, 'goal_duration_adapt_max', 0.05)),
+              inverse=False,
+              init=adapt_init,
+              name='mgr_dur_reg_adapter')
       self.goal_kl_adapter = embodied.jax.AutoAdapt(
           shape=(),
           impl=config.goal_kl_impl,
@@ -684,11 +725,16 @@ class Agent(embodied.jax.Agent):
       scales['mgr_extr_value'] = value_scale
       scales['mgr_expl_value'] = value_scale
       scales['wkr_goal_value'] = value_scale
-      if 'repval' in scales:
+      if self.config.repval_loss and 'repval' in scales:
+        # ``train`` only emits the replay-value losses when ``repval_loss`` is on, so
+        # only register their scales then; otherwise drop ``repval`` entirely (else
+        # the loss/scale key-set assertion in ``loss`` fails). Mirrors flat mode.
         repval_scale = scales.pop('repval')
         scales['repmgr_extr_value'] = repval_scale
         scales['repmgr_expl_value'] = repval_scale
         scales['repwkr_goal_value'] = repval_scale
+      else:
+        scales.pop('repval', None)
       if (self.use_masked_goals and self.mask_topk <= 0
           and self.mask_sparsity_mode != 'reinforce'):
         # Soft sparsity penalty as its own loss term ('prob'/'sample' modes).
@@ -920,8 +966,12 @@ class Agent(embodied.jax.Agent):
     """Map the held duration class index to a step count ``p`` in [min, max].
 
     The manager ``duration`` head is a categorical over ``n_duration_classes``
-    classes (index 0..n-1); ``p = goal_duration_min + index``."""
+    classes (index 0..n-1); ``p = goal_duration_min + index``. When
+    ``goal_duration_fixed > 0`` the head is bypassed and every decision holds for
+    that constant number of steps (control: variable training graph at a fixed K)."""
     idx = skill['duration']
+    if self.goal_duration_fixed > 0:
+      return jnp.full(jnp.shape(idx), self.goal_duration_fixed, i32)
     return (self.goal_duration_min + idx).astype(i32)
 
   def _goal_from_skill(self, skills, bdims=1):
@@ -1324,7 +1374,7 @@ class Agent(embodied.jax.Agent):
     T = skills['skill'].shape[1]
     B = skills['skill'].shape[0]
     if self.variable_goal_length:
-      p = (self.goal_duration_min + skills['duration'].astype(i32))  # (B, T)
+      p = self._duration_steps(skills)  # (B, T); honors goal_duration_fixed
 
       def body(remaining, pt):
         update = remaining <= 0
@@ -1738,10 +1788,27 @@ class Agent(embodied.jax.Agent):
           mgr_extr_rew = mgr_extr_rew - self.goal_switch_cost * mgr_switch
         else:
           mgr_extr_rew = mgr_extr_rew - self.goal_switch_cost * switch_mask
-      # Per-decision mean duration (switch-weighted) and realized switch rate.
-      dur = (self.goal_duration_min + mgr_skills['duration']).astype(f32)
-      metrics['goal/mgr_duration_mean'] = (
-          (dur * switch_mask).sum() / jnp.maximum(switch_mask.sum(), 1.0))
+      # Per-decision duration distribution (switch-weighted over decision steps)
+      # and realized switch rate. Logging the spread/extremes, not just the mean,
+      # surfaces whether the duration head collapses to a delta or stays varied.
+      dur = f32(self._duration_steps(mgr_skills))  # honors goal_duration_fixed
+      sw = f32(switch_mask)
+      wsum = jnp.maximum(sw.sum(), 1.0)
+      dur_mean = (dur * sw).sum() / wsum
+      dur_ex2 = (dur * dur * sw).sum() / wsum
+      metrics['goal/mgr_duration_mean'] = dur_mean
+      metrics['goal/mgr_duration_std'] = jnp.sqrt(
+          jnp.maximum(dur_ex2 - dur_mean * dur_mean, 0.0))
+      # Extremes over decision steps only (held-goal steps masked out).
+      metrics['goal/mgr_duration_min'] = jnp.min(
+          jnp.where(sw > 0.5, dur, jnp.inf))
+      metrics['goal/mgr_duration_max'] = jnp.max(
+          jnp.where(sw > 0.5, dur, -jnp.inf))
+      # Coarse histogram: fraction of decisions per duration quartile of [1, 16].
+      for lab, lo, hi in (('1_4', 0.5, 4.5), ('5_8', 4.5, 8.5),
+                          ('9_12', 8.5, 12.5), ('13_16', 12.5, 99.0)):
+        in_bin = f32((dur > lo) & (dur <= hi))
+        metrics[f'goal/mgr_duration_hist_p{lab}'] = (in_bin * sw).sum() / wsum
       metrics['goal/mgr_switch_rate'] = switch_mask.mean()
     else:
       # Fixed K: downsample the rollout to one entry per K-step manager window and
@@ -1849,6 +1916,8 @@ class Agent(embodied.jax.Agent):
         mgr_actent_perdim=self.manager_actent_perdim,
         mgr_dur_actent_adapter=(
             self.mgr_dur_actent if self.variable_goal_length else None),
+        mgr_dur_reg_adapter=(
+            self.mgr_dur_reg_adapter if self.goal_duration_adapt else None),
         switch_mask=mgr_switch,
         dur_reg_weight=float(getattr(self.config, 'goal_duration_reg', 0.0)),
         dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
@@ -1936,12 +2005,16 @@ class Agent(embodied.jax.Agent):
       repl_expl_full = self._mgr_expl_reward(feat)
 
       if self.variable_goal_length:
-        # Mirror the imagination manager path: use actual switch boundaries from
-        # the replay skill trace, not fixed-K ``downsample_manager_states``.
-        repl_skills_full = self._manager_skills_on_sequence(
-            feat, deterministic=True)
-        repl_switch = self._switch_mask_from_skills(repl_skills_full)
+        # Mirror the imagination manager path: the default critic trains full-
+        # resolution per-step (not fixed-K ``downsample_manager_states``). Only the
+        # block-rew variant needs the realized switch boundaries; reconstruct them
+        # there. NOTE the switches are *counterfactual* — derived from the current
+        # deterministic manager on replay states, not the behavior policy that
+        # generated the data — which is acceptable for an on-policy critic target.
         if self.variable_goal_block_rew:
+          repl_skills_full = self._manager_skills_on_sequence(
+              feat, deterministic=True)
+          repl_switch = self._switch_mask_from_skills(repl_skills_full)
           feat_down = downsample_at_switch_mask(feat, repl_switch)
           inp_down = self.feat2tensor(feat_down)
           n_mgr = feat_down['deter'].shape[1]
@@ -2552,6 +2625,7 @@ def imag_loss_mgr(
     mgr_actent_adapter=None,
     mgr_actent_perdim=True,
     mgr_dur_actent_adapter=None,
+    mgr_dur_reg_adapter=None,
     switch_mask=None,
     dur_reg_weight=0.0,
     dur_reg_target=0.0,
@@ -2685,19 +2759,34 @@ def imag_loss_mgr(
     losses['mgr_policy'] = w * -(
         mgr_logpi * sg(mgr_adv_normed) + actent * sum(mgr_ents.values()))
 
-  # Soft duration prior (``goal_duration_reg``): pull the manager's expected goal
-  # duration toward ``dur_reg_target`` directly through the duration logits (not via
-  # REINFORCE), applied at decision steps only (``w`` carries the switch mask).
-  if dur_reg_weight > 0.0 and 'duration' in manager_policy:
+  # Soft duration prior: pull the manager's expected goal duration toward
+  # ``dur_reg_target`` directly through the duration logits (not via REINFORCE),
+  # applied at decision steps only (``w`` carries the switch mask). The weight is
+  # either fixed (``goal_duration_reg``) or an auto-tuned, capped AutoAdapt
+  # multiplier (``mgr_dur_reg_adapter``) -- the cap keeps the prior from swamping
+  # the manager REINFORCE objective (the suspected fixed-reg=0.1 collapse mode).
+  if (dur_reg_weight > 0.0 or mgr_dur_reg_adapter is not None) and (
+      'duration' in manager_policy):
     dur_inner = _head_inner(manager_policy['duration'])
     dur_probs = jax.nn.softmax(dur_inner.logits, -1)         # (B, T, n_classes)
     classes = jnp.arange(dur_probs.shape[-1], dtype=f32)
     exp_p = dur_min + (dur_probs * classes).sum(-1)          # (B, T) expected steps
     exp_p = policy_time_slice(exp_p)                         # (B, T-1)
-    dur_reg_bt = dur_reg_weight * jnp.square(exp_p - f32(dur_reg_target))
+    sq_err = jnp.square(exp_p - f32(dur_reg_target))
+    if mgr_dur_reg_adapter is not None:
+      # Step the Lagrange multiplier on the switch-weighted mean error, then apply
+      # the (stop-grad, capped) scale per decision step.
+      mean_err = (w * sq_err).sum() / jnp.maximum(w.sum(), 1.0)
+      _, dur_adapt_mets = mgr_dur_reg_adapter(mean_err, update=update)
+      dur_reg_bt = mgr_dur_reg_adapter.scale() * sq_err
+      metrics.update(
+          {f'mgr_duration_adapt_{k}': v for k, v in dur_adapt_mets.items()})
+    else:
+      dur_reg_bt = dur_reg_weight * sq_err
     losses['mgr_policy'] = losses['mgr_policy'] + w * dur_reg_bt
     metrics['mgr_duration_reg_loss'] = (w * dur_reg_bt).mean()
     metrics['mgr_duration_exp_mean'] = exp_p.mean()
+    metrics['mgr_duration_exp_std'] = exp_p.std()
 
   metrics['mgr_policy_loss'] = losses['mgr_policy'].mean()
   metrics['mgr_ent_loss'] = mgr_ent_loss_bt.mean()

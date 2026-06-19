@@ -76,11 +76,25 @@ All eight are the **e25 base** (`size6m masked_goals variable_goals`, duration 1
 |---|---|---|---|---|---|
 | e41_cartpole | **4635264** | e24 + **duration prior** (`goal_duration_reg=0.1`, `goal_duration_target=8`). Plain goals, struct=200, `variable_goals` (`imag_length=32`). | Variable-K score collapse (e24) was partly durations drifting off the good K=8 regime; pinning `E[duration]→8` should recover fixed-K=8 execution while keeping learned duration. | `mgr_duration_mean≈8`, `switch_rate≈1/8`, score approaches exp1 fixed-K=8 (~700). | **DONE** (4M). Duration prior **worked** (`mgr_duration_mean=8.00`, `switch_rate=0.14`). Score **peaked ~728 @1.33M** (near exp1's 767) then **collapsed to 119** while `wkr_goal_rew` rose 0.52→0.66 — reachable-but-useless goals (same pathology as e20). **Not a rollout bug**: execution timing matched K=8; gap vs fixed K is the different manager training graph (per-step vs block-pooled rewards, full-res critic, replay repval mismatch). Script `run_v3_e41_cartpole_vargoal_plain_durreg.sbatch`. |
 | e42_cartpole | 4635702 → **4635723** | **Fixed K=8 plain control** matched to e41: `variable_goal_length=False`, `manager_sample_freq=8`, struct=200, `imag_length=32`, same goal-AE recipe. | True fixed-K baseline under e41's struct/AE knobs — isolates training-graph differences from duration sampling. | Stable score ≥ exp1 (~700) without late collapse. | **RUNNING** gpu-v100 (`--agent.report False`; 4635702 segfaulted on report JIT). Script `run_v3_e42_cartpole_fixedk8_plain_struct.sbatch`. |
-| e43_cartpole | **4635701** | e41 **rerun** with **repval manager-path fix** (same duration prior `reg=0.1`, fresh scratch). | Repval/imagination alignment removes critic mismatch; score should stay near peak without late collapse. | Score ≥ e41 peak (~728) held through 4M; `mgr_duration_mean≈8`. | **RUNNING** gpu-a100. Script `run_v3_e43_cartpole_vargoal_plain_durreg.sbatch`. |
+| e43_cartpole | **4635701** | e41 **rerun** with **repval manager-path fix** (same duration prior `reg=0.1`, fresh scratch). | Repval/imagination alignment removes critic mismatch; score should stay near peak without late collapse. | Score ≥ e41 peak (~728) held through 4M; `mgr_duration_mean≈8`. | **DONE (4M) — HYPOTHESIS REFUTED.** `mgr_duration_mean=8.00` (pinned), but score **never solves**: flat ~150–200 across all 4M (no early peak, worse than e41), `wkr_goal_rew` rising 0.46→0.56 — same reachable-but-useless-goal collapse as e41. **The repval fix did NOT recover e41**; this is the clean A/B (e41 config + fix only, modulo the bundled goal-deter-carry change in `9716a78`). ⇒ repval mismatch was not the cause; **duration-reg strength is the lever** (see e46/e47). Diagnostics e48–e51 isolate the real cause. |
 | e44_cartpole | 4635710 → **4635736** | e41 + **`variable_goal_block_rew=True`** (Director-style block-pooled manager rewards on adaptive switches) + repval fix. | If credit assignment was the gap vs fixed K, block pooling on realized switch boundaries should close the score gap vs e43. | Score closes gap vs e42; duration mean ≈8. | **RUNNING** gpu-v100 (`--agent.report False`; code fix: `variable_block_director_tensors`). Script `run_v3_e44_cartpole_vargoal_plain_durreg_blockrew.sbatch`. |
 | e45_cartpole | **4635739** | **e33 rerun** (masked variable goals, `goal_struct_weight=400`, no duration prior) with **repval fix**. e25 base + struct w400, `mask_sparsity_mode=prob` 0.3, `mgr_cond_goalcode`. | Original e33 (4635247, TIMEOUT @~2.5M) ran pre-repval fix; rerun tests whether aligned replay critic lets struct-w400 masked var-K hold score. | `struct_corr` high; score/reaching vs e33 original; no late collapse from repval mismatch. | **RUNNING** gpu-v100 (`--agent.report False`). Script `run_v3_e45_cartpole_struct_w400_repval.sbatch`. |
-| e46_cartpole | **4635744** | e43 recipe but **softer duration prior**: `goal_duration_reg=0.01`, `goal_duration_target=8` (10× weaker than e41/e43). Plain goals, struct=200, repval fix. | Strong reg (0.1) pins `mgr_duration_mean≈8` but may over-constrain the manager; gentle pull keeps durations out of e24 short-K collapse while allowing more exploration. | `mgr_duration_mean` drifts slightly from 8 but stays >6; score ≥ e43 or less late collapse. | **RUNNING** gpu-v100 (`--agent.report False`). Script `run_v3_e46_cartpole_vargoal_plain_durreg_soft.sbatch`. |
-| e47_cartpole | **4635745** | e43 recipe but **ultra-soft duration prior**: `goal_duration_reg=0.001`, `goal_duration_target=8` (100× weaker than e43, 10× weaker than e46). Plain goals, struct=200, repval fix. | Duration prior as a light nudge only — map the reg-strength ↔ duration-mean ↔ score tradeoff vs e43/e46/e24. | Duration mean between e24 (~3) and e43 (~8); score vs duration pinning curve. | **RUNNING** gpu-v100 (`--agent.report False`). Script `run_v3_e47_cartpole_vargoal_plain_durreg_ultrasoft.sbatch`. |
+| e46_cartpole | **4635744** | e43 recipe but **softer duration prior**: `goal_duration_reg=0.01`, `goal_duration_target=8` (10× weaker than e41/e43). Plain goals, struct=200, repval fix. | Strong reg (0.1) pins `mgr_duration_mean≈8` but may over-constrain the manager; gentle pull keeps durations out of e24 short-K collapse while allowing more exploration. | `mgr_duration_mean` drifts slightly from 8 but stays >6; score ≥ e43 or less late collapse. | **RUNNING, SOLVING** gpu-v100. @~2.2M: score **~735** (≥ e42 control), duration ~8.0, monotone climb, no collapse. With e47 this shows **soft prior works where strong (e43) fails** — duration-reg strength, not the repval fix, is decisive. Script `run_v3_e46_cartpole_vargoal_plain_durreg_soft.sbatch`. |
+| e47_cartpole | **4635745** | e43 recipe but **ultra-soft duration prior**: `goal_duration_reg=0.001`, `goal_duration_target=8` (100× weaker than e43, 10× weaker than e46). Plain goals, struct=200, repval fix. | Duration prior as a light nudge only — map the reg-strength ↔ duration-mean ↔ score tradeoff vs e43/e46/e24. | Duration mean between e24 (~3) and e43 (~8); score vs duration pinning curve. | **RUNNING, SOLVING** gpu-v100. @~2.2M: score **~730**, duration ~7.9 (settles near 8 even at near-zero reg), no collapse. Tied with e46. Script `run_v3_e47_cartpole_vargoal_plain_durreg_ultrasoft.sbatch`. |
+
+### e48–e51: collapse diagnostics + duration instrumentation + adaptive prior (06-19)
+
+Motivated by the e43 refutation: with the repval fix held constant, only the strong-prior run (e43,
+`reg=0.1`) fails while soft priors (e46/e47) solve. These runs disentangle *why* `reg=0.1` collapses
+and add richer duration logging (`goal/mgr_duration_{std,min,max,hist_p*}`, `mgr_duration_exp_std`).
+All plain goals, struct=200, `--agent.report False`, gpu-v100, fresh scratch.
+
+| Exp | Job id | Change vs e43 (`reg=0.1`) | Hypothesis it tests | Status |
+|---|---|---|---|---|
+| e48_cartpole | **4636083** | **Adaptive** duration prior (`goal_duration_adapt`, capped `adapt_max=0.05`) instead of fixed reg | **(A) magnitude domination** — capped, auto-tuned pressure holds ~8 without swamping the manager REINFORCE | **LAUNCHED 06-19** gpu-v100. Script `run_v3_e48_cartpole_vargoal_plain_durreg_adaptive.sbatch` |
+| e49_cartpole | 4636084 → **4636090** | `repval_loss=False` (else = e43, `reg=0.1`) | **(D)** + repval relevance — does collapse persist with no repval path at all? | **LAUNCHED 06-19** gpu-v100. First attempt (4636084) hit a latent bug — `repval_loss=False` was unsupported in HRL (scales expanded `repval`→3 keys unconditionally → loss/scale key-set assertion). Fixed (06-19): gate the HRL repval-scale expansion on `repval_loss`, mirroring flat mode. Script `run_v3_e49_cartpole_vargoal_plain_durreg_norepval.sbatch` |
+| e50_cartpole | **4636085** | duration head bypassed to constant **K=8** (`goal_duration_fixed=8`, `reg=0`) | **(B/C)** — does the variable training graph at fixed K=8 fail where true fixed-K e42 (~700) succeeds? (Caveat: duration head still gets execution-irrelevant REINFORCE.) | **LAUNCHED 06-19** gpu-v100. Script `run_v3_e50_cartpole_vargoal_plain_fixed8.sbatch` |
+| e51_cartpole | **4636086** | `goal_duration_reg=0.03` (between e46 0.01✅ and e43 0.1❌) | dose-response — locate the reg cliff | **LAUNCHED 06-19** gpu-v100. Script `run_v3_e51_cartpole_vargoal_plain_durreg_mid.sbatch` |
 
 **Duration-prior sweep** (plain goals, struct=200, repval fix, target 8):
 
@@ -120,6 +134,46 @@ All eight are the **e25 base** (`size6m masked_goals variable_goals`, duration 1
   ``agent.variable_goal_block_rew`` pools manager rewards over realized duration segments
   (Director-style credit on adaptive boundaries). Tests: ``embodied/tests/test_variable_goals.py``;
   smoke Leg 2b in ``run_smoke_variable_goals.sbatch``.
+- **Repval-fix audit (06-19): the fix is real but was NOT the cure for e41/e43.** Git-confirmed
+  e41 (launched 06-17, commit ``00585d3``) ran the pre-fix path — repval used fixed-K
+  ``downsample_manager_states`` even under ``variable_goal_length`` — so the manager value heads
+  got two inconsistent targets (imagination full-res per-step vs repval fixed-K block-pooled). The
+  fix (``9716a78``, 06-18) makes the default path full-res per-step, structurally consistent with
+  imagination. **But e43 (= e41 + fix, ``reg=0.1``) still fails flat** ⇒ the mismatch was not the
+  collapse cause. Further findings from the audit:
+  - **`aggregate_mgr_cont_variable` continuation bug (fixed 06-19).** It pooled segment continuation
+    with ``segment_max`` over a *non-increasing* within-segment cumulative product → returned the
+    segment's **first** step (≈ no discounting) instead of the **product** (Director ``abstract_traj``
+    ``c_blk.prod``). Now uses ``segment_min`` (== product, with empty segments → 0 not +inf to keep
+    ``* block_mask`` finite). Benign on cartpole swingup (cont≈1) but wrong for terminating tasks.
+  - **`variable_segment_ids` off-by-one (fixed 06-19) — the bigger block-rew bug.** It used
+    ``cumsum(sw)-sw`` (each switch step assigned to the *previous* segment) while the scatter-back
+    used ``switch_idx=cumsum(sw)-1`` — **inconsistent**. Effect: a spurious singleton first segment
+    and a one-step shift of every block, so block-pooled manager credit did **not** match fixed-K
+    (verified numerically: variable gave reward blocks `[r0, mean(r1:9)]` vs fixed `[mean(r0:8),
+    mean(r8:16)]`). Now ``cumsum(sw)-1`` (clamped ≥0), consistent with the scatter. The original
+    ``test_variable_segment_ids_fixed_k`` expectation encoded the *correct* behavior and would have
+    caught this — but **the variable-goal tests had never been run** (glibc/Py3.11 on the login node;
+    confirmed 06-19 by running on a v100). Both bugs only fire under ``variable_goal_block_rew`` (e44),
+    so **e44's collapse was on buggy credit code — its result is uninterpretable; rerun if pursuing
+    block-rew**. The default per-step path (e41/e43/e46/e47) never calls these and is unaffected.
+    Regression tests now run green on v100 (con<1 cases added; the old tests all used ``con=ones``,
+    masking the continuation bug).
+  - **Dead/counterfactual repval compute (cleaned 06-19).** ``repl_switch`` /
+    ``_manager_skills_on_sequence`` were computed but unused in the default repval branch — moved
+    into the block-rew branch. The reconstructed switches are *counterfactual* (current deterministic
+    manager on replay states, not the behavior policy) — fine for an on-policy critic target.
+  - **Discount consistency check (06-19): benign, pre-existing.** Imagination manager critic uses
+    ``disc=1`` (``contdisc=True``, continuation-based) while repval uses ``disc=1-1/horizon≈0.997``
+    (~9% tail down-weight over 32 steps). This is shared with flat/fixed-K repval (the established
+    flat-v3 pattern), not variable-specific — left as-is for parity.
+- **Why e41/e43 collapse — leading hypothesis (06-19): duration-reg magnitude domination.** The
+  fixed ``goal_duration_reg * (E[dur]-target)²`` term is added straight into ``mgr_policy``; at
+  ``reg=0.1`` the squared error (up to ~64) yields a loss ~O(1)+ that competes with the O(1)
+  normalized-advantage REINFORCE under one grad-clipped optimizer — plausibly starving task return.
+  ``reg=0.001`` (e47) is ~100× smaller and solves. e48–e51 test this (A) plus the K=8-trap (B/C) and
+  repval-relevance (D). New: gated **adaptive** duration prior (``goal_duration_adapt``, AutoAdapt,
+  hard-capped ``goal_duration_adapt_max``) and a constant-K control (``goal_duration_fixed``).
 - **Root cause of the e1/e3/e7 mask collapse (found 06-11):** the soft sparsity penalty
   was a **no-op on the mask head**. `mask_frac` was computed from the *hard* Bernoulli
   sample (`Binary.sample()` → `jax.random.bernoulli`, no straight-through, cf. `OneHot`
