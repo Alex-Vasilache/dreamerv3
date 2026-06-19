@@ -1,7 +1,11 @@
-"""Smoke test: goal_deter is held constant while goal_code Z is unchanged.
+"""Smoke test: held goal does not drift across non-switch steps.
 
 Runs a short policy rollout (no training) with masked + variable-duration goals,
-then asserts decoded goal vectors do not drift across held steps.
+then asserts that on every step where the decoded goal vector (``goal_deter``) is
+held, the cached *rendered goal image* (``goal_img_*``) is held bit-for-bit too.
+The image cache and the deter cache share the same refresh condition, so a held
+deter must imply a held frame; this is what stabilises the policy mask_viz panel
+even while the image decoder keeps training online.
 """
 import pathlib
 import sys
@@ -54,34 +58,51 @@ def main():
   driver = embodied.Driver([bind(m.make_env, config, 0)], parallel=False)
   driver.reset(agent.init_policy)
 
-  prev_code = prev_goal = None
+  prev_goal = None
+  prev_imgs = None
   held_checks = 0
-  violations = 0
+  deter_violations = 0
+  img_violations = 0
+
+  def img_frames(mgr_skill):
+    return {k: np.asarray(v[0]) for k, v in mgr_skill.items()
+            if k.startswith('goal_img_')}
 
   def check_hold(tran, worker):
-    nonlocal prev_code, prev_goal, held_checks, violations
+    nonlocal prev_goal, prev_imgs, held_checks
+    nonlocal deter_violations, img_violations
     carry = jax.tree.map(
         lambda x: x[0] if isinstance(x, list) else x, driver.carry)
     enc, dyn, dec, prevact, mgr_skill, mgr_step = agent.model._unpack_carry(
         carry)
-    code = np.asarray(mgr_skill['goal_code'][0])
     goal = np.asarray(mgr_skill['goal_deter'][0])
-    if prev_code is not None and np.allclose(code, prev_code, atol=0, rtol=0):
+    imgs = img_frames(mgr_skill)
+    # A held step = the cached deter is unchanged (no manager switch / reset).
+    if prev_goal is not None and np.allclose(goal, prev_goal, atol=0, rtol=0):
       held_checks += 1
       if not np.allclose(goal, prev_goal, atol=1e-6, rtol=1e-5):
-        violations += 1
-        print(f'HOLD VIOLATION at step {worker}: max_delta='
-              f'{np.abs(goal - prev_goal).max():.6g}')
-    prev_code, prev_goal = code, goal
+        deter_violations += 1
+      for k, v in imgs.items():
+        if not np.array_equal(v, prev_imgs[k]):
+          img_violations += 1
+          print(f'IMG HOLD VIOLATION at step {worker} ({k}): changed '
+                f'{int((v != prev_imgs[k]).sum())} px on a held step')
+    prev_goal, prev_imgs = goal, imgs
 
   driver.on_step(check_hold)
   driver(agent.policy, steps=400)
 
-  print(f'goal_hold: steps=400 held_checks={held_checks} violations={violations}')
+  print(f'goal_hold: steps=400 held_checks={held_checks} '
+        f'deter_violations={deter_violations} img_violations={img_violations} '
+        f'img_keys={sorted((prev_imgs or {}).keys())}')
   if held_checks < 50:
     raise SystemExit(f'TOO FEW held steps ({held_checks}); duration sampling may be broken')
-  if violations:
-    raise SystemExit(f'goal_deter drifted on {violations}/{held_checks} held steps')
+  if not prev_imgs:
+    raise SystemExit('no goal_img_* cache in carry; image-hold fix not active')
+  if deter_violations:
+    raise SystemExit(f'goal_deter drifted on {deter_violations}/{held_checks} held steps')
+  if img_violations:
+    raise SystemExit(f'goal image drifted on {img_violations} held steps')
   print('GOAL_HOLD OK')
 
 

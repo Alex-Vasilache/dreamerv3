@@ -801,6 +801,9 @@ class Agent(embodied.jax.Agent):
     # Decoded worker goal (deter); refreshed on manager switch / episode reset and
     # held constant between switches so rollout does not chase a moving decode.
     mgr_skill['goal_deter'] = jnp.zeros((batch_size, int(self.goal_shape[0])), f32)
+    # Held decoded-goal image frame(s); refreshed on switch/reset in ``policy`` so
+    # the goal/mask_viz panels stay pixel-stable as the decoder keeps training.
+    mgr_skill.update(self._goal_img_cache(batch_size))
     # ``mgr_step`` is a per-element counter (fixed K: step index for ``% K``;
     # variable: remaining steps until the next manager decision, starts at 0 so
     # the first step switches).
@@ -814,6 +817,22 @@ class Agent(embodied.jax.Agent):
   def init_report(self, batch_size):
     """Same carry shape as policy for ``report`` rollouts."""
     return self.init_policy(batch_size)
+
+  def _goal_img_cache(self, batch_size):
+    """Zeros for the held decoded-goal *image* cache (one uint8 frame per imgkey).
+
+    Holding the deter goal vector is not enough for a stable panel: the image
+    decoder / dynamics prior keep training during online rollout, so a fresh
+    decode of the same held goal drifts every step. We cache the rendered frame in
+    the carry and refresh it only on a manager switch / episode reset. Empty unless
+    the policy goal-image panels are active; gated identically to the render path in
+    ``policy`` so the carry pytree matches what ``policy`` writes back."""
+    cache = {}
+    if self.dec.imgkeys and bool(getattr(self.config, 'policy_goal_image', True)):
+      for k in self.dec.imgkeys:
+        shp = tuple(int(x) for x in self.obs_space[k].shape)
+        cache[f'goal_img_{k}'] = jnp.zeros((batch_size, *shp), jnp.uint8)
+    return cache
 
   def _unpack_carry(self, carry):
     """``(enc, dyn, dec, prevact, mgr_skill, mgr_step)``; tolerate 4-tuples (flat mode)."""
@@ -832,6 +851,7 @@ class Agent(embodied.jax.Agent):
     if self.variable_goal_length:
       mgr_skill['duration'] = jnp.zeros((B,), i32)
     mgr_skill['goal_deter'] = jnp.zeros((B, int(self.goal_shape[0])), f32)
+    mgr_skill.update(self._goal_img_cache(B))
     mgr_step = jnp.zeros((B,), i32)
     return enc, dyn, dec, prevact, mgr_skill, mgr_step
 
@@ -1058,7 +1078,11 @@ class Agent(embodied.jax.Agent):
     # don't carry them, so they must not reach ``skill_switch``).
     sticky = mgr_skill.get('last_edit_mask') if self.use_masked_goals else None
     cached_goal = mgr_skill.get('goal_deter')
-    strip = {'goal_deter'}
+    # Carry-only render caches (held decoded-goal images) must not reach the switch
+    # tree-maps either; pull them out and thread them through unchanged. ``policy``
+    # refreshes them on a switch.
+    img_cache = {k: v for k, v in mgr_skill.items() if k.startswith('goal_img_')}
+    strip = {'goal_deter', *img_cache}
     if sticky is not None:
       strip.add('last_edit_mask')
     mgr_skill = {k: v for k, v in mgr_skill.items() if k not in strip}
@@ -1086,6 +1110,7 @@ class Agent(embodied.jax.Agent):
         cached_goal if cached_goal is not None else jnp.zeros(
             (mgr_skill['skill'].shape[0], int(self.goal_shape[0])), f32))
     mgr_skill['goal_deter'] = goal
+    mgr_skill.update(img_cache)  # held frames; policy() refreshes them on switch
     if self.variable_goal_length:
       # On a switch, reload the countdown with the freshly emitted duration p;
       # otherwise tick the held goal down by one.
@@ -1102,7 +1127,10 @@ class Agent(embodied.jax.Agent):
       rr = reset.reshape(reset.shape + (1,) * (m.ndim - reset.ndim))
       sticky = jnp.where(rr, jnp.zeros_like(m), jnp.where(has_edit, m, sticky))
       mgr_skill['last_edit_mask'] = sticky
-    return mgr_skill, goal, mgr_step
+    # ``refresh`` marks steps where the goal changed (manager switch or reset); the
+    # policy goal-image cache re-renders only on these steps and holds otherwise.
+    refresh = jnp.logical_or(update, reset)
+    return mgr_skill, goal, mgr_step, refresh
 
   def _wkr_goal_reward(self, goals, imgfeat):
     """Worker goal reward: ``cosine_max`` between ``goal`` and ``deter`` (Director)."""
@@ -1413,7 +1441,7 @@ class Agent(embodied.jax.Agent):
       # the emitted skill code (whole code replaced each decision -> all yellow).
       mask_viz_on = (bool(self.dec.imgkeys) and
                      bool(getattr(self.config, 'report_mask_viz', True)))
-      mgr_skill, goal, mgr_step = self._manager_skill_step(
+      mgr_skill, goal, mgr_step, goal_refresh = self._manager_skill_step(
           feat, mgr_skill, mgr_step, reset)
       policy = self.pol(self._feat_goal2tensor(feat, goal), bdims=1)
     else:
@@ -1455,7 +1483,19 @@ class Agent(embodied.jax.Agent):
         if k not in obs:
           continue
         obs_u8 = obs[k]  # (B, H, W, C) uint8
-        goal_u8 = jnp.clip(goal_recons[k].pred() * 255, 0, 255).astype(jnp.uint8)
+        fresh_u8 = jnp.clip(goal_recons[k].pred() * 255, 0, 255).astype(jnp.uint8)
+        # Hold the rendered goal frame between manager switches. The deter goal is
+        # already held, but the image decoder / dynamics prior keep training during
+        # online rollout, so a fresh decode of the same goal drifts every step.
+        # Freeze the pixels until the next switch (refresh) so the panel is stable.
+        ckey = f'goal_img_{k}'
+        if ckey in mgr_skill:
+          r = goal_refresh.reshape(
+              goal_refresh.shape + (1,) * (fresh_u8.ndim - goal_refresh.ndim))
+          goal_u8 = jnp.where(r, fresh_u8, mgr_skill[ckey])
+          mgr_skill[ckey] = goal_u8
+        else:
+          goal_u8 = fresh_u8
         # Stack observation (top) and decoded goal (bottom) for episode composite.
         out[f'log/{k}_with_goal'] = jnp.concatenate([obs_u8, goal_u8], axis=1)
         if mask_viz_on:
