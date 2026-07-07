@@ -58,6 +58,19 @@ def goal_reward_cosine_max(goal, feat):
   return jnp.sum((goal / norm) * (feat / norm), axis=-1)
 
 
+def bernoulli_entropy(p, eps=1e-6):
+  """Per-element Bernoulli entropy in nats (max ``ln 2`` at p=0.5)."""
+  p = jnp.clip(p, eps, 1.0 - eps)
+  return -(p * jnp.log(p) + (1.0 - p) * jnp.log(1.0 - p))
+
+
+def bernoulli_kl(p, q, eps=1e-6):
+  """KL(Bernoulli(p) || Bernoulli(q)) per element, in nats."""
+  p = jnp.clip(p, eps, 1.0 - eps)
+  q = float(min(max(q, eps), 1.0 - eps))
+  return p * jnp.log(p / q) + (1.0 - p) * jnp.log((1.0 - p) / (1.0 - q))
+
+
 def pairwise_cosmax(x):
   """All-pairs ``cosine_max`` over a pool of vectors ``x`` of shape ``(N, F)``.
 
@@ -70,7 +83,7 @@ def pairwise_cosmax(x):
   return dot / (nm * nm)
 
 
-def aggregate_mgr_extr_rew(rew, con, k, without_zeros=False):
+def aggregate_mgr_extr_rew(rew, con, k, without_zeros=False, agg_mode='mean'):
   """Pool per-step extrinsic reward into skill windows (Director ``abstract_traj``).
 
   Each block of ``k`` transitions gets one reward:
@@ -94,14 +107,17 @@ def aggregate_mgr_extr_rew(rew, con, k, without_zeros=False):
   r_blk = r[:, :n * k].reshape(B, n, k)
   c_blk = c[:, :n * k].reshape(B, n, k)
   weights = jnp.cumprod(c_blk, axis=-1)
-  agg = (r_blk * weights).mean(axis=-1)  # shape (B, n)
+  pooled = r_blk * weights
+  agg = pooled.sum(axis=-1) if agg_mode == 'sum' else pooled.mean(axis=-1)  # (B, n)
 
   rem = Tm - n * k
   if rem > 0:
     r_rem = r[:, n * k:]
     c_rem = c[:, n * k:]
     w = jnp.cumprod(c_rem, axis=-1)
-    agg_rem = (r_rem * w).mean(-1, keepdims=True)  # shape (B,1)
+    pooled_rem = r_rem * w
+    agg_rem = (pooled_rem.sum(-1, keepdims=True) if agg_mode == 'sum'
+               else pooled_rem.mean(-1, keepdims=True))  # shape (B,1)
     agg_full = jnp.concatenate([agg, agg_rem], axis=1)
     idx = 1 + jnp.arange(n) * k
     out = jnp.zeros_like(rew)
@@ -204,7 +220,8 @@ def masked_cumprod(con, switch_mask):
   return jax.vmap(row)(c, sw)
 
 
-def aggregate_mgr_extr_rew_variable(rew, con, switch_mask, without_zeros=False):
+def aggregate_mgr_extr_rew_variable(rew, con, switch_mask, without_zeros=False,
+                                    agg_mode='mean'):
   """Pool per-step rewards between manager switches (variable segment lengths).
 
   Boundaries come from ``switch_mask`` (1 wherever a manager decision occurs) instead
@@ -222,6 +239,9 @@ def aggregate_mgr_extr_rew_variable(rew, con, switch_mask, without_zeros=False):
 
   def pool_row(w_row, seg_row):
     totals = jax.ops.segment_sum(w_row, seg_row, num_segments=max_seg)
+    if agg_mode == 'sum':
+      # SMDP option return: continuation-weighted SUM over the segment (no divide).
+      return totals
     counts = jax.ops.segment_sum(jnp.ones_like(w_row), seg_row, num_segments=max_seg)
     return totals / jnp.maximum(counts, 1.0)
 
@@ -277,7 +297,8 @@ def switch_valid_mask(switch_mask, n_cols):
   return f32(jnp.arange(n_cols)[None, :] < counts)
 
 
-def variable_block_director_tensors(rew, con, expl, switch_mask, horizon):
+def variable_block_director_tensors(rew, con, expl, switch_mask, horizon,
+                                    agg_mode='mean'):
   """Director ``abstract_traj`` manager tensors for variable switch boundaries.
 
   Mirrors fixed-K ``_mgr_extr_rew`` / ``_mgr_cont`` + ``imag_reward_pad``: block-pooled
@@ -291,9 +312,11 @@ def variable_block_director_tensors(rew, con, expl, switch_mask, horizon):
   block_mask = f32(jnp.arange(horizon - 1)[None, :] < n_blocks)
 
   pooled_extr = aggregate_mgr_extr_rew_variable(
-      rew, con, switch_mask, without_zeros=True)[:, :horizon - 1] * block_mask
+      rew, con, switch_mask, without_zeros=True,
+      agg_mode=agg_mode)[:, :horizon - 1] * block_mask
   pooled_expl = aggregate_mgr_extr_rew_variable(
-      expl, con, switch_mask, without_zeros=True)[:, :horizon - 1] * block_mask
+      expl, con, switch_mask, without_zeros=True,
+      agg_mode=agg_mode)[:, :horizon - 1] * block_mask
   pooled_cont = aggregate_mgr_cont_variable(
       con, switch_mask, without_zeros=True)[:, :horizon - 1] * block_mask
 
@@ -465,6 +488,43 @@ class Agent(embodied.jax.Agent):
     self.goal_duration_min = int(getattr(config, 'goal_duration_min', 1))
     self.goal_duration_max = int(getattr(config, 'goal_duration_max', 16))
     self.goal_switch_cost = float(getattr(config, 'goal_switch_cost', 0.0))
+    # Fixed per-edited-block cost (sparsity analog of goal_switch_cost): subtracted
+    # from the manager reward per edited block so editing is priced, not targeted.
+    self.goal_edit_cost = float(getattr(config, 'goal_edit_cost', 0.0))
+    # B.3 achievability-gated edit cost: when >0, the per-command edit cost is scaled
+    # by how reached the *standing* goal already is (achievement cosine in [0,1]), so
+    # churning an already-satisfied goal is expensive while re-planning an unmet goal
+    # is cheap. No sparsity target -> the interior edit fraction emerges from the state.
+    # Cost applied = goal_edit_cost_ach * mask_frac * achievement. Needs mgr_cond_achieve
+    # plumbing OFF is fine; the achievement cosine is computed locally at the cost site.
+    self.goal_edit_cost_ach = float(getattr(config, 'goal_edit_cost_ach', 0.0))
+    # C.5 sparsemax edit gate: replace the per-block independent Bernoulli mask with a
+    # sparsemax projection over the L block logits (simplex -> exact zeros), so the edit
+    # set is sparse *by construction* with no sparsity target. NOTE: sparsemax sums to 1,
+    # i.e. it imposes a soft ~1-block edit budget (a structural choice, not a tuned prior).
+    self.mask_sparsemax = bool(getattr(config, 'mask_sparsemax', False)) and self.use_masked_goals
+    # Tier 1 (prob_ach): fixed weight on the analytic, achievement-gated expected-edit
+    # penalty lambda * mean_i[achievement * sigma(l_i)] (zero-variance twin of B.3, no
+    # target). Only used when mask_sparsity_mode == 'prob_ach'.
+    self.mask_sparsity_prob_ach_weight = float(
+        getattr(config, 'mask_sparsity_prob_ach_weight', 1.0))
+    # Tier 2 (mask_perblock_credit): per-block leave-one-out advantage for the edit mask
+    # via a goal-conditioned Q-head Q_g(s, Z). Each edited block is credited by how much
+    # its edit raised Q_g vs reverting that block. A tiny edit cost breaks ties toward
+    # fewer edits; the credit decides WHICH blocks survive. See per_block_credit_plan.md.
+    self.mask_perblock_credit = bool(
+        getattr(config, 'mask_perblock_credit', False)) and self.use_masked_goals
+    # Tier 2 tie-break: small fixed cost subtracted from each edited block's leave-one-out
+    # advantage, so a block survives only if its task credit beats the cost (-> sparsity).
+    self.perblock_edit_cost = float(getattr(config, 'perblock_edit_cost', 0.0))
+    if self.mask_perblock_credit and not self._mgr_cond_any:
+      raise ValueError(
+          'mask_perblock_credit requires mgr_cond_goalcode or mgr_cond_achieve '
+          'or mgr_cond_decgoal so pre-edit goal codes are available.')
+    # Manager extrinsic-reward block aggregation: 'mean' (per-step average, the
+    # original; under per-step discounting this under-credits long blocks -> short-K
+    # bias) or 'sum' (continuation-weighted SMDP option return, K-neutral).
+    self.mgr_reward_agg = str(getattr(config, 'mgr_reward_agg', 'mean'))
     self.variable_goal_block_rew = bool(getattr(
         config, 'variable_goal_block_rew', False))
     self.goal_duration_fixed = int(getattr(config, 'goal_duration_fixed', 0))
@@ -573,6 +633,16 @@ class Agent(embodied.jax.Agent):
           embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
           source=self.wkr_goal_val, **config.slowvalue)
 
+      if self.mask_perblock_credit:
+        # Tier 2: goal-conditioned manager Q-head Q_g(s, Z) for leave-one-out
+        # counterfactual credit on the edit mask (see per_block_credit_plan.md).
+        self.mgr_goal_q = embodied.jax.MLPHead(scalar, **config.value, name='mgr_goal_q')
+        self.mgr_goal_q_slowval = embodied.jax.SlowModel(
+            embodied.jax.MLPHead(scalar, **config.value, name='mgr_goal_q_slowval'),
+            source=self.mgr_goal_q, **config.slowvalue)
+        self.mgr_goal_q_valnorm = embodied.jax.Normalize(
+            **config.valnorm, name='mgr_goal_q_valnorm')
+
       # DreamerV3 actor-critic normalization (``none`` valnorm / ``none`` advnorm).
       # The critics are symexp_twohot heads trained on RAW returns. The worker and
       # flat heads scale the advantage by the percentile return range (``perc``
@@ -608,11 +678,17 @@ class Agent(embodied.jax.Agent):
       if self.variable_goal_length:
         # Dedicated SCALAR entropy adapter for the duration head (the per-dim
         # ``mgr_actent`` is shaped for the L skill blocks and cannot also regulate
-        # the single duration categorical). Same target/limits as ``mgr_actent``.
+        # the single duration categorical). Limits as ``mgr_actent``; target may be
+        # raised independently via ``manager_actent_duration_target`` (<0 inherits
+        # ``manager_actent_target``) to keep the duration head exploratory and stop
+        # the variable-K short-K collapse without a duration prior.
+        _dur_target = float(getattr(config, 'manager_actent_duration_target', -1.0))
+        if _dur_target < 0:
+          _dur_target = float(config.manager_actent_target)
         self.mgr_dur_actent = embodied.jax.AutoAdapt(
             shape=(),
             impl=config.manager_actent_impl,
-            target=float(config.manager_actent_target),
+            target=_dur_target,
             min=float(config.manager_actent_min),
             max=float(config.manager_actent_max),
             vel=float(config.manager_actent_vel),
@@ -673,6 +749,34 @@ class Agent(embodied.jax.Agent):
             inverse=False,
             init=float(getattr(config, 'mask_sparsity_init', 1.0)),
             name='mask_sparsity_adapter')
+        # Entropy-native mask controls (built when mode == 'entropy'; off otherwise).
+        # ``mask_actent`` (inverse=True, entropy-style) holds the per-block mask entropy
+        # near a fraction-of-max setpoint so the mask stays stochastic (anti-collapse);
+        # ``mask_kl_adapter`` (inverse=False, KL-style) holds KL(mask || sparse prior)
+        # near a nats budget so the mask prefers not to edit unless task advantage pays
+        # for it. Both targets are dimensionless -> transfer across env / model size.
+        if self.mask_sparsity_mode == 'entropy':
+          self.mask_sparse_prior = float(getattr(config, 'mask_sparse_prior', 0.1))
+          self.mask_actent = embodied.jax.AutoAdapt(
+              shape=(),
+              impl=getattr(config, 'mask_actent_impl', 'mult'),
+              target=float(getattr(config, 'mask_actent_target', 0.5)),
+              min=float(getattr(config, 'mask_actent_min', 1e-5)),
+              max=float(getattr(config, 'mask_actent_max', 1e2)),
+              vel=float(getattr(config, 'mask_actent_vel', 0.1)),
+              inverse=True,
+              init=float(getattr(config, 'mask_actent_init', 1.0)),
+              name='mask_actent')
+          self.mask_kl_adapter = embodied.jax.AutoAdapt(
+              shape=(),
+              impl=getattr(config, 'mask_kl_impl', 'mult'),
+              target=float(getattr(config, 'mask_kl_target', 0.2)),
+              min=float(getattr(config, 'mask_kl_min', 1e-5)),
+              max=float(getattr(config, 'mask_kl_max', 1e2)),
+              vel=float(getattr(config, 'mask_kl_vel', 0.1)),
+              inverse=False,
+              init=float(getattr(config, 'mask_kl_init', 1.0)),
+              name='mask_kl_adapter')
     else:
       # Flat AC heads (v4-online): single value/critic over WM features.
       self.val = embodied.jax.MLPHead(scalar, **config.value, name='val')
@@ -698,6 +802,8 @@ class Agent(embodied.jax.Agent):
           self.manager_pol, self.pol,
           self.mgr_extr_val, self.mgr_expl_val, self.wkr_goal_val,
       ]
+      if self.mask_perblock_credit:
+        ac_modules.append(self.mgr_goal_q)
       groups = {
           'model': (model_modules, self._make_opt(**config.opt)),
           'goal': (goal_modules, self._make_opt(**config.goal_opt)),
@@ -725,6 +831,8 @@ class Agent(embodied.jax.Agent):
       scales['mgr_extr_value'] = value_scale
       scales['mgr_expl_value'] = value_scale
       scales['wkr_goal_value'] = value_scale
+      if self.mask_perblock_credit:
+        scales['mgr_goal_q_value'] = value_scale
       if self.config.repval_loss and 'repval' in scales:
         # ``train`` only emits the replay-value losses when ``repval_loss`` is on, so
         # only register their scales then; otherwise drop ``repval`` entirely (else
@@ -735,12 +843,14 @@ class Agent(embodied.jax.Agent):
         scales['repwkr_goal_value'] = repval_scale
       else:
         scales.pop('repval', None)
-      if (self.use_masked_goals and self.mask_topk <= 0
-          and self.mask_sparsity_mode != 'reinforce'):
+      if (self.use_masked_goals and self.mask_topk <= 0 and not self.mask_sparsemax
+          and self.mask_sparsity_mode not in ('reinforce', 'none')):
         # Soft sparsity penalty as its own loss term ('prob'/'sample' modes).
-        # With a hard top-k edit budget there is no sparsity loss, and in
-        # 'reinforce' mode the penalty is folded into the manager reward (not a
-        # loss term), so in both cases the key is dropped instead.
+        # With a hard top-k edit budget OR sparsemax gate there is no sparsity loss
+        # (sparsity is by construction); in 'reinforce'
+        # mode the penalty is folded into the manager reward; and in 'none' mode
+        # there is no sparsity penalty at all (free/priced sparsity). In all those
+        # cases the key is dropped so losses and scales stay in sync.
         scales['mask_sparsity'] = scales.pop(
             'mask_sparsity', getattr(self.config.loss_scales, 'mask_sparsity', 1.0))
       else:
@@ -866,6 +976,11 @@ class Agent(embodied.jax.Agent):
     ss = int(getattr(self.config, 'report_video_space_stride', 1))
     return _tb_video_grid(video_bthwc, time_stride=ts, space_stride=ss)
 
+  def _mgr_goal_q_inp(self, feat_inp, goal_code):
+    """Input to the goal-conditioned manager Q-head: concat WM feat with flat Z."""
+    flat = nn.cast(goal_code).reshape(*goal_code.shape[:-2], -1)
+    return jnp.concatenate([feat_inp, flat], -1)
+
   def _feat_goal2tensor(self, x, y):
     """Concatenate WM features with goal; supports ``(B, D)`` and ``(B, T, D)`` goals."""
     deter = nn.cast(x['deter'])
@@ -946,6 +1061,30 @@ class Agent(embodied.jax.Agent):
     kth = jax.lax.top_k(scores, k)[0][..., -1:]          # k-th largest score
     return (scores >= kth).astype(f32)                   # exactly k ones
 
+  def _select_sparsemax_mask(self, dist, deterministic):
+    """C.5: sparse edit gate *by construction* via sparsemax over the L block logits.
+
+    Sparsemax (Martins & Astudillo 2016) projects the logits onto the probability
+    simplex, producing *exact zeros* for low-scoring blocks -- so the edit set is sparse
+    with no sparsity target/penalty. The simplex sum-to-1 means a *decisive* edit must
+    concentrate mass on a few blocks (zeroing the rest): a soft ~1-block edit budget that
+    is a structural choice, not a tuned fraction. The realized 0/1 gate is reinforced by
+    the same Binary ``logp`` as the Bernoulli mask (no sparsity penalty needed)."""
+    logit = self._mask_logit(dist)                       # (..., L)
+    if not deterministic:
+      u = jax.random.uniform(nj.seed(), logit.shape, f32, 1e-6, 1.0)
+      logit = logit + (-jnp.log(-jnp.log(u)))            # Gumbel: explore which blocks
+    L = logit.shape[-1]
+    z_sorted = jnp.flip(jnp.sort(logit, axis=-1), axis=-1)   # descending
+    rng = jnp.arange(1, L + 1, dtype=f32)                    # (L,)
+    cssv = jnp.cumsum(z_sorted, axis=-1) - 1.0               # (..., L)
+    support = (1.0 + rng * z_sorted) > cssv                  # (..., L)
+    k = jnp.sum(support.astype(f32), axis=-1, keepdims=True) # (..., 1), always >= 1
+    idx = jnp.maximum(k.astype(jnp.int32) - 1, 0)
+    tau = jnp.take_along_axis(cssv, idx, axis=-1) / k        # (..., 1) threshold
+    w = jnp.maximum(logit - tau, 0.0)                        # sparse simplex weights
+    return (w > 0.0).astype(f32)                             # hard edit gate
+
   def _mask_logit(self, dist):
     """Unwrap a (possibly Agg-wrapped) Binary mask dist to its per-block logits."""
     inner = dist
@@ -963,9 +1102,12 @@ class Agent(embodied.jax.Agent):
     """Sample a manager command, applying the hard top-k edit budget to the mask."""
     out = mgr_as_dict(self.manager_pol(tensor, bdims))
     pick = mode if deterministic else sample
-    if self.use_masked_goals and self.mask_topk > 0 and 'mask' in out:
-      return {kk: (self._select_topk_mask(vv, deterministic) if kk == 'mask'
-                   else pick(vv)) for kk, vv in out.items()}
+    if (self.use_masked_goals and 'mask' in out
+        and (self.mask_topk > 0 or self.mask_sparsemax)):
+      sel = (self._select_topk_mask if self.mask_topk > 0
+             else self._select_sparsemax_mask)
+      return {kk: (sel(vv, deterministic) if kk == 'mask' else pick(vv))
+              for kk, vv in out.items()}
     return pick(out)
 
   def _advance_mgr_skill(self, mgr_skill, emit, update, base_code=None):
@@ -1141,7 +1283,9 @@ class Agent(embodied.jax.Agent):
 
   def _mgr_extr_rew(self, rew, con, without_zeros=False):
     """Manager extrinsic reward: WM reward pooled over ``manager_sample_freq`` steps."""
-    return aggregate_mgr_extr_rew(rew, con, self.manager_sample_freq, without_zeros)
+    return aggregate_mgr_extr_rew(
+        rew, con, self.manager_sample_freq, without_zeros,
+        agg_mode=self.mgr_reward_agg)
 
   def _mgr_cont(self, con, without_zeros=False):
     """Manager continuation: WM continuation pooled over ``manager_sample_freq`` steps."""
@@ -1800,7 +1944,8 @@ class Agent(embodied.jax.Agent):
         n_mgr = imgfeat_eff['deter'].shape[1]
         mgr_extr_rew, mgr_expl_rew, mgr_cont, mgr_switch = (
             variable_block_director_tensors(
-                rew_step, con, expl_step, switch_mask, n_mgr))
+                rew_step, con, expl_step, switch_mask, n_mgr,
+                agg_mode=self.mgr_reward_agg))
         if self._mgr_cond_any:
           preedit_eff = {'goal_code': downsample_at_switch_mask(
               {'goal_code': pre_code}, switch_mask)['goal_code']}
@@ -1886,17 +2031,64 @@ class Agent(embodied.jax.Agent):
     if self.use_masked_goals:
       mask_frac = mgr_skills_eff['mask'].mean(-1)           # (M, n_mgr) realized
       metrics['goal/mask_frac_mean'] = mask_frac.mean()
+      if self.goal_edit_cost:
+        # Fixed per-edited-block cost (sparsity analog of ``goal_switch_cost``):
+        # subtract a cost proportional to the realized edit fraction from the
+        # manager reward, so the manager only edits blocks whose task-return gain
+        # beats the cost. A no-op edit (same value) earns no extra worker reward and
+        # is strictly dominated. No target fraction -> sparsity is free, priced.
+        n = min(mgr_extr_rew.shape[1], mask_frac.shape[1])
+        edit_pen = jnp.zeros_like(mgr_extr_rew).at[:, :n].set(
+            self.goal_edit_cost * sg(mask_frac[:, :n]))
+        mgr_extr_rew = mgr_extr_rew - edit_pen
+        metrics['goal/edit_cost_pen_mean'] = edit_pen.mean()
+      if self.goal_edit_cost_ach and preedit_eff is not None:
+        # B.3 achievability-gated edit cost: scale the per-command edit cost by how
+        # reached the *standing* (pre-edit) goal already is, so churning an already-
+        # satisfied goal is expensive while re-planning an unmet goal is cheap. The
+        # interior edit fraction emerges from the state -- no sparsity target.
+        prev_goal_b3 = sg(self._goals_from_skills(preedit_eff, bdims=2))
+        ach_b3 = goal_reward_cosine_max(
+            prev_goal_b3, sg(self.feat2deter(imgfeat_eff)))     # (M, n) in [-1, 1]
+        ach_b3 = jnp.clip(ach_b3, 0.0, 1.0)
+        n = min(mgr_extr_rew.shape[1], mask_frac.shape[1], ach_b3.shape[1])
+        ach_pen = jnp.zeros_like(mgr_extr_rew).at[:, :n].set(
+            self.goal_edit_cost_ach * sg(mask_frac[:, :n]) * sg(ach_b3[:, :n]))
+        mgr_extr_rew = mgr_extr_rew - ach_pen
+        metrics['goal/edit_cost_ach_pen_mean'] = ach_pen.mean()
+        metrics['goal/achievement_mean'] = ach_b3.mean()
       if self.mgr_cond_achieve:
         # Mean of the achievement cosine fed to the manager (how reached the standing
         # goal was). Should rise as the manager learns to hold near-reached goals.
         prev_goal_d = sg(self._goals_from_skills(preedit_eff, bdims=2))
         ach = goal_reward_cosine_max(prev_goal_d, sg(self.feat2deter(imgfeat_eff)))
         metrics['goal/mgr_cond_achieve_mean'] = ach.mean()
-      if self.mask_topk <= 0:
+      if self.mask_topk <= 0 and not self.mask_sparsemax:
         # Differentiable expected edit fraction from the in-tape manager mask head.
+        # (Skipped under sparsemax: sparsity is by construction, no penalty.)
         mask_prob_frac = self._mask_prob(mgr_policy['mask']).mean(-1)  # (M, n_down)
         metrics['goal/mask_prob_mean'] = mask_prob_frac.mean()
-        if self.mask_sparsity_mode == 'reinforce':
+        if self.mask_sparsity_mode == 'none':
+          # Free sparsity: no target, no penalty. The optional ``goal_edit_cost``
+          # (priced editing) is the only force shaping the edit fraction; otherwise
+          # the manager's task-return REINFORCE alone decides which blocks to edit.
+          pass
+        elif self.mask_sparsity_mode == 'prob_ach':
+          # Tier 1: analytic, state-dependent sparsity shaping. Penalize the *expected*
+          # edit fraction sigma(l_i) weighted by how reached the standing goal already
+          # is (achievement in [0,1]), with a FIXED weight (no target). Zero-variance
+          # twin of B.3's reward cost: reached goal -> editing penalized; unmet -> free.
+          if preedit_eff is not None:
+            prev_goal_t1 = sg(self._goals_from_skills(preedit_eff, bdims=2))
+            ach_t1 = jnp.clip(goal_reward_cosine_max(
+                prev_goal_t1, sg(self.feat2deter(imgfeat_eff))), 0.0, 1.0)  # (M, n)
+            mp = self._mask_prob(mgr_policy['mask']).mean(-1)               # (M, n) sigma
+            n = min(mp.shape[1], ach_t1.shape[1])
+            weighted_bt = (mp[:, :n] * sg(ach_t1[:, :n])).mean(1).reshape((B, K_imag))
+            losses['mask_sparsity'] = self.mask_sparsity_prob_ach_weight * weighted_bt
+            metrics['goal/mask_sparsity_achweighted_mean'] = weighted_bt.mean()
+            metrics['goal/achievement_mean'] = ach_t1.mean()
+        elif self.mask_sparsity_mode == 'reinforce':
           # C: penalize the realized edit fraction through the manager *reward* so
           # REINFORCE pushes the mask logp toward sparser commands. The adapter is
           # still stepped (to track the target via ``scale``); its loss is dropped.
@@ -1911,6 +2103,27 @@ class Agent(embodied.jax.Agent):
           mgr_extr_rew = mgr_extr_rew - reward_pen
           metrics['goal/mask_sparsity_reward_pen_mean'] = reward_pen.mean()
           metrics.update({f'goal/mask_sparsity_{k}': v for k, v in mask_sp_mets.items()})
+        elif self.mask_sparsity_mode == 'entropy':
+          # ENTROPY-NATIVE mask (like the action policy). Two dimensionless, adaptive
+          # targets drive sparsity instead of a fixed fraction or reward-unit cost:
+          #   (a) mask_actent: hold per-block mask entropy (normalized by ln2) near a
+          #       fraction-of-max setpoint -> keeps the mask stochastic (anti-collapse);
+          #   (b) mask_kl:     hold KL(mask || Bernoulli(mask_sparse_prior)) near a nats
+          #       budget -> the transferable "prefer not to edit" pull (task advantage
+          #       spends the budget only where editing pays). Which blocks to edit is
+          #       decided by the manager REINFORCE gradient through the mask logp.
+          probs = self._mask_prob(mgr_policy['mask'])                   # (M, n, L)
+          ent = bernoulli_entropy(probs).mean(-1) / jnp.log(2.0)        # (M, n) in [0,1]
+          kl = bernoulli_kl(probs, self.mask_sparse_prior).mean(-1)     # (M, n) nats
+          ent_bt = ent.mean(1).reshape((B, K_imag))
+          kl_bt = kl.mean(1).reshape((B, K_imag))
+          ent_loss, ent_mets = self.mask_actent(ent_bt, update=training)
+          kl_loss, kl_mets = self.mask_kl_adapter(kl_bt, update=training)
+          losses['mask_sparsity'] = ent_loss + kl_loss
+          metrics['goal/mask_entropy_norm_mean'] = ent.mean()
+          metrics['goal/mask_kl_prior_mean'] = kl.mean()
+          metrics.update({f'goal/mask_actent_{k}': v for k, v in ent_mets.items()})
+          metrics.update({f'goal/mask_kl_{k}': v for k, v in kl_mets.items()})
         else:
           # 'prob' (B2): differentiable; 'sample' (legacy): gradient-free no-op.
           metric = (mask_prob_frac if self.mask_sparsity_mode == 'prob' else mask_frac)
@@ -1937,6 +2150,22 @@ class Agent(embodied.jax.Agent):
         actent=self.config.manager_actent,
         slowtar=self.config.manager_slowtar)
 
+    perblock_kwargs = {}
+    if self.mask_perblock_credit:
+      post_code = self._running_goal_code(mgr_skills_eff)
+      pre_code_pb = preedit_eff['goal_code'] if preedit_eff is not None else post_code
+      perblock_kwargs.update(
+          mask_perblock_credit=True,
+          perblock_edit_cost=self.perblock_edit_cost,
+          feat_inp=inp_eff,
+          goal_code=post_code,
+          pre_goal_code=pre_code_pb,
+          emit_skill=mgr_skills_eff['skill'],
+          mgr_goal_q_module=self.mgr_goal_q,
+          mgr_goal_q_slowmodule=self.mgr_goal_q_slowval,
+          mgr_goal_q_valnorm=self.mgr_goal_q_valnorm,
+      )
+
     los_mgr, imgloss_mgr_out, mets_mgr = imag_loss_mgr(
         mgr_skills_eff,
         mgr_extr_rew,
@@ -1962,6 +2191,7 @@ class Agent(embodied.jax.Agent):
         dur_reg_weight=float(getattr(self.config, 'goal_duration_reg', 0.0)),
         dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
         dur_min=self.goal_duration_min,
+        **perblock_kwargs,
         **kwargs_mgr)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
@@ -2061,7 +2291,7 @@ class Agent(embodied.jax.Agent):
           repl_mgr_extr_rew, repl_mgr_expl_rew, repl_mgr_cont, valid_mgr = (
               variable_block_director_tensors(
                   repl_rew_full, repl_con_full, repl_expl_full,
-                  repl_switch, n_mgr))
+                  repl_switch, n_mgr, agg_mode=self.mgr_reward_agg))
           last_down = downsample_at_switch_mask(
               {'last': last.astype(f32)}, repl_switch)['last'].astype(last.dtype)
           term_down = (1.0 - repl_mgr_cont).astype(term.dtype)
@@ -2485,6 +2715,49 @@ def _head_inner(head):
   return head.output if isinstance(head, outs.Agg) else head
 
 
+def _mask_logit_head(head):
+  """Unwrap a (possibly Agg-wrapped) Binary mask dist to its per-block logits."""
+  inner = _head_inner(head)
+  while not hasattr(inner, 'logit') and hasattr(inner, 'output'):
+    inner = inner.output
+  return f32(inner.logit)
+
+
+def mask_logp_perblock_time(head, event):
+  """Per-block Bernoulli log-prob with leading axes ``(batch, time - 1, L)``."""
+  lp = _head_inner(head).logp(sg(event))
+  return lp[:, :-1]
+
+
+def eval_mgr_goal_q(feat_inp, goal_code, mgr_goal_q_module, valnorm_stats):
+  """Unnormalized Q_g(s, Z) prediction at each (batch, time) step."""
+  flat = goal_code.reshape(*goal_code.shape[:-2], -1)
+  inp = jnp.concatenate([feat_inp, flat], -1)
+  voff, vscale = valnorm_stats
+  return mgr_goal_q_module(inp, 2).pred() * vscale + voff
+
+
+def mask_perblock_advantages(
+    feat_inp, goal_code, pre_goal_code, emit_skill, mask_head,
+    mgr_goal_q_module, mgr_goal_q_valnorm, rscale_extr, perblock_edit_cost):
+  """Leave-one-out COMA-style per-block advantages for the edit mask."""
+  voff, vscale = mgr_goal_q_valnorm.stats()
+  q_actual = eval_mgr_goal_q(
+      feat_inp, goal_code, mgr_goal_q_module, (voff, vscale))[:, :-1]
+  logit = _mask_logit_head(mask_head)[:, :-1]
+  L = goal_code.shape[-2]
+  advs = []
+  for i in range(L):
+    code0 = goal_code.at[..., i, :].set(pre_goal_code[..., i, :])
+    code1 = goal_code.at[..., i, :].set(emit_skill[..., i, :])
+    q0 = eval_mgr_goal_q(feat_inp, code0, mgr_goal_q_module, (voff, vscale))[:, :-1]
+    q1 = eval_mgr_goal_q(feat_inp, code1, mgr_goal_q_module, (voff, vscale))[:, :-1]
+    pi = jax.nn.sigmoid(logit[..., i])
+    baseline = pi * q1 + (1.0 - pi) * q0
+    advs.append((q_actual - baseline - f32(perblock_edit_cost)) / rscale_extr)
+  return jnp.stack(advs, -1)
+
+
 def head_logp_time(head, event):
   """Policy log-prob with leading axes ``(batch, time)``."""
   lp = _head_inner(head).logp(sg(event))
@@ -2670,6 +2943,17 @@ def imag_loss_mgr(
     dur_reg_weight=0.0,
     dur_reg_target=0.0,
     dur_min=1,
+    mask_perblock_credit=False,
+    perblock_edit_cost=0.0,
+    feat_inp=None,
+    goal_code=None,
+    pre_goal_code=None,
+    emit_skill=None,
+    mgr_goal_q_module=None,
+    mgr_goal_q_slowmodule=None,
+    mgr_goal_q_value=None,
+    mgr_goal_q_slowvalue=None,
+    mgr_goal_q_valnorm=None,
 ):
   """Manager actor-critic losses on imagined trajectories.
 
@@ -2732,8 +3016,23 @@ def imag_loss_mgr(
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 
   skill_events = align_skill_events(skills, manager_policy)
-  mgr_logpi = sum([
-      head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
+  mask_logpi = None
+  mask_adv_normed = None
+  if mask_perblock_credit and 'mask' in manager_policy:
+    mgr_logpi = sum([
+        head_logp_time(v, skill_events[k])
+        for k, v in manager_policy.items() if k != 'mask'])
+    mask_adv_blk = mask_perblock_advantages(
+        feat_inp, goal_code, pre_goal_code, emit_skill, manager_policy['mask'],
+        mgr_goal_q_module, mgr_goal_q_valnorm, rscale_extr, perblock_edit_cost)
+    mask_adv_normed = (mask_adv_blk - mgr_aoffset) / mgr_ascale
+    mask_logpi = mask_logp_perblock_time(
+        manager_policy['mask'], skill_events['mask'])
+    metrics['goal/mask_perblock_adv_std'] = mask_adv_blk.std()
+    metrics['goal/mask_perblock_adv_spread'] = jnp.abs(mask_adv_blk).mean()
+  else:
+    mgr_logpi = sum([
+        head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
   mgr_ents = {k: head_entropy_time(v) for k, v in manager_policy.items()}
 
   # Director-style adaptive normalized entropy regularizer (per-categorical
@@ -2793,11 +3092,17 @@ def imag_loss_mgr(
   # REINFORCE manager actor. With the adaptive entropy adapter the per-dim
   # normalized-entropy loss is already in ``mgr_ent_loss_bt``; otherwise fall
   # back to the fixed v3 ``actent`` on summed per-categorical entropy.
+  if mask_logpi is not None:
+    mgr_reinforce = (
+        mgr_logpi * sg(mgr_adv_normed) +
+        (mask_logpi * sg(mask_adv_normed)).sum(-1))
+  else:
+    mgr_reinforce = mgr_logpi * sg(mgr_adv_normed)
   if mgr_actent_adapter is not None:
-    losses['mgr_policy'] = w * (-mgr_logpi * sg(mgr_adv_normed) + mgr_ent_loss_bt)
+    losses['mgr_policy'] = w * (-mgr_reinforce + mgr_ent_loss_bt)
   else:
     losses['mgr_policy'] = w * -(
-        mgr_logpi * sg(mgr_adv_normed) + actent * sum(mgr_ents.values()))
+        mgr_reinforce + actent * sum(mgr_ents.values()))
 
   # Soft duration prior: pull the manager's expected goal duration toward
   # ``dur_reg_target`` directly through the duration logits (not via REINFORCE),
@@ -2853,6 +3158,23 @@ def imag_loss_mgr(
   losses['mgr_expl_value'] = vw * (
       mgr_expl_value.loss(sg(mgr_expl_tar_padded)) +
       slowreg * mgr_expl_value.loss(sg(mgr_expl_slowvalue.pred())))[:, :-1]
+
+  if mask_perblock_credit and mgr_goal_q_module is not None:
+    q_inp = jnp.concatenate([
+        feat_inp, goal_code.reshape(*goal_code.shape[:-2], -1)], -1)
+    mgr_goal_q_value = mgr_goal_q_module(q_inp, 2)
+    mgr_goal_q_slowvalue = mgr_goal_q_slowmodule(q_inp, 2)
+    voff_q, vscale_q = mgr_goal_q_valnorm(mgr_extr_ret, update)
+    mgr_goal_q_ret_normed = (mgr_extr_ret - voff_q) / vscale_q
+    mgr_goal_q_tar_padded = jnp.concatenate(
+        [mgr_goal_q_ret_normed, 0 * mgr_goal_q_ret_normed[:, -1:]], 1)
+    losses['mgr_goal_q_value'] = vw * (
+        mgr_goal_q_value.loss(sg(mgr_goal_q_tar_padded)) +
+        slowreg * mgr_goal_q_value.loss(
+            sg(mgr_goal_q_slowvalue.pred())))[:, :-1]
+    q_pred = eval_mgr_goal_q(
+        feat_inp, goal_code, mgr_goal_q_module, mgr_goal_q_valnorm.stats())
+    metrics['mgr_goal_q_val'] = q_pred.mean()
 
   metrics['mgr_adv'] = mgr_adv.mean()
   metrics['mgr_adv_std'] = mgr_adv.std()

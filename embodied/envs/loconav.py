@@ -16,7 +16,7 @@ class LocoNav(embodied.Env):
 
   def __init__(
       self, name, repeat=1, size=(64, 64), camera=-1, again=False,
-      termination=False, weaker=1.0):
+      termination=False, weaker=1.0, image=True):
     if name.endswith('hz'):
       name, freq = name.rsplit('_', 1)
       freq = int(freq.strip('hz'))
@@ -53,7 +53,7 @@ class LocoNav(embodied.Env):
         time_limit=60, task=task, random_state=None,
         strip_singleton_obs_buffer_dim=True)
     from . import dmc
-    self._env = dmc.DMC(env, repeat, size=size, camera=camera, image=False)
+    self._env = dmc.DMC(env, repeat, size=size, camera=camera, image=image)
     self._visited = None
     self._weaker = weaker
 
@@ -96,7 +96,6 @@ class LocoNav(embodied.Env):
     from dm_control import mjcf
     from dm_control.locomotion.arenas import labmaze_textures
     from dm_control.locomotion.arenas import mazes
-    import matplotlib.pyplot as plt
     class WallTexture(labmaze_textures.WallTextures):
       def _build(self, color=[0.8, 0.8, 0.8], model='labmaze_style_01'):
         self._mjcf_root = mjcf.RootElement(model=model)
@@ -104,9 +103,22 @@ class LocoNav(embodied.Env):
             'texture', type='2d', name='wall', builtin='flat',
             rgb1=color, width=100, height=100)]
     wall_textures = {'*': WallTexture([0.8, 0.8, 0.8])}
-    cmap = plt.get_cmap('tab10')
+    # Hardcoded matplotlib 'tab10' RGB values (matplotlib is not a dep here).
+    # These wall colors are visual landmarks the agent sees via the egocentric
+    # camera, so they must match Director's tab10 colors exactly.
+    tab10 = [
+        (0.12156862745098039, 0.4666666666666667, 0.7058823529411765),
+        (1.0, 0.4980392156862745, 0.054901960784313725),
+        (0.17254901960784313, 0.6274509803921569, 0.17254901960784313),
+        (0.8392156862745098, 0.15294117647058825, 0.1568627450980392),
+        (0.5803921568627451, 0.403921568627451, 0.7411764705882353),
+        (0.5490196078431373, 0.33725490196078434, 0.29411764705882354),
+        (0.8901960784313725, 0.4666666666666667, 0.7607843137254902),
+        (0.4980392156862745, 0.4980392156862745, 0.4980392156862745),
+        (0.7372549019607844, 0.7411764705882353, 0.13333333333333333),
+    ]
     for index in range(9):
-      wall_textures[str(index + 1)] = WallTexture(cmap(index)[:3])
+      wall_textures[str(index + 1)] = WallTexture(list(tab10[index]))
     layout = ''.join([
         line[::2].replace('.', ' ') + '\n' for line in MAPS[name]])
     maze = labmaze.FixedMazeWithRandomGoals(

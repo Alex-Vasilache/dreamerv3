@@ -21,12 +21,13 @@ import ruamel.yaml as yaml
 class WandBOutputWithFPS(elements.logger.WandBOutput):
   """WandBOutput that passes a configurable fps to wandb.Video for faster gifs."""
 
-  def __init__(self, name, video_fps=4, report_video_fps=None, **kwargs):
+  def __init__(self, name, video_fps=4, report_video_fps=None, videos=True, **kwargs):
     super().__init__(name, **kwargs)
     self._video_fps = video_fps
     # Report videos are subsampled by report_video_time_stride, so they need a
     # proportionally lower fps to appear at the same speed as episode videos.
     self._report_video_fps = report_video_fps if report_video_fps is not None else video_fps
+    self._videos = videos
 
   def __call__(self, summaries):
     import wandb
@@ -48,6 +49,8 @@ class WandBOutputWithFPS(elements.logger.WandBOutput):
         value = np.transpose(value, [2, 0, 1])
         bystep[step][name] = wandb.Image(value)
       elif len(value.shape) == 4:
+        if not self._videos:
+          continue
         assert value.shape[3] in [1, 3, 4], value.shape
         value = np.transpose(value, [0, 3, 1, 2])
         if value.dtype != np.uint8:
@@ -294,9 +297,11 @@ def make_logger(config):
         kwargs['entity'] = config.logger.wandb_entity
       wandb_fps = int(getattr(config.logger, 'wandb_fps', 4))
       report_video_fps = int(getattr(config.logger, 'report_wandb_fps', 5))
+      wandb_videos = bool(getattr(config.logger, 'wandb_videos', False))
       try:
         outputs.append(WandBOutputWithFPS(
-            run_name, video_fps=wandb_fps, report_video_fps=report_video_fps, **kwargs))
+            run_name, video_fps=wandb_fps, report_video_fps=report_video_fps,
+            videos=wandb_videos, **kwargs))
       except Exception as e:
         print(f'WandB init failed, skipping WandB output: {e}')
     elif output == 'scope':

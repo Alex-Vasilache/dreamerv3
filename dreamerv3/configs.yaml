@@ -31,7 +31,8 @@ defaults:
     timer: True
     fps: 15
     wandb_fps: 40
-    report_wandb_fps: 5 
+    report_wandb_fps: 5
+    wandb_videos: False  # send only scalars/histograms/images to wandb, no video (storage quota)
     user: ''
     wandb_project: dreamerv3
     wandb_entity: vasilache
@@ -45,7 +46,7 @@ defaults:
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
     dmc: {size: [64, 64], repeat: 1, proprio: True, image: True, camera: -1}
-    loconav: {size: [64, 64], repeat: 1, camera: -1}
+    loconav: {size: [64, 64], repeat: 1, camera: -1, image: True}
 
   replay:
     size: 5e6
@@ -141,7 +142,37 @@ defaults:
     #               manager mask head (differentiable; the adapter actually bites).
     #   reinforce (C) = subtract sg(scale)*hard_frac from the manager extrinsic
     #               reward so the mask logp is reinforced toward sparser masks.
+    #   prob_ach (Tier 1) = analytic achievement-gated expected-edit penalty
+    #               lambda * mean_i[achievement * sigma(l_i)]; zero-variance twin
+    #               of B.3 goal_edit_cost_ach (see per_block_credit_plan.md).
+    #   entropy   = ENTROPY-NATIVE (like the action policy): an adaptive entropy
+    #               adapter holds the per-block mask entropy near ``mask_actent_target``
+    #               (fraction of max, keeps the mask stochastic / anti-collapse) while
+    #               an adaptive KL adapter holds KL(mask || Bernoulli(mask_sparse_prior))
+    #               near ``mask_kl_target`` nats (the transferable "prefer not to edit"
+    #               level control — replaces the fixed fraction target + edit costs).
+    #               Task advantage (manager REINFORCE) decides WHICH blocks; the two
+    #               adapters decide exploration + how-sparse, both via dimensionless
+    #               targets that transfer across env / model size. See agent.loss.
     mask_sparsity_mode: prob
+    # Entropy-native mask controls (only used when mask_sparsity_mode == 'entropy').
+    # Both targets are dimensionless (fraction-of-max entropy; nats) so they transfer
+    # across environment and model size. Off unless the mode is selected.
+    mask_actent_target: 0.5     # per-block mask entropy setpoint (fraction of ln2)
+    mask_actent_impl: mult
+    mask_actent_min: 1e-5
+    mask_actent_max: 1e2
+    mask_actent_vel: 0.1
+    mask_actent_init: 1.0
+    mask_sparse_prior: 0.1      # q of the sparse Bernoulli prior the mask is pulled toward
+    mask_kl_target: 0.2         # nats budget for KL(mask || Bernoulli(q)); task may spend up to this
+    mask_kl_impl: mult
+    mask_kl_min: 1e-5
+    mask_kl_max: 1e2
+    mask_kl_vel: 0.1
+    mask_kl_init: 1.0
+    # Tier 1: fixed weight on the prob_ach penalty (only when mode=prob_ach).
+    mask_sparsity_prob_ach_weight: 1.0
     # B2 ablation: >0 uses a FIXED sparsity multiplier at target 0 (constant
     # pressure toward editing no blocks, i.e. frozen goal) instead of the adaptive
     # adapter. Only applies in 'prob' mode. 0 = use the adaptive adapter below.
@@ -243,6 +274,33 @@ defaults:
     # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
     # shapes the duration.
     goal_switch_cost: 0.0
+    # Optional fixed per-edited-block cost subtracted from the manager extrinsic
+    # reward (sparsity analog of goal_switch_cost). Prices editing without a target
+    # fraction: the manager edits a block only if its task-return gain beats the cost.
+    # 0 = off. Use with mask_sparsity_mode=none for fully free (priced) sparsity.
+    goal_edit_cost: 0.0
+    # B.3: achievability-gated edit cost. Per-command edit cost scaled by how reached
+    # the standing (pre-edit) goal already is (achievement cosine in [0,1]), so churning
+    # an already-satisfied goal is expensive and re-planning an unmet goal is cheap. The
+    # interior edit fraction emerges from the state, no sparsity target. 0 = off. Needs a
+    # mgr_cond_* flag on (so preedit_eff exists). Use with mask_sparsity_mode=none.
+    goal_edit_cost_ach: 0.0
+    # C.5: sparsemax edit gate. Replace the per-block Bernoulli mask with a sparsemax
+    # projection over the L block logits (simplex -> exact zeros), making the edit set
+    # sparse by construction with no sparsity target. Imposes a soft ~1-block edit budget
+    # (decisive edits must concentrate mass). Disables the soft sparsity penalty.
+    mask_sparsemax: False
+    # Tier 2: per-block leave-one-out REINFORCE credit for the edit mask via
+    # goal-conditioned Q_g(s, Z). Requires mgr_cond_* (pre-edit Z). See
+    # per_block_credit_plan.md.
+    mask_perblock_credit: False
+    # Small fixed cost subtracted from each block's counterfactual advantage
+    # (tie-break toward fewer edits when mask_perblock_credit is on).
+    perblock_edit_cost: 0.0
+    # Manager extrinsic-reward block aggregation: 'mean' (per-step average, original)
+    # or 'sum' (continuation-weighted SMDP option return). Under per-step block
+    # discounting 'mean' under-credits long blocks (short-K bias); 'sum' is K-neutral.
+    mgr_reward_agg: mean
     # When True with ``variable_goal_length``, pool manager extrinsic/exploratory
     # rewards over each realized duration segment (Director ``abstract_traj`` style)
     # instead of per-step dense rewards. Downsamples the manager AC timeline to
@@ -255,6 +313,7 @@ defaults:
     # Director ``actent`` adaptive scale on per-dim normalized manager entropy.
     manager_actent_impl: mult
     manager_actent_target: 0.5
+    manager_actent_duration_target: -1.0  # <0 inherits manager_actent_target; raise (e.g. 0.8) to keep the variable-K duration head exploratory (anti short-K collapse)
     manager_actent_min: 1e-5
     manager_actent_max: 1e2
     manager_actent_vel: 0.1
@@ -352,6 +411,53 @@ variable_goals: &variable_goals
   agent.variable_goal_length: True
   agent.imag_length: 32
 
+# Auto-tuning HRL: masked goals + variable-K where EVERY regularizer is an adaptive
+# Lagrange multiplier holding a DIMENSIONLESS target (entropy fraction, KL nats,
+# edit fraction) — no reward-unit costs (those never transfer across env/model size:
+# switch/edit costs only reach corners, duration-reg magnitude-dominates). The only
+# hand-set knobs are dimensionless targets, so one config is meant to transfer across
+# the whole env × size panel. Goal length is explored via the duration head's adaptive
+# entropy (no forced-K prior, no switch cost) with the option-return (block) credit for
+# convergence; mask sparsity via the proven two-sided ``prob`` fraction target (flip
+# ``mask_sparsity_mode`` to ``entropy`` to move to the fully entropy-native mask, whose
+# machinery is built and off-by-default). Manager conditioning OFF (neutral-to-negative,
+# finding #4; also disables per-block credit, which needs the pre-edit Z). See
+# EXPERIMENTS.md "Pure-Director vs masked recipe".
+hrl_auto: &hrl_auto
+  agent.use_hrl: True
+  agent.use_masked_goals: True
+  agent.variable_goal_length: True
+  agent.imag_length: 32
+  # Manager conditioning off (finding #4) -> per-block credit off (it needs pre-edit Z).
+  agent.mgr_cond_goalcode: False
+  agent.mgr_cond_achieve: False
+  agent.mask_perblock_credit: False
+  # Mean dense-reward aggregation; duration credit via the option-return (block) path.
+  agent.mgr_reward_agg: mean
+  agent.variable_goal_block_rew: True
+  # NO reward-unit costs (non-transferable across env / size).
+  agent.goal_switch_cost: 0.0
+  agent.goal_edit_cost: 0.0
+  agent.goal_edit_cost_ach: 0.0
+  agent.perblock_edit_cost: 0.0
+  # NO forced-K duration prior — K is explored by the duration head's adaptive entropy
+  # and pulled to useful values by the option-return credit. Raise the duration entropy
+  # setpoint above the skill target (0.5) to resist the documented short-K collapse.
+  agent.goal_duration_reg: 0.0
+  agent.goal_duration_adapt: False
+  agent.goal_duration_min: 1
+  agent.goal_duration_max: 16
+  agent.manager_actent_duration_target: 0.7
+  # Mask level control: prob-first (adaptive-weight two-sided Lagrangian, proven e57).
+  # Flip to 'entropy' to use the entropy-native mask (mask_actent + mask_kl adapters).
+  agent.mask_sparsity_mode: prob
+  agent.mask_sparsity_target: 0.3
+  agent.mask_sparsity_max: 5.0
+  agent.mask_topk: 0
+  agent.mask_sparsemax: False
+  # Keep the on-manifold struct term (finding #5: healthy, needed for block-splice goals).
+  agent.goal_struct_weight: 200.0
+
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}
   .*\.depth: 4
@@ -371,6 +477,16 @@ size6m_director: &size6m_director
   .*\.depth: 8
   .*\.units: 256
   batch_size: 2
+  batch_length: 32
+
+# Director defaults parity (TF Director configs.yaml): RSSM deter/hidden 1024,
+# classes 32, CNN depth 64, 4-layer 512-wide MLP heads. Use with 64x64 DMC.
+director_match: &director_match
+  .*\.rssm: {deter: 1024, hidden: 1024, classes: 32}
+  .*\.depth: 64
+  .*\.units: 512
+  .*\.layers: 4
+  batch_size: 4
   batch_length: 32
 
 size12m: &size12m
