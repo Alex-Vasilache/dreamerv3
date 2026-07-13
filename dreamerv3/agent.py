@@ -462,6 +462,9 @@ class Agent(embodied.jax.Agent):
     # 'sample' (legacy no-op), 'prob' (B2: penalize sigmoid probs, differentiable),
     # 'reinforce' (C: shape the manager reward by the realized edit fraction).
     self.mask_sparsity_mode = str(getattr(config, 'mask_sparsity_mode', 'prob'))
+    # Entropy mode only: whether the KL(mask || Bernoulli(sparse_prior)) "prefer not
+    # to edit" term is added on top of the mask_actent anti-collapse entropy floor.
+    self.mask_kl_enable = bool(getattr(config, 'mask_kl_enable', True))
     # B2 ablation: >0 replaces the adaptive sparsity target with a FIXED multiplier
     # at target 0 (constant pressure to edit no blocks). Only used in 'prob' mode.
     self.mask_sparsity_fixed = float(getattr(config, 'mask_sparsity_fixed_weight', 0.0))
@@ -532,6 +535,16 @@ class Agent(embodied.jax.Agent):
     # mode; the adapter itself is only built under ``variable_goal_length`` below.
     self.goal_duration_adapt = bool(
         getattr(config, 'goal_duration_adapt', False)) and self.variable_goal_length
+    # Mask-style Lagrangian duration prior: an AutoAdapt tracks the mean duration
+    # itself (not a squared-error-magnitude proxy) directly against
+    # ``goal_duration_target``, mirroring ``mask_sparsity_adapter``'s dual ascent on
+    # the realized quantity of interest. Folded out into its own top-level loss
+    # (``goal_duration_prior``, own ``loss_scales`` entry), unlike the fixed-weight
+    # ``goal_duration_reg`` / squared-error-adaptive ``goal_duration_adapt`` paths,
+    # which are added directly into ``mgr_policy``. Mutually exclusive with
+    # ``goal_duration_adapt`` (this takes priority if both are set).
+    self.goal_duration_lagrange = bool(
+        getattr(config, 'goal_duration_lagrange', False)) and self.variable_goal_length
     self.n_duration_classes = max(
         1, self.goal_duration_max - self.goal_duration_min + 1)
     if len(skill_shape_t) > 1:
@@ -711,6 +724,26 @@ class Agent(embodied.jax.Agent):
               inverse=False,
               init=adapt_init,
               name='mgr_dur_reg_adapter')
+        # Mask-style Lagrangian alternative: regulates the switch-weighted mean
+        # ABSOLUTE deviation |E[dur] - goal_duration_target| against a small
+        # tolerance (``goal_duration_lagrange_tol``), so the response is symmetric
+        # in the deviation direction (the first version regulated the raw mean
+        # duration one-sidedly -- it WEAKENED the prior when durations collapsed
+        # short, and railed at max during the early long-duration phase; e152-e159).
+        # The multiplier grows while the deviation exceeds the tolerance and
+        # self-relaxes once within it; capped at ``goal_duration_lagrange_max`` so
+        # it can never dominate the manager REINFORCE objective.
+        if self.goal_duration_lagrange:
+          self.mgr_dur_lagrange_adapter = embodied.jax.AutoAdapt(
+              shape=(),
+              impl=getattr(config, 'goal_duration_lagrange_impl', 'mult'),
+              target=float(getattr(config, 'goal_duration_lagrange_tol', 0.1)),
+              min=float(getattr(config, 'goal_duration_lagrange_min', 1e-5)),
+              max=float(getattr(config, 'goal_duration_lagrange_max', 5.0)),
+              vel=float(getattr(config, 'goal_duration_lagrange_vel', 0.1)),
+              inverse=False,
+              init=float(getattr(config, 'goal_duration_lagrange_init', 1.0)),
+              name='mgr_dur_lagrange_adapter')
       self.goal_kl_adapter = embodied.jax.AutoAdapt(
           shape=(),
           impl=config.goal_kl_impl,
@@ -749,13 +782,18 @@ class Agent(embodied.jax.Agent):
             inverse=False,
             init=float(getattr(config, 'mask_sparsity_init', 1.0)),
             name='mask_sparsity_adapter')
-        # Entropy-native mask controls (built when mode == 'entropy'; off otherwise).
-        # ``mask_actent`` (inverse=True, entropy-style) holds the per-block mask entropy
-        # near a fraction-of-max setpoint so the mask stays stochastic (anti-collapse);
-        # ``mask_kl_adapter`` (inverse=False, KL-style) holds KL(mask || sparse prior)
-        # near a nats budget so the mask prefers not to edit unless task advantage pays
-        # for it. Both targets are dimensionless -> transfer across env / model size.
-        if self.mask_sparsity_mode == 'entropy':
+        # Entropy-native mask controls (built when mode == 'entropy' or 'prob_entropy';
+        # off otherwise). ``mask_actent`` (inverse=True, entropy-style) holds the
+        # per-block mask entropy near a fraction-of-max setpoint so the mask stays
+        # stochastic (anti-collapse); ``mask_kl_adapter`` (inverse=False, KL-style)
+        # holds KL(mask || sparse prior) near a nats budget so the mask prefers not to
+        # edit unless task advantage pays for it. Both targets are dimensionless ->
+        # transfer across env / model size. ``prob_entropy`` combines this with the
+        # rate-targeting ``prob`` adapter below: the rate adapter controls the MEAN
+        # edit fraction, while this controls PER-BLOCK stochasticity, preventing the
+        # "railing to a corner" collapse where individual blocks saturate to hard 0/1
+        # even though the batch-mean sits on target.
+        if self.mask_sparsity_mode in ('entropy', 'prob_entropy'):
           self.mask_sparse_prior = float(getattr(config, 'mask_sparse_prior', 0.1))
           self.mask_actent = embodied.jax.AutoAdapt(
               shape=(),
@@ -767,16 +805,19 @@ class Agent(embodied.jax.Agent):
               inverse=True,
               init=float(getattr(config, 'mask_actent_init', 1.0)),
               name='mask_actent')
-          self.mask_kl_adapter = embodied.jax.AutoAdapt(
-              shape=(),
-              impl=getattr(config, 'mask_kl_impl', 'mult'),
-              target=float(getattr(config, 'mask_kl_target', 0.2)),
-              min=float(getattr(config, 'mask_kl_min', 1e-5)),
-              max=float(getattr(config, 'mask_kl_max', 1e2)),
-              vel=float(getattr(config, 'mask_kl_vel', 0.1)),
-              inverse=False,
-              init=float(getattr(config, 'mask_kl_init', 1.0)),
-              name='mask_kl_adapter')
+          # KL(mask || sparse prior) adapter: only built when mask_kl_enable, so a
+          # disabled run carries no unused adapter state. See mask_kl_enable above.
+          if self.mask_kl_enable:
+            self.mask_kl_adapter = embodied.jax.AutoAdapt(
+                shape=(),
+                impl=getattr(config, 'mask_kl_impl', 'mult'),
+                target=float(getattr(config, 'mask_kl_target', 0.2)),
+                min=float(getattr(config, 'mask_kl_min', 1e-5)),
+                max=float(getattr(config, 'mask_kl_max', 1e2)),
+                vel=float(getattr(config, 'mask_kl_vel', 0.1)),
+                inverse=False,
+                init=float(getattr(config, 'mask_kl_init', 1.0)),
+                name='mask_kl_adapter')
     else:
       # Flat AC heads (v4-online): single value/critic over WM features.
       self.val = embodied.jax.MLPHead(scalar, **config.value, name='val')
@@ -855,10 +896,19 @@ class Agent(embodied.jax.Agent):
             'mask_sparsity', getattr(self.config.loss_scales, 'mask_sparsity', 1.0))
       else:
         scales.pop('mask_sparsity', None)
+      if self.goal_duration_lagrange:
+        # Folded-out Lagrangian duration prior (own loss key, own scale) -- see
+        # ``mgr_dur_lagrange_adapter`` / ``losses['goal_duration_prior']``.
+        scales['goal_duration_prior'] = scales.pop(
+            'goal_duration_prior',
+            getattr(self.config.loss_scales, 'goal_duration_prior', 1.0))
+      else:
+        scales.pop('goal_duration_prior', None)
     else:
       # Flat mode: keep ``policy``/``value``/``repval`` (default keys), drop HRL-only.
       scales.pop('goal_autoencoder', None)
       scales.pop('mask_sparsity', None)
+      scales.pop('goal_duration_prior', None)
       if not self.config.repval_loss:
         scales.pop('repval', None)
     self.scales = scales
@@ -2030,7 +2080,20 @@ class Agent(embodied.jax.Agent):
     # subtract its cost from ``mgr_extr_rew``.
     if self.use_masked_goals:
       mask_frac = mgr_skills_eff['mask'].mean(-1)           # (M, n_mgr) realized
-      metrics['goal/mask_frac_mean'] = mask_frac.mean()
+      # Under variable-K the packed decision tensors are forward-filled to full
+      # width, so the LAST real decision occupies every trailing slot (~75% of
+      # columns at K~4, H=32). Weight every mask-sparsity statistic and loss by the
+      # valid-slot mask so estimates aren't dominated by the final decision. In
+      # fixed-K mode all slots are real and the weights are all-ones.
+      if self.variable_goal_length:
+        mask_valid = switch_valid_mask(switch_mask, mask_frac.shape[1])
+      else:
+        mask_valid = jnp.ones_like(mask_frac)
+      def _slot_mean(x, v):
+        # Valid-weighted mean over the packed decision-slot axis: (M, n) -> (M,).
+        return (x * v).sum(1) / jnp.maximum(v.sum(1), 1.0)
+      metrics['goal/mask_frac_mean'] = (
+          (mask_frac * mask_valid).sum() / jnp.maximum(mask_valid.sum(), 1.0))
       if self.goal_edit_cost:
         # Fixed per-edited-block cost (sparsity analog of ``goal_switch_cost``):
         # subtract a cost proportional to the realized edit fraction from the
@@ -2067,7 +2130,12 @@ class Agent(embodied.jax.Agent):
         # Differentiable expected edit fraction from the in-tape manager mask head.
         # (Skipped under sparsemax: sparsity is by construction, no penalty.)
         mask_prob_frac = self._mask_prob(mgr_policy['mask']).mean(-1)  # (M, n_down)
-        metrics['goal/mask_prob_mean'] = mask_prob_frac.mean()
+        if self.variable_goal_length:
+          prob_valid = switch_valid_mask(switch_mask, mask_prob_frac.shape[1])
+        else:
+          prob_valid = jnp.ones_like(mask_prob_frac)
+        metrics['goal/mask_prob_mean'] = (
+            (mask_prob_frac * prob_valid).sum() / jnp.maximum(prob_valid.sum(), 1.0))
         if self.mask_sparsity_mode == 'none':
           # Free sparsity: no target, no penalty. The optional ``goal_edit_cost``
           # (priced editing) is the only force shaping the edit fraction; otherwise
@@ -2084,7 +2152,8 @@ class Agent(embodied.jax.Agent):
                 prev_goal_t1, sg(self.feat2deter(imgfeat_eff))), 0.0, 1.0)  # (M, n)
             mp = self._mask_prob(mgr_policy['mask']).mean(-1)               # (M, n) sigma
             n = min(mp.shape[1], ach_t1.shape[1])
-            weighted_bt = (mp[:, :n] * sg(ach_t1[:, :n])).mean(1).reshape((B, K_imag))
+            weighted_bt = _slot_mean(
+                mp[:, :n] * sg(ach_t1[:, :n]), prob_valid[:, :n]).reshape((B, K_imag))
             losses['mask_sparsity'] = self.mask_sparsity_prob_ach_weight * weighted_bt
             metrics['goal/mask_sparsity_achweighted_mean'] = weighted_bt.mean()
             metrics['goal/achievement_mean'] = ach_t1.mean()
@@ -2093,7 +2162,8 @@ class Agent(embodied.jax.Agent):
           # REINFORCE pushes the mask logp toward sparser commands. The adapter is
           # still stepped (to track the target via ``scale``); its loss is dropped.
           _, mask_sp_mets = self.mask_sparsity_adapter(
-              sg(mask_frac).mean(1).reshape((B, K_imag)), update=training)
+              _slot_mean(sg(mask_frac), mask_valid).reshape((B, K_imag)),
+              update=training)
           sp_scale = sg(self.mask_sparsity_adapter.scale())        # Lagrange mult
           # Align the per-command cost to the reward length (imgfeat carries a
           # prepended start state, so the two can differ by one command step).
@@ -2115,19 +2185,49 @@ class Agent(embodied.jax.Agent):
           probs = self._mask_prob(mgr_policy['mask'])                   # (M, n, L)
           ent = bernoulli_entropy(probs).mean(-1) / jnp.log(2.0)        # (M, n) in [0,1]
           kl = bernoulli_kl(probs, self.mask_sparse_prior).mean(-1)     # (M, n) nats
-          ent_bt = ent.mean(1).reshape((B, K_imag))
-          kl_bt = kl.mean(1).reshape((B, K_imag))
+          ent_bt = _slot_mean(ent, prob_valid).reshape((B, K_imag))
+          kl_bt = _slot_mean(kl, prob_valid).reshape((B, K_imag))
           ent_loss, ent_mets = self.mask_actent(ent_bt, update=training)
-          kl_loss, kl_mets = self.mask_kl_adapter(kl_bt, update=training)
-          losses['mask_sparsity'] = ent_loss + kl_loss
-          metrics['goal/mask_entropy_norm_mean'] = ent.mean()
-          metrics['goal/mask_kl_prior_mean'] = kl.mean()
+          losses['mask_sparsity'] = ent_loss
+          metrics['goal/mask_entropy_norm_mean'] = (
+              (ent * prob_valid).sum() / jnp.maximum(prob_valid.sum(), 1.0))
+          metrics['goal/mask_kl_prior_mean'] = (
+              (kl * prob_valid).sum() / jnp.maximum(prob_valid.sum(), 1.0))
           metrics.update({f'goal/mask_actent_{k}': v for k, v in ent_mets.items()})
-          metrics.update({f'goal/mask_kl_{k}': v for k, v in kl_mets.items()})
+          if self.mask_kl_enable:
+            kl_loss, kl_mets = self.mask_kl_adapter(kl_bt, update=training)
+            losses['mask_sparsity'] = losses['mask_sparsity'] + kl_loss
+            metrics.update({f'goal/mask_kl_{k}': v for k, v in kl_mets.items()})
+        elif self.mask_sparsity_mode == 'prob_entropy':
+          # Combined: rate-targeting Lagrange (mean edit-fraction -> target, e.g. 0.3)
+          # PLUS per-block entropy Lagrange (keeps individual block probabilities away
+          # from 0/1 even while the mean sits on target). See construction comment
+          # above for why these are complementary rather than redundant.
+          metric_bt = _slot_mean(mask_prob_frac, prob_valid).reshape((B, K_imag))
+          rate_loss, rate_mets = self.mask_sparsity_adapter(metric_bt, update=training)
+          metrics.update({f'goal/mask_sparsity_{k}': v for k, v in rate_mets.items()})
+          probs = self._mask_prob(mgr_policy['mask'])                   # (M, n, L)
+          ent = bernoulli_entropy(probs).mean(-1) / jnp.log(2.0)        # (M, n) in [0,1]
+          ent_bt = _slot_mean(ent, prob_valid).reshape((B, K_imag))
+          ent_loss, ent_mets = self.mask_actent(ent_bt, update=training)
+          losses['mask_sparsity'] = rate_loss + ent_loss
+          metrics['goal/mask_entropy_norm_mean'] = (
+              (ent * prob_valid).sum() / jnp.maximum(prob_valid.sum(), 1.0))
+          metrics.update({f'goal/mask_actent_{k}': v for k, v in ent_mets.items()})
+          if self.mask_kl_enable:
+            kl = bernoulli_kl(probs, self.mask_sparse_prior).mean(-1)   # (M, n) nats
+            kl_bt = _slot_mean(kl, prob_valid).reshape((B, K_imag))
+            kl_loss, kl_mets = self.mask_kl_adapter(kl_bt, update=training)
+            losses['mask_sparsity'] = losses['mask_sparsity'] + kl_loss
+            metrics['goal/mask_kl_prior_mean'] = kl.mean()
+            metrics.update({f'goal/mask_kl_{k}': v for k, v in kl_mets.items()})
         else:
           # 'prob' (B2): differentiable; 'sample' (legacy): gradient-free no-op.
-          metric = (mask_prob_frac if self.mask_sparsity_mode == 'prob' else mask_frac)
-          metric_bt = metric.mean(1).reshape((B, K_imag))
+          if self.mask_sparsity_mode == 'prob':
+            metric, metric_valid = mask_prob_frac, prob_valid
+          else:
+            metric, metric_valid = mask_frac, mask_valid
+          metric_bt = _slot_mean(metric, metric_valid).reshape((B, K_imag))
           if self.mask_sparsity_fixed > 0.0:
             # Fixed-multiplier B2 ablation: constant weight, target 0 (drive the
             # edit fraction toward "no goals modified"). No adapter — the manager's
@@ -2187,6 +2287,8 @@ class Agent(embodied.jax.Agent):
             self.mgr_dur_actent if self.variable_goal_length else None),
         mgr_dur_reg_adapter=(
             self.mgr_dur_reg_adapter if self.goal_duration_adapt else None),
+        mgr_dur_lagrange_adapter=(
+            self.mgr_dur_lagrange_adapter if self.goal_duration_lagrange else None),
         switch_mask=mgr_switch,
         dur_reg_weight=float(getattr(self.config, 'goal_duration_reg', 0.0)),
         dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
@@ -2939,6 +3041,7 @@ def imag_loss_mgr(
     mgr_actent_perdim=True,
     mgr_dur_actent_adapter=None,
     mgr_dur_reg_adapter=None,
+    mgr_dur_lagrange_adapter=None,
     switch_mask=None,
     dur_reg_weight=0.0,
     dur_reg_target=0.0,
@@ -3110,26 +3213,42 @@ def imag_loss_mgr(
   # either fixed (``goal_duration_reg``) or an auto-tuned, capped AutoAdapt
   # multiplier (``mgr_dur_reg_adapter``) -- the cap keeps the prior from swamping
   # the manager REINFORCE objective (the suspected fixed-reg=0.1 collapse mode).
-  if (dur_reg_weight > 0.0 or mgr_dur_reg_adapter is not None) and (
-      'duration' in manager_policy):
+  if (dur_reg_weight > 0.0 or mgr_dur_reg_adapter is not None
+      or mgr_dur_lagrange_adapter is not None) and ('duration' in manager_policy):
     dur_inner = _head_inner(manager_policy['duration'])
     dur_probs = jax.nn.softmax(dur_inner.logits, -1)         # (B, T, n_classes)
     classes = jnp.arange(dur_probs.shape[-1], dtype=f32)
     exp_p = dur_min + (dur_probs * classes).sum(-1)          # (B, T) expected steps
     exp_p = policy_time_slice(exp_p)                         # (B, T-1)
     sq_err = jnp.square(exp_p - f32(dur_reg_target))
-    if mgr_dur_reg_adapter is not None:
-      # Step the Lagrange multiplier on the switch-weighted mean error, then apply
-      # the (stop-grad, capped) scale per decision step.
-      mean_err = (w * sq_err).sum() / jnp.maximum(w.sum(), 1.0)
-      _, dur_adapt_mets = mgr_dur_reg_adapter(mean_err, update=update)
-      dur_reg_bt = mgr_dur_reg_adapter.scale() * sq_err
+    if mgr_dur_lagrange_adapter is not None:
+      # Mask-style Lagrangian: regulate the switch-weighted mean |E[dur] - target|
+      # against a small tolerance (symmetric in deviation direction -- see the
+      # adapter construction comment). Folded out into its own loss key (not added
+      # into ``mgr_policy``) so it carries an independent scale, same as
+      # ``mask_sparsity``.
+      mean_abs_err = (
+          (w * jnp.abs(exp_p - f32(dur_reg_target))).sum() /
+          jnp.maximum(w.sum(), 1.0))
+      _, dur_lagrange_mets = mgr_dur_lagrange_adapter(mean_abs_err, update=update)
+      dur_reg_bt = mgr_dur_lagrange_adapter.scale() * sq_err
       metrics.update(
-          {f'mgr_duration_adapt_{k}': v for k, v in dur_adapt_mets.items()})
+          {f'mgr_duration_lagrange_{k}': v for k, v in dur_lagrange_mets.items()})
+      losses['goal_duration_prior'] = w * dur_reg_bt
+      metrics['mgr_duration_reg_loss'] = (w * dur_reg_bt).mean()
     else:
-      dur_reg_bt = dur_reg_weight * sq_err
-    losses['mgr_policy'] = losses['mgr_policy'] + w * dur_reg_bt
-    metrics['mgr_duration_reg_loss'] = (w * dur_reg_bt).mean()
+      if mgr_dur_reg_adapter is not None:
+        # Step the Lagrange multiplier on the switch-weighted mean error, then apply
+        # the (stop-grad, capped) scale per decision step.
+        mean_err = (w * sq_err).sum() / jnp.maximum(w.sum(), 1.0)
+        _, dur_adapt_mets = mgr_dur_reg_adapter(mean_err, update=update)
+        dur_reg_bt = mgr_dur_reg_adapter.scale() * sq_err
+        metrics.update(
+            {f'mgr_duration_adapt_{k}': v for k, v in dur_adapt_mets.items()})
+      else:
+        dur_reg_bt = dur_reg_weight * sq_err
+      losses['mgr_policy'] = losses['mgr_policy'] + w * dur_reg_bt
+      metrics['mgr_duration_reg_loss'] = (w * dur_reg_bt).mean()
     metrics['mgr_duration_exp_mean'] = exp_p.mean()
     metrics['mgr_duration_exp_std'] = exp_p.std()
 

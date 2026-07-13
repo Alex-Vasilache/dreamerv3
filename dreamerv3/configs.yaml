@@ -99,7 +99,7 @@ defaults:
     profiler: False
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0, mask_sparsity: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0, mask_sparsity: 1.0, goal_duration_prior: 1.0}
     # Three independent optimizers (Director-style): the world model + heads, the
     # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
     # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
@@ -154,10 +154,19 @@ defaults:
     #               Task advantage (manager REINFORCE) decides WHICH blocks; the two
     #               adapters decide exploration + how-sparse, both via dimensionless
     #               targets that transfer across env / model size. See agent.loss.
+    #   prob_entropy = COMBINES ``prob`` and ``entropy``: the rate adapter
+    #               (mask_sparsity_adapter) targets the batch-mean edit fraction
+    #               (mask_sparsity_target, e.g. 0.3) same as ``prob``, while the
+    #               entropy adapter (mask_actent, + optional mask_kl_adapter) keeps
+    #               individual block probabilities away from 0/1. These are
+    #               complementary, not redundant: ``prob`` alone can hit the mean
+    #               target while a fixed subset of blocks rails to hard 0/1 ("railing
+    #               to a corner" -- mean on target, but no per-block stochasticity).
     mask_sparsity_mode: prob
-    # Entropy-native mask controls (only used when mask_sparsity_mode == 'entropy').
-    # Both targets are dimensionless (fraction-of-max entropy; nats) so they transfer
-    # across environment and model size. Off unless the mode is selected.
+    # Entropy-native mask controls (used when mask_sparsity_mode == 'entropy' or
+    # 'prob_entropy'). Both targets are dimensionless (fraction-of-max entropy; nats)
+    # so they transfer across environment and model size. Off unless one of those
+    # modes is selected.
     mask_actent_target: 0.5     # per-block mask entropy setpoint (fraction of ln2)
     mask_actent_impl: mult
     mask_actent_min: 1e-5
@@ -165,6 +174,10 @@ defaults:
     mask_actent_vel: 0.1
     mask_actent_init: 1.0
     mask_sparse_prior: 0.1      # q of the sparse Bernoulli prior the mask is pulled toward
+    # KL(mask || Bernoulli(q)) term (entropy mode only): off by default. When False,
+    # the entropy-native mask runs on the mask_actent entropy floor alone (no explicit
+    # sparsity pull toward mask_sparse_prior) -- pure anti-collapse, no "prefer not to edit".
+    mask_kl_enable: False
     mask_kl_target: 0.2         # nats budget for KL(mask || Bernoulli(q)); task may spend up to this
     mask_kl_impl: mult
     mask_kl_min: 1e-5
@@ -266,6 +279,26 @@ defaults:
     goal_duration_adapt_setpoint: 0.5
     goal_duration_adapt_max: 0.05
     goal_duration_adapt_init: 0.001
+    # Mask-style Lagrangian alternative to BOTH ``goal_duration_reg`` (fixed) and
+    # ``goal_duration_adapt`` (adapts a squared-error-magnitude proxy toward a
+    # nonzero setpoint, so it never fully converges). This adapter regulates the
+    # switch-weighted mean |E[duration] - goal_duration_target| against a small
+    # tolerance (``goal_duration_lagrange_tol``): symmetric in deviation direction,
+    # grows while the deviation exceeds the tolerance, self-relaxes once within it.
+    # (The first version, e152-e159, regulated the RAW mean duration one-sidedly and
+    # railed at max -- fixed 2026-07-10.) Folded OUT of ``mgr_policy`` into its own
+    # loss key (``goal_duration_prior``, own ``loss_scales`` entry), matching how
+    # ``mask_sparsity`` gets an independent scale -- unlike the fixed/``_adapt``
+    # paths above, which share ``policy``'s scale. Mutually exclusive with
+    # ``goal_duration_adapt`` (this takes priority if both are set).
+    # 0/False = off (use the paths above).
+    goal_duration_lagrange: False
+    goal_duration_lagrange_tol: 0.1
+    goal_duration_lagrange_impl: mult
+    goal_duration_lagrange_min: 1e-5
+    goal_duration_lagrange_max: 5.0
+    goal_duration_lagrange_vel: 0.1
+    goal_duration_lagrange_init: 1.0
     # Force a constant goal duration (in steps) through the variable-K machinery,
     # bypassing the duration head sample. >0 enables; used as a control (variable
     # training graph at a fixed K, no duration prior). 0 = use the emitted duration.
@@ -447,7 +480,7 @@ hrl_auto: &hrl_auto
   agent.goal_duration_adapt: False
   agent.goal_duration_min: 1
   agent.goal_duration_max: 16
-  agent.manager_actent_duration_target: 0.7
+  agent.manager_actent_duration_target: 0.5
   # Mask level control: prob-first (adaptive-weight two-sided Lagrangian, proven e57).
   # Flip to 'entropy' to use the entropy-native mask (mask_actent + mask_kl adapters).
   agent.mask_sparsity_mode: prob

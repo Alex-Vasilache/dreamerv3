@@ -825,6 +825,631 @@ cartpole champion e57 (839). BIG cells (`director_match` 64×64) and the `entrop
 are the planned follow-ups. Prior baselines e123–e125 cancelled 2026-07-07 to free these slots
 (interim: cheetah 435>e118 372, hopper learning — archived to bucket).*
 
+**Interim check #2 (2026-07-08, ~1.4–2.4M/4M):**
+
+| Exp | Task | Size | Mode | Step | Last-15 | K | mask_frac |
+|---|---|---|---|---:|---:|---:|---:|
+| e126 | cartpole | 6m | prob | 1.81M | ~4.6 | 3.7 | 0.29 |
+| e132 | cartpole | 6m | entropy | 1.77M | **~193** | 3.5 | 0.30 |
+| e127 | cheetah | 6m | prob | 1.77M | ~4.9 | 3.3 | 0.23 |
+| e129 | hopper | 6m | prob | 1.76M | ~3.2 | 3.2 | 0.27 |
+| e130 | cheetah | BIG | prob | 2.44M | ~1.8 | 3.1 | 0.20 |
+| e131 | hopper | BIG | prob | 1.38M | ~0.003 | 3.3 | 0.28 |
+
+**e126 vs e132 A/B result — `entropy` beats `prob` because it recovers from a shared dip,
+not because it holds a different mask/K level.** Both tracked identically through ~730k
+steps (score climbing to ~170–200, K~3.4–3.6, mask~0.3, sparsity-adapter scale pinned ~0 in
+both — not fighting the task gradient, ruling out magnitude domination). Both dip around
+900k–1.2M. `prob` (e126) **never recovers** — stuck at ~10–20 through 1.8M. `entropy` (e132)
+recovers to ~170 by 1.8M. Mask_frac/K stay in the same healthy interior range for both
+throughout the dip — the differentiator is recoverability, not level. Consistent with
+`entropy` mode's `mask_actent` adapter (`inverse=True`) acting as an anti-collapse
+*diversity* floor on which blocks get edited, vs. `prob`'s mean-fraction-only target, which
+has no restoring force once the manager settles into a low-diversity (but fraction-correct)
+bad pattern.
+
+**hrl_auto vs pure-Director baseline (e123/e124) at matched steps — auto-tuning is losing
+off-cartpole.** K/mask do stay interior on cheetah/hopper too (no corner-railing — that part
+of the hypothesis holds), but interior K/mask ≠ learning:
+
+| Task | Pure Director | hrl_auto (matched/later step) |
+|---|---|---|
+| cheetah | e123 @2.46M: max **435**, last ep **372** | e130 (BIG) @2.44M: last-15 **~1.8** — dead |
+| hopper | e124 @2.05M: last ep **231**, learning | e131 (BIG) @1.38M: last-15 **~0.003** — dead |
+
+**Verdict (partial hypothesis break):** dimensionless/adaptive targets fixed the old
+"railing to a corner" failure mode (K/mask no longer collapse to 0 or max off-cartpole), but
+did **not** fix cross-env transfer — cheetah/hopper still fail as hard as the untuned
+hand-tuned masked recipe (e110–e114). The bottleneck for those envs is the more structural
+issues from the e123 regression analysis (partial-edit goals going off the goal-VAE
+manifold; bigger manager action space slowing credit assignment), not regularizer
+magnitude-domination. Only cartpole — the task the mechanism was built and tuned on — shows
+life, and there `entropy`'s anti-collapse property is what's currently winning.
+
+### e133–e138 · hrl_auto panel restart — K-entropy 0.7→0.5, KL term off (launched 2026-07-08)
+
+**Change vs e126–e132.** Two knobs, based on the e126/e132 A/B above: (1)
+`manager_actent_duration_target` **0.7 → 0.5**, matching the skill/mask entropy target
+(no more reason to hold the duration head *more* exploratory than the mask); (2) new flag
+`agent.mask_kl_enable` (`configs.yaml`, default **False**) strips the `mask_kl_adapter`
+KL(mask‖Bernoulli(sparse_prior)) term out of `entropy` mode entirely — only the
+`mask_actent` anti-collapse entropy floor remains (`agent.py` builds the adapter only when
+`mask_kl_enable=True`; the `mask_sparsity` loss/scale key stays single so `prob`-mode runs
+are unaffected). Rationale: e132's win over e126 tracked to *recoverability*, not sparsity
+level, so the KL "prefer not to edit" pull looked unnecessary — isolate whether the entropy
+floor alone reproduces e132's recovery. 3k-step smoke (`MASK_MODE=entropy`, job 4656535)
+compiled and exited 0:0 on V100 with no `mask_kl_adapter` params, confirming the flag is
+correctly wired.
+
+e126–e132 (partial, 1.4–2.4M/4M steps) were cancelled to free the panel's GPU slots for this
+restart — see "Interim check #2" above for their pre-cancellation numbers.
+
+| Exp | Job | Task | Size | Mask mode | Status |
+|---|---|---|---|---|---|
+| e133 | 4656546 | cartpole_swingup | 6m | prob | ⏳ RUNNING (gpu15) |
+| e134 | 4656547 | cheetah_run | 6m | prob | ⏳ RUNNING (gpu15) |
+| e135 | 4656548 | hopper_hop | 6m | prob | ⏳ RUNNING (gpu15) |
+| e136 | 4656550 | cheetah_run | BIG | prob | ⏳ PENDING (A100, queued) |
+| e137 | 4656551 | hopper_hop | BIG | prob | ⏳ RUNNING (4×V100 Route-A, gpu16) |
+| **e138** | 4656549 | cartpole_swingup | 6m | **entropy** (KL off) | ⏳ RUNNING (gpu15) — **replaces e132**, isolates the entropy-floor-only anti-collapse mechanism |
+
+*Watch e138 vs e133 (same A/B as e126/e132, now with the entropy-only KL-off mask) for
+whether the recovery advantage persists without the KL term, and whether K settles lower
+with the 0.5 duration-entropy target (was 0.7 in e126–e132, interior ~3.5–3.7 there already).*
+
+---
+
+### e139–e143 · e57 prior recipe (fixed dur+mask targets) ported off-cartpole + to BIG scale (launched 2026-07-08)
+
+**Motivation.** e126–e138's `hrl_auto` adaptive-Lagrange approach hasn't transferred
+off cartpole (see "Verdict (partial hypothesis break)" above — cheetah/hopper stay dead
+even with dimensionless targets). Meanwhile the **fixed-prior** recipe (e57: explicit
+`goal_duration_target=4.0` + `mask_sparsity_target=0.3`, both hand-set, not adaptive) is
+still the best result to date on cartpole — best-15 **839**, second-half avg 774, **max
+854** — but had never been tried on cheetah/hopper, nor at BIG (`director_match` 64×64)
+scale on any task. New A100 access (quota raised 1→**8 GPUs**, `sacctmgr` verified)
+removes the scaling bottleneck, so this batch (1) ports the exact e57 recipe to cheetah
+and hopper at the same `size6m`/32×32 scale, and (2) ports it to `director_match` 64×64
+BIG scale (imag16, batch16×64, train_ratio64, native conv — same fit-tested envelope as
+`run_v3_hrl_auto_big_a100.sbatch`) on all three tasks including cartpole, to see whether
+the fixed-prior recipe holds up at scale where `hrl_auto` was tried but never matched e57.
+
+**Freed capacity first:** cancelled e137 (hopper `hrl_auto` BIG, 4×V100 Route-A,
+job 4656551/4657195) to release V100 slots — it was requeued once already
+(4656551→4657195) with no signal beyond dead (~0.003, see Interim check #2 above); archived
+to bucket (`SKIP_REPLAY=1`) and deleted from `/work`. e136 (cheetah `hrl_auto` BIG, A100)
+and e133–e135/e138 (small `hrl_auto` panel, V100) were left running — different question
+(adaptive-Lagrange auto-tuning), not superseded by this prior-recipe batch.
+
+**Recipe (identical across all 5 runs, only `TASK`/scale differ):** `goal_duration_target
+4.0`, `goal_duration_reg 0.01`, `goal_duration_min/max 1/16`, `mask_sparsity_mode prob`,
+`mask_sparsity_target 0.3`, `mask_sparsity_max 5.0`, `goal_struct_weight 200`,
+`mgr_cond_goalcode True`, `manager_actent_target 0.5` — i.e. the exact e57 config, not
+`hrl_auto`'s adaptive targets. Scripts: `run_v3_prior_vargoal_small.sbatch` (generalizes
+`run_v3_cartpole_vargoal_masked_durreg_soft.sbatch` with a `TASK` var, size6m/32×32/V100)
+and new `run_v3_prior_vargoal_big_a100.sbatch` (director_match 64×64/A100, `masked_goals
+variable_goals` configs + e57 flags, `agent.imag_length` forced 16 for BIG fit — modeled
+on `run_v3_hrl_auto_big_a100.sbatch`'s proven-to-fit envelope but with fixed priors
+instead of `hrl_auto`). BIG config verified via a 3k-step smoke (job 4657197, cheetah):
+compiled clean, 75.2M params, no errors.
+
+| Exp | Job | Task | Size | Status |
+|---|---|---|---|---|
+| e139 | 4657198 | cheetah_run | 6m (32×32, V100) | ⏳ RUNNING (gpu16) |
+| e140 | 4657199 | hopper_hop | 6m (32×32, V100) | ⏳ RUNNING (gpu16) |
+| e141 | 4657200 | cartpole_swingup | BIG (director_match 64×64, A100) | ⏳ PENDING (a100) |
+| e142 | 4657201 | cheetah_run | BIG (director_match 64×64, A100) | ⏳ PENDING (a100) |
+| e143 | 4657202 | hopper_hop | BIG (director_match 64×64, A100) | ⏳ PENDING (a100) |
+
+**Hypothesis.** The fixed-K/fixed-mask prior (vs. `hrl_auto`'s fully-adaptive targets)
+is a stronger anti-collapse signal because it directly specifies *where* durations and
+edit-fractions should sit, rather than letting a Lagrange multiplier discover it — this
+may transfer better to cheetah/hopper's harder credit-assignment landscape than `hrl_auto`
+did. At BIG scale, the open question is whether e57's cartpole win (839/854) survives the
+larger goal-VAE / bigger manager action space (the same structural factors flagged in the
+e123 regression analysis as `hrl_auto`'s off-cartpole failure mode).
+
+**Expected result.** cartpole BIG (e141) should be the safest win — same task e57 already
+solves, only the scale changes. cheetah/hopper small (e139/e140) and BIG (e142/e143) are
+the real test: if they clear ~pure-Director baselines (e123 cheetah max 435 / e124 hopper
+last-ep 231) that would be the first sign the prior recipe (not just `hrl_auto`) transfers
+off cartpole. If they stay near-dead like `hrl_auto`'s e127/e129/e130/e131 did, the
+bottleneck is likely structural (goal-VAE manifold / credit assignment) rather than the
+adaptive-vs-fixed prior choice.
+
+---
+
+### e144–e159 · Mask/duration Lagrangian symmetry matrix (launched 2026-07-09)
+
+**Motivation.** A loss-formulation review of e57 (see `e57_losses.pdf`) surfaced two
+asymmetries between the mask-sparsity term and the duration prior: (1) mask sparsity
+(`prob` mode) does dual ascent *directly on the observed quantity* (mean edit-fraction
+$\bar p_t$ vs. target 0.3) and lives in its own independently-scaled loss key
+(`mask_sparsity`, own `loss_scales` entry); the duration prior (`goal_duration_reg`)
+instead uses a *fixed* weight on a squared-error term, folded directly into
+`mgr_policy` (no independent scale). (2) Mask sparsity has an available `entropy` mode
+(anti-collapse, per-block Bernoulli entropy toward a target fraction of max) that e57
+doesn't use. Four new mechanisms/combinations were added and tested head-to-head, all as
+straight ports of the e57 recipe (K target 4, mask target 0.3, struct weight 200)
+otherwise unchanged:
+
+- **`mask_sparsity_mode=entropy`** (pre-existing, unused by e57): per-block entropy
+  anti-collapse only, no rate target.
+- **`mask_sparsity_mode=prob_entropy`** (new, `agent.py`): combines the e57 rate
+  Lagrangian with the entropy anti-collapse term, so the mean edit-fraction can hit 0.3
+  without individual blocks railing to hard 0/1.
+- **`goal_duration_lagrange=True`** (new, `agent.py`/`configs.yaml`): a mask-style
+  Lagrangian for the duration prior — dual ascent directly on $\mathbb{E}[\mathrm{dur}_t]$
+  against the target (not a squared-error-magnitude proxy, unlike the pre-existing
+  `goal_duration_adapt`, which regulates error magnitude toward a nonzero setpoint and
+  never fully converges). Folded **out** of `mgr_policy` into its own loss key
+  (`goal_duration_prior`, own `loss_scales` entry — mirrors `mask_sparsity`).
+- **Combined**: both of the above together ("full symmetry" — mask and duration each
+  get a folded-out, independently-scaled target Lagrangian *plus* an entropy-style
+  anti-collapse term at target 0.5).
+
+See `e144_159_losses.pdf` for the exact per-group loss equations (mask-sparsity +
+manager-policy sections only).
+
+**Setup.** Cancelled all running jobs (e133–e143) to free the full quota, then launched
+a 4-group × {cartpole, hopper} × {small (V100, `size6m`/32×32), BIG (A100,
+`director_match`/64×64)} matrix — one run per cell, 16 jobs total, filling 8 V100 + 8
+A100 in a single wave. Smoke-tested the riskiest combination (Group D, both new
+mechanisms at once) for 3k steps before the full launch (job 4657426, clean exit 0:0, no
+shape/assertion errors from the new loss keys).
+
+| Exp | Job | Group | Mask mode | Dur mode | Task | Scale | Status |
+|---|---|---|---|---|---|---|---|
+| e144 | 4657451 | A mask_entropy | entropy | fixed | cartpole | small (V100) | ⏳ RUNNING (gpu17) ~1.9M/4M |
+| e145 | 4657452 | A mask_entropy | entropy | fixed | cartpole | BIG (A100) | ⏳ RUNNING (gpu26) ~2.3M/4M — **stuck, see below** |
+| e146 | 4657453 | A mask_entropy | entropy | fixed | hopper | small (V100) | ⏳ RUNNING (gpu17) ~1.9M/4M |
+| e147 | 4657454 | A mask_entropy | entropy | fixed | hopper | BIG (A100) | ⏳ RUNNING (gpu23) ~2.2M/4M |
+| e148 | 4657455 | B mask_probent | prob_entropy | fixed | cartpole | small (V100) | ⏳ RUNNING (gpu15) ~1.9M/4M |
+| e149 | 4657456 | B mask_probent | prob_entropy | fixed | cartpole | BIG (A100) | ⏳ RUNNING (gpu24) ~2.3M/4M |
+| e150 | 4657457 | B mask_probent | prob_entropy | fixed | hopper | small (V100) | ⏳ RUNNING (gpu15) ~1.9M/4M |
+| e151 | 4657458 | B mask_probent | prob_entropy | fixed | hopper | BIG (A100) | ⏳ RUNNING (gpu24) ~2.3M/4M |
+| e152 | 4657459 | C dur_lagrange | prob | lagrangian | cartpole | small (V100) | ⏳ RUNNING (gpu15) ~1.9M/4M |
+| e153 | 4657460 | C dur_lagrange | prob | lagrangian | cartpole | BIG (A100) | ⏳ RUNNING (gpu24) ~2.3M/4M |
+| e154 | 4657461 | C dur_lagrange | prob | lagrangian | hopper | small (V100) | ⏳ RUNNING (gpu16) ~1.9M/4M |
+| e155 | 4657462 | C dur_lagrange | prob | lagrangian | hopper | BIG (A100) | ⏳ RUNNING (gpu24) ~2.3M/4M |
+| e156 | 4657463 | D combined | prob_entropy | lagrangian | cartpole | small (V100) | ⏳ RUNNING (gpu16) ~1.9M/4M |
+| e157 | 4657464 | D combined | prob_entropy | lagrangian | cartpole | BIG (A100) | ⏳ RUNNING (gpu24) ~2.3M/4M — best cartpole so far |
+| e158 | 4657465 | D combined | prob_entropy | lagrangian | hopper | small (V100) | ⏳ RUNNING (gpu16) ~1.9M/4M |
+| e159 | 4657466 | D combined | prob_entropy | lagrangian | hopper | BIG (A100) | ⏳ RUNNING (gpu24) ~2.2M/4M |
+
+**Hypothesis.** Groups A/B isolate whether adding entropy anti-collapse to the mask
+(with or without keeping the rate target) reduces the "railing to a corner" pattern
+suspected in the e57-vs-e141 comparison (mask_frac_mean drifting off-target at BIG
+scale). Group C isolates whether a properly-converging, mask-style duration Lagrangian
+holds `mgr_duration_exp_std` tighter than e57's fixed-weight prior, especially at BIG
+scale. Group D tests whether combining both (full mask/duration symmetry) compounds the
+benefit or introduces new instability from two independently-adapting Lagrangians
+competing with the same REINFORCE signal.
+
+**Expected result.** If the loosening pattern from e57→e141 is really about weak
+target-tracking under scale (per the earlier correlation analysis), Groups C/D should
+show flatter `mgr_duration_exp_std` and `mask_frac_mean` at BIG scale than e57/e141 did,
+with returns at or above e141's ~703–715 on cartpole BIG. Group A (no rate target at
+all) is the highest-risk/highest-information cell — if it still holds a reasonable score
+without any explicit edit-fraction target, that would suggest the rate Lagrangian was
+never the load-bearing part of e57's mask mechanism, only anti-collapse was.
+
+Submit: `./submit_e144_159_symmetry_matrix.sh` from `code/dreamerv3/`.
+
+**Interim check #1 (2026-07-10, ~1.9M/4M small, ~2.2–2.3M/4M BIG):**
+
+| Exp | Group | Task | Scale | early mean | late mean | max | trend |
+|---|---|---|---|---:|---:|---:|---|
+| e144 | A mask_entropy | cartpole | small | 164 | 742 | 773 | UP |
+| e145 | A mask_entropy | cartpole | BIG | 95 | 86 | 370 | **flat, stuck** |
+| e146 | A mask_entropy | hopper | small | 0.27 | 0.32 | 18 | flat |
+| e147 | A mask_entropy | hopper | BIG | 0.14 | 0.03 | 11 | down |
+| e148 | B mask_probent | cartpole | small | 168 | 726 | 765 | UP |
+| e149 | B mask_probent | cartpole | BIG | 98 | 710 | 763 | UP |
+| e150 | B mask_probent | hopper | small | 0.57 | 0.91 | 16 | up |
+| e151 | B mask_probent | hopper | BIG | 0.34 | 0.01 | 15 | down |
+| e152 | C dur_lagrange | cartpole | small | 140 | 539 | 756 | UP |
+| e153 | C dur_lagrange | cartpole | BIG | 107 | 557 | 765 | UP |
+| e154 | C dur_lagrange | hopper | small | 0.30 | 0.12 | 15 | down |
+| e155 | C dur_lagrange | hopper | BIG | 0.58 | 0.49 | 18 | flat |
+| e156 | D combined | cartpole | small | 175 | 741 | 802 | UP |
+| e157 | D combined | cartpole | BIG | 89 | 833 | 869 | **UP, best cartpole** |
+| e158 | D combined | hopper | small | 0.62 | 0.01 | 14 | down |
+| e159 | D combined | hopper | BIG | 0.04 | 0.03 | 13 | flat |
+
+**Cartpole: 7/8 healthy, Group D (combined) leading.** All cartpole cells but e145 climbed
+from ~90–175 early to 540–870 late — Group D (`combined`, e156/e157) is the strongest so
+far, e157 (BIG) reaching 833 late-mean / 869 max, edging out e144's plain `entropy`-mode
+782 and matching/beating e149/e153. Consistent with the hypothesis that Group D's full
+mask+duration symmetry compounds rather than destabilizes, at least on cartpole.
+
+**e145 (mask_entropy, cartpole, BIG) is a real outlier, not scale-related.** It's the only
+BIG cartpole run that didn't take off (95→86 vs 710–833 for e149/e153/e157 at the same
+scale). `train/goal/kl_mean` in e145 is **10.4** at ~2.3M vs **1.4** in its own small
+sibling e144 at matched step — the goal-encoder KL has drifted an order of magnitude
+higher, with `mask_frac_mean` also elevated (0.78 vs 0.59). Config diff vs e144 is only
+the expected small→BIG scaling (units 128→512, depth 8→64, classes 8→32, layers 3→4,
+imag_length 32→16) — the same diffs e149/e153/e157 have without issue — so this looks
+like a **run-specific KL divergence**, not a systematic Group-A/BIG bug. Candidate: kill
+and relaunch e145 with a fresh seed, or add a KL clip on the goal encoder for Group A.
+
+**Hopper: no group is learning, consistent with every prior hopper run in this repo.**
+All 8 hopper cells sit at late-mean <1 (scores are DMC's 0–1000 scale; contrast cartpole's
+500–870). BIG cells skew worse (e147, e151 clearly trending down; e155, e159 flat-low) than
+small (e146, e150 flat/up, e154, e158 down). Cross-checked against `hrl_auto` baselines
+e129/e131/e135 (also <1 late-mean) — hopper_hop has not learned under *any* HRL config
+tried to date, so this isn't a regression introduced by the symmetry matrix; the bottleneck
+is the same structural one (goal-VAE manifold / credit assignment) flagged in the e123
+regression analysis, independent of the mask/duration Lagrangian choice being tested here.
+
+**Hypothesis verdicts (checking the actual named metrics — `mgr_duration_exp_std`,
+`mask_frac_mean` — against e141's fixed-prior baseline, not just score):**
+
+| Metric (BIG, cartpole, ~2.2–2.3M) | e141 (fixed prior, finished @709) | e145 (A, entropy) | e149 (B, prob_entropy) | e153 (C, dur_lagrange) | e157 (D, combined) |
+|---|---:|---:|---:|---:|---:|
+| `mgr_duration_exp_std` | 0.021–0.028 | 0.024–0.037 | 0.019–0.030 | **0.0011–0.0012** | **0.0013–0.0015** |
+| `mask_frac_mean` (target 0.3) | 0.32–0.39 (drifting) | 0.72–0.80 (railed high) | 0.31–0.35 (tight) | 0.20–0.32 | 0.29–0.35 (tight) |
+| late-mean return | 709 (benchmark) | 86 | 710 | 557 | **833** |
+
+- **Group C (`dur_lagrange`) hypothesis — "holds `mgr_duration_exp_std` tighter than the
+  fixed-weight prior at BIG scale, with returns ≥ e141's ~709":** **half-confirmed.** The
+  duration Lagrangian does exactly what it was designed to do — std is **~20× tighter**
+  than e141 (0.0012 vs 0.024), a clean, unambiguous mechanism win. But on its own (e153)
+  it does **not** clear the return bar — 557 vs e141's 709. Tight duration variance alone
+  isn't sufficient for better returns at BIG scale.
+- **Group D (`combined`) hypothesis — "compounds the benefit or introduces instability":**
+  **confirmed, no instability.** e157 keeps Group C's tight duration std (0.0013, matches
+  C) *and* Group B's tight mask tracking (0.30, matches B), and is the only BIG cartpole
+  cell to clear e141's 709 benchmark (833). Combining both Lagrangians compounds rather
+  than fights.
+- **Group B (`prob_entropy`) — implicit hypothesis that keeping the rate target while
+  adding entropy anti-collapse fixes e141's mask drift:** **confirmed.** `mask_frac_mean`
+  holds tightly at 0.31–0.35 (vs e141's 0.32–0.39 wandering) and return (710) matches
+  e141. Entropy-native anti-collapse plus the rate target is the best-tracking mask
+  variant on its own.
+- **Group A (`entropy`, no rate target) — "does it still hold a reasonable score without
+  an explicit edit-fraction target, suggesting the rate Lagrangian was never load-bearing,
+  only anti-collapse was":** **scale-dependent, and confounded.** At small scale (e144)
+  the hypothesis holds — mask drifts to 0.59 (well off 0.3) but score still reaches 742,
+  consistent with anti-collapse alone being sufficient. At BIG scale (e145) it breaks
+  hard: mask rails to 0.72–0.80 (far further off-target than at small scale) and score
+  is stuck at 86. That said, e145 also shows a `train/goal/kl_mean` of 10.4 (vs 1.4 in
+  e144) — an order-of-magnitude goal-encoder KL divergence not seen in any other BIG
+  cell — so the Group-A BIG failure may be a separate KL-stability bug rather than pure
+  evidence against the "anti-collapse alone suffices" hypothesis. Not resolved without a
+  reseed/rerun of e145.
+
+**Bottom line so far:** Group D (combined) is the standout — it's the only cell to beat
+the e141 baseline on both the mechanism metrics *and* the return, confirming its design
+hypothesis cleanly. Group C's duration Lagrangian works exactly as designed but isn't
+return-positive alone. Group B's mask combo is a solid, tight-tracking baseline. Group A
+is inconclusive at BIG scale pending an e145 reseed.
+
+---
+
+### e160–e161 · Group D BIG, struct_weight=0 ablation (launched 2026-07-10, `short-a100`)
+
+**Motivation.** Group D (combined mask/duration Lagrangian) is the current cartpole
+leader (e157: 833 late-mean), and `goal_struct_weight=200` (the e57-inherited structural
+correlation term) has been carried unchanged through every prior/combined variant so far
+without ever being ablated on its own. Isolating it on Group D — the strongest recipe —
+tests whether the struct-correlation loss is pulling its weight or just adding a
+confound to the comparisons above.
+
+**Setup.** Same Group D recipe as e157/e159 (`MASK_MODE=prob_entropy`,
+`DUR_MODE=lagrangian`, `DUR_TARGET=4.0`, seed 0, BIG/`director_match` 64×64,
+`imag_length 16`), with **`--agent.goal_struct_weight 0.0`** (vs. 200 in every prior
+run), on cartpole and hopper. Run on the new **`short-a100`** partition (see
+`reference_short_a100_partition` memory / SCDA's 2026-07-10 announcement) — 32
+GPU/user, 2h limit, 1h non-preemptible, preempted jobs requeue. Because `short-a100`
+jobs can be preempted and requeued mid-training, `RUN_DIR`/`--logdir` is fixed at
+submission time (via `dreamerv3_mktemp_run_dir`, passed in as `RUN_DIR` rather than
+`mktemp`'d inside the sbatch script) so a requeue resumes from checkpoint
+(`cp.load_or_save()` in `embodied/run/train.py`) instead of restarting in a fresh
+directory. New script: `run_v3_prior_vargoal_short_a100.sbatch`.
+
+| Exp | Job | Group | Task | Scale | struct_weight | Status |
+|---|---|---|---|---|---|---|
+| e160 | 4658045 | D combined | cartpole | BIG (short-a100) | 0.0 | ⏸ STALLED @623k/4M (terminal 2h TIMEOUT 07-11; resumable) |
+| e161 | 4658046 | D combined | hopper | BIG (short-a100) | 0.0 | ⏸ STALLED @690k/4M (terminal 2h TIMEOUT 07-11; resumable) |
+
+**Expected result.** cartpole (e160) is the key comparison — against e157 (struct=200,
+833 late-mean): if score holds or improves with struct off, the correlation term isn't
+load-bearing for Group D and could be dropped/simplified; if it collapses, struct=200 is
+doing real work that the mask/duration Lagrangians alone don't cover. Hopper (e161) is a
+secondary check — given no Group D or prior-recipe hopper cell has learned yet (e159
+included), a negative result here won't be very informative either way, but a positive
+one would be notable. Expect intermittent preemption/requeue churn given the low
+partition priority — check `job.env` / `logdir` step count for continuity across any
+requeue before reading progress as wall-clock.
+
+---
+
+### Post-mortem of e144–e159 + hopper analysis (2026-07-10) → batch cancelled, e162–e173 launched
+
+**Interim check #2 (final pre-cancel numbers, last-10-episode means, ~2.8M small /
+~3.6M BIG).** Cartpole: e144 757 · e145 **56 (collapsed)** · e148 742 · e149 751 ·
+e152 524 · e153 618 · e156 738 · e157 751 (off its 833 peak from interim #1 but still
+matching B). Hopper: all 8 cells exactly ~0.0 (`epstats/reward_rate` ≈ 3e-4,
+`mgr_extr_rew` ≈ 5e-5 — the manager never received extrinsic signal at any point).
+e145's collapse confirmed as real (mask_frac railed 0.75, `wkr_goal_rew` 0.23 vs 0.50
+in e149): **the mask rate target is load-bearing at BIG scale; entropy-only masking is
+not sufficient** (Group A answered, modulo the KL-divergence confound flagged in
+interim #1).
+
+**Two code issues found and fixed (2026-07-10):**
+
+1. **Packed-tensor recency bias in the mask-sparsity family.** Under
+   `variable_goal_length`, `downsample_at_switch_mask` packs decision tensors to full
+   width `T` and **forward-fills** trailing slots with the last real decision
+   (`forward_fill_packed`). With H=32/K≈4, ~9 real decisions occupy 33 slots → the
+   final imagined decision fills ~75% of columns, so every unweighted `.mean()` over
+   the slot axis — the `mask_sparsity` loss inputs, entropy/KL terms, and the logged
+   `goal/mask_frac_mean`/`mask_prob_mean` — was ~75% weighted to the *last* decision.
+   REINFORCE/value losses were immune (gated by `mgr_switch`); only the mask-sparsity
+   family wasn't. **Fix:** all mask-sparsity statistics and losses are now weighted by
+   `switch_valid_mask`. Env-symmetric → NOT the hopper gap; affects every variable-K
+   masked run to date incl. e57 (metrics mildly recency-biased; cross-run orderings
+   shared the bias).
+2. **One-sided duration-Lagrangian controller (Groups C/D, e152–e159).**
+   `mgr_dur_lagrange_adapter` regulated raw mean duration with `inverse=False` — grows
+   the multiplier when duration is *above* target but **weakens** it when below; wrong
+   for an equality constraint. It railed at max (5.0) early (durations start long) and
+   the deadband held it there, acting as a very stiff fixed prior (E[dur] 4.000, std
+   0.0013). The "~20× tighter duration std" mechanism win from interim #1 stands, but
+   came from a railed multiplier, not working dual ascent. **Fix:** the adapter now
+   regulates the switch-weighted mean **|E[dur] − target|** against a small tolerance
+   (`goal_duration_lagrange_tol`, default 0.1) — symmetric in the deviation and
+   self-relaxing once within tolerance. Group C's weak cartpole returns (524/618) need
+   re-running before being read as evidence against the Lagrangian.
+
+**Hopper vs cartpole — goal-proposal locality, not credit assignment (new evidence).**
+The earlier reading ("structural goal-VAE/credit-assignment bottleneck", e123 analysis)
+is sharpened by a direct baseline comparison: **e124 (pure Director, hopper, fixed K=8,
+no mask, no var-K, struct=0) DID learn hopper — reward found by 0.2–0.4M steps, ~300 by
+1.5M** (reward_rate 0.26, `wkr_ent/action` +2.4 vs low/negative in all masked runs).
+Worker goal-cosine is the *same* (~0.43) in e124 and the dead masked runs — so
+goal-*reaching* isn't the differentiator; goal-*selection* is. The masked recipe's
+three ingredients — sparse edits (~30% of blocks), struct=200 (code distance ∝ state
+distance, corr 0.975), and the running-goal anchor — jointly bound how far a goal moves
+per decision ("minimal tweaks" by design). Dense-reward cartpole thrives under that
+locality; hopper's reward lives far outside the visited manifold (stand, then hop), so
+local proposals never escape the dead region and the extrinsic stream stays at zero
+forever. Cheetah (dense velocity reward) lands in between (51–253), as predicted.
+Supporting numbers in the dead hopper runs: `goal/rec_mean` 8–10 (vs cartpole 23–36 —
+tiny visited manifold), `mgr_expl_rew` 2–3× weaker (motionless hopper → little
+disagreement).
+
+**Controls launched to close the argument (e162–e169) + Group D retry with fixes
+(e170–e177):** masked fixed-K=8 (masking package without var-K — if hopper dies,
+masking+struct locality is the killer independent of var-K) and plain var-K (full goal
+replacement, struct 0, no mask — "e124 + var-K"; if hopper learns, the locality
+package is confirmed as the bottleneck). e160/e161 (struct=0 within Group D,
+short-a100) left running — they isolate the struct ingredient specifically.
+
+---
+
+### e162–e177 · Hopper-locality controls + Group D retry on fixed code (launched 2026-07-10)
+
+All on the post-fix code (valid-masked sparsity stats; symmetric duration Lagrangian
+with `goal_duration_lagrange_tol=0.1`). Three 3k-step smokes (jobs 4658380–82, one per
+recipe path) compiled and exited 0:0 before launch. Templates now take
+`RECIPE={vark_masked,mask_fixedk,plain_vark}` (see script headers). Submit:
+`./submit_e162_177_controls_dfix.sh`.
+
+| Exp | Job | Recipe | Task | Scale | Status |
+|---|---|---|---|---|---|
+| e162 | 4658386 | CTRL1 mask_fixedk (K=8, prob 0.3, struct 200) | cartpole | small | ⚠ 272 (peak 575 @2M, then decayed) |
+| e163 | 4658387 | CTRL1 mask_fixedk | cartpole | BIG | ⚠ 360 (slow, still rising at 4M) |
+| e164 | 4658388 | CTRL1 mask_fixedk | hopper | small | ❌ 0 (dead) |
+| e165 | 4658389 | CTRL1 mask_fixedk | hopper | BIG | ❌ 0 (dead) |
+| e166 | 4658390 | CTRL2 plain_vark (no mask, struct 0, dur reg 0.01→4) | cartpole | small | ❌ 130 (peak 192) |
+| e167 | 4658391 | CTRL2 plain_vark | cartpole | BIG | ❌ 97 (peak 658 @1.5M, collapsed) |
+| e168 | 4658392 | CTRL2 plain_vark | hopper | small | ❌ 0 (dead) |
+| e169 | 4658393 | CTRL2 plain_vark | hopper | BIG | ❌ 0 (dead) |
+| e170 | 4658394 | D-fix (prob_entropy + sym. lagrangian) | cartpole | small | ✅ 668 (peak 786) ≈ e156 |
+| e171 | 4658395 | D-fix | cartpole | BIG | ✅ 776 (peak 844) ≈ e157 |
+| e172 | 4658396 | D-fix | hopper | small | ❌ 0 (dead) |
+| e173 | 4658397 | D-fix | hopper | BIG | ❌ 0 (dead) |
+| e174 | 4658398 | D-fix | cheetah | small | ✅ 166 (vs e139 fixed-prior 51) |
+| e175 | 4658399 | D-fix | cheetah | BIG | ✅ 465 (peak 508; vs e142 fixed-prior 253) |
+| e176 | 4658400 | D-fix | acrobot | small | ❌ 0 (peak 16, dead) |
+| e177 | 4658401 | D-fix | acrobot | BIG | ❌ ~1 (peak 34–37, dead; 2 incarnations, see 07-13 analysis) |
+
+**Hypotheses.** (1) *Locality controls, hopper cells are the informative ones*: if
+e164/e165 (masked fixed-K) stay dead while e168/e169 (plain var-K) learn, the
+mask+struct locality package is the hopper killer and var-K is exonerated; both dead →
+both packages implicated (or worker-never-sees-task-reward is binding); both alive →
+the interaction of the two packages was the problem. Cartpole cells are sanity anchors
+(expect e162 ≈ e8-tier ~700–800 at K=8 — note e58's masked var-K *target*-8 got only
+511; and e166 ≈ e46-tier ~720 at target 4). (2) *D-fix*: expect e170/e171 ≈ e156/e157
+(738–751+; the stat fix mostly reweights estimates, the controller fix should let the
+duration multiplier relax below 5.0 — watch `mgr_duration_lagrange_scale_mean` settle
+< max and `loss/goal_duration_prior` stay small). Cheetah (e174/e175) tests whether
+D-fix beats the fixed-prior e139/e142 (51 small / 253 BIG); acrobot (e176/e177) is a
+new sparse-ish swingup task — under the locality hypothesis it should behave more like
+hopper than cartpole at baseline mask/struct settings.
+
+**Metrics note.** As of the 2026-07-10 fix, `goal/mask_frac_mean`, `mask_prob_mean`,
+`mask_entropy_norm_mean`, `mask_kl_prior_mean`, and all `mask_sparsity` adapter inputs
+are valid-slot-weighted under variable-K — values are NOT directly comparable to
+pre-fix runs (e25–e159), which were ~75% weighted toward the last imagined decision.
+`mgr_duration_lagrange_mean/std` now log mean |E[dur]−target| (was: raw mean duration).
+
+---
+
+### e162–e177 + e160/e161 results (2026-07-13, all jobs finished)
+
+Small runs hit 24h TIMEOUT at ~2.8M/4M; BIG a100 runs COMPLETED ~4M in ~28h. Last-10
+episode means (peak trailing-10 in parens); mask/K/blk-step from final metrics row
+(post-fix valid-slot-weighted — NOT comparable to pre-fix runs):
+
+| Exp | Recipe | Task | Scale | last10 | peak10 | mask | K | blk/step |
+|---|---|---|---|---|---|---|---|---|
+| e162 | mask_fixedk | cartpole | small | 272 | 575 | 0.31 | 8 | 0.31 |
+| e163 | mask_fixedk | cartpole | BIG | 360 | 419 | 0.31 | 8 | 0.31 |
+| e164/e165 | mask_fixedk | hopper | both | 0 | ~5 | 0.30 | 8 | 0.30 |
+| e166 | plain_vark | cartpole | small | 130 | 192 | — | 4.0 | — |
+| e167 | plain_vark | cartpole | BIG | 97 | 658 | — | 4.0 | — |
+| e168/e169 | plain_vark | hopper | both | 0 | ~4 | — | 4.0 | — |
+| e170 | D-fix | cartpole | small | 668 | 786 | 0.31 | 3.98 | 0.61 |
+| e171 | D-fix | cartpole | BIG | **776** | **844** | 0.57 | 4.02 | 1.13 |
+| e172/e173 | D-fix | hopper | both | 0 | ~6 | 0.51–0.66 | 3.96 | 1.0–1.3 |
+| e174 | D-fix | cheetah | small | 166 | 171 | 0.52 | 3.95 | 1.05 |
+| e175 | D-fix | cheetah | BIG | **465** | 508 | 0.52 | 3.94 | 1.05 |
+| e176/e177 | D-fix | acrobot | both | 0–1 | 16–37 | 0.27–0.38 | 4.03 | 0.5–0.8 |
+
+**Findings.**
+
+1. **Hopper controls: BOTH dead → both packages implicated, no clean exoneration.**
+   e164/e165 (masking without var-K) *and* e168/e169 (var-K without mask/struct) sit at
+   exactly zero (`mgr_extr_rew` ≈ 1e-4, `reward_rate` ≈ 0 — extrinsic stream never fired),
+   same as full D-fix (e172/e173). Since e124 (pure Director, fixed K=8) learns hopper
+   ~300, *each* package alone is sufficient to kill hopper. The pre-registered "both dead"
+   reading applies: locality isn't attributable to the mask+struct package specifically.
+   Notably e164/e165 have **high worker action entropy (+3.1, above e124's +2.4)** yet
+   still never find reward — so low exploration entropy isn't the mechanism for the
+   fixed-K-masked cell; their `rec_mean` 14–16 is also midway between dead-var-K (~7)
+   and cartpole (23+). e168 has *negative* wkr entropy (−2.4) like the old dead runs.
+
+2. **Cartpole sanity anchors FAILED — controls are compromised.** e162 got 272/575 vs
+   the expected e8-tier 700–800; e166 got 130 vs the expected e46-tier ~720; e167 peaked
+   658 at 1.5M then collapsed to ~100. Each component alone now *underperforms* the
+   combined recipe on cartpole (inversion: D-fix 776–844 ≫ mask-only 360 ≫ vark-only 97).
+   Either the control configs don't faithfully reproduce the historical anchors (e8/e46
+   ran on much older code) or the components genuinely interact. Until a control recipe
+   reproduces its cartpole anchor, the hopper zeros in #1 can't be cleanly attributed —
+   treat #1 as "no exoneration" rather than "both convicted".
+
+3. **D-fix reproduces Group D on cartpole → the 07-10 fixes are performance-neutral
+   there.** e170 668 (peak 786) ≈ e156 738–802; e171 776 (peak 844) ≈ e157 833–869.
+   The symmetric duration Lagrangian works as designed: `mgr_duration_lagrange_scale`
+   relaxed to **0.0** (deviation |E[dur]−4| ≈ 0.097 < tol 0.1) while realized K held at
+   ~4.0 — duration control is self-sustaining at convergence without an active multiplier
+   (vs the pre-fix controller railed at 5.0).
+
+4. **Cheetah: D-fix ≈ 2–3× the fixed-prior recipe — best cheetah results to date.**
+   e174 166 vs e139's 51 (small); e175 465 (peak 508) vs e142's 253 (BIG). The
+   Lagrangian pair beats fixed targets off-cartpole, on the one non-cartpole task where
+   the recipe gets any traction.
+
+5. **Acrobot behaves like hopper, as the locality hypothesis predicted.** e176/e177
+   dead (peak 16–37) under D-fix. Adds a second sparse-reward casualty but doesn't
+   discriminate mechanisms (no acrobot pure-Director baseline yet — worth an e124-style
+   run if acrobot matters).
+
+6. **e160/e161 (struct=0 on short-a100) STALLED, question unanswered.** They survived 3
+   preemption-requeues (checkpoint-resume across dirs worked) but then hit their own 2h
+   **wall-time** TIMEOUT at 07-11 01:40/01:45 — TIMEOUT is terminal, only preemption
+   requeues. Stuck at 623k/690k of 4M. Early signal is weakly pro-struct (e160 trailing-10
+   ~0–132 at 0.6M vs e171's 289 at 0.5M) but inconclusive. To resume: resubmit with the
+   same `RUN_DIR`; for a real answer the script needs self-resubmission on TIMEOUT
+   (e.g. `--dependency=afternotok:$SLURM_JOB_ID` self-chain or trap+`scontrol requeue`).
+
+7. **Ops: e177 lost 19h to preemption on plain `gpu-a100`.** Job 4658401 was PREEMPTED
+   (short-a100 has preempt priority) at 2.71M steps and the requeue restarted **from
+   scratch** in a fresh mktemp dir (`...171610_Utqua9` → `...122453_nZQoJq`) — the
+   regular a100 script mktemps `RUN_DIR` inside the job, so requeues lose the checkpoint.
+   Result unaffected (acrobot dead in both incarnations), but fix the template the same
+   way as `run_v3_prior_vargoal_short_a100.sbatch` (fixed `RUN_DIR` at submit time)
+   before more long a100 runs — a100 jobs are now preemptible in practice.
+
+**Next steps suggested by this batch:** (a) debug why the control recipes miss their
+cartpole anchors before drawing hopper conclusions (diff e162 config vs e8, e166 vs e46);
+(b) resume e160/e161 with self-requeue to settle the struct ablation; (c) pure-Director
+acrobot baseline; (d) if pursuing hopper, the manager needs non-local proposals —
+locality is jointly enforced by *every* variant tried so far, and no masked/var-K variant
+has ever moved hopper off zero.
+
+---
+
+### CORRECTION (2026-07-13): control anchors were misremembered — controls are VALID
+
+Config-diff of the finished controls against their true historical anchors overturns
+finding #2 above ("cartpole sanity anchors FAILED"):
+
+- **e162 vs e9** (the *real* masked fixed-K8 anchor — e8 was **K=1**): resolved configs
+  are identical except `imag_length` 32 vs 16 and `report`. And **e9 scored ~1 (peak
+  trailing-10 142, over-sparsified to inert)**; masked K=8 was *always* bad on cartpole
+  (e9 ~1, e20–e23 504→3, e58 masked var-K tgt8 511). e162's 272/575 is *consistent
+  with (better than) history*, not a regression. The "expect e8-tier 700–800" line in
+  the hypotheses above compared against the wrong experiment.
+- **e166 vs e46**: e46's 724 was achieved **with `goal_struct_weight=200` and
+  duration target 8**; e166 ran struct **0** and target **4** (by design — it's the
+  "e124+var-K" cell, not an e46 rerun). Plain var-K *without struct* was never shown to
+  work (closest: e52 no-prior → 103). e166's 130 is in-family.
+
+So: **no code regression; the controls ran what they were configured to run.** The
+hopper reading sharpens rather than weakens:
+
+- **e169 vs e124 is a clean single-package diff** (verified from resolved configs):
+  identical BIG director_match config except `variable_goal_length=true`,
+  `goal_duration_reg` 0.01 vs 0.0, and `goal_duration_target` **4 vs 8** (plus
+  1×A100 vs 4×V100 devices). e124 learns hopper ~300; e169 is at exactly 0.
+  **The var-K package at hold-target 4 is sufficient to kill hopper on its own.**
+- Every var-K run in this program has used `DUR_TARGET=4` (the cartpole-tuned value;
+  e58 showed tgt 8 < tgt 4 *on cartpole*). e124's fixed K=8 is the only hopper recipe
+  that ever learned. **Hold length (temporal commitment) is now the leading suspect**,
+  ahead of mask/struct locality: a manager that re-decides every ~4 steps may never
+  commit long enough to leave the dead region in a sparse task, and (with
+  `mgr_reward_agg=mean`) its return is also *duration-invariant*, removing any return
+  incentive for longer commitment.
+
+---
+
+### e178–e184 · Var-K hopper/acrobot rescue matrix (launched 2026-07-13)
+
+All BIG `director_match` 64×64 on `gpu-a100` (requeue-safe templates as of today),
+4M steps, seed 0, post-fix code. Hypotheses, most→least likely:
+
+- **H1 — hold length:** var-K at target 4 halves e124's commitment; sparse tasks need
+  K≈8+. Test: e178 (plain var-K, tgt 8 — the e169 twin, one knob turned). If e178
+  learns hopper ≈ e124, H1 confirmed and the fix is per-task duration targets (or
+  duration priors that don't bind below 8). If still 0 → the var-K machinery itself
+  (duration-head REINFORCE variance / switch bookkeeping) is implicated.
+- **H2 — duration-return decoupling:** `mgr_reward_agg=mean` makes the manager's
+  per-decision return invariant to hold length, so var-K has no *return* reason to
+  commit. Test: e181 (plain var-K tgt 8 + `agg=sum`, Director-style block sums).
+  e181 vs e178 isolates the coupling at equal target.
+- **H3 — full-recipe rescue:** if H1 holds, does longer hold also rescue the *combined*
+  D recipe (mask+struct+lagrangians)? Test: e182 (D-fix, hopper, DUR_TARGET=8) and
+  e184 (D-fix, acrobot, DUR_TARGET=8). e178 learns but e182 doesn't → the masking
+  package is a second, independent hopper killer (locality story survives for masks).
+- **H4 — exploration strength:** dead-hopper runs show `mgr_expl_rew` 2–3× weaker than
+  learning runs; maybe 10× manager exploration weight lets even short-hold managers
+  escape. Test: e183 (D-fix, hopper, tgt 4, `mgr_expl_weight=1.0` vs default 0.1).
+- **H5 — acrobot attribution:** no pure-Director acrobot baseline exists; if the base
+  hierarchy also fails acrobot, var-K is exonerated there. Test: e180 (e123 script,
+  defaults only, acrobot).
+
+| Exp | Job | Recipe | Task | Key delta vs reference | Status |
+|---|---|---|---|---|---|
+| e178 | 4660138 | plain_vark tgt8 | hopper | e169 + DUR_TARGET 4→8 | ⏳ |
+| e179 | 4660139 | plain_vark tgt8 | cartpole | e167 + DUR_TARGET 4→8 (also: vs e46 724 w/struct200 → is struct needed at tgt8?) | ⏳ |
+| e180 | 4660140 | pure Director (e123 script) | acrobot | defaults only, K=8 fixed | ⏳ |
+| e181 | 4660141 | plain_vark tgt8 + agg=sum | hopper | e178 + mgr_reward_agg mean→sum | ⏳ |
+| e182 | 4660142 | D-fix tgt8 | hopper | e173 + DUR_TARGET 4→8 | ⏳ |
+| e183 | 4660143 | D-fix + mgr_expl_weight 1.0 | hopper | e173 + 10× manager exploration | ⏳ |
+| e184 | 4660144 | D-fix tgt8 | acrobot | e177 + DUR_TARGET 4→8 | ⏳ |
+
+**Expected results.** Read hopper cells first at ~1M steps: e124 found reward by
+0.2–0.4M, so `epstats/reward_rate` > 1e-2 by 1M is the "alive" criterion. Outcome
+matrix: e178 alive → H1; e181 ≫ e178 → H2 matters on top; e182 alive → whole program
+can move to tgt-8 defaults off-cartpole; e182 dead while e178 alive → masking is an
+independent killer (drop masks for sparse tasks); everything dead incl. e180 → the
+base hierarchy (not our additions) can't do sparse swingup/hop from pixels at these
+settings, and worker-task-reward mixing / non-local goal proposals become the next
+code-level intervention. Cartpole e179 also disambiguates e46: ~700 → struct was
+never needed given tgt 8; ~100–200 → struct is load-bearing for var-K stability.
+
+Template changes for this batch: `run_v3_prior_vargoal_big_a100.sbatch` gained
+`MGR_REWARD_AGG` and `MGR_EXPL_W` env knobs (defaults mean / 0.1 = old behavior);
+all three prior_vargoal templates + the e123 baseline script are now requeue-safe
+(job-id-keyed RUN_DIR fallback, `--requeue`, USR1-trap self-requeue 5–10 min before
+walltime, `--open-mode=append`; training backgrounded + `wait` so traps fire).
+Smoke: 3k-step run of the new plumbing (plain_vark tgt8 + agg=sum + explw 1.0)
+(job 4660128, 11 min) on a100 compiled and exited clean before launch.
+
 ---
 
 ## Technical notes (implementation facts that bit us)
@@ -852,13 +1477,31 @@ are the planned follow-ups. Prior baselines e123–e125 cancelled 2026-07-07 to 
   popping the scale for `none` mode (`agent.py:761`).
 
 ## New config flags (all default to DreamerV3 / pre-HRL behavior)
-`use_masked_goals`, `mask_sparsity_mode {prob,sample,reinforce,none}`, `mask_sparsity_target`,
-`mask_sparsity_max`, `mask_sparsity_fixed_weight`, `mask_topk` ·
+`use_masked_goals`, `mask_sparsity_mode {prob,sample,reinforce,none,entropy,prob_entropy}`,
+`mask_sparsity_target`, `mask_sparsity_max`, `mask_sparsity_fixed_weight`, `mask_topk` ·
 `variable_goal_length`, `variable_goal_block_rew`, `goal_duration_reg`, `goal_duration_target`,
-`goal_duration_adapt(_max)`, `goal_duration_fixed`, `goal_switch_cost`, `goal_edit_cost` ·
+`goal_duration_adapt(_max)`, `goal_duration_lagrange(_impl,_min,_max,_vel,_init)`,
+`goal_duration_fixed`, `goal_switch_cost`, `goal_edit_cost` ·
 `goal_struct_weight`, `goal_struct_target {deter,feat}`, `goal_struct_loss {mse,margin}`,
 `goal_struct_adapt` · `mgr_cond_goalcode`, `mgr_cond_achieve`, `mgr_reward_agg {mean,sum}`,
 `manager_actent_duration_target`. Key metrics:
 `goal/mask_frac`, `goal/mask_prob_mean`, `goal/struct_corr`, `goal/mgr_duration_mean`,
 `goal/mgr_switch_rate`, `goal/edit_cost_pen_mean`, `wkr_goal_rew`, `mgr_extr_rew`,
 `mgr_extr_rew_block`.
+
+**`mask_sparsity_mode=prob_entropy`** (added 2026-07-09, e144–e159): combines the `prob`
+rate-target Lagrangian (mean edit-fraction → `mask_sparsity_target`) with the `entropy`
+mode's per-block anti-collapse Lagrangian (`mask_actent`, target `mask_actent_target`) —
+both active simultaneously instead of either alone. See `agent.py` mask-sparsity branch
+(`elif self.mask_sparsity_mode == 'prob_entropy':`).
+
+**`goal_duration_lagrange`** (added 2026-07-09, e144–e159): mask-style Lagrangian
+alternative to `goal_duration_reg`/`goal_duration_adapt` — dual ascent directly on the
+realized mean duration $\mathbb{E}[\mathrm{dur}_t]$ against `goal_duration_target` (same
+control law as `mask_sparsity_adapter`), rather than adapting a weight toward a
+squared-error-magnitude setpoint. Folded **out** of `mgr_policy` into its own loss key
+(`goal_duration_prior`), with its own `loss_scales` entry — mirrors `mask_sparsity`'s
+independent scale, unlike `goal_duration_reg`/`goal_duration_adapt` which share
+`policy`'s scale. Mutually exclusive with `goal_duration_adapt` (lagrange takes
+priority if both set). New metrics: `mgr_duration_lagrange_scale_mean`,
+`mgr_duration_lagrange_mean`/`_std`.

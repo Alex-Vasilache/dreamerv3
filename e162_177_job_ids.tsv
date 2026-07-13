@@ -1,0 +1,16 @@
+e162	e162_maskfixedk_cartpole_small	4658386	small	TASK=dmc_cartpole_swingup,RECIPE=mask_fixedk,MASK_MODE=prob,MGR_FREQ=8
+e163	e163_maskfixedk_cartpole_BIG	4658387	BIG	TASK=dmc_cartpole_swingup,RECIPE=mask_fixedk,MASK_MODE=prob,MGR_FREQ=8
+e164	e164_maskfixedk_hopper_small	4658388	small	TASK=dmc_hopper_hop,RECIPE=mask_fixedk,MASK_MODE=prob,MGR_FREQ=8
+e165	e165_maskfixedk_hopper_BIG	4658389	BIG	TASK=dmc_hopper_hop,RECIPE=mask_fixedk,MASK_MODE=prob,MGR_FREQ=8
+e166	e166_plainvark_cartpole_small	4658390	small	TASK=dmc_cartpole_swingup,RECIPE=plain_vark,DUR_MODE=fixed,DUR_TARGET=4.0
+e167	e167_plainvark_cartpole_BIG	4658391	BIG	TASK=dmc_cartpole_swingup,RECIPE=plain_vark,DUR_MODE=fixed,DUR_TARGET=4.0
+e168	e168_plainvark_hopper_small	4658392	small	TASK=dmc_hopper_hop,RECIPE=plain_vark,DUR_MODE=fixed,DUR_TARGET=4.0
+e169	e169_plainvark_hopper_BIG	4658393	BIG	TASK=dmc_hopper_hop,RECIPE=plain_vark,DUR_MODE=fixed,DUR_TARGET=4.0
+e170	e170_dfix_cartpole_small	4658394	small	TASK=dmc_cartpole_swingup,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e171	e171_dfix_cartpole_BIG	4658395	BIG	TASK=dmc_cartpole_swingup,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e172	e172_dfix_hopper_small	4658396	small	TASK=dmc_hopper_hop,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e173	e173_dfix_hopper_BIG	4658397	BIG	TASK=dmc_hopper_hop,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e174	e174_dfix_cheetah_small	4658398	small	TASK=dmc_cheetah_run,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e175	e175_dfix_cheetah_BIG	4658399	BIG	TASK=dmc_cheetah_run,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e176	e176_dfix_acrobot_small	4658400	small	TASK=dmc_acrobot_swingup,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e177	e177_dfix_acrobot_BIG	4658401	BIG	TASK=dmc_acrobot_swingup,RECIPE=vark_masked,MASK_MODE=prob_entropy,DUR_MODE=lagrangian,DUR_TARGET=4.0
