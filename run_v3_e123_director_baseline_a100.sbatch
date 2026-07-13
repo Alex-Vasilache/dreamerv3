@@ -8,6 +8,9 @@
 #SBATCH --mem=128G
 #SBATCH -o /work/DoyaU/vasilache/work/slurm_logs/%x-%j.out
 #SBATCH -e /work/DoyaU/vasilache/work/slurm_logs/%x-%j.err
+#SBATCH --requeue
+#SBATCH --open-mode=append
+#SBATCH --signal=B:USR1@600
 
 # e123: PURE Director-style HRL baseline in our DreamerV3 implementation.
 #
@@ -43,8 +46,9 @@ unset DREAMERV3_CONV_IMPL   # native cuDNN conv (A100 sm_80 — ~2x faster)
 EXP_TAG="${EXP_TAG:-e123}"
 TASK="${TASK:-dmc_cheetah_run}"
 RUN_SUFFIX="${EXP_TAG}_${TASK}_director_baseline"
-# RUN_DIR must be passed in for chained resumes; only mint one on the first job.
-RUN_DIR="${RUN_DIR:-$(dreamerv3_mktemp_run_dir "$RUN_SUFFIX")}"
+# Requeue-safe RUN_DIR: keyed to SLURM_JOB_ID (stable across requeues) so a
+# preempted/requeued job resumes from checkpoint; pass RUN_DIR for chained resumes.
+RUN_DIR="${RUN_DIR:-/work/DoyaU/vasilache/work/${RUN_SUFFIX}_j${SLURM_JOB_ID}}"
 mkdir -p "$RUN_DIR"
 export MUJOCO_GL=egl
 
@@ -61,6 +65,16 @@ NOTE=pure Director baseline (defaults only, no masked/variable-K/struct/costs)
 EOF
 
 cd "$RUN_DIR"
+
+# Self-requeue near walltime (USR1 600s early); requeue keeps job id -> same
+# RUN_DIR -> checkpoint resume.
+on_usr1() {
+  echo "[self-requeue] USR1 near walltime; requeueing job $SLURM_JOB_ID to resume in $RUN_DIR"
+  scontrol requeue "$SLURM_JOB_ID"
+  exit 0
+}
+trap on_usr1 USR1
+
 # All flags below == config defaults; explicit for reproducibility.
 AGENT_FLAGS=(
   --agent.use_hrl True
@@ -102,6 +116,9 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --logger.wandb_entity vasilache \
   --jax.platform cuda \
   --jax.prealloc False \
-  "${AGENT_FLAGS[@]}"
+  "${AGENT_FLAGS[@]}" &
+TRAIN_PID=$!
+# Backgrounded + wait so the USR1 trap can run while training is in flight.
+wait "$TRAIN_PID"
 
 exit $?
