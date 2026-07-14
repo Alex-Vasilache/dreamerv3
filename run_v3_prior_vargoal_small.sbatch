@@ -124,6 +124,30 @@ case "$RECIPE" in
     STRUCT_W="${STRUCT_W:-0.0}"
     RECIPE_FLAGS=( "${VARK_FLAGS[@]}" )
     ;;
+  director)
+    # Pure Director baseline: fixed-K plain goals (no masked goals, no variable-K).
+    CONFIGS="size6m"
+    STRUCT_W="${STRUCT_W:-0.0}"
+    RECIPE_FLAGS=( --agent.manager_sample_freq "$MGR_FREQ" )
+    ;;
+  joint_fixedk)
+    # Single-head ("joint") masked manager on the fixed-K Director base. Minimal:
+    # no mgr_cond, no topk. MASK_MODE=none -> fully free; MASK_MODE=prob +
+    # MASK_TARGET_INIT/VEL -> ratchet P(abstain) 0->0.7. STRUCT via STRUCT_ADAPT.
+    CONFIGS="size6m masked_goals"
+    STRUCT_W="${STRUCT_W:-0.0}"
+    RECIPE_FLAGS=(
+      --agent.mask_joint_edit True
+      --agent.manager_sample_freq "$MGR_FREQ"
+      --agent.imag_length 32
+      --agent.mask_topk 0
+      --agent.mask_sparsity_mode "$MASK_MODE"
+      --agent.mask_sparsity_max "$MASK_MAX"
+      --agent.mask_sparsity_target "$MASK_TARGET"
+      --agent.mask_sparsity_target_init "$MASK_TARGET_INIT"
+      --agent.mask_sparsity_target_vel "$MASK_TARGET_VEL"
+    )
+    ;;
   *)
     echo "unknown RECIPE=$RECIPE" >&2; exit 1
     ;;

@@ -171,21 +171,60 @@ cancelled 07-14 (checkpoints resumable) and replaced by e204–e211)
 | e197 | 4660325 | full stack | hopper | small | — (small hopper never learned; long shot) | dead, 0.23/3.1 @2.0M (50%) — expected long shot |
 | e198 | 4660326 | full stack | cheetah | small (P100) | vs e174 (166) | 100/122 @2.31M (58%) — below e174, flat since 250k |
 | e199 | 4660327 | full stack | acrobot | small (P100) | vs e176 (0) | 3.4/22 @2.36M (59%) — still dead vs e176 |
-| e200 | 4662288 | full stack (struct-adapt target 0.006) | cartpole | BIG | scale e196 cell to BIG/τ8 with a lower, never-tried struct-adapt target | just launched 07-14 |
-| e201 | 4662289 | full stack (struct-adapt target 0.006) | cheetah | BIG | scale e198 cell to BIG/τ8 | just launched 07-14 |
-| e202 | 4662290 | full stack (struct-adapt target 0.006) | hopper | BIG | replaces e178/e185/e189 — last untried sparse-task cell (struct-adapt+countdown+τ8 together) | just launched 07-14 |
-| e203 | 4662291 | full stack (struct-adapt target 0.006) | acrobot | BIG | replaces e192 — same combined cell for acrobot | just launched 07-14 |
-| e204 | 4662318 | full stack + mask ratchet (init 1.0→0.3, vel 2.8e-6/call) | cartpole | small | dense regression check: ratchet should be return-neutral | just launched 07-14 |
-| e205 | 4662322 | full stack + mask ratchet (init 1.0→0.3, vel 1.12e-5/call) | cartpole | BIG | dense regression check vs e200 | just launched 07-14 |
-| e206 | 4662319 | full stack + mask ratchet | cheetah | small | dense regression check | just launched 07-14 |
-| e207 | 4662323 | full stack + mask ratchet | cheetah | BIG | dense regression check vs e201 | just launched 07-14 |
-| e208 | 4662320 | full stack + mask ratchet | hopper | small | exploration-starvation test (never learned at small scale under any recipe) | just launched 07-14 |
-| e209 | 4662324 | full stack + mask ratchet | hopper | BIG | **key test**: does full-goal-edit early rescue hopper vs e202 (dead)? | just launched 07-14 |
-| e210 | 4662321 | full stack + mask ratchet | acrobot | small | exploration-starvation test | just launched 07-14 |
-| e211 | 4662325 | full stack + mask ratchet | acrobot | BIG | **key test**: does full-goal-edit early rescue acrobot vs e203 (dead)? | just launched 07-14 |
+| e200 | 4662288 | full stack (struct-adapt target 0.006) | cartpole | BIG | scale e196 cell to BIG/τ8 with a lower, never-tried struct-adapt target | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e201 | 4662289 | full stack (struct-adapt target 0.006) | cheetah | BIG | scale e198 cell to BIG/τ8 | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e202 | 4662290 | full stack (struct-adapt target 0.006) | hopper | BIG | replaces e178/e185/e189 — last untried sparse-task cell (struct-adapt+countdown+τ8 together) | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e203 | 4662291 | full stack (struct-adapt target 0.006) | acrobot | BIG | replaces e192 — same combined cell for acrobot | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e204 | 4662318 | full stack + mask ratchet (init 1.0→0.3, vel 2.8e-6/call) | cartpole | small | dense regression check: ratchet should be return-neutral | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e205 | 4662322 | full stack + mask ratchet (init 1.0→0.3, vel 1.12e-5/call) | cartpole | BIG | dense regression check vs e200 | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e206 | 4662319 | full stack + mask ratchet | cheetah | small | dense regression check | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e207 | 4662323 | full stack + mask ratchet | cheetah | BIG | dense regression check vs e201 | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e208 | 4662320 | full stack + mask ratchet | hopper | small | exploration-starvation test (never learned at small scale under any recipe) | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e209 | 4662324 | full stack + mask ratchet | hopper | BIG | **key test**: does full-goal-edit early rescue hopper vs e202 (dead)? | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e210 | 4662321 | full stack + mask ratchet | acrobot | small | exploration-starvation test | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
+| e211 | 4662325 | full stack + mask ratchet | acrobot | BIG | **key test**: does full-goal-edit early rescue acrobot vs e203 (dead)? | **CANCELLED+archived 07-14** (freed for e212+ single-head campaign) |
 
-GPU occupancy: A100 8/8 (e200–e203, e205/e207/e209/e211) · V100 8/8 (e194–e199,
-e204/e206/e208/e210) · P100 2/8 (pinned `saion-gpu[11-14]`) · short-a100: e160.
+### Single-head mask campaign (e212–e229, launched 07-14)
+
+New component test of the **single-head ("joint") masked manager** (`agent.mask_joint_edit`:
+one categorical per block over C+1 classes, class 0 = abstain, 1..C = overwrite — removes the
+dual-head discarded-content REINFORCE confound by construction). Focused on the two decisive
+envs (**cheetah** dense-hard, **hopper** sparse-hard) at two scales. Each single-head run starts
+from the **pure Director base** (fixed manager_sample_freq=8, no var-K/durreg) + `mask_joint_edit`,
+then sweeps a 2×2: **struct** {off | adaptive dual-MSE, target 0.006} × **mask ratchet** {off
+(fully free) | on: P(abstain) annealed 0→0.7 over ~1M steps via the rate-Lagrange + target
+Ratchet on the non-abstain probability}. Small = size6m/v100·p100; BIG = director_match/a100.
+BIG Director baselines reused: cheetah **e191**, hopper **e124**. Cell code Sx Ry = struct x /
+ratchet y.
+
+| exp | job | recipe | env | size | hypothesis / expected | status |
+|---|---|---|---|---|---|---|
+| e212 | 4662391 | pure Director (fixed-K) baseline | cheetah | small | small Director control for the campaign | launched 07-14 |
+| e213 | 4662392 | pure Director (fixed-K) baseline | hopper | small | small Director control | launched 07-14 |
+| e214 | 4662393 | **single-head** S0R0 (struct off, ratchet off — fully free) | cheetah | small | minimal single-head vs Director e212: clean per-block credit ⇒ ≥ baseline | launched 07-14 |
+| e215 | 4662394 | single-head S1R0 (struct-adapt 0.006, ratchet off) | cheetah | small | +struct locality on top of single-head | launched 07-14 |
+| e216 | 4662395 | single-head S0R1 (struct off, ratchet on) | cheetah | small | +ratchet: full-edit early → sparse; dense regression-neutral | launched 07-14 |
+| e217 | 4662396 | single-head S1R1 (struct-adapt 0.006 + ratchet on) | cheetah | small | struct×ratchet combined | launched 07-14 |
+| e218 | 4662397 | single-head S0R0 | hopper | small | single-head on sparse-hard small (long shot) | launched 07-14 |
+| e219 | 4662398 | single-head S1R0 | hopper | small | +struct | launched 07-14 |
+| e220 | 4662399 | single-head S0R1 | hopper | small | +ratchet: does full-goal-edit early aid sparse exploration? | launched 07-14 |
+| e221 | 4662400 | single-head S1R1 | hopper | small | struct×ratchet | launched 07-14 |
+| e222 | 4662401 | single-head S0R0 | cheetah | BIG | single-head vs Director e191 at scale | launched 07-14 |
+| e223 | 4662402 | single-head S1R0 | cheetah | BIG | +struct | launched 07-14 |
+| e224 | 4662403 | single-head S0R1 | cheetah | BIG | +ratchet | launched 07-14 |
+| e225 | 4662404 | single-head S1R1 | cheetah | BIG | struct×ratchet | launched 07-14 |
+| e226 | 4662405 | single-head S0R0 | hopper | BIG | **key**: single-head vs Director e124 on sparse-hard | launched 07-14 |
+| e227 | 4662406 | single-head S1R0 | hopper | BIG | +struct | launched 07-14 |
+| e228 | 4662407 | single-head S0R1 | hopper | BIG | **key**: ratchet rescue of hopper? | launched 07-14 |
+| e229 | 4662408 | single-head S1R1 | hopper | BIG | struct×ratchet | launched 07-14 |
+
+Verified at launch (07-14): all 18 RUNNING; e216 (ratchet) step 4544 shows
+`mask_sparsity_target_now`≈1.0 annealing down, `mask_frac_mean`≈0.89 (full-edit early),
+`loss/mask_sparsity` finite — ratchet behaving as designed.
+
+GPU occupancy (post 07-14 single-head relaunch): A100 8/8 (e222–e229 BIG single-head) ·
+V100 8/8 (e212–e219 small) · P100 2/8 (e220/e221, pinned `saion-gpu[11-14]`). Prior
+occupants e194–e211 all CANCELLED+archived 07-14.
 Cancelled at 0.6M for flatness (07-13): e181 (agg=sum), e182/e184 (combined τ8 hop/acrobot),
 e183 (10× expl), e161 (struct-0 hopper). Cancelled 07-14 (dead, freed A100s for e200–e203):
 e178/e185/e189 (hopper), e192 (acrobot). Cancelled 07-14 (alive but not "just started";

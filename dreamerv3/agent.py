@@ -531,6 +531,22 @@ class Agent(embodied.jax.Agent):
       raise ValueError(
           'mask_perblock_credit requires mgr_cond_goalcode or mgr_cond_achieve '
           'or mgr_cond_decgoal so pre-edit goal codes are available.')
+    # Single-head ("joint") masked manager: merge the separate ``skill`` (content,
+    # L x C onehot) and ``mask`` (per-block Bernoulli edit bit) heads into ONE
+    # categorical per block over ``C + 1`` classes -- class 0 = abstain (keep the
+    # running block), classes 1..C = overwrite with content class c. One sample,
+    # one log-prob per block, so the discarded-content REINFORCE confound of the
+    # dual-head path (the content proposal for a masked-off block still gets
+    # credited) vanishes by construction. Free sparsity: the abstain rate emerges
+    # from REINFORCE alone (no init bias, no rate penalty). Opt-in, A/B'd against
+    # the dual-head path; mutually exclusive with the mask-specific machinery below.
+    self.mask_joint_edit = self.use_masked_goals and bool(
+        getattr(config, 'mask_joint_edit', False))
+    if self.mask_joint_edit and (
+        self.mask_topk > 0 or self.mask_sparsemax or self.mask_perblock_credit):
+      raise ValueError(
+          'mask_joint_edit is mutually exclusive with mask_topk, mask_sparsemax, '
+          'and mask_perblock_credit (there is no separate mask head to operate on).')
     # Manager extrinsic-reward block aggregation: 'mean' (per-step average, the
     # original; under per-step discounting this under-credits long blocks -> short-K
     # bias) or 'sum' (continuation-weighted SMDP option return, K-neutral).
@@ -559,6 +575,10 @@ class Agent(embodied.jax.Agent):
           'skill_shape[-1] must equal skill_classes (classes per categorical)')
     # Director-style sparse skills: float one-hot matrix, not integer indices.
     self.skill_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
+    # Single-head manager (``mask_joint_edit``): the manager ``skill`` head widens
+    # by one class per block (class 0 = abstain), so its onehot sample is (L, C+1);
+    # the running goal code ``Z`` and the goal autoencoder stay (L, C).
+    self.joint_skill_shape = (skill_shape_t[0], skill_shape_t[-1] + 1)
     self.goal_shape = (self.config.dyn.rssm.deter,)
 
     # Encoder/decoder omit control/meta keys; dynamics still sees actions separately.
@@ -615,15 +635,23 @@ class Agent(embodied.jax.Agent):
     if self.use_hrl:
       if self.use_masked_goals or self.variable_goal_length:
         # Joint manager head with a shared trunk and multiple output heads:
-        #   skill    : discrete skill code (onehot L,C) -- always present
+        #   skill    : discrete skill code (onehot L,C) -- always present. Under
+        #              ``mask_joint_edit`` it widens to (L, C+1) and absorbs the
+        #              mask (class 0 = abstain), so no separate ``mask`` head.
         #   mask     : discrete block mask m_t (Bernoulli per block) -- masked goals
+        #              (dual-head path only; dropped under ``mask_joint_edit``)
         #   duration : categorical over {0..n-1} -> p = goal_duration_min + idx
         #              -- variable goal length
         mgr_cfg = {**config.manager_policy}
         skill_out = mgr_cfg.pop('output')
-        mgr_space = {'skill': self.goal_code_space}
+        if self.mask_joint_edit:
+          skill_space = elements.Space(
+              np.float32, self.joint_skill_shape, 0.0, 1.0)
+        else:
+          skill_space = self.goal_code_space
+        mgr_space = {'skill': skill_space}
         mgr_out = {'skill': skill_out}
-        if self.use_masked_goals:
+        if self.use_masked_goals and not self.mask_joint_edit:
           mgr_space['mask'] = elements.Space(bool, (skill_shape_t[0],), 0, 2)
           mgr_out['mask'] = 'binary'
         if self.variable_goal_length:
@@ -782,7 +810,8 @@ class Agent(embodied.jax.Agent):
             one_sided=bool(getattr(config, 'goal_struct_adapt_one_sided', False)),
             init=float(config.goal_struct_adapt_init),
             name='goal_struct_adapter')
-      if self.use_masked_goals and self.mask_topk <= 0:
+      if self.use_masked_goals and self.mask_topk <= 0 and (
+          not self.mask_joint_edit or self.mask_sparsity_mode != 'none'):
         # Adaptive sparsity: drives the mean fraction of active manager-mask bits
         # toward ``mask_sparsity_target`` so the mask does not collapse to
         # all-ones (which would reduce masked goals to plain goals).
@@ -977,10 +1006,14 @@ class Agent(embodied.jax.Agent):
     if not self.use_hrl:
       return base
     skill_shape = tuple(int(x) for x in self.skill_shape)
-    mgr_skill = {'skill': jnp.zeros((batch_size, *skill_shape), f32)}
+    mgr_shape = self.joint_skill_shape if self.mask_joint_edit else skill_shape
+    mgr_skill = {'skill': jnp.zeros((batch_size, *mgr_shape), f32)}
     if self.use_masked_goals:
-      # Discrete block mask (emitted edit) + persisted running goal code Z.
-      mgr_skill['mask'] = jnp.zeros((batch_size, skill_shape[0]), f32)
+      # Persisted running goal code Z (always (L, C)); the emitted edit is a
+      # per-block Bernoulli ``mask`` in the dual-head path, absorbed into the
+      # widened ``skill`` head under ``mask_joint_edit`` (no separate mask entry).
+      if not self.mask_joint_edit:
+        mgr_skill['mask'] = jnp.zeros((batch_size, skill_shape[0]), f32)
       mgr_skill['goal_code'] = jnp.zeros((batch_size, *skill_shape), f32)
       # Sticky mask of the most recent NON-empty edit, for the mask_viz yellow
       # overlay (held across empty/held goals; reset at episode start).
@@ -1032,9 +1065,11 @@ class Agent(embodied.jax.Agent):
     # non-empty carry leaf (dyn/prevact always have a leading batch dim).
     B = jax.tree.leaves((enc, dyn, dec, prevact))[0].shape[0]
     skill_shape = tuple(int(x) for x in self.skill_shape)
-    mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
+    mgr_shape = self.joint_skill_shape if self.mask_joint_edit else skill_shape
+    mgr_skill = {'skill': jnp.zeros((B, *mgr_shape), f32)}
     if self.use_masked_goals:
-      mgr_skill['mask'] = jnp.zeros((B, skill_shape[0]), f32)
+      if not self.mask_joint_edit:
+        mgr_skill['mask'] = jnp.zeros((B, skill_shape[0]), f32)
       mgr_skill['goal_code'] = jnp.zeros((B, *skill_shape), f32)
       mgr_skill['last_edit_mask'] = jnp.zeros((B, skill_shape[0]), f32)
     if self.variable_goal_length:
@@ -1138,7 +1173,16 @@ class Agent(embodied.jax.Agent):
 
     ``Z_next[i] = m[i] ? z_new[i] : Z[i]`` over the ``L`` skill blocks. The mask is
     the manager's *edit selector* (a value of 1 means "change this block"), so the
-    running goal accumulates the manager's edits across resamples."""
+    running goal accumulates the manager's edits across resamples.
+
+    Under ``mask_joint_edit`` there is no separate mask: the ``skill`` sample is a
+    per-block onehot over ``C+1`` classes (class 0 = abstain / keep the block,
+    classes 1..C = overwrite with content class c-1), so the edit selector and the
+    proposed content come from the same draw."""
+    if self.mask_joint_edit:
+      code = nn.cast(emit['skill'])                   # (..., L, C+1) onehot
+      keep = code[..., :1] > 0.5                       # (..., L, 1) class 0 == abstain
+      return jnp.where(keep, code_old, code[..., 1:])  # else content onehot (..., L, C)
     gate = (nn.cast(emit['mask']) > 0.5)[..., None]   # (..., L, 1)
     return jnp.where(gate, emit['skill'], code_old)
 
@@ -1365,7 +1409,12 @@ class Agent(embodied.jax.Agent):
       # Update the sticky mask_viz mask: replace with the current goal's edit mask
       # only when it actually edits something (mask has any 1s), so an empty/held
       # goal leaves the previous yellow in place; clear at the episode boundary.
-      m = mgr_skill['mask']
+      # Joint mode has no ``mask`` head -> the per-block edit indicator is "did the
+      # block NOT abstain" (class 0 of the widened skill sample).
+      if self.mask_joint_edit:
+        m = f32(mgr_skill['skill'][..., 0] < 0.5)   # (B, L) non-abstain
+      else:
+        m = mgr_skill['mask']
       has_edit = (m.sum(-1, keepdims=True) > 0)
       rr = reset.reshape(reset.shape + (1,) * (m.ndim - reset.ndim))
       sticky = jnp.where(rr, jnp.zeros_like(m), jnp.where(has_edit, m, sticky))
@@ -1508,11 +1557,13 @@ class Agent(embodied.jax.Agent):
     K = max(1, int(self.manager_sample_freq))
     B = jax.tree.leaves(starts)[0].shape[0]
     skill_shape = tuple(int(x) for x in self.skill_shape)
+    mgr_shape = self.joint_skill_shape if self.mask_joint_edit else skill_shape
     # Start with a dummy skill that will be replaced in first step
-    mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
+    mgr_skill = {'skill': jnp.zeros((B, *mgr_shape), f32)}
     seed_code = None
     if self.use_masked_goals:
-      mgr_skill['mask'] = jnp.zeros((B, skill_shape[0]), f32)
+      if not self.mask_joint_edit:
+        mgr_skill['mask'] = jnp.zeros((B, skill_shape[0]), f32)
       # Seed the running goal code with the start-state encoding so the first
       # manager command (step 0) edits the current state, not a zero code.
       seed_code = self._encode_goal_code(starts['deter'], 1)
@@ -2160,7 +2211,39 @@ class Agent(embodied.jax.Agent):
     # ``prob`` (B2) penalizes the differentiable head probabilities and ``reinforce``
     # (C) shapes the manager reward. Placed before the manager AC loss so C can
     # subtract its cost from ``mgr_extr_rew``.
-    if self.use_masked_goals:
+    if self.mask_joint_edit:
+      # Single-head manager: realized non-abstain fraction per decision, read from
+      # the widened skill sample (class 0 == abstain). ``blk/step`` =
+      # mask_frac_mean * L / mgr_duration_mean.
+      edit_gate = f32(mgr_skills_eff['skill'][..., 0] < 0.5)   # (M, n, L)
+      mask_frac = edit_gate.mean(-1)                            # (M, n)
+      if self.variable_goal_length:
+        mask_valid = switch_valid_mask(switch_mask, mask_frac.shape[1])
+      else:
+        mask_valid = jnp.ones_like(mask_frac)
+      metrics['goal/mask_frac_mean'] = (
+          (mask_frac * mask_valid).sum() / jnp.maximum(mask_valid.sum(), 1.0))
+      if self.mask_sparsity_mode != 'none':
+        # Ratchet the *edit* rate (non-abstain probability) toward the annealed
+        # target via the same rate-Lagrange used by the dual-head 'prob' mode. With
+        # mask_sparsity_target_init=1.0 -> target=0.3 the schedule pins P(abstain)
+        # from ~0 (full Director-style goal edits early) to ~0.7 (sparse) over the
+        # anneal horizon. 'none' = fully free (no penalty), handled above.
+        def _slot_mean(x, v):
+          return (x * v).sum(1) / jnp.maximum(v.sum(1), 1.0)
+        tgt = self.mask_sparsity_target_sched(update=training)
+        # OneHot wraps a Categorical (logits live at ``.dist.logits``); unwrap Agg first.
+        logits = _head_inner(mgr_policy['skill']).dist.logits      # (M, n, L, C+1)
+        edit_prob = (1.0 - jax.nn.softmax(logits, -1)[..., 0]).mean(-1)  # (M, n)
+        metrics['goal/mask_prob_mean'] = (
+            (edit_prob * mask_valid).sum() / jnp.maximum(mask_valid.sum(), 1.0))
+        metric_bt = _slot_mean(edit_prob, mask_valid).reshape((B, K_imag))
+        sp_loss, sp_mets = self.mask_sparsity_adapter(
+            metric_bt, update=training, target=tgt)
+        losses['mask_sparsity'] = sp_loss
+        metrics['goal/mask_sparsity_target_now'] = tgt
+        metrics.update({f'goal/mask_sparsity_{k}': v for k, v in sp_mets.items()})
+    if self.use_masked_goals and not self.mask_joint_edit:
       mask_frac = mgr_skills_eff['mask'].mean(-1)           # (M, n_mgr) realized
       # Under variable-K the packed decision tensors are forward-filled to full
       # width, so the LAST real decision occupies every trailing slot (~75% of

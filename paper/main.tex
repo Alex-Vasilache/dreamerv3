@@ -95,6 +95,23 @@ so only the selected blocks change. The mask is a learned policy output; its
 sparsity is controlled by constraints (Sec.~\ref{sec:controllers}), not
 hard-coded.
 
+\textbf{Single-head (joint) edits.} The two-head form above has a credit-assignment
+flaw: the content head proposes a value $z_t[i]$ for \emph{every} block on every
+decision, and REINFORCE reinforces its log-probability regardless of whether the
+mask $m_t[i]$ discarded it. At edit rate $\bar m$ a fraction $1-\bar m$ of the
+content gradient is thus applied to proposals that never influenced the trajectory
+--- causally disconnected noise (a driver of the unstable manager value we observe
+in the two-head runs). We remove this by construction: merge the content and mask
+heads into a \emph{single} per-block categorical over $C{+}1$ classes, where class
+$0$ = \emph{abstain} (keep $Z_{t-1}[i]$) and classes $1..C$ = overwrite with content
+class $c$. Then $Z_t[i]$ is a function of one sample with one log-probability per
+block; when the manager abstains, abstaining \emph{is} the entire recorded action
+for that block, so there is no discarded content event to miscredit. The edit rate
+$\bar m = 1-\Pr[\text{abstain}]$ is either left free (shaped only by task-return
+REINFORCE) or ratcheted: $\Pr[\text{abstain}]$ is driven from $0$ (full
+Director-style goal edits early) to $0.7$ over $\sim$1M steps by the same rate
+controller (Sec.~\ref{sec:controllers}) acting on the non-abstain probability.
+
 \textbf{Variable durations.} Alongside the goal, the manager outputs a hold
 duration $d_t \in \{1,\dots,16\}$ from a categorical head; the next decision
 occurs after exactly $d_t$ steps (the worker is never interrupted early).
@@ -501,6 +518,10 @@ e195 & var-$K$ $\tau_d{=}4$ + adaptive struct & cartpole & small & struct-as-Lag
 e196--e199 & full stack: combined + countdown + adaptive struct & 4 tasks & small & does the all-adaptive stack cost anything (cartpole) and transfer (cheetah)? \\
 e200--e203 & full stack, $\tau_d{=}8$, struct-adapt target 0.006 & 4 tasks & BIG & scale e196--e199 to BIG/$\tau_d{=}8$ with a lower, never-tried struct-adapt target \\
 e204--e211 & e200--e203 recipe + mask-sparsity-target ratchet (\S\ref{sec:ratchet}) & 4 tasks & small \& BIG & does starting the mask at ``edit everything'' and annealing to the sparse target over the first $\sim$1M steps rescue hopper/acrobot? \\
+\midrule
+\multicolumn{5}{l}{\emph{Single-head mask campaign (e212--e229; e194--e211 cancelled+archived 07-14 to free GPUs).}}\\
+e212--e213 & pure Director baseline, fixed-$K{=}8$ & cheetah, hopper & small & small Director controls for the campaign \\
+e214--e229 & \textbf{single-head (joint) mask} on the fixed-$K{=}8$ Director base, $2{\times}2$: struct$\{$off, adaptive 0.006$\}$ $\times$ ratchet$\{$off, on$\}$ & cheetah, hopper & small \& BIG & does merging the two heads (removing the discarded-content confound) match/beat Director, and do struct and the abstain-ratchet each help? \\
 \bottomrule
 \end{tabular}
 \caption{Hypothesis matrix. The small-cartpole $2{\times}2$

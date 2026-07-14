@@ -354,6 +354,17 @@ defaults:
     # Small fixed cost subtracted from each block's counterfactual advantage
     # (tie-break toward fewer edits when mask_perblock_credit is on).
     perblock_edit_cost: 0.0
+    # Single-head ("joint") masked manager: merge the separate ``skill`` (content,
+    # L x C onehot) and per-block Bernoulli ``mask`` heads into ONE categorical per
+    # block over C+1 classes -- class 0 = abstain (keep the running block), classes
+    # 1..C = overwrite with content class c. One sample, one log-prob per block, so
+    # the discarded-content REINFORCE confound of the dual-head path (content for a
+    # masked-off block still gets credited) disappears by construction. Free
+    # sparsity: the abstain rate emerges from REINFORCE alone (no init bias, no rate
+    # penalty; ``mask_sparsity_*`` are inert). Requires use_masked_goals; mutually
+    # exclusive with mask_topk / mask_sparsemax / mask_perblock_credit. False = the
+    # dual-head path (byte-for-byte unchanged).
+    mask_joint_edit: False
     # Manager extrinsic-reward block aggregation: 'mean' (per-step average, original)
     # or 'sum' (continuation-weighted SMDP option return). Under per-step block
     # discounting 'mean' under-credits long blocks (short-K bias); 'sum' is K-neutral.
