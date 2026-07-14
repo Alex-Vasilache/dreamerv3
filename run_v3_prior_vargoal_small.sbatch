@@ -61,6 +61,8 @@ DUR_REG="${DUR_REG:-0.01}"
 DUR_MODE="${DUR_MODE:-fixed}"
 DUR_LAGRANGE_MAX="${DUR_LAGRANGE_MAX:-5.0}"
 SEED="${SEED:-0}"
+WORKER_TIMED_GOALS="${WORKER_TIMED_GOALS:-False}"   # HiTS-style worker countdown conditioning
+STRUCT_ADAPT="${STRUCT_ADAPT:-False}"   # AutoAdapt multiplier toward struct-loss ceiling (goal_struct_adapt)
 
 if [ "$DUR_MODE" = "lagrangian" ]; then
   DUR_FLAGS=(
@@ -142,6 +144,8 @@ AGENT_FLAGS=(
   --agent.manager_actent_impl mult
   --agent.manager_actent_target 0.5
   --agent.goal_struct_weight "$STRUCT_W"
+  --agent.worker_timed_goals "$WORKER_TIMED_GOALS"
+  --agent.goal_struct_adapt "$STRUCT_ADAPT"
   "${RECIPE_FLAGS[@]}"
   --agent.report False
 )

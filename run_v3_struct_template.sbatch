@@ -29,7 +29,7 @@ STRUCT_TARGET="${STRUCT_TARGET:-deter}"  # deter | feat
 STRUCT_LOSS="${STRUCT_LOSS:-mse}"        # mse | margin
 STRUCT_MARGIN="${STRUCT_MARGIN:-0.1}"
 STRUCT_ADAPT="${STRUCT_ADAPT:-False}"
-STRUCT_ADAPT_TARGET="${STRUCT_ADAPT_TARGET:-0.01}"
+STRUCT_ADAPT_TARGET="${STRUCT_ADAPT_TARGET:-0.005}"  # struct-loss setpoint, dual-ascent
 STRUCT_ADAPT_INIT="${STRUCT_ADAPT_INIT:-200.0}"
 
 # --- fixed e25 recipe knobs ---

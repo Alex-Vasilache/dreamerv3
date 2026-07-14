@@ -99,18 +99,27 @@ class AutoAdapt(nj.Module):
   Use ``inverse=True`` for entropy-style regularizers (we want loss to push up
   on entropy when it falls below target). ``inverse=False`` for KL-style
   regularizers (we want stronger push when KL is above target).
+
+  ``one_sided=True`` disables the shrink branch: the scale still grows to
+  correct a violation but never relaxes back down once the target is met, for
+  regularizers where overshooting the target is harmless or beneficial (e.g.
+  a loss ceiling that may drift back above target later in training under a
+  fixed scale -- relaxing early would leave less pressure to correct that).
   """
 
   vel: float = 0.1
   thres: float = 0.1
 
-  def __init__(self, shape, impl, target, min, max, inverse=False, init=1.0):
+  def __init__(
+      self, shape, impl, target, min, max, inverse=False, one_sided=False,
+      init=1.0):
     self.shape = tuple(shape)
     self.impl = impl
     self.target = float(target)
     self.min = float(min)
     self.max = float(max)
     self.inverse = bool(inverse)
+    self.one_sided = bool(one_sided)
     if impl in ('mult', 'prop'):
       init_val = float(init)
       self.scale_var = nj.Variable(
@@ -159,6 +168,8 @@ class AutoAdapt(nj.Module):
     above = avg > (1.0 + self.thres) * self.target
     if self.inverse:
       below, above = above, below
+    if self.one_sided:
+      below = jnp.zeros_like(below)  # never relax once the target is met
     s = self.scale_var.read()
     if self.impl == 'mult':
       adjusted = jnp.where(
@@ -168,6 +179,8 @@ class AutoAdapt(nj.Module):
       direction = avg - self.target
       if self.inverse:
         direction = -direction
+      if self.one_sided:
+        direction = jnp.maximum(direction, 0.0)
       adjusted = s + self.vel * direction
     else:
       raise NotImplementedError(self.impl)

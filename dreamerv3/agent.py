@@ -490,6 +490,13 @@ class Agent(embodied.jax.Agent):
     self.variable_goal_length = bool(getattr(config, 'variable_goal_length', False))
     self.goal_duration_min = int(getattr(config, 'goal_duration_min', 1))
     self.goal_duration_max = int(getattr(config, 'goal_duration_max', 16))
+    # HiTS-style timed subgoals (Guertler et al., NeurIPS 2021): condition the
+    # worker policy AND value on the countdown until the next manager decision
+    # (steps left including the current one, normalized to [-1, 1] by the
+    # duration budget). Makes the worker's per-goal horizon observable, so
+    # V(s, goal, countdown) is well-posed under variable goal lengths instead
+    # of facing a random unobservable deadline.
+    self.worker_timed_goals = bool(getattr(config, 'worker_timed_goals', False))
     self.goal_switch_cost = float(getattr(config, 'goal_switch_cost', 0.0))
     # Fixed per-edited-block cost (sparsity analog of goal_switch_cost): subtracted
     # from the manager reward per edited block so editing is priced, not targeted.
@@ -755,9 +762,15 @@ class Agent(embodied.jax.Agent):
           init=float(config.goal_kl_init),
           name='goal_kl_adapter')
       if getattr(config, 'goal_struct_adapt', False):
-        # Adaptive struct weight: grows when the geometry-matching loss sits above
-        # ``goal_struct_adapt_target`` (codes not yet aligned), shrinks once below,
-        # auto-tuning the pressure instead of using a fixed ``goal_struct_weight``.
+        # Adaptive struct weight (dual-ascent, two-sided by default): grows
+        # while the raw struct MSE/margin loss (``goal/struct_loss``) sits above
+        # ``goal_struct_adapt_target``, shrinks while below, auto-tuning the
+        # pressure instead of a fixed ``goal_struct_weight``. Optional
+        # ``goal_struct_adapt_one_sided`` (off by default) drops the shrink
+        # branch -- relevant if the target is later re-violated after being
+        # cleared (BIG-scale struct loss was observed to drift back above a
+        # fixed weight's own earlier level later in training: e171, 0.0068
+        # @445k -> 0.0183 @3.1M) and premature relaxation is a concern.
         self.goal_struct_adapter = embodied.jax.AutoAdapt(
             shape=(),
             impl='mult',
@@ -766,6 +779,7 @@ class Agent(embodied.jax.Agent):
             max=float(config.goal_struct_adapt_max),
             vel=float(config.goal_struct_adapt_vel),
             inverse=False,
+            one_sided=bool(getattr(config, 'goal_struct_adapt_one_sided', False)),
             init=float(config.goal_struct_adapt_init),
             name='goal_struct_adapter')
       if self.use_masked_goals and self.mask_topk <= 0:
@@ -1031,15 +1045,37 @@ class Agent(embodied.jax.Agent):
     flat = nn.cast(goal_code).reshape(*goal_code.shape[:-2], -1)
     return jnp.concatenate([feat_inp, flat], -1)
 
-  def _feat_goal2tensor(self, x, y):
-    """Concatenate WM features with goal; supports ``(B, D)`` and ``(B, T, D)`` goals."""
+  def _countdown_budget(self):
+    """Duration budget normalizing the worker countdown (HiTS delta_t_max)."""
+    if self.variable_goal_length:
+      return float(self.goal_duration_max)
+    return float(max(1, int(self.manager_sample_freq)))
+
+  def _countdown_norm(self, cd_steps):
+    """Map steps-left-including-current to [-1, 1] (HiTS convert_time)."""
+    dmax = self._countdown_budget()
+    cd = jnp.clip(f32(cd_steps), 0.0, dmax)
+    return (2.0 * cd / dmax - 1.0)[..., None]
+
+  def _feat_goal2tensor(self, x, y, countdown=None):
+    """Concatenate WM features with goal; supports ``(B, D)`` and ``(B, T, D)`` goals.
+
+    With ``worker_timed_goals``, also appends the normalized countdown until the
+    next manager decision ((..., 1), in [-1, 1]). ``countdown=None`` falls back
+    to the full budget (+1) — only report/viz rollouts with a held goal use this;
+    every training path passes the real countdown."""
     deter = nn.cast(x['deter'])
     stoch = nn.cast(x['stoch'].reshape((*x['stoch'].shape[:-2], -1)))
     if y.ndim == deter.ndim:
       goal = nn.cast(y)
     else:
       goal = nn.cast(y.reshape((*y.shape[:-2], -1)))
-    return jnp.concatenate([deter, stoch, goal], -1)
+    parts = [deter, stoch, goal]
+    if self.worker_timed_goals:
+      if countdown is None:
+        countdown = jnp.ones(deter.shape[:-1] + (1,), f32)
+      parts.append(nn.cast(sg(countdown)))
+    return jnp.concatenate(parts, -1)
 
   def _running_goal_code(self, skills):
     """The skill code that decodes to the worker goal.
@@ -1481,17 +1517,23 @@ class Agent(embodied.jax.Agent):
       mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update)
       if self.variable_goal_length:
         p = self._duration_steps(mgr_skill)
-        remaining = jnp.where(update, p, remaining) - 1
+        # Countdown = steps left on the current goal INCLUDING this one (= the
+        # fresh duration p on a switch step); remaining carries countdown - 1.
+        cd_steps = jnp.where(update, p, remaining)
+        remaining = cd_steps - 1
+      else:
+        cd_steps = jnp.broadcast_to(K - (step_i % K), (B,))
       # Match skill to state: decode goal from mgr_skill *after* resampling.
       goal = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
-      act = sample(self.pol(self._feat_goal2tensor(feat, goal), 1))
+      act = sample(self.pol(self._feat_goal2tensor(
+          feat, goal, countdown=self._countdown_norm(cd_steps)), 1))
       dyn_carry, (feat_next, act_out) = self.dyn.imagine(
           dyn_carry, act, 1, training, single=True)
       # Fixed K: ``update`` is a scalar (shared step counter); broadcast to (B,) so
       # the scan stacks a batched switch flag. Variable: ``update`` is already (B,).
       switch = jnp.broadcast_to(f32(update), (B,))
       return ((dyn_carry, mgr_skill, step_i + 1, remaining),
-              (feat_next, act_out, mgr_skill, switch))
+              (feat_next, act_out, mgr_skill, switch, i32(cd_steps)))
 
     if H < 1:
       raise ValueError(f'imagination length must be >= 1, got {H}')
@@ -1500,7 +1542,7 @@ class Agent(embodied.jax.Agent):
     # Match ``rssm.imagine``: empty ``xs``, explicit ``length``, step in carry.
     init_remaining = jnp.zeros((B,), i32)
     ((last_dyn, last_mgr_skill, _, last_remaining),
-     (imgfeat, imgact, img_skills, img_switch)) = nj.scan(
+     (imgfeat, imgact, img_skills, img_switch, img_cd)) = nj.scan(
         body, (starts, mgr_skill, jnp.int32(0), init_remaining), (), H,
         unroll=unroll, axis=1)
 
@@ -1518,9 +1560,17 @@ class Agent(embodied.jax.Agent):
     # switch_mask aligns with img_skills: [switch0...switchH] over H+1 manager steps.
     last_switch = jnp.broadcast_to(f32(update_last), (B,))[:, None]
     switch_mask = jnp.concatenate([img_switch, last_switch], 1)
+    # Countdown at position H mirrors the body: fresh duration on a switch, else
+    # the carried remaining (which equals countdown_{H-1} - 1).
+    if self.variable_goal_length:
+      cd_last = jnp.where(
+          update_last, self._duration_steps(last_mgr_skill), last_remaining)
+    else:
+      cd_last = jnp.broadcast_to(K - (H % K), (B,))
+    countdowns = jnp.concatenate([img_cd, i32(cd_last)[:, None]], 1)
     # ``seed_code`` is the exact step-0 pre-edit code; the train re-derivation uses it
     # to reconstruct per-step pre-edit codes for the manager-policy conditioning input.
-    return imgfeat, imgact, img_skills, seed_code, switch_mask
+    return imgfeat, imgact, img_skills, seed_code, switch_mask, countdowns
 
   def _manager_skills_on_sequence(self, repfeat, downsample=False, deterministic=False):
     """K-step manager skills along a ``(B, T)`` feature sequence (replay tail).
@@ -1567,8 +1617,13 @@ class Agent(embodied.jax.Agent):
       mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update)
       if self.variable_goal_length:
         p = self._duration_steps(mgr_skill)
-        remaining = jnp.where(update, p, remaining) - 1
-      return (mgr_skill, remaining), mgr_skill
+        cd_steps = jnp.where(update, p, remaining)
+        remaining = cd_steps - 1
+      else:
+        cd_steps = jnp.broadcast_to(K - (t % K), remaining.shape)
+      # ``countdown`` is output-only (steps left incl. current); it must never
+      # enter the carry skill dict, which other code tree-maps over.
+      return (mgr_skill, remaining), {**mgr_skill, 'countdown': i32(cd_steps)}
 
     if T <= 1:
       _, skill = body((mgr_skill, init_remaining), 0)
@@ -1637,7 +1692,16 @@ class Agent(embodied.jax.Agent):
                      bool(getattr(self.config, 'report_mask_viz', True)))
       mgr_skill, goal, mgr_step, goal_refresh = self._manager_skill_step(
           feat, mgr_skill, mgr_step, reset)
-      policy = self.pol(self._feat_goal2tensor(feat, goal), bdims=1)
+      # Countdown for THIS step from the post-step counter: var-K decrements
+      # (returned mgr_step = countdown - 1); fixed-K counts up (returned
+      # mgr_step = position + 1).
+      K = max(1, int(self.manager_sample_freq))
+      if self.variable_goal_length:
+        act_cd = mgr_step + 1
+      else:
+        act_cd = K - ((mgr_step - 1) % K)
+      policy = self.pol(self._feat_goal2tensor(
+          feat, goal, countdown=self._countdown_norm(act_cd)), bdims=1)
     else:
       policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
@@ -1879,7 +1943,8 @@ class Agent(embodied.jax.Agent):
     #   goal_struct_loss:   'mse' (default squared Gram match) | 'margin'
     #     (contrastive: pull similar-state codes together, push dissimilar-state
     #     codes apart past a margin -- stronger separation of far-apart pairs).
-    #   goal_struct_adapt:  AutoAdapt the weight toward a struct-loss setpoint. ---
+    #   goal_struct_adapt:  AutoAdapt the weight toward a struct-loss setpoint,
+    #     dual-ascent (grows above, shrinks below) unless _one_sided=True. ---
     struct_on = (self.goal_struct_weight > 0.0) or bool(
         getattr(self.config, 'goal_struct_adapt', False))
     if struct_on:
@@ -1950,7 +2015,7 @@ class Agent(embodied.jax.Agent):
     K_repl = K_imag
     H = self.config.imag_length  # imagined steps after the start state (H+1 states).
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
-    imgfeat, imgprevact, img_skills, mgr_seed_code, switch_mask = (
+    imgfeat, imgprevact, img_skills, mgr_seed_code, switch_mask, img_countdowns = (
         self._imagine_with_manager(starts, H, training))
     # Prefix replay states to imagined chain so AC sees grounded first step.
     first = jax.tree.map(
@@ -1961,7 +2026,9 @@ class Agent(embodied.jax.Agent):
     last_mgr_skill = jax.tree.map(lambda x: x[:, -1], mgr_skills)
     last_goal = sg(self._goal_from_skill(jax.tree.map(sg, last_mgr_skill), bdims=1))
     lastact = sample(self.pol(
-        self._feat_goal2tensor(last_feat, last_goal), 1))
+        self._feat_goal2tensor(
+            last_feat, last_goal,
+            countdown=self._countdown_norm(img_countdowns[:, -1])), 1))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
     assert all(x.shape[:2] == (B * K_imag, H + 1) for x in jax.tree.leaves(imgfeat))
@@ -2323,7 +2390,12 @@ class Agent(embodied.jax.Agent):
       win_goal = merge(jnp.broadcast_to(
           goals[:, win_starts][:, :, None],
           (M, n_win, K + 1) + goals.shape[2:]))             # window goal held constant
-      win_feat_goal = self._feat_goal2tensor(win_feat, win_goal)
+      # Within-window countdown K..0: the boundary state (pos K) keeps the OLD
+      # window's goal for bootstrap, so its honest countdown is 0 (time's up).
+      win_cd = jnp.broadcast_to(
+          K - jnp.arange(K + 1, dtype=i32), (M * n_win, K + 1))
+      win_feat_goal = self._feat_goal2tensor(
+          win_feat, win_goal, countdown=self._countdown_norm(win_cd))
       win_goal_rew = self._wkr_goal_reward(win_goal, win_feat)
       kwargs_wkr.update(skill_window=0)                         # each window is its own segment
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
@@ -2342,7 +2414,8 @@ class Agent(embodied.jax.Agent):
       # ``skill_window`` argument. Variable goal length passes the per-step boundary
       # mask (``switch_mask``); the fixed-K fallback (e.g. H not a multiple of K)
       # passes the integer window length K.
-      feat_goal = self._feat_goal2tensor(imgfeat, goals)
+      feat_goal = self._feat_goal2tensor(
+          imgfeat, goals, countdown=self._countdown_norm(img_countdowns))
       wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
       kwargs_wkr.update(
           skill_window=(switch_mask if self.variable_goal_length else K))
@@ -2386,6 +2459,7 @@ class Agent(embodied.jax.Agent):
         if self.variable_goal_block_rew:
           repl_skills_full = self._manager_skills_on_sequence(
               feat, deterministic=True)
+          repl_skills_full.pop('countdown', None)
           repl_switch = self._switch_mask_from_skills(repl_skills_full)
           feat_down = downsample_at_switch_mask(feat, repl_switch)
           inp_down = self.feat2tensor(feat_down)
@@ -2436,9 +2510,11 @@ class Agent(embodied.jax.Agent):
       repl_skills = jax.tree.map(
           lambda x: x[:, -K_repl:],
           self._manager_skills_on_sequence(feat, deterministic=True))
+      repl_cd = repl_skills.pop('countdown')
       # Detach manager goals in replay value path.
       repl_goals = sg(self._goals_from_skills(jax.tree.map(sg, repl_skills), bdims=2))
-      feat_goal_wkr = self._feat_goal2tensor(feat_wkr, repl_goals)
+      feat_goal_wkr = self._feat_goal2tensor(
+          feat_wkr, repl_goals, countdown=self._countdown_norm(repl_cd))
       repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
 
       # --- 3. Compute Value Losses ---
@@ -2603,6 +2679,7 @@ class Agent(embodied.jax.Agent):
                 bool(getattr(self.config, 'report_vec_viz', False)))
     if need_mgr:
       mgr_skills = self._manager_skills_on_sequence(rep)
+      mgr_skills.pop('countdown', None)
       mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
       mgr_goal_feat = self._feat_from_goal(mgr_goals)
       _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)

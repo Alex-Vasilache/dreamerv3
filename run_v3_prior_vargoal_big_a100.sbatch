@@ -44,6 +44,7 @@ DUR_REG="${DUR_REG:-0.01}"
 DUR_MODE="${DUR_MODE:-fixed}"
 DUR_LAGRANGE_MAX="${DUR_LAGRANGE_MAX:-5.0}"
 SEED="${SEED:-0}"
+WORKER_TIMED_GOALS="${WORKER_TIMED_GOALS:-False}"   # HiTS-style worker countdown conditioning
 RECIPE="${RECIPE:-vark_masked}"   # vark_masked | mask_fixedk | plain_vark (see small script)
 MGR_FREQ="${MGR_FREQ:-8}"
 MGR_REWARD_AGG="${MGR_REWARD_AGG:-mean}"   # mean (default) | sum (couples mgr return to hold length)
@@ -132,6 +133,7 @@ AGENT_FLAGS=(
   --agent.manager_actent_impl mult
   --agent.manager_actent_target 0.5
   --agent.goal_struct_weight "$STRUCT_W"
+  --agent.worker_timed_goals "$WORKER_TIMED_GOALS"
   "${RECIPE_FLAGS[@]}"
   --agent.imag_length 16
   --agent.report False

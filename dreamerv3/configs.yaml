@@ -220,13 +220,21 @@ defaults:
     # richer target the worker actually conditions on). kind: ``mse`` (squared
     # Gram-matrix match) or ``margin`` (contrastive pull-positives / push-negatives
     # hinge that separates far-apart states' codes more aggressively, margin width
-    # ``goal_struct_margin``). adapt: wrap the struct term in an AutoAdapt that tunes
-    # the weight toward a struct-loss setpoint instead of using the fixed weight.
+    # ``goal_struct_margin``). adapt: wrap the struct term in an AutoAdapt (dual-
+    # ascent Lagrangian) that tunes the weight toward a ``goal/struct_loss``
+    # setpoint instead of using the fixed weight -- grows while loss > target,
+    # shrinks while loss < target, by default (two-sided, like the mask-rate and
+    # duration controllers). goal_struct_adapt_one_sided=True switches to a
+    # ratchet that still grows on violation but never shrinks back once the
+    # target is cleared -- useful if the setpoint is observed to be re-violated
+    # later in training (BIG-scale struct loss drifts back up under a fixed
+    # weight) and premature relaxation is a concern; off by default.
     goal_struct_target: deter   # deter | feat
     goal_struct_loss: mse       # mse | margin
     goal_struct_margin: 0.1
     goal_struct_adapt: False
-    goal_struct_adapt_target: 0.01
+    goal_struct_adapt_target: 0.005
+    goal_struct_adapt_one_sided: False
     goal_struct_adapt_min: 1.0
     goal_struct_adapt_max: 2000.0
     goal_struct_adapt_vel: 0.1
@@ -262,6 +270,13 @@ defaults:
     variable_goal_length: False
     goal_duration_min: 1
     goal_duration_max: 16
+    # HiTS-style timed subgoals (Guertler et al. 2021): append the normalized
+    # countdown until the next manager decision (steps left incl. current, mapped
+    # to [-1, 1] by the duration budget) to the worker policy AND value inputs.
+    # Makes the worker's per-goal horizon observable — under variable_goal_length
+    # the deadline is otherwise random and invisible to the worker. False = the
+    # worker sees only (feat, goal), exactly as before.
+    worker_timed_goals: False
     # Soft prior pulling the manager's expected goal duration toward a setpoint
     # (e.g. the fixed-K=8 regime that lifted worker reaching), independent of the
     # REINFORCE advantage. Adds ``goal_duration_reg * (E[duration] -
