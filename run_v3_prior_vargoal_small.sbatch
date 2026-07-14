@@ -56,6 +56,11 @@ MASK_TOPK="${MASK_TOPK:-0}"
 MASK_MODE="${MASK_MODE:-prob}"
 MASK_MAX="${MASK_MAX:-5.0}"
 MASK_TARGET="${MASK_TARGET:-0.3}"
+# Open-loop anneal of the sparsity target itself (agent.Ratchet): ramps from
+# MASK_TARGET_INIT toward MASK_TARGET by at most MASK_TARGET_VEL per training
+# call. Default init == target -> no-op (byte-for-byte prior behavior).
+MASK_TARGET_INIT="${MASK_TARGET_INIT:-$MASK_TARGET}"
+MASK_TARGET_VEL="${MASK_TARGET_VEL:-0.01}"
 MGR_ACHIEVE="${MGR_ACHIEVE:-False}"
 DUR_REG="${DUR_REG:-0.01}"
 DUR_MODE="${DUR_MODE:-fixed}"
@@ -63,6 +68,8 @@ DUR_LAGRANGE_MAX="${DUR_LAGRANGE_MAX:-5.0}"
 SEED="${SEED:-0}"
 WORKER_TIMED_GOALS="${WORKER_TIMED_GOALS:-False}"   # HiTS-style worker countdown conditioning
 STRUCT_ADAPT="${STRUCT_ADAPT:-False}"   # AutoAdapt multiplier toward struct-loss ceiling (goal_struct_adapt)
+STRUCT_ADAPT_TARGET="${STRUCT_ADAPT_TARGET:-0.005}"  # struct-loss setpoint (dual-ascent unless one_sided)
+MGR_REWARD_AGG="${MGR_REWARD_AGG:-mean}"   # mean (default) | sum (couples mgr return to hold length)
 
 if [ "$DUR_MODE" = "lagrangian" ]; then
   DUR_FLAGS=(
@@ -84,6 +91,8 @@ MASK_FLAGS=(
   --agent.mask_sparsity_mode "$MASK_MODE"
   --agent.mask_sparsity_max "$MASK_MAX"
   --agent.mask_sparsity_target "$MASK_TARGET"
+  --agent.mask_sparsity_target_init "$MASK_TARGET_INIT"
+  --agent.mask_sparsity_target_vel "$MASK_TARGET_VEL"
   --agent.mgr_cond_goalcode True
   --agent.mgr_cond_achieve "$MGR_ACHIEVE"
 )
@@ -121,7 +130,7 @@ case "$RECIPE" in
 esac
 
 echo "RUN_DIR=$RUN_DIR" > "$RUN_DIR/job.env"
-echo "EXP_TAG=$EXP_TAG TASK=$TASK RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX MASK_MODE=$MASK_MODE MASK_TARGET=$MASK_TARGET STRUCT_W=$STRUCT_W MGR_FREQ=$MGR_FREQ SEED=$SEED" >> "$RUN_DIR/job.env"
+echo "EXP_TAG=$EXP_TAG TASK=$TASK RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX MASK_MODE=$MASK_MODE MASK_TARGET=$MASK_TARGET MASK_TARGET_INIT=$MASK_TARGET_INIT MASK_TARGET_VEL=$MASK_TARGET_VEL STRUCT_W=$STRUCT_W STRUCT_ADAPT=$STRUCT_ADAPT STRUCT_ADAPT_TARGET=$STRUCT_ADAPT_TARGET WORKER_TIMED_GOALS=$WORKER_TIMED_GOALS MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_FREQ=$MGR_FREQ SEED=$SEED" >> "$RUN_DIR/job.env"
 RUN_STEPS="${RUN_STEPS:-4000000}"
 
 cd "$RUN_DIR"
@@ -146,6 +155,7 @@ AGENT_FLAGS=(
   --agent.goal_struct_weight "$STRUCT_W"
   --agent.worker_timed_goals "$WORKER_TIMED_GOALS"
   --agent.goal_struct_adapt "$STRUCT_ADAPT"
+  --agent.goal_struct_adapt_target "$STRUCT_ADAPT_TARGET"
   "${RECIPE_FLAGS[@]}"
   --agent.report False
 )
@@ -161,6 +171,7 @@ python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --agent.enc.simple.outer True \
   --agent.dec.simple.outer True \
   --agent.mgr_expl_weight 0.1 \
+  --agent.mgr_reward_agg "$MGR_REWARD_AGG" \
   --agent.mgr_retnorm.impl meanstd \
   --online_learning False \
   --online_actor_cpu False \

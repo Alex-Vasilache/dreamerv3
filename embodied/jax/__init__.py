@@ -7,6 +7,7 @@ from .heads import MLPHead
 from .utils import AutoAdapt
 from .utils import LayerScan
 from .utils import Normalize
+from .utils import Ratchet
 from .utils import RmsTracker
 from .utils import SlowModel
 

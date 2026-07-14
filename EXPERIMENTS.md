@@ -74,7 +74,10 @@ the restructured, maintained log.
 
 ---
 
-## 2. Current state (2026-07-14, interim readout — 18/19 live-board runs still training)
+## 2. Current state (2026-07-14, interim readout — 23/31 live-board runs still training;
+e178/e185/e189/e192 cancelled to free A100s for e200–e203; e179/e180/e190/e191/e186/e187/
+e188/e193 cancelled 07-14 (checkpoints preserved, resumable) to free 4×A100 + 4×V100 for
+e204–e211, the mask-sparsity-target-ratchet cell — see below)
 
 **Dense tasks: solved at Director-comparable cost, and countdown found a second,
 simpler route there.** Best cartpole: combined recipe BIG → 833/869 (e157), reproduced
@@ -103,6 +106,33 @@ cell. See §6 for per-experiment interim readouts and the paper's Outlook for th
 escalation order (worker task-reward mixing, then non-local goal proposals) if these
 also fail.
 
+**New mechanism, 07-14: mask-sparsity-target ratchet (e204–e211).** Motivating question:
+under the mask, is the manager's exploration-reward advantage (`_mgr_expl_reward`, dense
+goal-deter reconstruction error, block-pooled exactly like the extrinsic reward) scoped to
+the *edited* blocks, or is it one scalar over the whole resulting goal applied uniformly to
+every manager head? Confirmed the latter — with a sparse mask (target 0.3, 2–3 of 8 blocks
+edited/decision), the manager gets the same-magnitude exploration credit whether it edited 1
+block or 8, with no per-block attribution telling the mask head *which* edit caused the
+novelty. Hypothesis: this starves goal-space exploration early in training, before the
+manager has any signal about which blocks are worth editing — compounding on top of F12
+(masking alone already kills hopper/acrobot at fixed K8, e164/e165). Fix (this session):
+`agent.Ratchet` (`embodied/jax/utils.py`) — a deterministic, velocity-capped, open-loop
+ramp of the `mask_sparsity_adapter`'s **target** itself (not just its Lagrange weight, which
+was already adaptive) from `mask_sparsity_target_init=1.0` (edit the whole goal — full
+goal-space exploration, mask has no effect early on) down to `mask_sparsity_target=0.3` at a
+rate tuned to ~1M env-steps (`mask_sparsity_target_vel`: 2.8e-6/train-call small-scale,
+1.12e-5/train-call BIG-scale — both scales' batch/train_ratio give different env-steps per
+call, so the raw `vel` differs but the wall-clock/env-step ramp length matches). Fully
+opt-in (`target_init == target` by default → no-op, byte-identical to prior runs unless set).
+Smoke-tested (`run_smoke_mask_ratchet.sbatch`, job 4662316): ratchet observed 0.8→0.3
+monotonic + correctly clipped, full combined-recipe smoke leg (prob_entropy + var-K
+Lagrangian + struct-adapt + countdown + ratchet together) trains without error. e204–e211
+port the e200–e203 cell (full stack, τ8, struct 200+adapt dual-ascent target 0.006) to all
+4 tasks × both scales with the ratchet added — the acrobot/hopper cells (e208/e209/e210/
+e211) are the actual test of the exploration-starvation hypothesis; cartpole/cheetah
+(e204–e207) are dense-task regression checks (ratchet should be return-neutral there, since
+e196/e200/e198/e201 already work without it).
+
 ### Best known configs
 
 ```bash
@@ -112,36 +142,56 @@ DUR_TARGET=4.0,MASK_MODE=prob_entropy,DUR_MODE=lagrangian run_v3_prior_vargoal_b
 # e57 small-scale champion: same via run_v3_prior_vargoal_small.sbatch with MASK_MODE=prob,
 # DUR_MODE=fixed (reg 0.01), DUR_TARGET=4.0.
 # Optional new knobs (defaults preserve old behavior): WORKER_TIMED_GOALS=True,
-# STRUCT_ADAPT=True, MGR_REWARD_AGG={mean,sum}, MGR_EXPL_W, RECIPE={vark_masked,mask_fixedk,plain_vark}.
+# STRUCT_ADAPT=True, STRUCT_ADAPT_TARGET=0.006 (default 0.005; big_a100 script gained
+# both flags 07-14 -- previously only run_v3_prior_vargoal_small.sbatch had them),
+# MGR_REWARD_AGG={mean,sum}, MGR_EXPL_W, RECIPE={vark_masked,mask_fixedk,plain_vark}.
 ```
 
-### Live board (19 runs)
+### Live board (31 rows, 19 running: 4 cancelled 07-14 and replaced by e200–e203; 8 more
+cancelled 07-14 (checkpoints resumable) and replaced by e204–e211)
 
 | Exp | Job | Recipe | Task | Scale | Question | Signal as of 2026-07-14 (interim, % of 4M budget) |
 |---|---|---|---|---|---|---|
 | e160 | 4660123 | combined, struct=0 | cartpole | BIG short-a100 | struct needed inside full recipe? | COLLAPSED: 138→22 @2.19M (55%); mask_frac drifted 0.30→0.51, mgr_extr_adv≈0 |
-| e178 | 4660138 | plain var-K τ8 | hopper | BIG | hold length alone | flat 0–5e-3 through 3.2M (80%), score ≈0 — the "rising" read at 0.6M did not hold |
-| e179 | 4660139 | plain var-K τ8 | cartpole | BIG | stability without struct at τ8 | 740/755 @3.25M (81%), stable since 1.8M — struct not needed at τ8 |
-| e180 | 4660140 | pure Director | acrobot | BIG | task-difficulty control | ALIVE: rate 0→0.19, score 176/262 @3.34M (83%), still climbing |
-| e185 | 4660298 | e178 + countdown | hopper | BIG | horizon observability | dead, ≈e178 (wkr 0.21 vs e178's 0.16); dur_std blew up to 6.6 |
-| e186 | 4660299 | combined + countdown | cartpole | small | countdown inside best recipe (vs e170: 668/786) | 695/766 @2.08M (52%) ≈ e170; wkr_goal_rew 0.57, above e170's level |
-| e187 | 4660300 | plain var-K τ4 + countdown | cartpole | small | sharpest worker-confusion test (vs e166: 130) | 697/757 @2.11M (53%) — 5.4× e166, stable since 0.7M |
-| e188 | 4660301 | mask-only K8 + countdown | cartpole | small | phase observability at fixed K (vs e162: 272/575) | 254/347 @2.13M (53%), below e162's 565 peak so far |
-| e189 | 4660308 | plain var-K τ8 + struct200 | hopper | BIG | struct: stabilizer or locality killer? | dead, weaker than e178; struct_corr 0.94 — locality face confirmed |
-| e190 | 4660309 | pure Director | cartpole | BIG | Director-matched control | 714/747 @2.52M (63%), still climbing toward e171's 776 |
-| e191 | 4660310 | pure Director | cheetah | BIG | control redo (e123 stopped 2.6M, peak 425) | non-monotonic: 471 peak@1.4M → dip 225@2.27M → 293/499 @2.55M (64%) |
-| e192 | 4660311 | plain var-K τ8 + countdown | acrobot | BIG | best-guess sparse recipe vs e180 | dead (no trend) while e180 climbs — acrobot ≠ hopper failure mode |
-| e193 | 4660312 | plain var-K τ4 + struct200 | cartpole | small | duration×struct 2×2 (with e46/e166/e194) | 42/203 @2.09M (52%) — peaked early (240k), stuck low since |
+| e178 | 4660138 | plain var-K τ8 | hopper | BIG | hold length alone | flat 0–5e-3 through 3.2M (80%), score ≈0 — the "rising" read at 0.6M did not hold. **CANCELLED 07-14** to free A100 for e202 |
+| e179 | 4660139 | plain var-K τ8 | cartpole | BIG | stability without struct at τ8 | 740/755 @3.25M (81%), stable since 1.8M — struct not needed at τ8. **CANCELLED 07-14** (checkpoint kept, resumable) to free A100 for e205 |
+| e180 | 4660140 | pure Director | acrobot | BIG | task-difficulty control | ALIVE: rate 0→0.19, score 176/262 @3.34M (83%), still climbing. **CANCELLED 07-14** (checkpoint kept, resumable) to free A100 for e211 |
+| e185 | 4660298 | e178 + countdown | hopper | BIG | horizon observability | dead, ≈e178 (wkr 0.21 vs e178's 0.16); dur_std blew up to 6.6. **CANCELLED 07-14** to free A100 for e202 |
+| e186 | 4660299 | combined + countdown | cartpole | small | countdown inside best recipe (vs e170: 668/786) | 695/766 @2.08M (52%) ≈ e170; wkr_goal_rew 0.57, above e170's level. **CANCELLED 07-14** (checkpoint kept, resumable) to free V100 for e204 |
+| e187 | 4660300 | plain var-K τ4 + countdown | cartpole | small | sharpest worker-confusion test (vs e166: 130) | 697/757 @2.11M (53%) — 5.4× e166, stable since 0.7M. **CANCELLED 07-14** (checkpoint kept, resumable) to free V100 for e206 |
+| e188 | 4660301 | mask-only K8 + countdown | cartpole | small | phase observability at fixed K (vs e162: 272/575) | 254/347 @2.13M (53%), below e162's 565 peak so far. **CANCELLED 07-14** (checkpoint kept, resumable) to free V100 for e208 |
+| e189 | 4660308 | plain var-K τ8 + struct200 | hopper | BIG | struct: stabilizer or locality killer? | dead, weaker than e178; struct_corr 0.94 — locality face confirmed. **CANCELLED 07-14** to free A100 for e202 |
+| e190 | 4660309 | pure Director | cartpole | BIG | Director-matched control | 714/747 @2.52M (63%), still climbing toward e171's 776. **CANCELLED 07-14** (checkpoint kept, resumable) to free A100 for e207 |
+| e191 | 4660310 | pure Director | cheetah | BIG | control redo (e123 stopped 2.6M, peak 425) | non-monotonic: 471 peak@1.4M → dip 225@2.27M → 293/499 @2.55M (64%). **CANCELLED 07-14** (checkpoint kept, resumable) to free A100 for e209 |
+| e192 | 4660311 | plain var-K τ8 + countdown | acrobot | BIG | best-guess sparse recipe vs e180 | dead (no trend) while e180 climbs — acrobot ≠ hopper failure mode. **CANCELLED 07-14** to free A100 for e203 |
+| e193 | 4660312 | plain var-K τ4 + struct200 | cartpole | small | duration×struct 2×2 (with e46/e166/e194) | 42/203 @2.09M (52%) — peaked early (240k), stuck low since. **CANCELLED 07-14** (checkpoint kept, resumable) to free V100 for e210 |
 | e194 | 4660313 | plain var-K τ8, struct0 | cartpole | small | 2×2; small mirror of e179 | 152/285 @2.11M (53%) — no collapse, no climb either |
 | e195 | 4660317 | plain var-K τ4 + struct-adapt | cartpole | small | struct-as-Lagrangian pilot | 175/352 @2.09M (52%) — beats e193, still ≪ e46's 724 |
 | e196 | 4660324 | **full stack**: combined+countdown+struct-adapt | cartpole | small | everything-adaptive cell vs e170/e186 | 648/683 @2.01M (50%) ≈ e170/e186, dipped-and-recovered at 1.1M |
 | e197 | 4660325 | full stack | hopper | small | — (small hopper never learned; long shot) | dead, 0.23/3.1 @2.0M (50%) — expected long shot |
 | e198 | 4660326 | full stack | cheetah | small (P100) | vs e174 (166) | 100/122 @2.31M (58%) — below e174, flat since 250k |
 | e199 | 4660327 | full stack | acrobot | small (P100) | vs e176 (0) | 3.4/22 @2.36M (59%) — still dead vs e176 |
+| e200 | 4662288 | full stack (struct-adapt target 0.006) | cartpole | BIG | scale e196 cell to BIG/τ8 with a lower, never-tried struct-adapt target | just launched 07-14 |
+| e201 | 4662289 | full stack (struct-adapt target 0.006) | cheetah | BIG | scale e198 cell to BIG/τ8 | just launched 07-14 |
+| e202 | 4662290 | full stack (struct-adapt target 0.006) | hopper | BIG | replaces e178/e185/e189 — last untried sparse-task cell (struct-adapt+countdown+τ8 together) | just launched 07-14 |
+| e203 | 4662291 | full stack (struct-adapt target 0.006) | acrobot | BIG | replaces e192 — same combined cell for acrobot | just launched 07-14 |
+| e204 | 4662318 | full stack + mask ratchet (init 1.0→0.3, vel 2.8e-6/call) | cartpole | small | dense regression check: ratchet should be return-neutral | just launched 07-14 |
+| e205 | 4662322 | full stack + mask ratchet (init 1.0→0.3, vel 1.12e-5/call) | cartpole | BIG | dense regression check vs e200 | just launched 07-14 |
+| e206 | 4662319 | full stack + mask ratchet | cheetah | small | dense regression check | just launched 07-14 |
+| e207 | 4662323 | full stack + mask ratchet | cheetah | BIG | dense regression check vs e201 | just launched 07-14 |
+| e208 | 4662320 | full stack + mask ratchet | hopper | small | exploration-starvation test (never learned at small scale under any recipe) | just launched 07-14 |
+| e209 | 4662324 | full stack + mask ratchet | hopper | BIG | **key test**: does full-goal-edit early rescue hopper vs e202 (dead)? | just launched 07-14 |
+| e210 | 4662321 | full stack + mask ratchet | acrobot | small | exploration-starvation test | just launched 07-14 |
+| e211 | 4662325 | full stack + mask ratchet | acrobot | BIG | **key test**: does full-goal-edit early rescue acrobot vs e203 (dead)? | just launched 07-14 |
 
-GPU occupancy: A100 8/8 · V100 8/8 · P100 2/8 (pinned `saion-gpu[11-14]`) · short-a100: e160.
+GPU occupancy: A100 8/8 (e200–e203, e205/e207/e209/e211) · V100 8/8 (e194–e199,
+e204/e206/e208/e210) · P100 2/8 (pinned `saion-gpu[11-14]`) · short-a100: e160.
 Cancelled at 0.6M for flatness (07-13): e181 (agg=sum), e182/e184 (combined τ8 hop/acrobot),
-e183 (10× expl), e161 (struct-0 hopper). Detailed hypotheses & readout logic: §6.
+e183 (10× expl), e161 (struct-0 hopper). Cancelled 07-14 (dead, freed A100s for e200–e203):
+e178/e185/e189 (hopper), e192 (acrobot). Cancelled 07-14 (alive but not "just started";
+checkpoints preserved and resumable, freed 4×A100 + 4×V100 for the mask-ratchet cell
+e204–e211): e179/e180/e190/e191 (A100) and e186/e187/e188/e193 (V100). Detailed hypotheses
+& readout logic: §6.
 
 ### Interim hyperparameter comparison table (2026-07-14, live campaign + controls)
 
@@ -155,50 +205,62 @@ fixed switch interval) or `var τ{4,8} (reg|lagr)` (soft fixed-prior vs. duratio
 control mode). Struct `+adapt` = `goal_struct_adapt` Lagrangian on top of the listed init
 weight.
 
-| exp | env | size | works? | score | blk/step | struct | goal mask | goal length | reward agg | wkr countdown |
-|---|---|---|---|---|---|---|---|---|---|---|
-| e46† | cartpole | small | ✅ | 724 (755) | 1.00 | 200 | off | var τ8 (reg) | mean | no |
-| e124† | hopper | BIG | ✅ | 196 (326) | 1.00 | 0 | off | fix 8 | mean | no |
-| e162† | cartpole | small | ~ | 270 (565) | 0.31 | 200 | prob | fix 8 | mean | no |
-| e163† | cartpole | BIG | ~ | 364 (412) | 0.31 | 200 | prob | fix 8 | mean | no |
-| e164† | hopper | small | ❌ | 0.0 (3.7) | 0.30 | 200 | prob | fix 8 | mean | no |
-| e165† | hopper | BIG | ❌ | 0.3 (3.9) | 0.31 | 200 | prob | fix 8 | mean | no |
-| e166† | cartpole | small | ❌ | 129 (185) | 2.00 | 0 | off | var τ4 (reg) | mean | no |
-| e167† | cartpole | BIG | ❌ | 98 (650) | 2.00 | 0 | off | var τ4 (reg) | mean | no |
-| e168† | hopper | small | ❌ | 0.3 (3.1) | 2.02 | 0 | off | var τ4 (reg) | mean | no |
-| e169† | hopper | BIG | ❌ | 0.0 (2.4) | 2.01 | 0 | off | var τ4 (reg) | mean | no |
-| e170† | cartpole | small | ✅ | 653 (785) | 0.61 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e171† | cartpole | BIG | ✅ | 776 (843) | 1.13 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e172† | hopper | small | ❌ | 0.7 (4.3) | 1.03 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e173† | hopper | BIG | ❌ | 0.0 (3.9) | 1.33 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e174† | cheetah | small | ~ | 165 (171) | 1.05 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e175† | cheetah | BIG | ✅ | 463 (502) | 1.05 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e176† | acrobot | small | ❌ | 1.9 (12.3) | 0.54 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e177† | acrobot | BIG | ❌ | 2.5 (25.9) | 0.75 | 200 | prob_entropy | var τ4 (lagr) | mean | no |
-| e161† | hopper | BIG | ❌ cancelled | 0.4 (1.5) | 1.17 | 0 | prob_entropy | var τ4 (lagr) | mean | no |
-| e181† | hopper | BIG | ❌ cancelled | 0.0 (3.0) | 1.00 | 0 | off | var τ8 (reg) | **sum** | no |
-| e182† | hopper | BIG | ❌ cancelled | 0.1 (1.6) | 0.50 | 200 | prob_entropy | var τ8 (lagr) | mean | no |
-| e183† | hopper | BIG | ❌ cancelled | 0.0 (0.4) | 0.94 | 200 | prob_entropy | var τ4 (lagr) | mean, expl_w=1.0 (10×) | no |
-| e184† | acrobot | BIG | ❌ cancelled | 0.4 (17.6) | 0.30 | 200 | prob_entropy | var τ8 (lagr) | mean | no |
-| e160 | cartpole | BIG | ❌ | 22 (182) | 1.04 | 0 | prob_entropy | var τ4 (lagr) | mean | no |
-| e178 | hopper | BIG | ❌ | 0.03 (3.1) | 1.00 | 0 | off | var τ8 (reg) | mean | no |
-| e179 | cartpole | BIG | ✅ | 740 (755) | 1.00 | 0 | off | var τ8 (reg) | mean | no |
-| e180 | acrobot | BIG | ~ (climbing) | 177 (262) | 1.00 | 0 | off | fix 8 | mean | no |
-| e185 | hopper | BIG | ❌ | 0.03 (0.9) | 1.00 | 0 | off | var τ8 (reg) | mean | **yes** |
-| e186 | cartpole | small | ✅  | 695 (766) | 0.72 | 200 | prob_entropy | var τ4 (lagr) | mean | **yes** |
-| e187 | cartpole | small | ✅ | 697 (757) | 2.00 | 0 | off | var τ4 (reg) | mean | **yes** |
-| e188 | cartpole | small | ~ | 254 (347) | 0.29 | 200 | prob | fix 8 | mean | **yes** |
-| e189 | hopper | BIG | ❌ | 0.0 (1.7) | 1.00 | **200** | off | var τ8 (reg) | mean | no |
-| e190 | cartpole | BIG | ✅ (climbing) | 714 (747) | 1.00 | 0 | off | fix 8 | mean | no |
-| e191 | cheetah | BIG | ~ (non-monotonic) | 293 (499) | 1.00 | 0 | off | fix 8 | mean | no |
-| e192 | acrobot | BIG | ❌ | 8.1 (19.4) | 1.00 | 0 | off | var τ8 (reg) | mean | **yes** |
-| e193 | cartpole | small | ❌ | 42 (203) | 2.00 | 200 | off | var τ4 (reg) | mean | no |
-| e194 | cartpole | small | ❌ | 152 (285) | 1.00 | 0 | off | var τ8 (reg) | mean | no |
-| e195 | cartpole | small | ~ | 175 (352) | 2.00 | 200+adapt | off | var τ4 (reg) | mean | no |
-| e196 | cartpole | small | ✅ | 648 (683) | 0.71 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** |
-| e197 | hopper | small | ❌ | 0.23 (3.1) | 1.07 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** |
-| e198 | cheetah | small | ❌ | 100 (122) | 1.17 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** |
-| e199 | acrobot | small | ❌ | 3.4 (21.9) | 0.60 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** |
+| exp | env | size | works? | score | blk/step | struct | goal mask | goal length | reward agg | wkr countdown | mask ratchet |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| e46† | cartpole | small | ✅ | 724 (755) | 1.00 | 200 | off | var τ8 (reg) | mean | no | no |
+| e124† | hopper | BIG | ✅ | 196 (326) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e162† | cartpole | small | ~ | 270 (565) | 0.31 | 200 | prob | fix 8 | mean | no | no |
+| e163† | cartpole | BIG | ~ | 364 (412) | 0.31 | 200 | prob | fix 8 | mean | no | no |
+| e164† | hopper | small | ❌ | 0.0 (3.7) | 0.30 | 200 | prob | fix 8 | mean | no | no |
+| e165† | hopper | BIG | ❌ | 0.3 (3.9) | 0.31 | 200 | prob | fix 8 | mean | no | no |
+| e166† | cartpole | small | ❌ | 129 (185) | 2.00 | 0 | off | var τ4 (reg) | mean | no | no |
+| e167† | cartpole | BIG | ❌ | 98 (650) | 2.00 | 0 | off | var τ4 (reg) | mean | no | no |
+| e168† | hopper | small | ❌ | 0.3 (3.1) | 2.02 | 0 | off | var τ4 (reg) | mean | no | no |
+| e169† | hopper | BIG | ❌ | 0.0 (2.4) | 2.01 | 0 | off | var τ4 (reg) | mean | no | no |
+| e170† | cartpole | small | ✅ | 653 (785) | 0.61 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e171† | cartpole | BIG | ✅ | 776 (843) | 1.13 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e172† | hopper | small | ❌ | 0.7 (4.3) | 1.03 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e173† | hopper | BIG | ❌ | 0.0 (3.9) | 1.33 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e174† | cheetah | small | ~ | 165 (171) | 1.05 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e175† | cheetah | BIG | ✅ | 463 (502) | 1.05 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e176† | acrobot | small | ❌ | 1.9 (12.3) | 0.54 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e177† | acrobot | BIG | ❌ | 2.5 (25.9) | 0.75 | 200 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e161† | hopper | BIG | ❌ cancelled | 0.4 (1.5) | 1.17 | 0 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e181† | hopper | BIG | ❌ cancelled | 0.0 (3.0) | 1.00 | 0 | off | var τ8 (reg) | **sum** | no | no |
+| e182† | hopper | BIG | ❌ cancelled | 0.1 (1.6) | 0.50 | 200 | prob_entropy | var τ8 (lagr) | mean | no | no |
+| e183† | hopper | BIG | ❌ cancelled | 0.0 (0.4) | 0.94 | 200 | prob_entropy | var τ4 (lagr) | mean, expl_w=1.0 (10×) | no | no |
+| e184† | acrobot | BIG | ❌ cancelled | 0.4 (17.6) | 0.30 | 200 | prob_entropy | var τ8 (lagr) | mean | no | no |
+| e160 | cartpole | BIG | ❌ | 22 (182) | 1.04 | 0 | prob_entropy | var τ4 (lagr) | mean | no | no |
+| e178 | hopper | BIG | ❌ | 0.03 (3.1) | 1.00 | 0 | off | var τ8 (reg) | mean | no | no |
+| e179 | cartpole | BIG | ✅ | 740 (755) | 1.00 | 0 | off | var τ8 (reg) | mean | no | no |
+| e180 | acrobot | BIG | ~ (climbing) | 177 (262) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e185 | hopper | BIG | ❌ | 0.03 (0.9) | 1.00 | 0 | off | var τ8 (reg) | mean | **yes** | no |
+| e186 | cartpole | small | ✅  | 695 (766) | 0.72 | 200 | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
+| e187 | cartpole | small | ✅ | 697 (757) | 2.00 | 0 | off | var τ4 (reg) | mean | **yes** | no |
+| e188 | cartpole | small | ~ | 254 (347) | 0.29 | 200 | prob | fix 8 | mean | **yes** | no |
+| e189 | hopper | BIG | ❌ | 0.0 (1.7) | 1.00 | **200** | off | var τ8 (reg) | mean | no | no |
+| e190 | cartpole | BIG | ✅ (climbing) | 714 (747) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e191 | cheetah | BIG | ~ (non-monotonic) | 293 (499) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e192 | acrobot | BIG | ❌ | 8.1 (19.4) | 1.00 | 0 | off | var τ8 (reg) | mean | **yes** | no |
+| e193 | cartpole | small | ❌ | 42 (203) | 2.00 | 200 | off | var τ4 (reg) | mean | no | no |
+| e194 | cartpole | small | ❌ | 152 (285) | 1.00 | 0 | off | var τ8 (reg) | mean | no | no |
+| e195 | cartpole | small | ~ | 175 (352) | 2.00 | 200+adapt | off | var τ4 (reg) | mean | no | no |
+| e196 | cartpole | small | ✅ | 648 (683) | 0.71 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
+| e197 | hopper | small | ❌ | 0.23 (3.1) | 1.07 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
+| e198 | cheetah | small | ❌ | 100 (122) | 1.17 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
+| e199 | acrobot | small | ❌ | 3.4 (21.9) | 0.60 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
+| e200 | cartpole | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e201 | cheetah | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e202 | hopper | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e203 | acrobot | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e204 | cartpole | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e205 | cartpole | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e206 | cheetah | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e207 | cheetah | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e208 | hopper | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e209 | hopper | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e210 | acrobot | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e211 | acrobot | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
 
 Reading the columns together: every ✅ dense-task row sits at blk/step ≥1.0 by the end of
 training (Director-dense or denser) except e170/e186/e196 (0.61–0.72) — high final blk/step
@@ -437,12 +499,17 @@ e160 continues). e162–e177 (post-fix code, 07-10→07-12):
 | e174/**e175** | combined τ4 | cheetah s/BIG | 166 / **465 (508)** | 2–3× fixed-prior (F10) |
 | e176/e177 | combined τ4 | acrobot s/BIG | 0 (16) / ~1 (37) | dead; e177 lost 19h to preemption (§7) |
 
-### e178–e199 · Current campaign (see §2 live board, §6 hypotheses)
+### e178–e203 · Current campaign (see §2 live board, §6 hypotheses)
 Launched 07-13. Triaged at 0.6M: e181–e184 cancelled (flat; see §4). e185–e188 countdown
 cells; e189/e193–e195 struct cells; e190/e191 controls; e192 acrobot best-guess;
 e196–e199 full stack (combined + countdown + struct-adapt) on 4 small tasks.
 Smokes passed pre-launch: countdown ×3 recipes + flag-off regression (4660289–91),
 struct-adapt (4660314), full stack (4660322).
+e200–e203 (launched 07-14): full-stack cell (masked var-K τ8 lagrangian + struct-adapt,
+now `run_v3_prior_vargoal_big_a100.sbatch`-native via new `STRUCT_ADAPT`/
+`STRUCT_ADAPT_TARGET` env knobs + countdown) at BIG scale on all 4 tasks, struct-adapt
+target lowered to **0.006** (untried at any scale before this). Replaces the 4 dead
+hopper/acrobot BIG cells e178/e185/e189/e192, cancelled the same day to free the A100s.
 
 ---
 

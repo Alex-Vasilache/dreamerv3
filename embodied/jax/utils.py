@@ -129,10 +129,10 @@ class AutoAdapt(nj.Module):
     else:
       raise NotImplementedError(impl)
 
-  def __call__(self, reg, update=True):
+  def __call__(self, reg, update=True, target=None):
     reg = f32(reg)
     if update:
-      self.update(reg)
+      self.update(reg, target)
     scale = self.scale()
     # Broadcast scale over leading reduction dims of reg.
     while scale.ndim < reg.ndim:
@@ -144,6 +144,8 @@ class AutoAdapt(nj.Module):
         'scale_mean': self.scale().mean(),
         'scale_std': self.scale().std(),
     }
+    if target is not None:
+      metrics['target'] = f32(target).mean()
     return loss, metrics
 
   def scale(self):
@@ -151,9 +153,10 @@ class AutoAdapt(nj.Module):
       return jnp.full(self.shape, self.fixed_scale, f32)
     return sg(self.scale_var.read())
 
-  def update(self, reg):
+  def update(self, reg, target=None):
     if self.impl == 'fixed':
       return
+    tgt = self.target if target is None else f32(target)
     # Reduce all leading dims that are not part of self.shape.
     reduce_ndim = reg.ndim - len(self.shape)
     if reduce_ndim > 0:
@@ -164,8 +167,8 @@ class AutoAdapt(nj.Module):
     axes = internal.get_data_axes()
     if axes:
       avg = jax.lax.pmean(avg, axes)
-    below = avg < (1.0 / (1.0 + self.thres)) * self.target
-    above = avg > (1.0 + self.thres) * self.target
+    below = avg < (1.0 / (1.0 + self.thres)) * tgt
+    above = avg > (1.0 + self.thres) * tgt
     if self.inverse:
       below, above = above, below
     if self.one_sided:
@@ -176,7 +179,7 @@ class AutoAdapt(nj.Module):
           above, s * (1.0 + self.vel),
           jnp.where(below, s / (1.0 + self.vel), s))
     elif self.impl == 'prop':
-      direction = avg - self.target
+      direction = avg - tgt
       if self.inverse:
         direction = -direction
       if self.one_sided:
@@ -186,6 +189,38 @@ class AutoAdapt(nj.Module):
       raise NotImplementedError(self.impl)
     adjusted = jnp.clip(adjusted, self.min, self.max)
     self.scale_var.write(adjusted)
+
+
+class Ratchet(nj.Module):
+  """Deterministic value that moves linearly from ``init`` toward ``final`` by
+  at most ``vel`` per call, then holds at ``final``. Open-loop (no feedback
+  from any regulated quantity) -- unlike ``AutoAdapt``, which reacts to a
+  measured signal, this only tracks a step count. Used to anneal an
+  ``AutoAdapt`` target itself over training without discontinuous jumps (e.g.
+  mask sparsity target 1.0 -> 0.3 as goal-space exploration narrows).
+  """
+
+  vel: float = 0.01
+
+  def __init__(self, shape, init, final):
+    self.shape = tuple(shape)
+    self.init = float(init)
+    self.final = float(final)
+    self.value_var = nj.Variable(
+        lambda s: jnp.full(s, float(init), f32), self.shape, name='value')
+
+  def __call__(self, update=True):
+    if update:
+      self.step()
+    return sg(self.value_var.read())
+
+  def step(self):
+    v = self.value_var.read()
+    if self.final >= self.init:
+      adjusted = jnp.minimum(v + self.vel, self.final)
+    else:
+      adjusted = jnp.maximum(v - self.vel, self.final)
+    self.value_var.write(adjusted)
 
 
 class RmsTracker(nj.Module):

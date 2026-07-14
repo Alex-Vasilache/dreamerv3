@@ -499,6 +499,8 @@ e193 & var-$K$ $\tau_d{=}4$ + struct 200 & cartpole & small & completes duration
 e194 & var-$K$ $\tau_d{=}8$, $w_s{=}0$ & cartpole & small & completes $2{\times}2$ \\
 e195 & var-$K$ $\tau_d{=}4$ + adaptive struct & cartpole & small & struct-as-Lagrangian pilot \\
 e196--e199 & full stack: combined + countdown + adaptive struct & 4 tasks & small & does the all-adaptive stack cost anything (cartpole) and transfer (cheetah)? \\
+e200--e203 & full stack, $\tau_d{=}8$, struct-adapt target 0.006 & 4 tasks & BIG & scale e196--e199 to BIG/$\tau_d{=}8$ with a lower, never-tried struct-adapt target \\
+e204--e211 & e200--e203 recipe + mask-sparsity-target ratchet (\S\ref{sec:ratchet}) & 4 tasks & small \& BIG & does starting the mask at ``edit everything'' and annealing to the sparse target over the first $\sim$1M steps rescue hopper/acrobot? \\
 \bottomrule
 \end{tabular}
 \caption{Hypothesis matrix. The small-cartpole $2{\times}2$
@@ -543,6 +545,26 @@ general. Finally, acrobot's best-guess sparse recipe (e192) stays at the dead
 floor while its own Director-baseline control (e180) climbs steadily over the
 same window, splitting acrobot from hopper as a separate failure mode rather
 than a shared one.
+
+\paragraph{Mask-sparsity-target ratchet (2026-07-14).}
+\label{sec:ratchet}
+Under the mask, the manager's exploration-reward advantage (a dense goal-deter
+reconstruction error, block-pooled the same way as the extrinsic reward) is a
+single scalar over the \emph{entire} resulting goal, applied uniformly to
+every manager head --- editing 1 of 8 blocks earns the same-magnitude
+exploration credit as editing all 8, with no per-block attribution of which
+edit produced the novelty. Since the sparsity Lagrangian (\S\ref{sec:ongoing})
+already drives the edit fraction toward its target from the first training
+step, we hypothesized this compounds with F12 (masking alone already kills
+hopper/acrobot at fixed $K{=}8$) by starving goal-space exploration before the
+manager has any signal about which blocks are worth editing. We added an
+open-loop, velocity-capped ratchet on the sparsity Lagrangian's \emph{target}
+itself (distinct from the already-adaptive Lagrange weight): it ramps from
+editing the whole goal (target $1.0$) down to the sparse target ($0.3$) over
+approximately the first 1M environment steps, then holds. The mechanism is
+opt-in and a no-op unless explicitly enabled. e204--e211 (Table
+\ref{tab:ongoing}) test it on the e200--e203 recipe across all four tasks at
+both scales; results pending.
 
 \section{Outlook}
 

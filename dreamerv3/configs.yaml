@@ -133,6 +133,15 @@ defaults:
     # Adaptive sparsity: drive the mean fraction of *edited* blocks per command
     # toward this target so the manager makes minimal tweaks to the running goal.
     mask_sparsity_target: 0.3
+    # Open-loop anneal of the target above: ramps from mask_sparsity_target_init
+    # toward mask_sparsity_target by at most mask_sparsity_target_vel per training
+    # call (see agent.Ratchet). Default init == target, i.e. off (constant target,
+    # byte-for-byte prior behavior). Opt in per experiment, e.g. init: 1.0 to start
+    # by editing the whole goal (full goal-space exploration) before narrowing to
+    # the sparse target -- for sparse-reward envs (acrobot, hopper) where a fixed
+    # sparse mask from step 0 was suspected to starve exploration in goal space.
+    mask_sparsity_target_init: 0.3
+    mask_sparsity_target_vel: 0.01
     mask_sparsity_impl: mult
     # How the soft sparsity penalty reaches the discrete mask head:
     #   sample    = penalize mean of the HARD Bernoulli sample (legacy; the hard

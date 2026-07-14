@@ -796,6 +796,21 @@ class Agent(embodied.jax.Agent):
             inverse=False,
             init=float(getattr(config, 'mask_sparsity_init', 1.0)),
             name='mask_sparsity_adapter')
+        # Open-loop anneal of the sparsity TARGET itself (not the Lagrange scale
+        # above): ramps ``mask_sparsity_target_init`` -> ``mask_sparsity_target``
+        # by at most ``mask_sparsity_target_vel`` per training call. Defaults to
+        # init == target, i.e. a no-op constant target -- opt in per experiment
+        # by setting ``mask_sparsity_target_init`` above ``mask_sparsity_target``
+        # (e.g. 1.0 -> 0.3, to allow full-goal edits early for exploration before
+        # narrowing to the sparse regime).
+        self.mask_sparsity_target_sched = embodied.jax.Ratchet(
+            shape=(),
+            init=float(getattr(
+                config, 'mask_sparsity_target_init',
+                getattr(config, 'mask_sparsity_target', 0.3))),
+            final=float(getattr(config, 'mask_sparsity_target', 0.3)),
+            vel=float(getattr(config, 'mask_sparsity_target_vel', 0.01)),
+            name='mask_sparsity_target_sched')
         # Entropy-native mask controls (built when mode == 'entropy' or 'prob_entropy';
         # off otherwise). ``mask_actent`` (inverse=True, entropy-style) holds the
         # per-block mask entropy near a fraction-of-max setpoint so the mask stays
@@ -2203,6 +2218,10 @@ class Agent(embodied.jax.Agent):
           prob_valid = jnp.ones_like(mask_prob_frac)
         metrics['goal/mask_prob_mean'] = (
             (mask_prob_frac * prob_valid).sum() / jnp.maximum(prob_valid.sum(), 1.0))
+        # Annealed sparsity target (no-op constant unless mask_sparsity_target_init
+        # was set away from mask_sparsity_target -- see construction comment).
+        mask_sparsity_target_now = self.mask_sparsity_target_sched(update=training)
+        metrics['goal/mask_sparsity_target_now'] = mask_sparsity_target_now
         if self.mask_sparsity_mode == 'none':
           # Free sparsity: no target, no penalty. The optional ``goal_edit_cost``
           # (priced editing) is the only force shaping the edit fraction; otherwise
@@ -2230,7 +2249,7 @@ class Agent(embodied.jax.Agent):
           # still stepped (to track the target via ``scale``); its loss is dropped.
           _, mask_sp_mets = self.mask_sparsity_adapter(
               _slot_mean(sg(mask_frac), mask_valid).reshape((B, K_imag)),
-              update=training)
+              update=training, target=mask_sparsity_target_now)
           sp_scale = sg(self.mask_sparsity_adapter.scale())        # Lagrange mult
           # Align the per-command cost to the reward length (imgfeat carries a
           # prepended start state, so the two can differ by one command step).
@@ -2271,7 +2290,8 @@ class Agent(embodied.jax.Agent):
           # from 0/1 even while the mean sits on target). See construction comment
           # above for why these are complementary rather than redundant.
           metric_bt = _slot_mean(mask_prob_frac, prob_valid).reshape((B, K_imag))
-          rate_loss, rate_mets = self.mask_sparsity_adapter(metric_bt, update=training)
+          rate_loss, rate_mets = self.mask_sparsity_adapter(
+              metric_bt, update=training, target=mask_sparsity_target_now)
           metrics.update({f'goal/mask_sparsity_{k}': v for k, v in rate_mets.items()})
           probs = self._mask_prob(mgr_policy['mask'])                   # (M, n, L)
           ent = bernoulli_entropy(probs).mean(-1) / jnp.log(2.0)        # (M, n) in [0,1]
@@ -2304,7 +2324,7 @@ class Agent(embodied.jax.Agent):
             metrics['goal/mask_sparsity_scale_mean'] = jnp.float32(self.mask_sparsity_fixed)
           else:
             mask_sparsity_loss, mask_sp_mets = self.mask_sparsity_adapter(
-                metric_bt, update=training)
+                metric_bt, update=training, target=mask_sparsity_target_now)
             metrics.update({f'goal/mask_sparsity_{k}': v for k, v in mask_sp_mets.items()})
           losses['mask_sparsity'] = mask_sparsity_loss
 

@@ -39,12 +39,19 @@ MASK_TOPK="${MASK_TOPK:-0}"
 MASK_MODE="${MASK_MODE:-prob}"
 MASK_MAX="${MASK_MAX:-5.0}"
 MASK_TARGET="${MASK_TARGET:-0.3}"
+# Open-loop anneal of the sparsity target itself (agent.Ratchet): ramps from
+# MASK_TARGET_INIT toward MASK_TARGET by at most MASK_TARGET_VEL per training
+# call. Default init == target -> no-op (byte-for-byte prior behavior).
+MASK_TARGET_INIT="${MASK_TARGET_INIT:-$MASK_TARGET}"
+MASK_TARGET_VEL="${MASK_TARGET_VEL:-0.01}"
 MGR_ACHIEVE="${MGR_ACHIEVE:-False}"
 DUR_REG="${DUR_REG:-0.01}"
 DUR_MODE="${DUR_MODE:-fixed}"
 DUR_LAGRANGE_MAX="${DUR_LAGRANGE_MAX:-5.0}"
 SEED="${SEED:-0}"
 WORKER_TIMED_GOALS="${WORKER_TIMED_GOALS:-False}"   # HiTS-style worker countdown conditioning
+STRUCT_ADAPT="${STRUCT_ADAPT:-False}"   # AutoAdapt multiplier toward struct-loss ceiling (goal_struct_adapt)
+STRUCT_ADAPT_TARGET="${STRUCT_ADAPT_TARGET:-0.005}"  # struct-loss setpoint (dual-ascent unless one_sided)
 RECIPE="${RECIPE:-vark_masked}"   # vark_masked | mask_fixedk | plain_vark (see small script)
 MGR_FREQ="${MGR_FREQ:-8}"
 MGR_REWARD_AGG="${MGR_REWARD_AGG:-mean}"   # mean (default) | sum (couples mgr return to hold length)
@@ -70,6 +77,8 @@ MASK_FLAGS=(
   --agent.mask_sparsity_mode "$MASK_MODE"
   --agent.mask_sparsity_max "$MASK_MAX"
   --agent.mask_sparsity_target "$MASK_TARGET"
+  --agent.mask_sparsity_target_init "$MASK_TARGET_INIT"
+  --agent.mask_sparsity_target_vel "$MASK_TARGET_VEL"
   --agent.mgr_cond_goalcode True
   --agent.mgr_cond_achieve "$MGR_ACHIEVE"
 )
@@ -119,7 +128,7 @@ EXP_TAG=$EXP_TAG
 CONFIGS=$CONFIGS
 TASK=$TASK
 SIZE=BIG IMAGE=64x64 IMAG=16 BATCH=16x64 TRAIN_RATIO=64 CONV=native
-RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX MASK_TARGET=$MASK_TARGET MASK_MODE=$MASK_MODE STRUCT_W=$STRUCT_W MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W SEED=$SEED
+RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX MASK_TARGET=$MASK_TARGET MASK_TARGET_INIT=$MASK_TARGET_INIT MASK_TARGET_VEL=$MASK_TARGET_VEL MASK_MODE=$MASK_MODE STRUCT_W=$STRUCT_W STRUCT_ADAPT=$STRUCT_ADAPT STRUCT_ADAPT_TARGET=$STRUCT_ADAPT_TARGET WORKER_TIMED_GOALS=$WORKER_TIMED_GOALS MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W SEED=$SEED
 NOTE=prior-vargoal template (RECIPE-switched) at BIG director_match scale
 EOF
 RUN_STEPS="${RUN_STEPS:-4000000}"
@@ -133,6 +142,8 @@ AGENT_FLAGS=(
   --agent.manager_actent_impl mult
   --agent.manager_actent_target 0.5
   --agent.goal_struct_weight "$STRUCT_W"
+  --agent.goal_struct_adapt "$STRUCT_ADAPT"
+  --agent.goal_struct_adapt_target "$STRUCT_ADAPT_TARGET"
   --agent.worker_timed_goals "$WORKER_TIMED_GOALS"
   "${RECIPE_FLAGS[@]}"
   --agent.imag_length 16
