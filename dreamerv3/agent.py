@@ -462,6 +462,10 @@ class Agent(embodied.jax.Agent):
     # 'sample' (legacy no-op), 'prob' (B2: penalize sigmoid probs, differentiable),
     # 'reinforce' (C: shape the manager reward by the realized edit fraction).
     self.mask_sparsity_mode = str(getattr(config, 'mask_sparsity_mode', 'prob'))
+    # Implicit-sparsity controller (works without any edit/abstain mask, incl. plain
+    # Director): 'reinforce' drives the measured implicit block sparsity toward
+    # ``impl_sparsity_target`` via a per-decision REINFORCE change-cost. 'none' = off.
+    self.impl_sparsity_mode = str(getattr(config, 'impl_sparsity_mode', 'none'))
     # Entropy mode only: whether the KL(mask || Bernoulli(sparse_prior)) "prefer not
     # to edit" term is added on top of the mask_actent anti-collapse entropy floor.
     self.mask_kl_enable = bool(getattr(config, 'mask_kl_enable', True))
@@ -472,12 +476,113 @@ class Agent(embodied.jax.Agent):
     # with every flag False feeds the manager exactly ``feat2tensor(feat)`` as before).
     # Each appends a stop-gradient'd channel built from the PRE-edit running code Z, so
     # the manager can see what it is editing / whether the standing goal was reached.
-    self.mgr_cond_goalcode = self.use_masked_goals and bool(
-        getattr(config, 'mgr_cond_goalcode', False))
+    # ``mgr_cond_goalcode`` is also valid WITHOUT masked goals: a plain Director
+    # manager that regenerates the whole code each decision needs to SEE the
+    # previous goal to deliberately re-emit (reuse) blocks -- this is what makes
+    # implicit sparsity learnable rather than incidental. The conditioning channel
+    # is built generically from ``_running_goal_code`` (the emitted skill for plain
+    # goals, the running code Z for masked), so no masked-only machinery is needed.
+    self.mgr_cond_goalcode = bool(getattr(config, 'mgr_cond_goalcode', False))
     self.mgr_cond_achieve = self.use_masked_goals and bool(
         getattr(config, 'mgr_cond_achieve', False))
-    self.mgr_cond_decgoal = self.use_masked_goals and bool(
-        getattr(config, 'mgr_cond_decgoal', False))
+    # ``mgr_cond_decgoal`` is also valid WITHOUT masked goals, same reasoning as
+    # ``mgr_cond_goalcode`` above: the previous DECODED goal is a generic
+    # function of ``_running_goal_code`` regardless of recipe, and is required
+    # input for ``goal_reuse_weight`` below (the manager can't reason about how
+    # far it's moving the goal without seeing where the goal currently is).
+    self.mgr_cond_decgoal = bool(getattr(config, 'mgr_cond_decgoal', False))
+    # Delta goal generation (opt-in, F18 follow-up): instead of sampling the new
+    # goal code from the manager's own categorical from scratch, its per-class
+    # logits pass through an UNNORMALIZED sigmoid ("votes", independent per class,
+    # can be driven to all-~0) that gets ADDED to the previous goal code's one-hot
+    # before the categorical sample. All-~0 votes -> the sum is just the previous
+    # one-hot -> the block is reproduced with ~1.0 probability: a clean, explicit,
+    # DIFFERENTIABLE "reuse" action (unlike measuring reuse post hoc via a
+    # stop-gradiented argmax==argmax comparison, F18's root cause). Actively
+    # re-voting the same class still changes the winning margin and so still
+    # carries gradient, so "reuse by default" and "actively re-predict the same
+    # thing" remain distinguishable to any downstream loss. Only meaningful for
+    # plain (non-masked, non-joint) goals -- it replaces the block-mask/abstain
+    # mechanisms as the reuse channel, so it is mutually exclusive with both.
+    self.goal_delta_mode = self.use_hrl and bool(
+        getattr(config, 'goal_delta_mode', False))
+    if self.goal_delta_mode and self.use_masked_goals:
+      raise ValueError(
+          'goal_delta_mode is mutually exclusive with use_masked_goals (which '
+          'implies mask_joint_edit is unreachable too): it is itself the reuse '
+          'mechanism, at the plain-goal skill head; combining it with an explicit '
+          'edit/abstain mask would give two competing reuse channels.')
+    # Delta mode needs to SEE the previous code (both as the additive target and,
+    # via ``_mgr_input``, as the input the manager's votes are conditioned on) --
+    # force the conditioning channel on rather than silently no-op'ing if the user
+    # forgot to also set ``mgr_cond_goalcode``.
+    self.mgr_cond_goalcode = self.mgr_cond_goalcode or self.goal_delta_mode
+    # Cap on a single class's vote before it's added to the previous one-hot (which
+    # always contributes exactly 1.0 to its class): <=1.0 means a single fresh vote
+    # can at most tie the previous class's weight, not unilaterally overrule it
+    # without the softmax-normalized result still giving the previous class real
+    # mass. Purely a stability/tuning knob -- 1.0 (sigmoid's natural ceiling) is a
+    # no-op clip.
+    self.goal_delta_clip = float(getattr(config, 'goal_delta_clip', 1.0))
+    # Direct (REINFORCE-free) implicit sparsity (2026-07-16, F18 follow-up #2):
+    # instead of recombining the SAMPLE with the past (goal_delta_mode) or
+    # measuring reuse post hoc with no gradient (impl_sparsity_mode), leave
+    # plain (direct) sampling untouched and add an ordinary loss on the
+    # OVERLAP between this decision's own softmax and the previous decision's
+    # -- sum_c p_t[c]*p_{t-1}[c] per block, averaged over blocks -- plus feed
+    # the manager the previous decision's soft distribution as an extra input.
+    # No sampling, no decoder pass, no reward shaping: backprops straight into
+    # both steps' own logits through their softmax (see _emit_manager).
+    self.goal_soft_reuse_adapt = self.use_hrl and bool(
+        getattr(config, 'goal_soft_reuse_adapt', False))
+    if self.goal_soft_reuse_adapt and self.goal_delta_mode:
+      raise ValueError(
+          'goal_soft_reuse_adapt and goal_delta_mode are mutually exclusive '
+          '-- both are reuse mechanisms for the same conditioning channel; '
+          'goal_delta_mode recombines the SAMPLE, goal_soft_reuse_adapt only '
+          'adds a loss and a soft input on top of plain (direct) sampling.')
+    if self.goal_soft_reuse_adapt:
+      # Needs to SEE the previous decision's soft distribution, same reasoning
+      # as goal_delta_mode above.
+      self.mgr_cond_goalcode = True
+    # Either reuse mechanism needs the soft ``skill_probs`` side-channel
+    # threaded through the manager-skill carry (see _emit_manager/_mgr_input
+    # and every init_policy/_unpack_carry/_imagine_with_manager carry init).
+    self._mgr_needs_skill_probs = self.goal_delta_mode or self.goal_soft_reuse_adapt
+    # Differentiable continuous-goal-space reuse loss (2026-07-16). Code-level
+    # reuse (delta mode / implicit_sparsity_block) is a PROXY: an unchanged code
+    # doesn't guarantee an unchanged DECODED goal (the decoder needn't be
+    # locally smooth there), and a changed code doesn't guarantee a changed one
+    # -- while worker success is entirely a function of the decoded goal
+    # (goal_reward_cosine_max(goal_deter, feat)), never the code directly.
+    # goal_struct_weight targets a GLOBAL code<->deter geometry correlation as
+    # an indirect proxy for this; goal_reuse targets the SPECIFIC quantity
+    # that matters -- this decision's decoded goal vs. the previous one --
+    # directly, with a real gradient path INTO THE MANAGER ONLY (decode the
+    # sampled code fresh through goal_dec with the decoder's OWN parameters
+    # stop-gradiented, see ``_decode_goal_no_decoder_grad`` -- the goal
+    # autoencoder is trained by its own reconstruction/struct losses, not by
+    # an incidental manager-shaping objective), compared via
+    # goal_reward_cosine_max to the previous decision's (stop-gradiented,
+    # fixed) decoded goal. See the loss body (``goal/reuse_sim_mean``) for the
+    # exact computation. Two mutually exclusive modes (mirrors
+    # goal_struct_weight/goal_struct_adapt): ``goal_reuse_weight`` (fixed,
+    # pushes toward similarity=1 unconditionally) or ``goal_reuse_adapt``
+    # (recommended: dual-ascent Lagrange multiplier holding mean similarity AT
+    # ``goal_reuse_target`` rather than driving it to 1 unconditionally).
+    # Both default off (0.0 / False) -- byte-for-byte prior behavior.
+    self.goal_reuse_weight = float(getattr(config, 'goal_reuse_weight', 0.0))
+    self.goal_reuse_adapt = bool(getattr(config, 'goal_reuse_adapt', False))
+    if self.goal_reuse_weight > 0.0 and self.goal_reuse_adapt:
+      raise ValueError(
+          'goal_reuse_weight (fixed) and goal_reuse_adapt (adaptive Lagrange) '
+          'are mutually exclusive modes for the same loss, like '
+          'goal_struct_weight/goal_struct_adapt -- set exactly one.')
+    if self.goal_reuse_weight > 0.0 or self.goal_reuse_adapt:
+      # The manager needs to SEE the previous decoded goal to make an informed
+      # decision about how far it's moving it -- force the channel on rather
+      # than silently no-op'ing if the user forgot to also set this.
+      self.mgr_cond_decgoal = True
     self._mgr_cond_any = (
         self.mgr_cond_goalcode or self.mgr_cond_achieve or self.mgr_cond_decgoal)
 
@@ -789,6 +894,34 @@ class Agent(embodied.jax.Agent):
           inverse=False,
           init=float(config.goal_kl_init),
           name='goal_kl_adapter')
+      if self.impl_sparsity_mode != 'none':
+        # Dual-ascent Lagrange multiplier on the per-decision CHANGE fraction
+        # (1 - implicit block sparsity): grows while the manager changes more
+        # blocks than allowed by the annealed kept-target, subtracting a REINFORCE
+        # cost from the manager reward so it re-emits blocks identically. Applies to
+        # any HRL run (masked, joint, or plain Director) -- no mask head needed.
+        # ``impl_sparsity_one_sided`` -> ratchet (scale only grows).
+        self.impl_sparsity_adapter = embodied.jax.AutoAdapt(
+            shape=(),
+            impl=str(getattr(config, 'impl_sparsity_impl', 'mult')),
+            target=1.0 - float(getattr(config, 'impl_sparsity_target', 0.5)),
+            min=float(getattr(config, 'impl_sparsity_min', 1e-5)),
+            max=float(getattr(config, 'impl_sparsity_max', 5.0)),
+            vel=float(getattr(config, 'impl_sparsity_vel', 0.1)),
+            inverse=False,
+            one_sided=bool(getattr(config, 'impl_sparsity_one_sided', False)),
+            init=float(getattr(config, 'impl_sparsity_init', 1.0)),
+            name='impl_sparsity_adapter')
+        # Open-loop ramp of the KEPT-fraction target (Ratchet): init == target is a
+        # DIRECT target (no gradual descent); init below target ratchets sparsity in.
+        self.impl_sparsity_target_sched = embodied.jax.Ratchet(
+            shape=(),
+            init=float(getattr(
+                config, 'impl_sparsity_target_init',
+                getattr(config, 'impl_sparsity_target', 0.5))),
+            final=float(getattr(config, 'impl_sparsity_target', 0.5)),
+            vel=float(getattr(config, 'impl_sparsity_target_vel', 0.01)),
+            name='impl_sparsity_target_sched')
       if getattr(config, 'goal_struct_adapt', False):
         # Adaptive struct weight (dual-ascent, two-sided by default): grows
         # while the raw struct MSE/margin loss (``goal/struct_loss``) sits above
@@ -810,6 +943,69 @@ class Agent(embodied.jax.Agent):
             one_sided=bool(getattr(config, 'goal_struct_adapt_one_sided', False)),
             init=float(config.goal_struct_adapt_init),
             name='goal_struct_adapter')
+      if self.goal_reuse_adapt:
+        # Adaptive goal-reuse weight (dual-ascent Lagrange multiplier): grows
+        # while mean realized similarity (``goal/reuse_sim_mean``, in [-1,1])
+        # sits BELOW ``goal_reuse_target``, shrinks while above --
+        # ``inverse=True`` is the same sense used for entropy regularizers
+        # ("push up when below target"), since higher similarity is what we
+        # want, unlike struct/mask_sparsity's raw losses which we want to
+        # push DOWN. Self-tunes the pressure to hold similarity AT the
+        # target rather than driving it to 1 unconditionally.
+        self.goal_reuse_adapter = embodied.jax.AutoAdapt(
+            shape=(),
+            impl='mult',
+            target=float(config.goal_reuse_target),
+            min=float(config.goal_reuse_adapt_min),
+            max=float(config.goal_reuse_adapt_max),
+            vel=float(config.goal_reuse_adapt_vel),
+            inverse=True,
+            one_sided=bool(getattr(config, 'goal_reuse_adapt_one_sided', False)),
+            init=float(config.goal_reuse_adapt_init),
+            name='goal_reuse_adapter')
+        # Open-loop anneal of the TARGET itself (agent.Ratchet, same mechanism
+        # as impl_sparsity_target_sched / mask_sparsity_target's ratchet):
+        # ramps from goal_reuse_target_init toward goal_reuse_target by at
+        # most goal_reuse_target_vel per training call, giving the manager
+        # time to establish basic task competence before the similarity
+        # constraint tightens to its final value, rather than imposing the
+        # full target from step 0. Default init == target -> no-op (constant
+        # target, byte-for-byte prior behavior unless explicitly set apart).
+        self.goal_reuse_target_sched = embodied.jax.Ratchet(
+            shape=(),
+            init=float(getattr(
+                config, 'goal_reuse_target_init', config.goal_reuse_target)),
+            final=float(config.goal_reuse_target),
+            vel=float(getattr(config, 'goal_reuse_target_vel', 0.01)),
+            name='goal_reuse_target_sched')
+      if self.goal_soft_reuse_adapt:
+        # Adaptive weight on the direct block-overlap loss (dual-ascent
+        # Lagrange multiplier): grows while mean realized overlap sits BELOW
+        # ``goal_soft_reuse_target``, shrinks while above -- ``inverse=True``,
+        # same sense as ``goal_reuse_adapter`` (higher overlap is what we want).
+        self.goal_soft_reuse_adapter = embodied.jax.AutoAdapt(
+            shape=(),
+            impl='mult',
+            target=float(config.goal_soft_reuse_target),
+            min=float(config.goal_soft_reuse_adapt_min),
+            max=float(config.goal_soft_reuse_adapt_max),
+            vel=float(config.goal_soft_reuse_adapt_vel),
+            inverse=True,
+            one_sided=bool(getattr(config, 'goal_soft_reuse_adapt_one_sided', False)),
+            init=float(config.goal_soft_reuse_adapt_init),
+            name='goal_soft_reuse_adapter')
+        # Open-loop ramp of the TARGET itself (agent.Ratchet, same mechanism as
+        # impl_sparsity_target_sched / goal_reuse_target_sched): ramps from
+        # goal_soft_reuse_target_init toward goal_soft_reuse_target by at most
+        # goal_soft_reuse_target_vel per training call. Default init == target
+        # -> no-op (constant target) unless explicitly ratcheted.
+        self.goal_soft_reuse_target_sched = embodied.jax.Ratchet(
+            shape=(),
+            init=float(getattr(
+                config, 'goal_soft_reuse_target_init', config.goal_soft_reuse_target)),
+            final=float(config.goal_soft_reuse_target),
+            vel=float(getattr(config, 'goal_soft_reuse_target_vel', 0.01)),
+            name='goal_soft_reuse_target_sched')
       if self.use_masked_goals and self.mask_topk <= 0 and (
           not self.mask_joint_edit or self.mask_sparsity_mode != 'none'):
         # Adaptive sparsity: drives the mean fraction of active manager-mask bits
@@ -962,11 +1158,33 @@ class Agent(embodied.jax.Agent):
             getattr(self.config.loss_scales, 'goal_duration_prior', 1.0))
       else:
         scales.pop('goal_duration_prior', None)
+      if self.goal_reuse_weight > 0.0 or self.goal_reuse_adapt:
+        # Differentiable continuous-goal-space reuse loss, own key -- see
+        # ``losses['goal_reuse']`` in ``loss()``. The actual weight (fixed
+        # ``goal_reuse_weight`` or the adapter's own dual-ascent scale) is
+        # baked into the loss value; this outer scale stays at its configured
+        # default (1.0), matching ``mask_sparsity``/``goal_struct``.
+        scales['goal_reuse'] = scales.pop(
+            'goal_reuse', getattr(self.config.loss_scales, 'goal_reuse', 1.0))
+      else:
+        scales.pop('goal_reuse', None)
+      if self.goal_soft_reuse_adapt:
+        # Direct block-overlap sparsity loss, own key -- see
+        # ``losses['goal_soft_reuse']`` in ``loss()``. Same convention as
+        # ``goal_reuse`` above: the adapter's own dual-ascent scale is baked
+        # into the loss value, so this outer scale stays at its default (1.0).
+        scales['goal_soft_reuse'] = scales.pop(
+            'goal_soft_reuse',
+            getattr(self.config.loss_scales, 'goal_soft_reuse', 1.0))
+      else:
+        scales.pop('goal_soft_reuse', None)
     else:
       # Flat mode: keep ``policy``/``value``/``repval`` (default keys), drop HRL-only.
       scales.pop('goal_autoencoder', None)
       scales.pop('mask_sparsity', None)
       scales.pop('goal_duration_prior', None)
+      scales.pop('goal_reuse', None)
+      scales.pop('goal_soft_reuse', None)
       if not self.config.repval_loss:
         scales.pop('repval', None)
     self.scales = scales
@@ -1008,6 +1226,13 @@ class Agent(embodied.jax.Agent):
     skill_shape = tuple(int(x) for x in self.skill_shape)
     mgr_shape = self.joint_skill_shape if self.mask_joint_edit else skill_shape
     mgr_skill = {'skill': jnp.zeros((batch_size, *mgr_shape), f32)}
+    if self._mgr_needs_skill_probs:
+      # Soft pre-sample distribution behind the current ``skill`` one-hot, for
+      # ``_mgr_input``'s next-step conditioning (see ``_delta_combine_skill``/
+      # ``goal_soft_reuse_adapt``). Zero-init like ``skill`` itself; harmless
+      # since ``update`` is always True on the very first (reset) decision,
+      # discarding this placeholder value.
+      mgr_skill['skill_probs'] = jnp.zeros((batch_size, *mgr_shape), f32)
     if self.use_masked_goals:
       # Persisted running goal code Z (always (L, C)); the emitted edit is a
       # per-block Bernoulli ``mask`` in the dual-head path, absorbed into the
@@ -1018,6 +1243,13 @@ class Agent(embodied.jax.Agent):
       # Sticky mask of the most recent NON-empty edit, for the mask_viz yellow
       # overlay (held across empty/held goals; reset at episode start).
       mgr_skill['last_edit_mask'] = jnp.zeros((batch_size, skill_shape[0]), f32)
+    # Sticky mask of blocks CHANGED vs the previous goal (implicit sparsity), for the
+    # mask_viz overlay; updated on each manager switch, held between. Tracked for ANY
+    # HRL run (masked or plain Director), not just ``use_masked_goals`` -- plain
+    # Director can also reproduce a block's previous class (optionally biased there
+    # by ``mgr_cond_goalcode``/the implicit-sparsity controller), so "unchanged" is a
+    # real, informative signal there too, not just under explicit masking.
+    mgr_skill['last_change_mask'] = jnp.zeros((batch_size, skill_shape[0]), f32)
     if self.variable_goal_length:
       mgr_skill['duration'] = jnp.zeros((batch_size,), i32)
     # Decoded worker goal (deter); refreshed on manager switch / episode reset and
@@ -1067,11 +1299,14 @@ class Agent(embodied.jax.Agent):
     skill_shape = tuple(int(x) for x in self.skill_shape)
     mgr_shape = self.joint_skill_shape if self.mask_joint_edit else skill_shape
     mgr_skill = {'skill': jnp.zeros((B, *mgr_shape), f32)}
+    if self._mgr_needs_skill_probs:
+      mgr_skill['skill_probs'] = jnp.zeros((B, *mgr_shape), f32)
     if self.use_masked_goals:
       if not self.mask_joint_edit:
         mgr_skill['mask'] = jnp.zeros((B, skill_shape[0]), f32)
       mgr_skill['goal_code'] = jnp.zeros((B, *skill_shape), f32)
       mgr_skill['last_edit_mask'] = jnp.zeros((B, skill_shape[0]), f32)
+    mgr_skill['last_change_mask'] = jnp.zeros((B, skill_shape[0]), f32)
     if self.variable_goal_length:
       mgr_skill['duration'] = jnp.zeros((B,), i32)
     mgr_skill['goal_deter'] = jnp.zeros((B, int(self.goal_shape[0])), f32)
@@ -1149,10 +1384,23 @@ class Agent(embodied.jax.Agent):
     it). Channels are appended in the fixed order goalcode, decgoal, achieve and are
     all stop-gradient'd, so this adds no gradient path into ``goal_enc``/``goal_dec``
     -- only ``manager_pol``'s own (lazily-sized) first layer consumes them. With every
-    flag off this returns exactly ``feat2tensor(feat)`` (bit-identical to before)."""
+    flag off this returns exactly ``feat2tensor(feat)`` (bit-identical to before).
+
+    Under ``goal_delta_mode`` OR ``goal_soft_reuse_adapt``, the goalcode channel
+    is the SOFT distribution (``mgr_skill['skill_probs']`` -- the combined
+    distribution under delta mode, §``_delta_combine_skill``; the manager's own
+    plain softmax under soft-reuse, §``_emit_manager``) rather than the collapsed
+    one-hot -- a strictly richer signal (the one-hot is a lossy argmax of it)
+    that also tells the manager how *contested* the last decision was, not just
+    which class won. Only this input-side view changes; under
+    ``goal_soft_reuse_adapt`` sampling itself is untouched (direct prediction,
+    no recombination)."""
     parts = [self.feat2tensor(feat)]
     if self._mgr_cond_any:
-      code = sg(self._running_goal_code(mgr_skill))            # (..., L, C) pre-edit Z
+      if self._mgr_needs_skill_probs and 'skill_probs' in mgr_skill:
+        code = sg(f32(mgr_skill['skill_probs']))                 # (..., L, C) soft
+      else:
+        code = sg(self._running_goal_code(mgr_skill))            # (..., L, C) pre-edit Z
       if self.mgr_cond_goalcode:
         parts.append(code.reshape((*code.shape[:-2], -1)))     # (..., L*C)
       if self.mgr_cond_achieve or self.mgr_cond_decgoal:
@@ -1243,17 +1491,112 @@ class Agent(embodied.jax.Agent):
     mask logits (the hard Bernoulli *sample* carries no gradient)."""
     return jax.nn.sigmoid(self._mask_logit(dist))          # (..., L) in (0, 1)
 
-  def _emit_manager(self, tensor, bdims, deterministic=False):
-    """Sample a manager command, applying the hard top-k edit budget to the mask."""
+  def _delta_combine_skill(self, skill_out, prev_mgr_skill):
+    """``goal_delta_mode``: add the manager's per-class SIGMOID votes (independent,
+    unnormalized, can be driven to all-~0) to the previous goal code's SOFT
+    pre-sample distribution before the categorical sample, instead of predicting
+    a goal code from scratch.
+
+    The additive base is ``prev_mgr_skill['skill_probs']`` when available, NOT
+    the collapsed one-hot: a one-hot is a lossy view of the previous decision (a
+    55%-confident pick and a 99%-confident pick both collapse to an identical
+    onehot once sampled), and basing "how much to trust the standing choice" on
+    that lossy view would silently max out trust at 1.0 regardless of how
+    contested the decision actually was. Using the real pre-sample probabilities
+    means a block's "stickiness" scales with how confidently it was last chosen:
+    a decisively-won class (prob ~1.0) still caps a single fresh vote at a tie
+    (``goal_delta_clip``'s ceiling can't exceed sigmoid's own [0,1] range), but a
+    contested class (e.g. 0.55) can be outright overtaken by one strong vote on
+    the alternative (0.45 + ~1.0 clearly beats 0.55 + ~0) -- a genuinely
+    decisive switch, not just a coin flip. Falls back to the one-hot
+    (``_running_goal_code``) when no ``skill_probs`` exists yet (a synthetic
+    seed dict, e.g. the current-state encoding at episode start / report-time
+    proposals -- those aren't a manager decision at all, so treating them as a
+    confident commitment is the right default).
+
+    All-~0 votes for a block -> the sum is (numerically) just the previous
+    distribution, unchanged -> the same class stays most likely: a clean,
+    explicit, DIFFERENTIABLE "reuse" action distinct from a stop-gradiented
+    post-hoc argmax==argmax comparison (F18's root cause -- there was no
+    gradient-carrying way for the manager to express "don't change this
+    block"). Actively re-voting the same class still shifts its margin over the
+    alternatives and so still carries gradient, so silent reuse and active
+    re-confirmation stay distinguishable to any downstream loss reading the
+    pre-sample probabilities.
+
+    Preserves whatever ``outs.Agg`` wrapping (block-sum reduction for
+    entropy/kl/logp) the original head output had. Returns ``(dist, probs)`` --
+    ``probs`` is the pre-sample soft distribution, threaded into the carry as
+    ``skill_probs`` so the manager's NEXT input (and NEXT combination, per
+    above) can condition on it directly (see ``_mgr_input``) instead of only
+    the collapsed one-hot."""
+    is_agg = isinstance(skill_out, outs.Agg)
+    inner = skill_out
+    while not hasattr(inner, 'dist') and hasattr(inner, 'output'):
+      inner = inner.output
+    logits = f32(inner.dist.logits)                            # (..., L, C) or (..., C)
+    if 'skill_probs' in prev_mgr_skill:
+      prev_code = sg(f32(prev_mgr_skill['skill_probs']))        # soft, confidence-aware
+    else:
+      prev_code = sg(f32(self._running_goal_code(prev_mgr_skill)))  # onehot fallback
+    votes = jnp.clip(jax.nn.sigmoid(logits), 0.0, self.goal_delta_clip)
+    # ``prev_code`` sums to 1.0/block whether it's a onehot or a genuine
+    # distribution (both normalized), so this is still a valid combination base.
+    combined = prev_code + votes
+    # Normalize to a valid categorical distribution, then floor + renormalize so the
+    # subsequent ``log`` never sees an exact 0 (sigmoid saturates to 0.0 in float32
+    # for very negative logits) -- the "clipping so it doesn't derail" safeguard.
+    probs = combined / jnp.clip(combined.sum(-1, keepdims=True), 1e-6, None)
+    probs = jnp.clip(probs, 1e-6, 1.0)
+    probs = probs / probs.sum(-1, keepdims=True)
+    new_inner = outs.OneHot(jnp.log(probs), 0.0)
+    # ``Head.onehot`` stamps ``minent``/``maxent`` onto the OneHot instance it
+    # builds (used by the adaptive entropy regularizer, ``agent.py``'s
+    # ``mgr_actent_adapter`` loop); a freshly-constructed OneHot has neither, which
+    # would silently drop the skill head out of that loop. Shape/class-count are
+    # unchanged by delta-combination, so the original bounds still apply.
+    for attr in ('minent', 'maxent'):
+      if hasattr(inner, attr):
+        setattr(new_inner, attr, getattr(inner, attr))
+    new_dist = (
+        outs.Agg(new_inner, len(skill_out.axes), skill_out.agg)
+        if is_agg else new_inner)
+    return new_dist, probs
+
+  def _emit_manager(
+      self, tensor, bdims, deterministic=False, prev_mgr_skill=None):
+    """Sample a manager command, applying the hard top-k edit budget to the mask
+    and (``goal_delta_mode``) combining the skill logits with the previous goal
+    code before sampling. ``prev_mgr_skill`` is any dict ``_running_goal_code``
+    accepts (e.g. ``{'goal_code': ...}`` or an ``mgr_skill``-shaped dict); ignored
+    unless ``goal_delta_mode`` is on. When active, the sampled result also carries
+    ``skill_probs`` (the pre-sample soft distribution) for the next step's input
+    conditioning. Under ``goal_soft_reuse_adapt`` (direct prediction, no
+    recombination), ``skill_probs`` is instead the manager's own PLAIN softmax --
+    exposed the same way, purely as an input/loss signal, with sampling itself
+    left untouched (mutually exclusive with ``goal_delta_mode``)."""
     out = mgr_as_dict(self.manager_pol(tensor, bdims))
+    skill_probs = None
+    if self.goal_delta_mode and prev_mgr_skill is not None and 'skill' in out:
+      new_skill, skill_probs = self._delta_combine_skill(out['skill'], prev_mgr_skill)
+      out = {**out, 'skill': new_skill}
+    elif self.goal_soft_reuse_adapt and 'skill' in out:
+      inner = out['skill']
+      while not hasattr(inner, 'dist') and hasattr(inner, 'output'):
+        inner = inner.output
+      skill_probs = jax.nn.softmax(f32(inner.dist.logits), -1)
     pick = mode if deterministic else sample
     if (self.use_masked_goals and 'mask' in out
         and (self.mask_topk > 0 or self.mask_sparsemax)):
       sel = (self._select_topk_mask if self.mask_topk > 0
              else self._select_sparsemax_mask)
-      return {kk: (sel(vv, deterministic) if kk == 'mask' else pick(vv))
-              for kk, vv in out.items()}
-    return pick(out)
+      result = {kk: (sel(vv, deterministic) if kk == 'mask' else pick(vv))
+                for kk, vv in out.items()}
+    else:
+      result = pick(out)
+    if skill_probs is not None:
+      result = {**result, 'skill_probs': skill_probs}
+    return result
 
   def _advance_mgr_skill(self, mgr_skill, emit, update, base_code=None):
     """Switch in the freshly emitted manager skill, threading the running goal.
@@ -1299,6 +1642,34 @@ class Agent(embodied.jax.Agent):
     flat = s.reshape((-1, *s.shape[bdims:]))
     goals = self.goal_dec(flat, 1).pred()
     return goals.reshape(bshape + goals.shape[1:])
+
+  def _decode_goal_no_decoder_grad(self, code, bdims):
+    """Decode ``code`` through ``goal_dec`` with gradient into the DECODER'S
+    OWN PARAMETERS blocked, while gradient into ``code`` (hence, via
+    straight-through, into whatever produced it -- typically the manager)
+    passes through unchanged. Used by ``goal_reuse_weight``/``goal_reuse_adapt``
+    so that loss shapes the manager only; the goal autoencoder is trained by
+    its own reconstruction/struct losses, not by an incidental
+    manager-shaping objective (``MultiOptimizer`` does one combined backward
+    pass and routes gradients to each module's own optimizer purely by which
+    params the loss's forward computation touched -- there is no other
+    isolation, so this has to be explicit).
+
+    Implements ``g(params, x) = f(sg(params), x)``: temporarily swap
+    ``goal_dec``'s live parameter values for stop-gradiented copies of the
+    SAME values (identical forward computation, only the backward path
+    changes), decode, then restore. Verified in isolation (test_freeze_grad.py,
+    2026-07-16): parameter gradient exactly 0, input gradient exactly matches
+    the unfrozen call's, forward values match exactly. Uses the same
+    ``.values``/``.write()`` primitives ``embodied.jax.utils.SlowModel``
+    already relies on, for a different purpose (EMA target networks)."""
+    live = self.goal_dec.values
+    for k, v in live.items():
+      self.goal_dec.write(k, sg(v))
+    out = self.goal_dec(code, bdims).pred()
+    for k, v in live.items():
+      self.goal_dec.write(k, v)
+    return out
 
   def _code_diag(self, repfeat):
     """Offline diagnostics on the goal-code structure (report_code_diag).
@@ -1364,14 +1735,19 @@ class Agent(embodied.jax.Agent):
     # Pull carry-only fields out before any switch tree-map (``emit``/``new_skill``
     # don't carry them, so they must not reach ``skill_switch``).
     sticky = mgr_skill.get('last_edit_mask') if self.use_masked_goals else None
+    sticky_change = mgr_skill.get('last_change_mask')
     cached_goal = mgr_skill.get('goal_deter')
     # Carry-only render caches (held decoded-goal images) must not reach the switch
     # tree-maps either; pull them out and thread them through unchanged. ``policy``
     # refreshes them on a switch.
     img_cache = {k: v for k, v in mgr_skill.items() if k.startswith('goal_img_')}
-    strip = {'goal_deter', *img_cache}
+    strip = {'goal_deter', 'last_change_mask', *img_cache}
     if sticky is not None:
       strip.add('last_edit_mask')
+    # Pre-switch running code: the "previous goal" reference for the
+    # implicit-sparsity CHANGED overlay below, captured before ``skill_switch``/
+    # ``_advance_mgr_skill`` overwrite it. Needed for masked AND plain goals alike.
+    prev_code = self._running_goal_code(mgr_skill)
     mgr_skill = {k: v for k, v in mgr_skill.items() if k not in strip}
     K = max(1, int(self.manager_sample_freq))
     mgr_step = jnp.where(reset, 0, mgr_step)
@@ -1384,12 +1760,20 @@ class Agent(embodied.jax.Agent):
     if self.use_masked_goals:
       init_code = self._encode_goal_code(self.feat2deter(feat), 1)
       r = reset.reshape(reset.shape + (1,) * (init_code.ndim - reset.ndim))
-      base_code = jnp.where(r, init_code, mgr_skill['goal_code'])
+      base_code = jnp.where(r, init_code, prev_code)
       # Condition the manager on the PRE-edit running code it is about to edit.
-      emit = self._emit_manager(self._mgr_input(feat, {'goal_code': base_code}), 1)
+      emit = self._emit_manager(
+          self._mgr_input(feat, {'goal_code': base_code}), 1,
+          prev_mgr_skill={'goal_code': base_code})
       mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update, base_code)
+      prev_code = base_code   # reset-aware pre-edit code is the correct reference
     else:
-      emit = self._emit_manager(self.feat2tensor(feat), 1)
+      # Plain Director: optionally condition the manager on the PREVIOUS emitted
+      # skill (held in ``mgr_skill`` before the switch) so it can deliberately
+      # re-emit blocks; falls back to bare feat when no conditioning is enabled.
+      mgr_inp = (self._mgr_input(feat, mgr_skill) if self._mgr_cond_any
+                 else self.feat2tensor(feat))
+      emit = self._emit_manager(mgr_inp, 1, prev_mgr_skill=mgr_skill)
       mgr_skill = skill_switch(update, emit, mgr_skill)
     # Hold the decoded deter across non-switch steps (Z is already held in carry).
     goal = self._held_goal_deter(
@@ -1416,9 +1800,27 @@ class Agent(embodied.jax.Agent):
       else:
         m = mgr_skill['mask']
       has_edit = (m.sum(-1, keepdims=True) > 0)
-      rr = reset.reshape(reset.shape + (1,) * (m.ndim - reset.ndim))
-      sticky = jnp.where(rr, jnp.zeros_like(m), jnp.where(has_edit, m, sticky))
+      rre = reset.reshape(reset.shape + (1,) * (m.ndim - reset.ndim))
+      sticky = jnp.where(rre, jnp.zeros_like(m), jnp.where(has_edit, m, sticky))
       mgr_skill['last_edit_mask'] = sticky
+    # Implicit-sparsity overlay: mark blocks whose class actually CHANGED from the
+    # previous goal (argmax(new code) != argmax(pre-switch code)), independent of
+    # any edit/abstain selector -- regenerating (or, under plain Director,
+    # re-emitting) a block with the same value is not highlighted. Tracked for
+    # masked AND plain-Director goals alike: a plain manager can reproduce a
+    # block's previous class too (baseline, or steered there by
+    # ``mgr_cond_goalcode``/the implicit-sparsity controller), and that reuse is
+    # exactly what this overlay exists to surface as "white" (unchanged) blocks.
+    # Refresh only on a manager switch (held otherwise, like the goal itself);
+    # cleared at the episode boundary.
+    changed = f32(jnp.argmax(self._running_goal_code(mgr_skill), -1)
+                  != jnp.argmax(prev_code, -1))          # (B, L)
+    rr = reset.reshape(reset.shape + (1,) * (changed.ndim - reset.ndim))
+    u = update.reshape(update.shape + (1,) * (changed.ndim - update.ndim))
+    sticky_change = jnp.where(
+        rr, jnp.zeros_like(changed),
+        jnp.where(u, changed, sticky_change))
+    mgr_skill['last_change_mask'] = sticky_change
     # ``refresh`` marks steps where the goal changed (manager switch or reset); the
     # policy goal-image cache re-renders only on these steps and holds otherwise.
     refresh = jnp.logical_or(update, reset)
@@ -1458,8 +1860,21 @@ class Agent(embodied.jax.Agent):
     if impl == 'manager':
       if self.use_masked_goals:
         base = self._encode_goal_code(self.feat2deter(feat), 1)
-        emit = self._emit_manager(self._mgr_input(feat, {'goal_code': base}), 1)
+        emit = self._emit_manager(
+            self._mgr_input(feat, {'goal_code': base}), 1,
+            prev_mgr_skill={'goal_code': base})
         code = self._edit_running_goal(base, emit)
+      elif self._mgr_cond_any:
+        # Plain Director + conditioning: seed the manager's "previous code" channel
+        # with the current-state encoding so the input width matches every other
+        # manager_pol call site (the lazily-sized first layer is shared). Under
+        # ``goal_delta_mode`` this also seeds the additive reference, so a fresh
+        # proposal here reuses/edits relative to the current state, not a zero code.
+        base = self._encode_goal_code(self.feat2deter(feat), 1)
+        emit = self._emit_manager(
+            self._mgr_input(feat, {'goal_code': base}), 1,
+            prev_mgr_skill={'goal_code': base})
+        code = emit['skill'] if isinstance(emit, dict) else emit
       else:
         emit = self._emit_manager(self.feat2tensor(feat), 1)
         code = emit['skill'] if isinstance(emit, dict) else emit
@@ -1560,6 +1975,8 @@ class Agent(embodied.jax.Agent):
     mgr_shape = self.joint_skill_shape if self.mask_joint_edit else skill_shape
     # Start with a dummy skill that will be replaced in first step
     mgr_skill = {'skill': jnp.zeros((B, *mgr_shape), f32)}
+    if self._mgr_needs_skill_probs:
+      mgr_skill['skill_probs'] = jnp.zeros((B, *mgr_shape), f32)
     seed_code = None
     if self.use_masked_goals:
       if not self.mask_joint_edit:
@@ -1568,6 +1985,12 @@ class Agent(embodied.jax.Agent):
       # manager command (step 0) edits the current state, not a zero code.
       seed_code = self._encode_goal_code(starts['deter'], 1)
       mgr_skill['goal_code'] = seed_code
+    elif self._mgr_cond_any:
+      # Plain Director + conditioning: the body's step-0 emit conditions on the
+      # initial (zero) skill; return it as the seed so the train re-derivation
+      # reconstructs the same step-0 pre-edit conditioning code (no leakage of the
+      # skill the manager is about to emit).
+      seed_code = mgr_skill['skill']
     if self.variable_goal_length:
       mgr_skill['duration'] = jnp.zeros((B,), i32)
 
@@ -1579,7 +2002,8 @@ class Agent(embodied.jax.Agent):
       else:
         update = jnp.equal(step_i % K, 0)
       # The carry's goal_code is the PRE-edit running Z for this step.
-      emit = self._emit_manager(self._mgr_input(feat, mgr_skill), 1)
+      emit = self._emit_manager(
+          self._mgr_input(feat, mgr_skill), 1, prev_mgr_skill=mgr_skill)
       mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update)
       if self.variable_goal_length:
         p = self._duration_steps(mgr_skill)
@@ -1619,7 +2043,9 @@ class Agent(embodied.jax.Agent):
       update_last = last_remaining <= 0
     else:
       update_last = jnp.equal(H % K, 0)
-    emit_last = self._emit_manager(self._mgr_input(feat_last, last_mgr_skill), 1)
+    emit_last = self._emit_manager(
+        self._mgr_input(feat_last, last_mgr_skill), 1,
+        prev_mgr_skill=last_mgr_skill)
     last_mgr_skill = self._advance_mgr_skill(last_mgr_skill, emit_last, update_last)
 
     img_skills = concat([img_skills, jax.tree.map(lambda x: x[:, None], last_mgr_skill)], 1)
@@ -1662,8 +2088,17 @@ class Agent(embodied.jax.Agent):
       seed_code = self._encode_goal_code(self.feat2deter(feat0), 1)
       mgr_skill = self._emit_manager(
           self._mgr_input(feat0, {'goal_code': seed_code}), 1,
-          deterministic=deterministic)
+          deterministic=deterministic, prev_mgr_skill={'goal_code': seed_code})
       mgr_skill['goal_code'] = seed_code
+    elif self._mgr_cond_any:
+      # Plain Director + conditioning: seed the manager's "previous code" channel
+      # with the start-state encoding so the first manager_pol call has the same
+      # input width as the body (which conditions on the held previous skill).
+      # Under ``goal_delta_mode`` this also seeds the additive reference.
+      seed_code = self._encode_goal_code(self.feat2deter(feat0), 1)
+      mgr_skill = self._emit_manager(
+          self._mgr_input(feat0, {'goal_code': seed_code}), 1,
+          deterministic=deterministic, prev_mgr_skill={'goal_code': seed_code})
     else:
       mgr_skill = self._emit_manager(
           self.feat2tensor(feat0), 1, deterministic=deterministic)
@@ -1679,7 +2114,8 @@ class Agent(embodied.jax.Agent):
       else:
         update = jnp.equal(t % K, 0)
       emit = self._emit_manager(
-          self._mgr_input(feat, mgr_skill), 1, deterministic=deterministic)
+          self._mgr_input(feat, mgr_skill), 1, deterministic=deterministic,
+          prev_mgr_skill=mgr_skill)
       mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update)
       if self.variable_goal_length:
         p = self._duration_steps(mgr_skill)
@@ -1751,9 +2187,11 @@ class Agent(embodied.jax.Agent):
       dec_carry, dec_entry, recons = self.dec(dec_carry, feat, reset, **kw)
 
     if self.use_hrl:
-      # mask_viz applies to any HRL run with an image decoder: masked goals show the
-      # running code Z with the sticky last-edit blocks in yellow; plain goals show
-      # the emitted skill code (whole code replaced each decision -> all yellow).
+      # mask_viz applies to any HRL run with an image decoder: the running/emitted
+      # code is shown with blocks CHANGED vs the previous goal in yellow and blocks
+      # left unchanged (implicit sparsity, or explicit abstain under masked goals)
+      # in white/grayscale -- tracked via the sticky ``last_change_mask`` for both
+      # masked and plain-Director goals alike (see ``_manager_skill_step``).
       mask_viz_on = (bool(self.dec.imgkeys) and
                      bool(getattr(self.config, 'report_mask_viz', True)))
       mgr_skill, goal, mgr_step, goal_refresh = self._manager_skill_step(
@@ -1791,15 +2229,14 @@ class Agent(embodied.jax.Agent):
         lo = code.min((-2, -1), keepdims=True)
         hi = code.max((-2, -1), keepdims=True)
         gcode = (code - lo) / (hi - lo + 1e-8)                  # (B, L, C) in [0,1]
-        # Edited blocks render yellow (keep R,G = intensity, zero blue). Masked
-        # goals use the sticky ``last_edit_mask`` so the yellow marks the last
-        # NON-empty edit and persists until the next one (an empty/held goal does
-        # not clear it). Plain goals replace the whole skill code at every manager
-        # decision, so every block is edited -> all yellow.
-        if self.use_masked_goals:
-          edit = f32(mgr_skill['last_edit_mask'])                # (B, L)
-        else:
-          edit = jnp.ones(code.shape[:-1], f32)                 # (B, L) all-edited
+        # CHANGED blocks render yellow (keep R,G = intensity, zero blue); UNCHANGED
+        # blocks stay grayscale/white (R=G=B). ``last_change_mask`` marks the blocks
+        # that actually differ from the PREVIOUS goal (implicit sparsity), not an
+        # edit/abstain selector: a block re-emitted with the same value is not
+        # highlighted, whether that reuse came from an explicit abstain (masked
+        # goals) or the manager simply redrawing the same class (plain Director).
+        # Held between switches, cleared at episode start.
+        edit = f32(mgr_skill['last_change_mask'])                 # (B, L)
         keepblue = (1.0 - edit)[:, :, None]                     # (B, L, 1)
         code_rgb = jnp.stack([gcode, gcode, gcode * keepblue], -1)  # (B, L, C, 3)
         code_u8 = (code_rgb * 255).astype(jnp.uint8)
@@ -2103,6 +2540,77 @@ class Agent(embodied.jax.Agent):
     con = self.con(inp, 2).prob(1)
     # Detach manager-produced goals from worker actor/critic.
     goals = sg(self._goals_from_skills(jax.tree.map(sg, mgr_skills), bdims=2))
+    # --- Implicit (effective) sparsity, logged for EVERY HRL run (masked, joint,
+    # AND plain Director). Measures how much of the goal is KEPT from the previous
+    # goal, independent of any edit/abstain mask -- a block regenerated with the
+    # same value counts as unchanged (this is exactly what block masking was a
+    # proxy for). Two views:
+    #   * goal/implicit_sparsity_block -- fraction of goal-code blocks whose class
+    #     is identical to the previous goal (1 = regenerated identical / fully
+    #     sparse, 0 = every block changed).
+    #   * goal/implicit_sparsity_cont  -- decoded-goal similarity to the previous
+    #     decoded goal (cosine_max in [-1, 1] mapped to [0, 1]; 1 = goal unchanged).
+    # Both reduce over manager-DECISION steps only: on held steps the running code
+    # is unchanged by construction and would otherwise pin the metric at 1.
+    post_code_impl = self._running_goal_code(mgr_skills)          # (M, H+1, [L,] C)
+    seed_impl = (mgr_seed_code if mgr_seed_code is not None
+                 else post_code_impl[:, 0])
+    pre_code_impl = jnp.concatenate(
+        [seed_impl[:, None], post_code_impl[:, :-1]], 1)
+    kept = f32(jnp.argmax(post_code_impl, -1) == jnp.argmax(pre_code_impl, -1))
+    block_kept = kept.mean(-1) if self._skill_factorized else kept    # (M, H+1)
+    # Held decodes are identical, so the previous decoded goal is just ``goals``
+    # shifted one step (avoids a second goal_dec pass).
+    pre_goal_impl = jnp.concatenate([goals[:, :1], goals[:, :-1]], 1)
+    cont_sim = 0.5 * (goal_reward_cosine_max(pre_goal_impl, goals) + 1.0)  # (M,H+1)
+    if self.variable_goal_length and switch_mask is not None:
+      dec_w = f32(switch_mask)                                    # per-step switch
+    else:
+      K_dec = max(1, int(self.manager_sample_freq))
+      dec_w = jnp.zeros(block_kept.shape, f32).at[:, ::K_dec].set(1.0)
+    # Exclude the first imagined decision: its "previous goal" is the (unavailable)
+    # real goal from before imagination, so comparing to the zero/self seed is not a
+    # valid decision-to-decision change. Dropping it keeps this metric consistent
+    # with the controller's change_frac (same exclusion below).
+    dec_w = dec_w.at[:, 0].set(0.0)
+    dec_sum = jnp.maximum(dec_w.sum(), 1.0)
+    metrics['goal/implicit_sparsity_block'] = (block_kept * dec_w).sum() / dec_sum
+    metrics['goal/implicit_sparsity_cont'] = (cont_sim * dec_w).sum() / dec_sum
+    if self.goal_reuse_weight > 0.0 or self.goal_reuse_adapt:
+      # Differentiable continuous-goal-space reuse loss (see __init__ comment).
+      # ``cont_sim`` above is a pure diagnostic: ``goals`` is stop-gradiented
+      # (twice over -- ``sg(self._goals_from_skills(jax.tree.map(sg, ...)))``),
+      # by design, so worker-conditioning/logging never leaks gradient into the
+      # manager. Here we decode ``post_code_impl`` FRESH, with the decoder's
+      # OWN parameters stop-gradiented but not its input (see
+      # ``_decode_goal_no_decoder_grad``), so the straight-through gradient
+      # the sampled code already carries reaches this loss and shapes the
+      # MANAGER only, not the goal autoencoder -- ``pre_goal_impl`` (the fixed
+      # target, this decision's PREVIOUS decoded goal) stays exactly the
+      # already-stop-gradiented value above, on purpose: we want gradient
+      # flowing from "how far did I move" back into the CURRENT decision, not
+      # into a revision of the past.
+      goal_now = self._decode_goal_no_decoder_grad(post_code_impl, 2)  # (M,H+1,D)
+      reuse_sim = goal_reward_cosine_max(pre_goal_impl, goal_now)   # (M,H+1) in [-1,1]
+      sim_bt = (reuse_sim * dec_w).sum(1) / jnp.maximum(dec_w.sum(1), 1.0)
+      sim_bt = sim_bt.reshape((B, K_imag))               # valid-weighted mean similarity
+      if self.goal_reuse_adapt:
+        # Dual-ascent Lagrange multiplier holding mean similarity AT the
+        # (possibly ratcheted) target (inverse=True: grows the pressure while
+        # similarity sits below target, shrinks while above -- see adapter
+        # construction). Annealed target (no-op unless goal_reuse_target_init
+        # was set apart from goal_reuse_target -- see construction comment).
+        reuse_target_now = self.goal_reuse_target_sched(update=training)
+        reuse_loss, reuse_mets = self.goal_reuse_adapter(
+            sim_bt, update=training, target=reuse_target_now)
+        metrics['goal/reuse_target_now'] = reuse_target_now
+        metrics.update({f'goal/reuse_adapt_{k}': v for k, v in reuse_mets.items()})
+      else:
+        # Fixed-weight ablation: pushes toward similarity=1 unconditionally,
+        # no target, no adaptive scale. Kept for comparison/completeness.
+        reuse_loss = self.goal_reuse_weight * (1.0 - sim_bt)
+      losses['goal_reuse'] = reuse_loss
+      metrics['goal/reuse_sim_mean'] = (reuse_sim * dec_w).sum() / dec_sum
     # Re-derive the manager policy with the SAME conditioning input the rollout used.
     # ``mgr_skills`` carry the POST-edit code Z_t; the manager conditioned on the
     # PRE-edit code (Z_{t-1}, with step 0 = the imagination seed).
@@ -2110,6 +2618,18 @@ class Agent(embodied.jax.Agent):
       post_code = self._running_goal_code(mgr_skills)              # (M, H+1, L, C)
       seed = mgr_seed_code if mgr_seed_code is not None else post_code[:, 0]
       pre_code = jnp.concatenate([seed[:, None], post_code[:, :-1]], 1)
+      if self.goal_soft_reuse_adapt:
+        # Same pre-edit shift as ``pre_code`` above, but for the soft
+        # distribution: mgr_skills['skill_probs'] is a genuine per-decision
+        # stacked field (threaded through the scan carry like goal_code/skill),
+        # so no onehot fallback is needed. Seed with zeros, matching the real
+        # carry's own zero-init at episode/imagination start (init_policy /
+        # _imagine_with_manager) -- decision 0 is excluded from the loss below,
+        # so this placeholder only ever matters as a (harmless, "no signal
+        # yet") conditioning input, never as a loss target.
+        post_probs = mgr_skills['skill_probs']                     # (M, H+1, L, C)
+        seed_probs = jnp.zeros_like(post_probs[:, 0])
+        pre_probs = jnp.concatenate([seed_probs[:, None], post_probs[:, :-1]], 1)
     rew_step = sg(self.rew(inp, 2).pred())
     expl_step = sg(self._mgr_expl_reward(imgfeat))
     if self.variable_goal_length:
@@ -2132,6 +2652,9 @@ class Agent(embodied.jax.Agent):
         if self._mgr_cond_any:
           preedit_eff = {'goal_code': downsample_at_switch_mask(
               {'goal_code': pre_code}, switch_mask)['goal_code']}
+          if self.goal_soft_reuse_adapt:
+            preedit_eff['skill_probs'] = downsample_at_switch_mask(
+                {'skill_probs': pre_probs}, switch_mask)['skill_probs']
           mgr_pol_inp = self._mgr_input(imgfeat_eff, preedit_eff)
         else:
           preedit_eff = None
@@ -2146,6 +2669,8 @@ class Agent(embodied.jax.Agent):
         mgr_expl_rew = imag_reward_pad(expl_step[:, 1:])
         if self._mgr_cond_any:
           preedit_eff = {'goal_code': pre_code}
+          if self.goal_soft_reuse_adapt:
+            preedit_eff['skill_probs'] = pre_probs
           mgr_pol_inp = self._mgr_input(imgfeat, preedit_eff)
         else:
           preedit_eff = None
@@ -2192,6 +2717,8 @@ class Agent(embodied.jax.Agent):
       # code the manager just produced (leakage).
       if self._mgr_cond_any:
         preedit_eff = {'goal_code': pre_code[:, ::self.manager_sample_freq]}
+        if self.goal_soft_reuse_adapt:
+          preedit_eff['skill_probs'] = pre_probs[:, ::self.manager_sample_freq]
         assert preedit_eff['goal_code'].shape[1] == imgfeat_eff['deter'].shape[1]
         mgr_pol_inp = self._mgr_input(imgfeat_eff, preedit_eff)
       else:
@@ -2203,6 +2730,14 @@ class Agent(embodied.jax.Agent):
       mgr_expl_rew = imag_reward_pad(
           self._mgr_extr_rew(expl_step, con, without_zeros=True))
     mgr_policy = mgr_as_dict(self.manager_pol(mgr_pol_inp, 2))
+    if self.goal_delta_mode and preedit_eff is not None and 'skill' in mgr_policy:
+      # Re-derive the SAME delta-combined distribution ``_emit_manager`` sampled
+      # from during imagination (``preedit_eff`` is the identical pre-edit code
+      # used to build ``mgr_pol_inp`` above), so logp/entropy/kl below are taken
+      # under the distribution the action actually came from, not the raw
+      # pre-combination network output.
+      mgr_skill_dist, _ = self._delta_combine_skill(mgr_policy['skill'], preedit_eff)
+      mgr_policy = {**mgr_policy, 'skill': mgr_skill_dist}
 
     # --- Edit sparsity: drive the fraction of edited blocks per command toward
     # ``mask_sparsity_target``. ``mask`` is the emitted edit mask m_t (a 1 means
@@ -2410,6 +2945,75 @@ class Agent(embodied.jax.Agent):
                 metric_bt, update=training, target=mask_sparsity_target_now)
             metrics.update({f'goal/mask_sparsity_{k}': v for k, v in mask_sp_mets.items()})
           losses['mask_sparsity'] = mask_sparsity_loss
+
+    if self.impl_sparsity_mode != 'none':
+      # Implicit-sparsity REINFORCE cost (mask-free): per manager decision, measure
+      # the CHANGE fraction vs the previous decision's goal code and subtract
+      # sg(lambda) * change_frac from the manager reward, so REINFORCE pushes the
+      # skill logp toward re-emitting the same blocks. lambda is dual-ascent toward
+      # the (annealed) kept-fraction target. Works for plain Director (full-goal
+      # regeneration) and masked/joint alike, since it reads the running goal code.
+      post_eff = self._running_goal_code(mgr_skills_eff)         # (M, n, [L,] C)
+      pre_eff = jnp.concatenate([post_eff[:, :1], post_eff[:, :-1]], 1)
+      chg = f32(jnp.argmax(post_eff, -1) != jnp.argmax(pre_eff, -1))
+      chg = chg.mean(-1) if self._skill_factorized else chg      # (M, n) change frac
+      if (self.variable_goal_length and mgr_switch is not None
+          and mgr_switch.shape == chg.shape):
+        v = f32(mgr_switch)                                      # valid decisions
+      else:
+        v = jnp.ones_like(chg)
+      # Exclude decision 0: pre_eff[0] is a self-compare (chg==0), which would
+      # otherwise dilute the tracked change_frac and mis-set the Lagrangian. Matches
+      # the goal/implicit_sparsity_block exclusion so the reported metric and the
+      # controller optimise the same quantity.
+      v = v.at[:, 0].set(0.0)
+      kept_target = self.impl_sparsity_target_sched(update=training)
+      chg_bt = ((chg * v).sum(1) / jnp.maximum(v.sum(1), 1.0)).reshape((B, K_imag))
+      _, impl_mets = self.impl_sparsity_adapter(
+          chg_bt, update=training, target=1.0 - kept_target)
+      impl_scale = sg(self.impl_sparsity_adapter.scale())        # Lagrange mult
+      n = min(mgr_extr_rew.shape[1], chg.shape[1])
+      impl_pen = jnp.zeros_like(mgr_extr_rew).at[:, :n].set(
+          impl_scale * sg(chg[:, :n]))
+      mgr_extr_rew = mgr_extr_rew - impl_pen
+      metrics['goal/impl_sparsity_target_now'] = kept_target
+      metrics['goal/impl_sparsity_change_frac_mean'] = (
+          (chg * v).sum() / jnp.maximum(v.sum(), 1.0))
+      metrics['goal/impl_sparsity_reward_pen_mean'] = impl_pen.mean()
+      metrics.update({f'goal/impl_sparsity_{k}': vv for k, vv in impl_mets.items()})
+
+    if self.goal_soft_reuse_adapt:
+      # Direct (non-REINFORCE) implicit sparsity: overlap between this
+      # decision's own plain softmax and the previous decision's, per block,
+      # averaged over blocks -- an ordinary differentiable quantity (no
+      # sampling, no decoder pass); backprops straight into both steps' own
+      # logits through their softmax. ``mgr_policy['skill']`` here is the RAW
+      # (uncombined) manager output -- goal_delta_mode's recombination never
+      # runs since the two modes are mutually exclusive (__init__ check).
+      cur_inner = mgr_policy['skill']
+      while not hasattr(cur_inner, 'dist') and hasattr(cur_inner, 'output'):
+        cur_inner = cur_inner.output
+      p_cur = jax.nn.softmax(f32(cur_inner.dist.logits), -1)          # (M, n, [L,] C)
+      p_prev = sg(preedit_eff['skill_probs'])                        # fixed target: don't revise the past
+      overlap = (p_cur * p_prev).sum(-1)                             # (M, n, [L])
+      overlap = overlap.mean(-1) if self._skill_factorized else overlap  # (M, n)
+      if (self.variable_goal_length and mgr_switch is not None
+          and mgr_switch.shape == overlap.shape):
+        v = f32(mgr_switch)                                          # valid decisions
+      else:
+        v = jnp.ones_like(overlap)
+      # Exclude decision 0: its "previous" is the zero seed, not a real
+      # decision (matches impl_sparsity/implicit_sparsity_block's exclusion).
+      v = v.at[:, 0].set(0.0)
+      soft_target_now = self.goal_soft_reuse_target_sched(update=training)
+      overlap_bt = ((overlap * v).sum(1) / jnp.maximum(v.sum(1), 1.0)).reshape((B, K_imag))
+      soft_loss, soft_mets = self.goal_soft_reuse_adapter(
+          overlap_bt, update=training, target=soft_target_now)
+      losses['goal_soft_reuse'] = soft_loss
+      metrics['goal/soft_reuse_target_now'] = soft_target_now
+      metrics['goal/soft_reuse_overlap_mean'] = (
+          (overlap * v).sum() / jnp.maximum(v.sum(), 1.0))
+      metrics.update({f'goal/soft_reuse_{k}': vv for k, vv in soft_mets.items()})
 
     kwargs_mgr = {**self.config.imag_loss}
     kwargs_mgr.update(
@@ -2868,9 +3472,10 @@ class Agent(embodied.jax.Agent):
     # NOTE: the masked / overwrite-goal panel moved to the online policy() path so
     # it spans an entire episode (logged as epstats/policy_mask_viz_{key}), mirroring
     # epstats/policy_image_with_goal. Its 3 rows (each upscaled 10x) are obs | goal
-    # code with the most-recently-edited blocks in yellow | active goal image. Masked
-    # goals highlight the sticky last-edit blocks on the running code Z; plain goals
-    # show the emitted skill code all-yellow (whole code replaced each decision). See
+    # code with blocks CHANGED vs the previous goal in yellow, unchanged blocks
+    # white/grayscale | active goal image. Tracked via the sticky
+    # ``last_change_mask`` for masked AND plain-Director goals alike (a plain
+    # manager reproducing a block's previous class shows white there too). See
     # ``mask_viz_on`` in ``policy``. ``report_mask_viz`` gates it.
 
     # Director-style: [initial | proposed goal | worker rollout] per proposal

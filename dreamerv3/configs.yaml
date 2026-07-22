@@ -99,7 +99,7 @@ defaults:
     profiler: False
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0, mask_sparsity: 1.0, goal_duration_prior: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0, mask_sparsity: 1.0, goal_duration_prior: 1.0, goal_reuse: 1.0, goal_soft_reuse: 1.0}
     # Three independent optimizers (Director-style): the world model + heads, the
     # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
     # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
@@ -143,6 +143,31 @@ defaults:
     mask_sparsity_target_init: 0.3
     mask_sparsity_target_vel: 0.01
     mask_sparsity_impl: mult
+    # --- Implicit (effective) sparsity controller -------------------------------
+    # Drives the MEASURED implicit block sparsity -- the fraction of goal-code
+    # blocks the manager regenerates IDENTICAL to the previous goal (metric
+    # goal/implicit_sparsity_block) -- toward a target, WITHOUT any edit/abstain
+    # mask. Works with plain full-goal regeneration (Director-style): a per-decision
+    # REINFORCE cost lambda*change_frac is subtracted from the manager reward, where
+    # change_frac = 1 - kept_frac, so the manager is pushed to re-emit the same
+    # blocks. lambda is a dual-ascent AutoAdapt tracking the (annealed) kept target.
+    #   impl_sparsity_mode: none | reinforce  (none = off, byte-for-byte prior).
+    #   impl_sparsity_target: kept-fraction setpoint (0.5 = keep half the blocks).
+    #   impl_sparsity_target_init/_vel: open-loop ramp of the target (Ratchet). Set
+    #       init == target for a DIRECT target (no gradual descent); set init below
+    #       target (e.g. 0.0 -> 0.5) to RATCHET sparsity in across training.
+    #   impl_sparsity_one_sided: True = the Lagrange scale only grows (ratchet), so
+    #       sparsity pressure never relaxes once applied.
+    impl_sparsity_mode: none
+    impl_sparsity_target: 0.5
+    impl_sparsity_target_init: 0.5
+    impl_sparsity_target_vel: 0.01
+    impl_sparsity_impl: mult
+    impl_sparsity_min: 1e-5
+    impl_sparsity_max: 5.0
+    impl_sparsity_vel: 0.1
+    impl_sparsity_init: 1.0
+    impl_sparsity_one_sided: False
     # How the soft sparsity penalty reaches the discrete mask head:
     #   sample    = penalize mean of the HARD Bernoulli sample (legacy; the hard
     #               sample has no gradient to the mask logits, so this is a no-op
@@ -212,9 +237,104 @@ defaults:
     # manager input stays exactly feat2tensor(feat)). Each appends a stop-gradient'd
     # channel built from the PRE-edit running code Z so the manager can see what it is
     # editing / whether the standing goal was already reached. See agent._mgr_input.
-    mgr_cond_goalcode: False   # concat flattened pre-edit running code Z (L*C dims)
+    mgr_cond_goalcode: False   # concat flattened pre-edit running code Z (L*C dims); auto-forced True below by goal_soft_reuse_adapt regardless of this default
     mgr_cond_achieve: False    # concat scalar cosine_max(decode(pre-edit Z), deter)
     mgr_cond_decgoal: False    # (least preferred) concat decoded previous goal (deter dims)
+    # Delta goal generation (opt-in, F18 follow-up; mutually exclusive with
+    # use_masked_goals). Instead of sampling the new goal code from the manager's
+    # own categorical from scratch, its per-class logits pass through an
+    # unnormalized sigmoid ("votes", independent per class, can be driven to
+    # all-~0) that gets ADDED to the previous goal code's one-hot before the
+    # categorical sample -- an explicit, gradient-carrying "reuse the previous
+    # block" default, vs. reuse only ever being a lucky coincidence with no
+    # gradient. Implies mgr_cond_goalcode (forced on in agent.py if set here).
+    # See agent._delta_combine_skill.
+    goal_delta_mode: False
+    # Cap on a single class's vote before adding it to the previous one-hot
+    # (which always contributes exactly 1.0 to its class). <=1.0 (sigmoid's
+    # natural ceiling) is a no-op; lower values soften how strongly one fresh
+    # vote can outweigh the standing class.
+    goal_delta_clip: 1.0
+    # Direct (REINFORCE-free) implicit sparsity (2026-07-16, F18 follow-up #2).
+    # F18 found impl_sparsity_mode catastrophic because "kept" has no
+    # differentiable representation under plain (direct) sampling -- the only
+    # channel was a stop-gradiented reward penalty through REINFORCE.
+    # goal_delta_mode fixes this by recombining the SAMPLE itself with the
+    # past; this is a cheaper alternative that leaves sampling untouched
+    # (mutually exclusive with goal_delta_mode) and instead adds an ordinary
+    # loss on the OVERLAP between this decision's own softmax and the previous
+    # decision's: sum_c p_t[c]*p_{t-1}[c] per block, averaged over blocks --
+    # bounded in [0,1] by Cauchy-Schwarz (the probability an independent draw
+    # from each distribution would land on the same class). No sampling, no
+    # decoder pass; backprops straight into both steps' own logits through
+    # their softmax (see agent._emit_manager's goal_soft_reuse_adapt branch).
+    # Implies mgr_cond_goalcode (forced on in agent.py), with that channel
+    # carrying the previous decision's SOFT distribution instead of the
+    # one-hot (mirrors goal_delta_mode's own input-side change; see
+    # _mgr_input). Dual-ascent Lagrange multiplier (inverse=True, "push up
+    # when below target", same sense as goal_reuse_adapt) holds mean overlap
+    # AT goal_soft_reuse_target rather than driving it to 1 unconditionally.
+    # Default masking mechanism (2026-07-22): block-overlap reuse, ratcheted to
+    # target 0.5, struct+ratchet -- the e286 (hopper BIG)/e290 (cheetah BIG) recipe,
+    # the best-performing cell of the F19 retest (both above their Director
+    # baseline late in training; see EXPERIMENTS.md §2/§3 F19 interim update and
+    # paper/main.tex §softreuse). Pairs with goal_struct_adapt/_target below.
+    goal_soft_reuse_adapt: True
+    goal_soft_reuse_target: 0.5
+    # Open-loop anneal of the target itself (agent.Ratchet, same mechanism as
+    # impl_sparsity_target_sched / goal_reuse_target_sched): ramps from
+    # goal_soft_reuse_target_init toward goal_soft_reuse_target by at most
+    # goal_soft_reuse_target_vel per training call. Default init == target ->
+    # no-op (constant target from step 0) unless explicitly ratcheted.
+    goal_soft_reuse_target_init: 0.0
+    # BIG-scale calibration (0->0.5 over ~2M env-steps at MGR_FREQ=8,
+    # train_ratio=64); e286/e290 exact value. Small-scale runs should override
+    # to ~1.0e-6 (project convention: BIG vel * small/BIG env-steps-per-call
+    # ratio), matching GOAL_SOFT_REUSE_TARGET_VEL in the sbatch templates.
+    goal_soft_reuse_target_vel: 3.9e-6
+    goal_soft_reuse_adapt_init: 1.0
+    goal_soft_reuse_adapt_min: 1e-5
+    goal_soft_reuse_adapt_max: 100.0
+    goal_soft_reuse_adapt_vel: 0.1
+    goal_soft_reuse_adapt_one_sided: False
+    # Differentiable continuous-goal-space reuse loss (2026-07-16). Directly
+    # targets cosine_max(decoded_goal_t, decoded_goal_{t-1}) instead of
+    # relying on code-level reuse (delta mode / implicit sparsity) as a proxy --
+    # worker success is a function of the DECODED goal, never the code
+    # directly, and an unchanged code doesn't guarantee an unchanged decode (or
+    # vice versa). Own loss key (``goal_reuse``, see loss_scales); gradient
+    # flows through goal_dec's INPUT (the code, straight-through into the
+    # manager) but NOT into goal_dec's own parameters -- the goal autoencoder
+    # is trained only by its own reconstruction/struct losses, this mechanism
+    # shapes the manager only (see agent._decode_goal_no_decoder_grad). Works
+    # regardless of which goal-generation mechanism produced the code (plain,
+    # masked, joint, or delta). Implies mgr_cond_decgoal (forced on in
+    # agent.py if either this or goal_reuse_adapt is set) -- the manager needs
+    # to see the previous decoded goal to reason about how far it's moving it.
+    # Two mutually-exclusive modes (mirrors goal_struct_weight/goal_struct_adapt):
+    #   goal_reuse_weight (fixed, default/simple ablation): pushes toward
+    #     similarity=1 unconditionally, weighted by this constant. 0.0 = off.
+    #   goal_reuse_adapt (adaptive, recommended): a dual-ascent Lagrange
+    #     multiplier (embodied.jax.AutoAdapt, inverse=True -- "push up when
+    #     below target", the same sense used for entropy regularizers) that
+    #     grows while mean realized similarity sits BELOW goal_reuse_target and
+    #     shrinks while above, so the pressure self-tunes to hold similarity
+    #     AT the target rather than driving it to 1 unconditionally.
+    goal_reuse_weight: 0.0
+    goal_reuse_adapt: False
+    goal_reuse_target: 0.9
+    # Open-loop anneal of goal_reuse_target itself (agent.Ratchet, same
+    # mechanism as impl_sparsity_target_sched): ramps from
+    # goal_reuse_target_init toward goal_reuse_target by at most
+    # goal_reuse_target_vel per training call. Default init == target -> no-op
+    # (constant target from step 0, byte-for-byte prior behavior).
+    goal_reuse_target_init: 0.9
+    goal_reuse_target_vel: 0.01
+    goal_reuse_adapt_init: 1.0
+    goal_reuse_adapt_min: 1e-5
+    goal_reuse_adapt_max: 100.0
+    goal_reuse_adapt_vel: 0.1
+    goal_reuse_adapt_one_sided: False
     skill_shape: [8, 8]
     skill_classes: 8
     goal_autoencoder_beta: 0.25
@@ -241,8 +361,11 @@ defaults:
     goal_struct_target: deter   # deter | feat
     goal_struct_loss: mse       # mse | margin
     goal_struct_margin: 0.1
-    goal_struct_adapt: False
-    goal_struct_adapt_target: 0.005
+    # e286/e290 default recipe (see goal_soft_reuse_adapt above): struct+ratchet
+    # on top of the block-overlap reuse loss, target 0.01 (not the 0.005 general
+    # struct-adapt setpoint -- this specific pairing was tuned as target 0.01).
+    goal_struct_adapt: True
+    goal_struct_adapt_target: 0.01
     goal_struct_adapt_one_sided: False
     goal_struct_adapt_min: 1.0
     goal_struct_adapt_max: 2000.0

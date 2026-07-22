@@ -149,6 +149,7 @@ regulating the deviation keeps the controller symmetric, and it relaxes to
 $\lambda \to 0$ once within tolerance.
 
 \subsection{Structural code consistency}
+\label{sec:struct}
 A structural loss with weight $w_s$ (200 unless stated) ties code-space
 distances to latent-state distances so that small code edits correspond to
 nearby goals:
@@ -487,8 +488,241 @@ entropy effect. Two repairs are under test: the structural loss as a code
 stabilizer (Sec.~\ref{sec:controllers}.2), and making the worker's horizon
 observable (Sec.~\ref{sec:timed}).
 
+\paragraph{6. A single-head masked manager rescues hopper, refining Finding 4
+(2026-07-15, preliminary).} Finding 4 framed the open question as ``what does
+\emph{any} deviation from whole-code, fixed-schedule replacement remove'' ---
+implying every restriction breaks sparse exploration. This no longer holds
+unconditionally. All prior masked variants used two independent heads per
+block (which content to write, and whether to write it), trained by separate
+REINFORCE estimators; whenever a block is not edited, the content head's
+gradient for that block is discarded, an asymmetry we call the
+\emph{discarded-content confound}. Replacing the two heads with one
+$(C{+}1)$-way categorical per block (class 0 = abstain, keep $Z_{t-1}[i]$;
+classes $1..C$ = overwrite, Sec.~\ref{sec:restrictions}) removes this confound by
+construction. On the fixed-$K{=}8$ Director base with this single-head mask
+left fully free (no sparsity target imposed), BIG-scale hopper reaches
+extrinsic reward rate 0.245 (versus the $10^{-4}$--$10^{-2}$ band of every
+Finding-3/4 cell) and a peak 280--290 last-15 plateau around 1.6--2.1M steps,
+ahead of the Director baseline's own 196 (peak 326) at a comparable point
+(Fig.~\ref{fig:singlehead}, bottom row). It reaches this \emph{without}
+editing sparsely: the realized edit fraction stays at 0.94--0.97 throughout
+training, so the free manager simply never learns to abstain much. The
+rescue therefore isolates to the credit-assignment mechanism, not to any
+change in how much of the goal gets rewritten --- a distinction Finding 4
+could not draw, since every prior masked cell coupled the confounded credit
+assignment to whatever edit rate its penalty enforced. Imposing sparsity
+still costs performance under the new design: pairing the single head with
+the structural loss roughly halves the peak score (165 vs.\ 302) though,
+unlike the old design, does not kill it outright; forcing the edit fraction
+down via the mask-sparsity-target ratchet (Sec.~\ref{sec:ratchet}) keeps the
+run flat near zero for its full 4M-step budget, and combining both
+constraints reproduces Finding 5's collapse signature (a promising early
+climb to 208 by 0.5M, then a permanent crash). The rescue is BIG-scale only
+so far: every small-scale single-head hopper cell rises transiently and then
+decays, matching the small Director control's own dead floor --- consistent
+with hopper needing Director-matched scale independent of the manager
+design.
+
+\textbf{Correction (2026-07-15, same day as the reading above): the BIG-scale
+hopper rescue is not yet stable.} Continued training past the point the
+``alive'' reading above was based on shows both the free cell and its
+struct-paired sibling \emph{decline} substantially in large-window average
+after their peaks --- free: peak $\sim$290 around 1.9M steps down to
+$\sim$75 over the last $\sim$270-episode window at 3.2M; struct-paired: peak
+$\sim$150 down to $\sim$24 --- visible directly in
+Fig.~\ref{fig:singlehead}'s bottom-right panel. This is not Finding 5's
+collapse signature: the manager's extrinsic advantage stays small throughout
+(no advantage spike) and the worker's goal-reaching reward is still
+\emph{rising}, not dropping, over the same window, so the usual
+coordination-failure diagnosis does not apply. The cheetah cells
+(Fig.~\ref{fig:singlehead}, top row) show no equivalent decline over the
+same training window. Read Finding 6 as ``the single-head design rescues
+hopper for roughly the first two-thirds of training, then something
+currently unexplained erodes the gain'' rather than as a settled result;
+root-causing the late decline is the immediate next step before any claim
+here is finalized. Single seed throughout; details in
+Sec.~\ref{sec:ongoing}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.48\linewidth]{figures/cheetah_singlehead_small.pdf}\hfill
+\includegraphics[width=.48\linewidth]{figures/cheetah_singlehead_big.pdf}\\[2pt]
+\includegraphics[width=.48\linewidth]{figures/hopper_singlehead_small.pdf}\hfill
+\includegraphics[width=.48\linewidth]{figures/hopper_singlehead_big.pdf}
+\caption{Director baseline vs.\ two single-head masked-manager cells, one
+panel per env $\times$ scale: free (S0R0, no struct, no ratchet) and
+struct+ratchet combined (S1R1, struct-adapt target 0.006, ratchet target
+0.3 --- the original single-head campaign's setpoints, since revised and
+retested in Sec.~\ref{sec:ongoing}). Top: cheetah (dense-hard) at small
+(e212 vs.\ e214 vs.\ e217) and BIG (e191 vs.\ e222 vs.\ e225) scale --- the
+free cell matches or exceeds Director at both scales with no late decline,
+while S1R1 plateaus 2--3$\times$ lower. Bottom: hopper (sparse-hard) at small
+(e213 vs.\ e218 vs.\ e221, all near the dead floor) and BIG (e124 vs.\ e226
+vs.\ e229) scale --- the free cell opens a substantial lead over Director
+mid-training before declining in its final third (see the correction above
+Finding 6), while S1R1 climbs alongside the free cell early (to $\sim$208 by
+0.5M) then collapses outright once the ratchet's target fully takes hold.
+S1R1's BIG-scale curves (e225, e229) are complete/archived; all others are
+single seeds, smoothed over a trailing 20-episode window, plotted to their
+latest logged episode as of 2026-07-15 (still training).}
+\label{fig:singlehead}
+\end{figure}
+
 \section{Experiments in progress}
 \label{sec:ongoing}
+
+\subsection{Five mechanisms for goal-code sparsity, at a glance}
+\label{sec:foursparsity}
+
+Sections~\ref{sec:implicit}--\ref{sec:softreuse} introduce five distinct
+ways to make the manager reuse more of the previous goal per decision. They
+differ in exactly one thing: \emph{where the sparsity signal gets a gradient
+into the network}. Table~\ref{tab:foursparsity} summarizes all five before
+the detailed treatment; the short version is that three are ordinary
+differentiable losses, one is a REINFORCE reward penalty (and the weakest of
+the five, F18), and one is not a loss at all but a change to how the goal
+code is sampled. All three differentiable losses (mechanisms 1, 4, 5) turn
+out to share mechanism 2's failure mode once their target is pushed high
+enough (F19, \S\ref{sec:reusesynthesis}) --- differentiability alone
+does not avoid it.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{p{2.9cm}p{2.7cm}p{4.1cm}p{3.2cm}}
+\toprule
+Mechanism & What it controls & How pressure is applied & Gradient path \\
+\midrule
+\textbf{1. Abstain}
+(\S\ref{sec:restrictions}, \texttt{mask\_sparsity}) &
+mean non-abstain probability $\bar p$ &
+loss $\lambda_m(\bar p - \tau_m)$, Eq.~\eqref{eq:stage2} &
+direct: backprop through a softmax probability, Eq.~\eqref{eq:abstaingrad} \\
+\addlinespace
+\textbf{2. Implicit}
+(\S\ref{sec:implicit}, \texttt{impl\_sparsity\_mode}) &
+$s_t$, measured post hoc: did the code repeat? &
+reward penalty $\lambda(1-s_t)$ on $r^{\text{extr}}_t$, Eq.~\eqref{eq:implcost} &
+REINFORCE only: $\log\pi^{\text{mgr}}\!\cdot\hat A$ (Eq.~\ref{eq:mgr}); no direct path, $s_t$ is stop-gradiented (Eq.~\ref{eq:implicits}) \\
+\addlinespace
+\textbf{3. Delta}
+(\S\ref{sec:delta}, \texttt{goal\_delta\_mode}) &
+nothing on its own --- no loss key &
+resamples from $p_t = \mathrm{normalize}(p_{t-1} + \text{votes})$, Eq.~\eqref{eq:delta} &
+none of its own; gives mechanisms 2, 4 or 5 an explicit ``keep'' action to attach a gradient to \\
+\addlinespace
+\textbf{4. Goal-space reuse}
+(\S\ref{sec:goalreuse}, \texttt{goal\_reuse}) &
+decoded-goal similarity $u_t$ &
+loss $\lambda_r(\tau_r - u_t)$, dual-ascent as Eq.~\eqref{eq:dual}, on Eq.~\eqref{eq:goalreuse} &
+direct: straight-through gradient through the sampled code, decoder's own weights frozen \\
+\addlinespace
+\textbf{5. Soft block overlap}
+(\S\ref{sec:softreuse}, \texttt{goal\_soft\_reuse\_adapt}) &
+block-overlap $o_t$ between successive plain softmaxes &
+loss $\lambda_o(\tau_o - o_t)$, dual-ascent as Eq.~\eqref{eq:dual}, on Eq.~\eqref{eq:softoverlap} &
+direct: backprop through both steps' own softmax, no sampling and no decoder pass involved \\
+\bottomrule
+\end{tabular}
+\caption{Five mechanisms tried for promoting goal-code sparsity, in the
+order they were introduced. Mechanisms 1, 4 and 5 are ordinary losses added
+to $\mathcal{L} = \sum_k s_k\mathcal{L}_k$; mechanism 2 instead reshapes the
+manager's \emph{reward} and relies on the policy-gradient estimator to carry
+the signal --- the same channel task return uses, and the one Finding~1/F18
+show rails and kills learning under pressure. Mechanism 3 is plumbing, not a
+pressure source: it composes with 2 (e250--e257, testing whether a real
+``keep'' action rescues the REINFORCE penalty --- cancelled without a
+readout, superseded by mechanism 4) and with 4 (e258/e260/e262/e264,
+tested at scale, \S\ref{sec:goalreuse}; the \texttt{goal\_delta\_mode}
+counterparts e259/e261/e263/e265 were cancelled and replaced by e274--e277,
+a manager-input ablation removing the raw code channel). Mechanisms 4 and 5
+both reach the magnitude-domination collapse of Finding~1/F18 once their
+target fully engages (F19, \S\ref{sec:reusesynthesis}), despite a fully
+differentiable gradient path in both cases.}
+\label{tab:foursparsity}
+\end{table}
+
+\subsection{From explicit masking to \emph{implicit} sparsity}
+\label{sec:implicit}
+
+The restrictions of \S\ref{sec:restrictions} force sparsity by \emph{construction}
+(a per-block edit/abstain mask). This proved to be only a proxy for the real
+quantity of interest---how much of the goal the manager \emph{chooses} to keep
+unchanged---and the discarded-content bookkeeping of a hard mask complicates
+credit assignment. We drop the mask entirely: the manager regenerates the whole
+goal code $Z_t$ each decision (plain Director), conditioned on the previous code
+$Z_{t-1}$ so it can \emph{deliberately} re-emit blocks, and we simply
+\emph{measure} the realized reuse.
+
+\paragraph{Implicit sparsity.} At each manager decision the fraction of
+goal-code blocks whose class is unchanged from the previous goal is
+\begin{equation}
+s_t \;=\; \frac1L\sum_{i=1}^{L}\mathbf{1}\big[\arg\max Z_t^{(i)} = \arg\max Z_{t-1}^{(i)}\big]
+\;=\; \mathrm{sg}(s_t)\quad(\text{no gradient, by construction}),
+\label{eq:implicits}
+\end{equation}
+($1$ = regenerated identically, $0$ = every block changed); the $\mathrm{sg}(\cdot)$
+is not decorative --- $\arg\max$ and $\mathbf{1}[\cdot]$ have zero gradient
+almost everywhere, so $s_t$ is a pure measurement with no path back into the
+network that produced $Z_t$. A continuous analogue,
+$s^{\mathrm{cont}}_t = \tfrac12(1+\cos_{\max}(g(Z_t), g(Z_{t-1})))\in[0,1]$
+(decoded-goal similarity), is logged alongside it. Both are logged for every
+run (\texttt{goal/implicit\_sparsity\_block}, \texttt{...\_cont}), averaged
+over manager-decision steps (the seed step is excluded).
+
+\paragraph{An implicit-sparsity controller.} With no gradient available
+through $s_t$ itself, the only remaining lever is to shape the manager's
+\emph{reward} and let REINFORCE carry the signal:
+\begin{equation}
+r_t^{\text{shaped}} \;=\; r_t^{\text{extr}} \;-\; \lambda\,(1 - s_t), \qquad
+\lambda \leftarrow \operatorname{clip}\!\big(\lambda\cdot\exp(\eta\,(\bar s - s_t)),\,
+\lambda_{\min},\,\lambda_{\max}\big),
+\label{eq:implcost}
+\end{equation}
+the same dual-ascent rule as Eq.~\eqref{eq:dual}, driving the measured
+kept-fraction toward target $\bar s$. \emph{Direct} fixes $\bar s$ from
+step~0; \emph{ratchet} anneals $\bar s: 0\to\bar s$ over training with
+one-sided $\lambda$ (pressure never relaxes). Because $s_t$ is stop-gradiented
+(Eq.~\eqref{eq:implicits}), every gradient this cost contributes to the
+manager reaches it only through the policy-gradient term
+$\log\pi^{\text{mgr}}\!\cdot\hat A$ of Eq.~\eqref{eq:mgr}, with $\hat A$ now
+built from $r_t^{\text{shaped}}$ --- sparsity pressure enters through the
+\emph{same channel} as the task-return signal, rather than as its own direct
+gradient. This composes with the structural term (\S\ref{sec:struct}), which
+raises reuse \emph{indirectly} via temporal code correlation and needs no
+reward-shaping at all.
+
+\paragraph{Baselines.} Measured at each trained Director's final checkpoint
+(Table~\ref{tab:implbaseline}), a plain Director \emph{already} keeps
+$0.32$--$0.45$ of blocks per decision unprompted (vs.\ $\approx\!1/C$ early),
+with small models keeping more than BIG. The target $\bar s=0.7$
+(equivalently a $0.3$ change fraction) is set above this band so the controller
+must actively increase sparsity.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{llcc}
+\toprule
+Director baseline & scale & kept $s$ & $s^{\mathrm{cont}}$ \\
+\midrule
+e212 cheetah & small & 0.445 & 0.971 \\
+e213 hopper  & small & 0.414 & 0.887 \\
+e123 cheetah & BIG   & 0.316 & 0.980 \\
+e124 hopper  & BIG   & 0.367 & 0.849 \\
+e125 acrobot & BIG   & 0.395 & 0.770 \\
+\bottomrule
+\end{tabular}
+\caption{Implicit sparsity of trained Director baselines (final checkpoint). A
+BIG cartpole reference (e115) could not be measured---its pre-redesign masked
+checkpoint no longer shape-matches current code.}
+\label{tab:implbaseline}
+\end{table}
+
+\paragraph{The e234--e249 matrix.} Pure Director copy (fixed $K{=}8$,
+$\bar s$-conditioning on) at 1M steps, over $\{$hopper, cheetah$\}\times\{$small,
+BIG$\}\times\{$struct-adapt only; ratchet$\to$0.7; struct+ratchet; direct
+$0.7\}$. Question: which lever reaches $s\approx0.7$ at least task-return
+cost---indirect (struct/code correlation) or the direct REINFORCE controller---and
+does raising sparsity above the Director's natural band help or cost return.
 
 All 4M steps; ``alive'' on sparse tasks = extrinsic reward rate $>10^{-2}$ by
 1M steps (baseline reference). Cells cancelled at 0.6M for being flat while
@@ -522,6 +756,9 @@ e204--e211 & e200--e203 recipe + mask-sparsity-target ratchet (\S\ref{sec:ratche
 \multicolumn{5}{l}{\emph{Single-head mask campaign (e212--e229; e194--e211 cancelled+archived 07-14 to free GPUs).}}\\
 e212--e213 & pure Director baseline, fixed-$K{=}8$ & cheetah, hopper & small & small Director controls for the campaign \\
 e214--e229 & \textbf{single-head (joint) mask} on the fixed-$K{=}8$ Director base, $2{\times}2$: struct$\{$off, adaptive 0.006$\}$ $\times$ ratchet$\{$off, on$\}$ & cheetah, hopper & small \& BIG & does merging the two heads (removing the discarded-content confound) match/beat Director, and do struct and the abstain-ratchet each help? \\
+\midrule
+\multicolumn{5}{l}{\emph{Looser-setpoint retest (e230--e233; e224/e225/e228/e229 cancelled+archived 07-15).}}\\
+e230--e233 & single-head S1R1 (struct + ratchet together), ratchet target loosened $0.3{\to}0.5$ (same $\sim$1M-step anneal, recalibrated velocity), struct-adapt target loosened $0.006{\to}0.01$ & \textbf{all 4 tasks} & BIG & is the R1 underperformance a setpoint artifact (too-tight targets) or does forced sparsity cost hopper/cheetah at any setpoint? key cell: e233 vs.\ e228/e229 (hopper, flat/collapsed) \\
 \bottomrule
 \end{tabular}
 \caption{Hypothesis matrix. The small-cartpole $2{\times}2$
@@ -583,31 +820,589 @@ open-loop, velocity-capped ratchet on the sparsity Lagrangian's \emph{target}
 itself (distinct from the already-adaptive Lagrange weight): it ramps from
 editing the whole goal (target $1.0$) down to the sparse target ($0.3$) over
 approximately the first 1M environment steps, then holds. The mechanism is
-opt-in and a no-op unless explicitly enabled. e204--e211 (Table
-\ref{tab:ongoing}) test it on the e200--e203 recipe across all four tasks at
-both scales; results pending.
+opt-in and a no-op unless explicitly enabled. e204--e211 were cancelled before
+producing results (hardware reallocated to the single-head campaign, Table
+\ref{tab:ongoing}); the ratchet was instead tested there as the ``R1'' cells
+of the single-head $2{\times}2$.
+
+\paragraph{Ratchet readout (2026-07-15): the exploration-starvation hypothesis
+is refuted.} The ratchet anneals exactly as designed --- realized edit
+fraction tracks target down to 0.30 by $\sim$1.1M steps on both cheetah and
+hopper --- but every ratchet-on cell underperforms its free counterpart: on
+hopper, 22 (peak 52) versus the free cell's 214 (peak 302); on cheetah, 134
+(peak 143) versus 181--205 (peak 434--455) for the free and struct-on cells.
+Left free, the manager does not choose to abstain (edit fraction stays at
+0.94--0.97 the whole run, Finding 6), so there was no starved exploration
+signal to rescue in the first place; forcing the edit fraction down early
+removes the behavior that was working rather than adding the credit signal
+we hypothesized was missing. One confound this readout cannot rule out on its
+own: targets 0.3 (mask, R1) and 0.006 (struct-adapt) were both carried over
+unchanged from the old dual-head design, so the underperformance could be a
+too-tight-setpoint artifact rather than a fact about forced sparsity in
+general. e230--e233 (Table~\ref{tab:ongoing}) retest the S1R1 cell at looser
+targets (mask $0.5$, struct-adapt $0.01$) on all four tasks to separate the
+two explanations.
+
+\paragraph{Looser-setpoint retest (e230--e233): partial, but points toward
+a setpoint artifact.} All four runs were cancelled 2026-07-15 at only
+15--17\% of their 4M-step budget to free hardware for the e234--e249 launch
+below, so none reached a final verdict. At cancellation: cartpole (e230)
+435/479 and still climbing; acrobot (e231) 54/84, weak but the first
+non-negligible single-head acrobot result at any setting (every prior
+dual-head acrobot cell, e176/e177, was $\le 2.5$); cheetah (e232) 173/178,
+already above e224/e225's tight-setpoint plateau ($\sim$110--140); hopper
+(e233) \textbf{215/216}, far above e228's final 22/52 and inside e226's
+alive-plateau range (280--286) at under a fifth of the training budget.
+The key cell (hopper) leans toward refuting ``any imposed sparsity target
+collapses the task'' at the looser setpoint, but e226/e227 themselves
+looked alive at a comparable fraction of budget before declining
+substantially by 3M+ steps (\S\ref{sec:implicit} correction below), so this
+is a lead, not a settled result.
+
+\paragraph{The e234--e249 matrix: results.} All 16 runs completed the full
+1M-step budget (Table~\ref{tab:implresults}). The pre-registered question
+--- which lever reaches high implicit sparsity at least task-return cost,
+struct or the direct REINFORCE controller --- turned out not to be the
+operative one: \textbf{struct-only is safe in all 4 cells tried; every one
+of the other 12 cells, which add the REINFORCE controller in ratchet,
+direct, or struct+ratchet form, collapses to near-zero score regardless of
+task or scale.} Cheetah at BIG scale under struct-only (330/335) lands
+within noise of contemporaneous plain-Director controls at the same step
+count ($\approx$250--305); hopper BIG (115/116) and cheetah small
+(118/159) are clearly alive under struct-only but well below their
+Director references, a real but partial cost; hopper small stays at the
+established small-hopper noise floor (Finding~15) regardless of condition.
+Every controller-bearing cell, by contrast, scores 0--8.6 and fails to even
+reach its own target: the dual multiplier $\lambda$ rails to its
+configured ceiling ($5.0$) in all 12 cells, typically within the first
+third of training, while the realized change fraction plateaus at
+0.44--0.52 --- short of the 0.3 implied by the $0.7$ kept-target. This is
+the same magnitude-domination failure mode as the duration-reg cliff
+(\S\ref{sec:controllers}) and the one-sided edit/switch costs of Finding~2,
+and it reproduces the single-head mask ratchet's failure under the old
+design (e228/e229 above) under a third, independent mechanism: forcing a
+measured sparsity quantity via an aggressive per-step REINFORCE penalty
+destroys learning, while a softer or indirect lever does not. One
+qualification: struct's own kept-fraction (0.20--0.38) is not clearly
+\emph{higher} than the unprompted Director baseline (0.32--0.45,
+Table~\ref{tab:implbaseline}) --- on 3 of 4 cells it is lower, though that
+baseline was measured on checkpoints trained without
+\texttt{mgr\_cond\_goalcode}, so the comparison is suggestive rather than a
+controlled ablation. struct is established here as \emph{safe}, not as a
+demonstrated sparsity lever; \texttt{agent.impl\_sparsity\_mode} stays off
+by default pending either a much weaker controller weight or a
+non-REINFORCE mechanism (e.g.\ a KL-to-prior penalty).
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{lllccc}
+\toprule
+Cell & Task & Scale & score & kept $s$ (final) & $\lambda$ (final) \\
+\midrule
+struct & hopper & small & 1.9 (46.5) & 0.36 & --- \\
+struct & cheetah & small & 117.8 (159.0) & 0.26 & --- \\
+struct & hopper & BIG & 115.1 (115.7) & 0.38 & --- \\
+struct & cheetah & BIG & \textbf{329.8 (335.4)} & 0.20 & --- \\
+\addlinespace
+ratchet / direct / struct+ratchet & hopper & small & 0.0 (0.5--0.7) & 0.56 & 5.00 (railed) \\
+ratchet / direct / struct+ratchet & cheetah & small & 1.4--3.0 (4.2--5.0) & 0.51--0.56 & 5.00 (railed) \\
+ratchet / direct / struct+ratchet & hopper & BIG & 0.0 (0.2--1.0) & 0.49--0.53 & 5.00 (railed) \\
+ratchet / direct / struct+ratchet & cheetah & BIG & 3.4--4.1 (6.1--8.6) & 0.52--0.55 & 5.00 (railed) \\
+\bottomrule
+\end{tabular}
+\caption{e234--e249, full 1M-step results. Each ratchet/direct/struct+ratchet
+row summarizes 3 cells (individual condition scores differ by
+$<$5 points; see \texttt{EXPERIMENTS.md} for per-cell numbers). $\lambda$ =
+\texttt{impl\_sparsity\_scale\_mean}, the dual-ascent multiplier on the
+REINFORCE cost; its configured ceiling is 5.0.}
+\label{tab:implresults}
+\end{table}
+
+\paragraph{Root cause: the implicit controller is architecturally forced into
+the one mechanism already known to fail.} The two designs differ in exactly
+one place --- where the sparsity gradient comes from --- and that
+difference is visible directly in the two loss forms. Under the explicit
+single-head mask (\texttt{mode='prob'}/\texttt{'prob\_entropy'}, used by
+e224--e229), abstain is class~0 of each block's own $(C{+}1)$-way
+categorical (\S\ref{sec:restrictions}), so the mean edit probability $\bar p$
+of Eq.~\eqref{eq:stage2} is itself a smooth function of the network's
+logits, $p_i = 1-\pi_i(\text{abstain})$, and the sparsity term
+\begin{equation}
+\mathcal{L}_{\text{sparsity}}^{\text{abstain}} \;=\;
+\lambda_m\,(\bar p - \tau_m) \;+\; \lambda_H\,(\tau_H - \bar H_{\text{block}})
+\qquad(\text{Eq.~\ref{eq:stage2}})
+\label{eq:abstainloss}
+\end{equation}
+backpropagates directly into each block's own logit. Because $p_i$ is a
+deterministic softmax output, not a sampled outcome, the chain rule gives an
+ordinary closed-form derivative,
+\begin{equation}
+\frac{\partial \mathcal{L}_{\text{sparsity}}^{\text{abstain}}}{\partial\,\text{logit}_{i,0}}
+\;=\; \frac{\lambda_m}{L}\cdot\underbrace{\big(-\pi_i(\text{abstain})(1-\pi_i(\text{abstain}))\big)}_{\partial p_i / \partial\,\text{logit}_{i,0}}
+\;+\; \lambda_H\cdot\frac{\partial \bar H_{\text{block}}}{\partial\,\text{logit}_{i,0}},
+\label{eq:abstaingrad}
+\end{equation}
+available every step regardless of which class the block actually sampled,
+with zero sampling variance --- exact, per-block credit, entirely
+independent of the REINFORCE/task-return channel, with a dedicated ``keep''
+outcome one bit away. Eq.~\eqref{eq:implcost}, by contrast, needs a full
+rollout sampled, an advantage estimated from it, and that estimator's
+variance absorbed before any sparsity signal reaches the network at all. The
+implicit controller has
+no such action: every block always redraws a real class, so ``kept'' is only
+ever the post-hoc, stop-gradiented measurement $s_t$ of
+Eq.~\eqref{eq:implicits}, and the sparsity cost can only reach the network
+via reward-shaped REINFORCE, Eq.~\eqref{eq:implcost}. Contrasting
+Eq.~\eqref{eq:abstainloss} (ordinary supervised-style gradient, its own loss
+key, Eq.~\ref{eq:stage2}) against Eq.~\eqref{eq:implcost} (folded into the
+\emph{reward}, sharing the manager's REINFORCE estimator with task return)
+makes the failure mode legible: this is structurally identical to the
+explicit-mask framework's own REINFORCE-reward-shaped mode, which Finding~1
+already showed rails and kills reward in the earliest bring-up runs
+(e10/e11). Dropping the mask removed not only the discarded-content confound
+(the intended win of the pivot, \S\ref{sec:implicit}) but also access to a
+differentiable sparsity proxy, forcing the new controller into the one
+mechanism already known to be broken. The raw trajectories are consistent
+with this account: implicit-controller cells are dead from step~0 (e.g.\
+hopper BIG ratchet: score $\approx 0$ throughout, no initial rise), whereas
+the explicit-mask ratchet cells at least achieved partial or transient
+learning before degrading (e228: 22/52; e229: rose to 208 before
+collapsing at 500k) --- the differentiable per-block loss shaped behavior
+carefully from the start; the reward-mediated scalar penalty never had the
+chance to.
+
+\subsection{Delta goal generation: a differentiable reuse action}
+\label{sec:delta}
+
+The root-cause analysis above implies a fix: give plain-Director goal
+generation a differentiable way to express ``keep this block'', rather than
+only being able to measure reuse after the fact. We introduce
+\texttt{goal\_delta\_mode}: the manager's per-class logits pass through an
+\emph{unnormalized, independent} sigmoid (``votes'' --- deliberately not a
+softmax, so every class can be driven toward 0 \emph{simultaneously}, which a
+normalized distribution can never do) that is \emph{added} to the previous
+goal code's own pre-sample distribution before the categorical sample:
+\begin{equation}
+  \text{votes} = \mathrm{clip}(\sigma(\text{logits}),\,0,\,c), \qquad
+  p_t = \mathrm{normalize}\!\big(p_{t-1} + \text{votes}\big),
+\label{eq:delta}
+\end{equation}
+applied independently per block ($L{=}8$ blocks of $C{=}8$ classes by
+default; no cross-block coupling in the combination itself, only whatever
+correlation the shared network trunk that produces the logits learns to
+encode). $c$ (\texttt{goal\_delta\_clip}, default~1, a no-op at sigmoid's own
+ceiling) caps a single vote. $p_{t-1}$ is the PREVIOUS decision's own
+pre-sample distribution, not its collapsed sample: a one-hot is a lossy view
+of that decision (a 55\%-confident pick and a 99\%-confident pick both
+collapse to an identical one-hot once sampled), so basing next-step
+stickiness on the one-hot would silently max out trust at~1 regardless of
+how contested the choice actually was, capping every single-vote switch at a
+coin-flip tie no matter what. Using the real $p_{t-1}$ instead makes
+stickiness scale with actual prior confidence: a decisively-won class
+($p_{t-1}\!\approx\!1$) still caps a fresh vote at a tie (votes are bounded
+in $[0,1]$, same as the standing class's residual weight), but a contested
+class (e.g.\ $0.55/0.45$) can be outright overtaken by one strong vote on the
+alternative ($0.45+{\sim}1 \gg 0.55+{\sim}0$) --- a genuinely decisive switch
+in one decision, not just a coin flip. (The fallback for $p_{t-1}$ when no
+real previous decision exists yet --- episode-start seeding, report-time
+proposals --- is the state encoding's one-hot, which is not a manager
+decision at all, so treating it as a firm commitment is the right default
+there.) All-$\approx\!0$ votes for a block leave $p_t$ numerically unchanged
+from $p_{t-1}$, so the same class stays most likely: an explicit,
+gradient-carrying reuse default, in contrast to $\arg\max$-based reuse
+measurement, which carries no gradient by construction. Critically, actively
+re-voting the same class is still distinguishable from silent reuse: it
+shifts that class's margin over the alternatives, so any downstream loss
+reading $p_t$ (rather than only the hard sample) can tell the two apart.
+\texttt{goal\_delta\_mode} implies \texttt{mgr\_cond\_goalcode} and is
+mutually exclusive with \texttt{use\_masked\_goals} (it is itself a reuse
+mechanism, replacing rather than composing with the explicit block mask). The
+same $p_t$ is also fed back as the manager's own next-step conditioning
+input in place of the collapsed one-hot -- a strictly richer signal (the
+one-hot is a lossy $\arg\max$ of it) that additionally reports how
+\emph{contested} the previous decision was.
+
+Implementation-wise the change touches every site that samples or
+re-derives the manager's skill distribution: the online policy step, both
+imagination-rollout paths, the replay re-derivation used for the worker
+target, and --- easy to miss, since it is a separate reconstruction of the
+same distribution purely for the loss --- the actor-loss site that
+recomputes $\log\pi(\text{action})$ for the manager's REINFORCE term. Unless
+that site applies the identical delta combination, the policy gradient is
+taken under the wrong distribution. \texttt{goal\_delta\_mode} is currently
+smoke-tested only, on cartpole (three legs: delta off, delta on at clip 1.0,
+delta on at clip 0.5), all passing crash-free through the online policy step,
+both imagination-rollout paths, and the actor-loss re-derivation site, with
+no NaN/Inf in any logged scalar and a stable implicit-sparsity signal close
+to the delta-off baseline at random initialization (expected: $p_{t-1}$
+starts near-uniform, so early behavior resembles a fresh decision rather
+than an artificially sticky one); an e-numbered A/B against the existing
+\texttt{impl\_sparsity\_mode} cells (Table~\ref{tab:implresults}) is the
+natural next experiment.
+
+\subsection{Targeting the decoded goal directly, not code identity}
+\label{sec:goalreuse}
+
+Both the original \texttt{impl\_sparsity\_mode} controller and
+\S\ref{sec:delta}'s delta mechanism operate at the goal-\emph{code} level
+(block class identity). But code-level reuse is only a proxy: an unchanged
+code does not guarantee an unchanged \emph{decoded} goal (the decoder need
+not be locally smooth at that point of the code manifold), and a changed
+code does not guarantee a changed one --- while worker success is entirely a
+function of the decoded goal, $\mathrm{cosine\_max}(\text{goal}_{\mathrm{deter}},
+\text{feat})$, never the code directly. \texttt{goal\_struct\_weight}
+already addresses this, but indirectly and globally: it forces code-space
+distances to correlate with deter-space distances across the whole code
+manifold, as a general-purpose regularizer, not a targeted per-decision
+signal. We introduce a goal-reuse loss that targets the specific quantity
+that matters --- this decision's decoded goal versus the previous one ---
+directly, with a real gradient path, every decision.
+
+The metric \texttt{goal/implicit\_sparsity\_cont} already computes almost
+exactly this similarity, but is fed from the worker's goal-conditioning
+tensor, which is deliberately stop-gradiented twice over so that
+worker-target conditioning never leaks gradient into the manager --- the same
+disease as \S\ref{sec:implicit}'s root cause: a real, informative signal
+with no gradient path. The fix decodes the sampled code a \emph{second} time:
+\begin{equation}
+  \text{goal}_t = \mathrm{goal\_dec}(Z_t), \qquad
+  u_t = \mathrm{cosine\_max}(\text{goal}_{t-1}, \text{goal}_t) \in [-1, 1],
+\label{eq:goalreuse}
+\end{equation}
+using $u_t$ (not $s_t$) to keep this decoded-space quantity distinct from the
+code-space metric of Eq.~\eqref{eq:implicits}.
+$Z_t$ is the manager's sampled code and was never separately stop-gradiented
+in the existing codebase (only the worker-facing \emph{copy} of it was), so
+it still carries the standard straight-through gradient into the manager's
+logits regardless of which goal-generation mechanism produced it --- plain,
+masked, joint-edit, or delta. $\text{goal}_{t-1}$, the fixed comparison
+target, stays exactly the already-stop-gradiented value: gradient should
+flow from ``how far did this decision move the goal'' into the
+\emph{current} decision, not revise the past. The manager also needs the
+previous decoded goal as \emph{input} to reason about how far it is moving
+it; the corresponding conditioning channel (\texttt{mgr\_cond\_decgoal})
+already existed but was restricted to masked goals only (the same
+over-restriction \texttt{mgr\_cond\_goalcode} had before \S\ref{sec:delta})
+--- un-gated, and forced on automatically when the mechanism is active.
+
+\paragraph{Blocking gradient into the decoder.} Since $\mathrm{goal\_dec}$
+is a real network and \texttt{MultiOptimizer} does one combined backward
+pass, routing gradient to each module's own optimizer purely by which
+parameters the forward computation touched (with no other isolation), a
+plain call to $\mathrm{goal\_dec}(Z_t)$ also sends gradient into the
+decoder's own weights --- an incidental training signal on the goal
+autoencoder from what is meant to be a manager-shaping loss only. We block
+this explicitly: $g(\theta, x) = f(\mathrm{sg}(\theta), x)$, implemented by
+temporarily swapping $\mathrm{goal\_dec}$'s live parameter values for
+stop-gradiented copies of the identical values, decoding, then restoring
+(the same \texttt{.values}/\texttt{.write()} primitives the codebase's EMA
+target-network utility already uses, for a different purpose). This gives
+exactly the forward value of a normal call, exactly zero gradient into
+$\mathrm{goal\_dec}$'s parameters, and an unchanged gradient into $Z_t$ ---
+verified in isolation on a minimal ninjax module (a single scalar-weight
+decoder): forward value, parameter gradient ($0$ vs.\ nonzero for a normal
+call), and input gradient (identical to the normal call) all matched their
+analytically expected values exactly.
+
+\paragraph{An adaptive target, not an unconditional push toward~1.} A fixed
+weight on $1 - u_t$ pushes similarity toward $1$ unconditionally, with no
+notion of ``similar enough.'' We instead hold $u_t$ at a target via a
+dual-ascent Lagrange multiplier (the same \texttt{AutoAdapt} mechanism
+already used for the struct and mask-sparsity targets), in the
+\emph{inverse} sense used for entropy regularizers --- the multiplier grows
+while mean realized similarity sits below the target and shrinks while
+above, self-tuning the pressure rather than driving similarity to $1$
+unconditionally. This mode (\texttt{goal\_reuse\_adapt}, target similarity
+default $0.9$) is mutually exclusive with a fixed-weight ablation mode
+(\texttt{goal\_reuse\_weight}), mirroring
+\texttt{goal\_struct\_weight}/\texttt{goal\_struct\_adapt}'s existing
+dual-mode convention exactly.
+
+Both the decoder-gradient block and the full mechanism are smoke-tested:
+the gradient block in isolation (a minimal ninjax module outside the full
+agent, confirming the three properties above exactly), and the full
+mechanism through the agent (four legs: off, fixed-weight, adaptive, and
+adaptive combined with \texttt{goal\_delta\_mode}), all passing crash-free
+with finite, bounded similarity and Lagrange-scale metrics and zero NaN/Inf,
+confirming the mechanism is general-purpose (not delta-mode-specific) and
+composes with delta mode without conflict.
+
+\paragraph{Results (2026-07-21, 8 cells, full 4M-step budget).} Launched at
+scale as e258/e260/e262/e264 (\{hopper, cheetah\} $\times$ \{small, BIG\},
+target ratcheted $0{\to}0.95$ over $\sim$1M steps, \texttt{mgr\_cond\_goalcode}
+on), with a manager-input ablation e274--e277 (identical config but
+\texttt{mgr\_cond\_goalcode} forced \emph{off}, so the manager's only
+conditioning on its own past decision is the decoded goal
+$\text{goal}_{t-1}$, not the raw one-hot code $Z_{t-1}$). The
+\texttt{goal\_delta\_mode} counterparts (e259/e261/e263/e265) were cancelled
+before a readout, so whether code-level recombination changes this outcome
+remains untested.
+
+All 8 cells reach the similarity target --- $u_t$ (Eq.~\eqref{eq:goalreuse})
+settles at $0.92$--$0.97$ against the $0.95$ target, with the adaptive scale
+railed at or near its configured ceiling in 6 of 8 cells --- and all 8
+collapse task return regardless: hopper scores $0.001$--$0.004$ against an
+$\approx\!300$-score Director baseline (a total collapse to the dead floor),
+cheetah scores $1.85$--$7.57$ against $\approx\!300$--$435$ (BIG) /
+$\approx\!100$ (small) baselines (collapse to roughly $2$--$8\%$ of
+baseline). Every cell's trajectory has the same shape: a genuine early peak
+(score $17$--$203$, reached between step $176$k and $945$k, i.e.\ around or
+before the target ratchet finishes tightening), followed by collapse to the
+floor for the remaining $3$M steps. This is the magnitude-domination
+signature of Finding~1/F18 (\S\ref{sec:implicit}), reached here through a
+fully differentiable loss with a real gradient path into the manager, so
+\emph{differentiability itself does not prevent the collapse} --- see the
+cross-mechanism synthesis, F19 (\S\ref{sec:reusesynthesis}). The manager-input
+ablation (e274--e277 vs.\ e258/e260/e262/e264) resolves cleanly: removing the
+raw code channel does not rescue any cell, and does not clearly hurt either
+(comparable or marginally higher scores and peaks without it) --- the code
+channel is not load-bearing for satisfying the similarity target, but this
+is moot given the underlying mechanism collapses either way.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=.48\linewidth]{figures/hopper_reuse_cont.pdf}\hfill
+\includegraphics[width=.48\linewidth]{figures/cheetah_reuse_cont.pdf}
+\caption{BIG scale, target $0.95$ (F19, dashed vermillion) vs.\ a retest at
+target $0.8$ (green, interim). Both dashed curves show the peak-then-collapse
+signature; both solid curves recover.}
+\label{fig:reusecont}
+\end{figure}
+
+\paragraph{Interim retest at a lower target (2026-07-22, e278/e280,
+77--81\% of the 4M-step budget, still training).} Re-running the same two
+BIG-scale cells with the target lowered from $0.95$ to $0.8$ (ratchet
+stretched to $\sim$2M steps) recovers cheetah outright (e280: trailing score
+$306.1$, peak $333.0$, essentially at the $\approx\!300$--$435$ baseline,
+Fig.~\ref{fig:reusecont} right) and rescues hopper for most of training
+before it starts declining again (e278: peak $326.8$ at step $2.71$M,
+matching the $\approx\!300$ baseline, but down to $97.8$ at $80\%$ of
+budget as of this pull, Fig.~\ref{fig:reusecont} left) --- the first time
+any decoded-goal-similarity cell on either task has cleared its own
+Director baseline even transiently. The adaptive scale in both cells sits
+near its numerical floor rather than railed at ceiling, confirming the
+$0.95$ target itself, not the mechanism, drove F19's collapse; whether
+hopper's late-training decline is a slower version of the same collapse or
+a separate effect is not yet resolved and is worth watching to completion.
+
+\subsection{A discrete alternative: block overlap on the manager's own softmax}
+\label{sec:softreuse}
+
+\S\ref{sec:goalreuse}'s loss targets continuous decoded-goal similarity.
+A cheaper, purely discrete alternative leaves the sampling mechanism and the
+decoder untouched entirely and instead measures how much two successive
+\emph{plain softmax distributions} (before sampling) agree at the block
+level:
+\begin{equation}
+o_t \;=\; \frac1L\sum_{i=1}^L \sum_{c=1}^C p_t^{(i,c)}\,p_{t-1}^{(i,c)} \;\in\; [0,1],
+\label{eq:softoverlap}
+\end{equation}
+the probability that an independent draw from each distribution lands on
+the same class (bounded in $[0,1]$ by Cauchy--Schwarz). Unlike
+Eq.~\eqref{eq:implicits}'s $s_t$, $o_t$ has a real gradient: it backprops
+directly into both steps' own pre-sample logits through their softmax, with
+no sampling, no decoder pass, and no reward shaping involved --- the
+cheapest of the three differentiable mechanisms in Table~\ref{tab:foursparsity}.
+The manager's next-step conditioning input is also switched from the
+collapsed one-hot to the raw softmax $p_{t-1}$ (the same input-side
+substitution \S\ref{sec:delta} uses), so it can condition on how confident,
+not just which, the previous decision was. As in \S\ref{sec:goalreuse}, a
+dual-ascent Lagrange multiplier ($\texttt{goal\_soft\_reuse\_adapter}$, same
+inverse sense as Eq.~\eqref{eq:dual}) holds $o_t$ at a target, ratcheted
+$0\to0.7$ over $\sim$1M steps. \texttt{goal\_soft\_reuse\_adapt} is mutually
+exclusive with \texttt{goal\_delta\_mode} (both act on the sampling/pressure
+side of the same softmax) but composes with the structural term
+(\S\ref{sec:struct}), tested as an explicit ablation below.
+
+\paragraph{Results (2026-07-21, 8 cells $\times$ \{struct+ratchet,
+ratchet-only\}, full 4M-step budget).} Every cell trains to a real early
+peak (score $14$--$365$, reached between step $336$k and $3.6$M) and the
+overlap ratchet completes on schedule, but \emph{none} reaches its own $0.7$
+target: $o_t$ plateaus at $0.56$--$0.60$ across all 8 cells regardless of
+task, scale, or struct, with the Lagrange scale railed at or near its
+ceiling throughout --- the same signature as \S\ref{sec:goalreuse}'s
+collapse and F18's REINFORCE multiplier, just with a real gradient path.
+Task outcome, however, is not uniform: all 4 hopper cells still collapse to
+the dead floor ($0.004$--$1.75$ against $\approx\!300$), matching every
+other reuse mechanism tried so far --- but cheetah \emph{substantially
+survives} ($70$--$182$ against $\approx\!300$--$435$/$\approx\!100$
+baselines, i.e.\ roughly $20$--$60\%$ of baseline), an order of magnitude
+better than \S\ref{sec:goalreuse}'s cheetah cells ($1.85$--$7.57$) and the
+first reuse mechanism of the five in Table~\ref{tab:foursparsity} (besides
+the unrestricted single-head design, Finding~6) where cheetah does not fully
+collapse. The struct ablation is informative and runs against expectation:
+ratchet-only \emph{beats} struct+ratchet on cheetah at both scales ($182$ vs.\
+$70$ BIG; $111$ vs.\ $73$ small) --- stacking the struct term, established
+safe on its own by F18, on top of a direct reuse loss costs cheetah roughly
+half its score rather than helping. On hopper the direction reverses (both
+members of each pair are already at the dead floor, so this reads as noise
+near zero, not a real effect).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=.48\linewidth]{figures/hopper_reuse_block.pdf}\hfill
+\includegraphics[width=.48\linewidth]{figures/cheetah_reuse_block.pdf}
+\caption{BIG scale, struct+ratchet, target $0.7$ (F19, dashed vermillion) vs.\
+a retest at target $0.5$ (green, interim). Unlike the goal-space mechanism
+(Fig.~\ref{fig:reusecont}), both solid curves stay well above baseline
+through the latest pull, with no sign yet of the goal-space cell's late
+decline.}
+\label{fig:reuseblock}
+\end{figure}
+
+\paragraph{Interim retest at a lower target (2026-07-22, e286/e290, 92--93\%
+of the 4M-step budget, still training).} Lowering the target from $0.7$ to
+$0.5$ (same struct+ratchet condition) is the strongest result in this
+report: both tasks are not just alive but \emph{above} their Director
+baseline this late in training --- hopper (e286) trailing $354.8$ against a
+$\approx\!300$ baseline, peak $430.6$ reached as late as step $3.69$M
+(still rising intermittently); cheetah (e290) trailing $336.1$, peak
+$449.4$, above the $\approx\!300$--$435$ baseline range
+(Fig.~\ref{fig:reuseblock}). Neither curve shows the goal-space
+mechanism's (\S\ref{sec:goalreuse}) late decline as of this pull. Combined
+with \S\ref{sec:goalreuse}'s retest, F19's ordering also \emph{reverses} at
+this target: struct+ratchet now beats the plain ratchet-only leg on cheetah
+BIG (retest not shown in this figure pair; see \texttt{EXPERIMENTS.md}
+\S2), opposite the $0.7$-target finding above --- struct's cost is
+target-dependent, not fixed.
+
+\paragraph{Promoted to the default recipe (2026-07-22).} Since this is the
+best-performing cell found on either task to date, \texttt{goal\_soft\_reuse\_adapt}
+(target $0.5$, ratcheted from $0$ at the BIG-scale rate) plus
+\texttt{goal\_struct\_adapt} (target $0.01$) are now the shipped defaults in
+\texttt{configs.yaml} rather than an opt-in ablation; every already-scripted
+experiment sets these flags explicitly per-launch, so the change is inert
+for reproducing past results. Two further BIG-scale cells launched with the
+identical e286/e290 configuration on tasks not yet tested under any reuse
+mechanism --- cartpole swingup (e294) and acrobot swingup (e295), both
+queued behind the 8/8-GPU \texttt{gpu-a100} cap as of this writing --- to
+check whether the recipe costs a dense, easy task (cartpole) and whether it
+extends to acrobot, which has failed under every restricted recipe tried so
+far except unrestricted Director (\S\ref{sec:restrictions}).
+
+\subsection{Synthesis: every differentiable reuse mechanism reproduces
+Finding~1/F18's collapse (F19)}
+\label{sec:reusesynthesis}
+
+Across all three reuse mechanisms tested at scale --- \S\ref{sec:implicit}'s
+REINFORCE-shaped reward (F18, 12/12 cells dead), \S\ref{sec:goalreuse}'s
+continuous decoded-goal loss (8/8 cells dead), and \S\ref{sec:softreuse}'s
+discrete block-overlap loss (4/8 hopper cells dead, 4/8 cheetah cells
+partially alive) --- the failure mode is identical in shape: a soft prior
+that is harmless while its target is loose becomes catastrophic once the
+target fully engages, regardless of whether the pressure reaches the
+manager through a stop-gradiented reward penalty or a genuine backprop path.
+\emph{Differentiability was never the root cause of F18}; the shared cause
+is a target set high enough, relative to the task's own tolerance for
+constrained goal-code behavior, that the constraint's Lagrange multiplier
+must rail to satisfy it, and a railed multiplier dominates the combined
+weighted loss regardless of mechanism. Two secondary results refine rather
+than overturn this picture. First, the manager's own conditioning input is
+not the lever: removing the raw one-hot code channel (\S\ref{sec:goalreuse}'s
+ablation) changes nothing about the collapse. Second, stacking the
+structural term on top of a direct reuse loss is not free, unlike stacking
+it alone (F18): it costs cheetah roughly half its surviving score under
+\S\ref{sec:softreuse}, refining F18's ``struct is safe'' to ``safe only as
+the sole sparsity lever.'' The one asymmetry that survives every mechanism
+tried is task identity, not mechanism identity: hopper has now failed under
+every sparsity/reuse mechanism in the project except the unrestricted
+single-head design (Finding~6) --- it reads as uniquely fragile to
+\emph{any} secondary manager-side objective pushed hard enough, not
+specifically to non-differentiable or REINFORCE-mediated ones. Cheetah's
+partial survival under the block-overlap loss, and specifically its
+preference for ratchet-only over struct+ratchet, is the one live thread
+worth extending: a direct next step is retargeting $o_t$'s Lagrangian at a
+lower target closer to the unprompted $0.32$--$0.45$ reuse band
+(Table~\ref{tab:implbaseline}) rather than $0.7$, to test whether the
+mechanism itself is exhausted or only its current target is too aggressive.
+\texttt{goal\_delta\_mode}'s own marginal contribution remains untested at
+scale, since both of its scheduled A/Bs were cancelled before a readout ---
+an open question, not one F19 closes.
 
 \section{Outlook}
 
 On dense tasks the combined recipe matches strong fixed-schedule baselines at
 comparable or lower edit rates, and constraint controllers remove per-task
-penalty tuning. The open problem is sparse-reward tasks, where the baseline
-hierarchy learns and every restricted variant so far does not. Finding 4 now
-narrows that gap to a sharper question than the factorial was originally
-designed around: hold length, masking, struct, and worker horizon
-observability have each been tested in isolation or combination, and every
-cell that changes anything about the base hierarchy's whole-code,
-fixed-schedule goal replacement stays dead on hopper, while acrobot appears to
-fail for a distinct reason (alive under the unrestricted baseline, dead under
-every restricted recipe tried so far including the countdown-augmented one).
-No cell in the current factorial has yet produced an alive sparse-task run.
-Per the project's standing escalation order, the next interventions if the
-remaining cells (struct$\times$countdown, the full adaptive stack) also fail
-are code-level rather than hyperparameter-level: mixing task reward into the
+penalty tuning. Sparse-reward tasks were the open problem: hold length,
+masking, struct, and worker horizon observability, tested in isolation or
+combination, all stayed dead on hopper under the original two-head (skill +
+mask) manager, while acrobot failed for a distinct reason (alive under the
+unrestricted baseline, dead under every restricted recipe including the
+countdown-augmented one). Finding 6 (2026-07-15, preliminary, single seed)
+breaks that pattern: a single-head masked manager --- one $(C{+}1)$-way
+categorical per block instead of separate content and mask heads --- is alive
+on hopper at BIG scale (reward rate 0.245, score rising to a 280--290
+plateau, ahead of the Director baseline's 196/326) with no other change to
+the recipe. The rescue traces to removing the discarded-content
+credit-assignment confound, not to achieving sparsity: left free, the manager
+keeps the edit fraction at 0.94--0.97 throughout, and every attempt to force
+it lower (structural loss, the sparsity-target ratchet, or both) costs
+performance or, combined, collapses the run outright. This reframes rather
+than closes the open problem: the base hierarchy's discarded-content
+credit-assignment bug, not whole-code fixed-schedule replacement per se, was
+the load-bearing cause of every dead sparse-task cell in Findings 3--5, but a
+manager that edits \emph{sparsely} and still survives hopper has not yet been
+shown. Remaining before this becomes a claim: a second seed on e226 (and on
+e223, the best dense-task single-head cell); the corresponding acrobot cells,
+untested under the single-head design so far; and, since the rescue is
+BIG-scale only (every small-scale single-head hopper cell rises transiently
+then decays, matching the small Director control's own dead floor), a check
+of whether that is a capacity limit independent of the manager design or a
+consequence of some other BIG-only training detail (batch size, native conv,
+cadence). If the single-head design fails to hold up under seed replication
+or to reach a genuinely sparse edit rate on hopper, the project's standing
+escalation order resumes at the code level: mixing task reward into the
 worker's objective, then periodic non-local goal proposals (mask-free
 decisions every $N$th switch) to let the manager reach distant goals that
-gradual masked edits cannot. Whichever combination first produces an alive
-sparse-task run defines the revised recipe, to be re-evaluated on all four
-tasks with seed replication before any claims are finalized.
+gradual masked edits cannot.
+
+A parallel thread (\S\ref{sec:ongoing}) asked a narrower question: does
+\emph{forcing} reuse cost less if the pressure reaches the manager through a
+real gradient rather than F18's REINFORCE penalty? F19 answers no across
+three independent mechanisms (12 REINFORCE cells, 8 continuous decoded-goal
+cells, 8 discrete block-overlap cells, 28 cells total) --- every mechanism
+that pushes its target high enough rails its own Lagrange multiplier and
+collapses task return, regardless of gradient path. Hopper in particular has
+now failed under every restrictive or reuse-forcing mechanism tried in the
+project except the unrestricted single-head design of Finding~6, sharpening
+that finding's implication: the fix that matters for hopper is the
+credit-assignment repair, not any particular sparsity mechanism layered on
+top of it. Cheetah is the one place F19 leaves a live, partially positive
+result --- the discrete block-overlap loss without struct
+(\S\ref{sec:softreuse}) keeps 40--60\% of baseline score while measurably
+raising reuse above the unprompted band, worth a follow-up at a lower,
+better-calibrated target before the mechanism itself is written off.
+
+\paragraph{Interim update (2026-07-22, pending).} A direct retest of all three
+reuse mechanisms at a lower, better-calibrated target (decoded-goal
+similarity $0.8$ instead of $0.95$; block-overlap $0.5$ instead of $0.7$,
+same ratchet shape stretched over $\sim\!2$M steps instead of $\sim\!1$M) is
+77--93\% through its 4M-step budget and, read at this point, contradicts two
+of F19's claims (BIG-scale figures for two of the three families in
+Figs.~\ref{fig:reusecont}--\ref{fig:reuseblock}, \S\ref{sec:goalreuse}/
+\S\ref{sec:softreuse}). First, hopper is alive at BIG scale in all 6 cells
+tried across all three families at some point in training (peaks
+187--431, against F19's 0.001--1.75 and a $\approx 300$ baseline) --- the
+Lagrange multiplier in nearly every cell has settled near its numerical
+floor rather than railing at its ceiling, meaning the lower target is
+within each mechanism's reach at essentially no pressure. Cheetah improves
+in every cell as well, several now at or above baseline throughout (e.g.\
+$336.1$ trailing for block-overlap with struct at BIG scale, against
+$71.8$ at the old target). Second, the struct-stacking cost F19 reports
+reverses in direction at this target: struct plus the ratchet now
+\emph{beats} the ratchet-only leg on cheetah BIG, opposite the
+$0.7$-target ordering (\S\ref{sec:softreuse}). Hopper at small scale is
+unaffected and stays dead in all 4 cells, consistent with the pre-existing
+small-scale floor (Finding 5) rather than a reuse-specific failure. The
+picture is not uniformly clean, though: one cell (e278, goal-space reuse,
+hopper BIG, target $0.8$) peaked at $326.8$ around step $2.7$M and has
+since declined to a trailing score of $97.8$ at $80\%$ of budget --- either
+a slower version of F19's own collapse reasserting itself past the point
+the earlier batch failed at, or a separate late-training effect; the other
+5 BIG cells show no such decline as of this pull. Not final until the
+4M-step checkpoints land; see \texttt{EXPERIMENTS.md} \S2 for the full
+interim table. If confirmed for the cells that hold, this would mean F19's
+magnitude-domination collapse is a property of the
+\emph{target}, not of hopper or of any of the three mechanisms tested.
 
 \end{document}

@@ -52,6 +52,35 @@ SEED="${SEED:-0}"
 WORKER_TIMED_GOALS="${WORKER_TIMED_GOALS:-False}"   # HiTS-style worker countdown conditioning
 STRUCT_ADAPT="${STRUCT_ADAPT:-False}"   # AutoAdapt multiplier toward struct-loss ceiling (goal_struct_adapt)
 STRUCT_ADAPT_TARGET="${STRUCT_ADAPT_TARGET:-0.005}"  # struct-loss setpoint (dual-ascent unless one_sided)
+# Implicit-sparsity controller (mask-free): drive measured implicit block sparsity
+# toward IMPL_TARGET via a per-decision REINFORCE change-cost. See small script.
+IMPL_MODE="${IMPL_MODE:-none}"
+IMPL_TARGET="${IMPL_TARGET:-0.5}"
+IMPL_TARGET_INIT="${IMPL_TARGET_INIT:-$IMPL_TARGET}"
+IMPL_TARGET_VEL="${IMPL_TARGET_VEL:-0.001}"
+IMPL_ONE_SIDED="${IMPL_ONE_SIDED:-False}"
+# Condition the manager on the previous goal code so it can deliberately reuse
+# blocks (required for learnable implicit sparsity). Valid on plain Director too.
+MGR_COND_GOALCODE="${MGR_COND_GOALCODE:-False}"
+# Delta goal generation (07-16, F18 follow-up): additive sigmoid-vote combination
+# with the previous goal code's soft distribution -- see small script / agent.py
+# _delta_combine_skill / EXPERIMENTS.md §7. Implies mgr_cond_goalcode.
+GOAL_DELTA_MODE="${GOAL_DELTA_MODE:-False}"
+GOAL_DELTA_CLIP="${GOAL_DELTA_CLIP:-1.0}"
+# Differentiable continuous-goal-space reuse loss (07-16 follow-up) -- see
+# small script / agent._decode_goal_no_decoder_grad / EXPERIMENTS.md §7.
+GOAL_REUSE_WEIGHT="${GOAL_REUSE_WEIGHT:-0.0}"
+GOAL_REUSE_ADAPT="${GOAL_REUSE_ADAPT:-False}"
+GOAL_REUSE_TARGET="${GOAL_REUSE_TARGET:-0.9}"
+GOAL_REUSE_TARGET_INIT="${GOAL_REUSE_TARGET_INIT:-$GOAL_REUSE_TARGET}"
+GOAL_REUSE_TARGET_VEL="${GOAL_REUSE_TARGET_VEL:-0.01}"
+# Direct (REINFORCE-free) implicit sparsity (07-16, F18 follow-up #2) -- see
+# small script / agent.py goal_soft_reuse_adapt / EXPERIMENTS.md §7. Mutually
+# exclusive with GOAL_DELTA_MODE. Implies mgr_cond_goalcode.
+GOAL_SOFT_REUSE_ADAPT="${GOAL_SOFT_REUSE_ADAPT:-False}"
+GOAL_SOFT_REUSE_TARGET="${GOAL_SOFT_REUSE_TARGET:-0.7}"
+GOAL_SOFT_REUSE_TARGET_INIT="${GOAL_SOFT_REUSE_TARGET_INIT:-$GOAL_SOFT_REUSE_TARGET}"
+GOAL_SOFT_REUSE_TARGET_VEL="${GOAL_SOFT_REUSE_TARGET_VEL:-0.01}"
 RECIPE="${RECIPE:-vark_masked}"   # vark_masked | mask_fixedk | plain_vark (see small script)
 MGR_FREQ="${MGR_FREQ:-8}"
 MGR_REWARD_AGG="${MGR_REWARD_AGG:-mean}"   # mean (default) | sum (couples mgr return to hold length)
@@ -152,7 +181,7 @@ EXP_TAG=$EXP_TAG
 CONFIGS=$CONFIGS
 TASK=$TASK
 SIZE=BIG IMAGE=64x64 IMAG=16 BATCH=16x64 TRAIN_RATIO=64 CONV=native
-RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX MASK_TARGET=$MASK_TARGET MASK_TARGET_INIT=$MASK_TARGET_INIT MASK_TARGET_VEL=$MASK_TARGET_VEL MASK_MODE=$MASK_MODE STRUCT_W=$STRUCT_W STRUCT_ADAPT=$STRUCT_ADAPT STRUCT_ADAPT_TARGET=$STRUCT_ADAPT_TARGET WORKER_TIMED_GOALS=$WORKER_TIMED_GOALS MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W SEED=$SEED
+RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX MASK_TARGET=$MASK_TARGET MASK_TARGET_INIT=$MASK_TARGET_INIT MASK_TARGET_VEL=$MASK_TARGET_VEL MASK_MODE=$MASK_MODE STRUCT_W=$STRUCT_W STRUCT_ADAPT=$STRUCT_ADAPT STRUCT_ADAPT_TARGET=$STRUCT_ADAPT_TARGET WORKER_TIMED_GOALS=$WORKER_TIMED_GOALS MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W IMPL_MODE=$IMPL_MODE IMPL_TARGET=$IMPL_TARGET IMPL_TARGET_INIT=$IMPL_TARGET_INIT IMPL_TARGET_VEL=$IMPL_TARGET_VEL IMPL_ONE_SIDED=$IMPL_ONE_SIDED MGR_COND_GOALCODE=$MGR_COND_GOALCODE GOAL_DELTA_MODE=$GOAL_DELTA_MODE GOAL_DELTA_CLIP=$GOAL_DELTA_CLIP GOAL_REUSE_WEIGHT=$GOAL_REUSE_WEIGHT GOAL_REUSE_ADAPT=$GOAL_REUSE_ADAPT GOAL_REUSE_TARGET=$GOAL_REUSE_TARGET GOAL_REUSE_TARGET_INIT=$GOAL_REUSE_TARGET_INIT GOAL_REUSE_TARGET_VEL=$GOAL_REUSE_TARGET_VEL GOAL_SOFT_REUSE_ADAPT=$GOAL_SOFT_REUSE_ADAPT GOAL_SOFT_REUSE_TARGET=$GOAL_SOFT_REUSE_TARGET GOAL_SOFT_REUSE_TARGET_INIT=$GOAL_SOFT_REUSE_TARGET_INIT GOAL_SOFT_REUSE_TARGET_VEL=$GOAL_SOFT_REUSE_TARGET_VEL SEED=$SEED
 NOTE=prior-vargoal template (RECIPE-switched) at BIG director_match scale
 EOF
 RUN_STEPS="${RUN_STEPS:-4000000}"
@@ -168,6 +197,23 @@ AGENT_FLAGS=(
   --agent.goal_struct_weight "$STRUCT_W"
   --agent.goal_struct_adapt "$STRUCT_ADAPT"
   --agent.goal_struct_adapt_target "$STRUCT_ADAPT_TARGET"
+  --agent.impl_sparsity_mode "$IMPL_MODE"
+  --agent.impl_sparsity_target "$IMPL_TARGET"
+  --agent.impl_sparsity_target_init "$IMPL_TARGET_INIT"
+  --agent.impl_sparsity_target_vel "$IMPL_TARGET_VEL"
+  --agent.impl_sparsity_one_sided "$IMPL_ONE_SIDED"
+  --agent.mgr_cond_goalcode "$MGR_COND_GOALCODE"
+  --agent.goal_delta_mode "$GOAL_DELTA_MODE"
+  --agent.goal_delta_clip "$GOAL_DELTA_CLIP"
+  --agent.goal_reuse_weight "$GOAL_REUSE_WEIGHT"
+  --agent.goal_reuse_adapt "$GOAL_REUSE_ADAPT"
+  --agent.goal_reuse_target "$GOAL_REUSE_TARGET"
+  --agent.goal_reuse_target_init "$GOAL_REUSE_TARGET_INIT"
+  --agent.goal_reuse_target_vel "$GOAL_REUSE_TARGET_VEL"
+  --agent.goal_soft_reuse_adapt "$GOAL_SOFT_REUSE_ADAPT"
+  --agent.goal_soft_reuse_target "$GOAL_SOFT_REUSE_TARGET"
+  --agent.goal_soft_reuse_target_init "$GOAL_SOFT_REUSE_TARGET_INIT"
+  --agent.goal_soft_reuse_target_vel "$GOAL_SOFT_REUSE_TARGET_VEL"
   --agent.worker_timed_goals "$WORKER_TIMED_GOALS"
   "${RECIPE_FLAGS[@]}"
   --agent.imag_length 16

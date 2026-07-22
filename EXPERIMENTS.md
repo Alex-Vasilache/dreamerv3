@@ -74,10 +74,698 @@ the restructured, maintained log.
 
 ---
 
-## 2. Current state (2026-07-14, interim readout — 23/31 live-board runs still training;
-e178/e185/e189/e192 cancelled to free A100s for e200–e203; e179/e180/e190/e191/e186/e187/
-e188/e193 cancelled 07-14 (checkpoints preserved, resumable) to free 4×A100 + 4×V100 for
-e204–e211, the mask-sparsity-target-ratchet cell — see below)
+## 2. Current state (2026-07-22, afternoon — `goal_soft_reuse_adapt`
+(struct+ratchet, target 0.5) promoted to the config default; e294/e295 launched to test
+the identical e286/e290 recipe on cartpole BIG and acrobot BIG.)
+
+**Default changed.** `dreamerv3/configs.yaml` `defaults.agent` now ships with the e286
+(hopper BIG)/e290 (cheetah BIG) recipe on by default — `goal_soft_reuse_adapt: True`,
+`goal_soft_reuse_target: 0.5` (ratcheted from `goal_soft_reuse_target_init: 0.0` at
+`goal_soft_reuse_target_vel: 3.9e-6`, the BIG-scale calibration), `goal_struct_adapt:
+True`, `goal_struct_adapt_target: 0.01`. This is currently the best-performing cell of
+the whole project: both e286 and e290 sit *above* their Director baseline late in
+training (§3 below), and it's the first reuse/sparsity mechanism that doesn't collapse
+hopper. `mgr_cond_goalcode` stays `False` in the YAML (unchanged) since `agent.py`
+already force-enables it whenever `goal_soft_reuse_adapt` is set
+(`self.mgr_cond_goalcode = True` at the point the flag is read, `agent.py:547`) —
+confirmed by reading the code, not just the comment, so no config-level side effect
+there. All existing `run_v3_prior_vargoal_*.sbatch` templates pass every one of these
+flags explicitly per-launch (own `False`/old-target fallbacks), so this default change is
+inert for every past and already-scripted experiment; it only changes behavior for a bare
+`--configs defaults` invocation with no overrides (interactive runs, new sbatch scripts
+that don't set these vars explicitly). Small-scale runs should still override
+`goal_soft_reuse_target_vel` to `1.0e-6` (the small-scale calibration) — the shipped
+default is BIG-calibrated, matching "the params in e286 and e290" literally.
+
+**e294/e295 launched (2026-07-22)** — same recipe as e286/e290, ported to two untested
+tasks, using explicit flags (not relying on the new ambient default, for the project's
+usual explicit-repro convention):
+
+| Exp | Job | Task | Scale | Config | Status | Hypothesis |
+|---|---|---|---|---|---|---|
+| e294 | 4668645 | cartpole swingup | BIG | identical to e286/e290 (`RECIPE=director`, `MGR_FREQ=8`, `STRUCT_ADAPT=True` target 0.01, `MGR_COND_GOALCODE=True`, `GOAL_SOFT_REUSE_ADAPT=True` target 0.5 ratcheted from 0 at vel 3.9e-6) | PENDING (`gpu-a100` at 8/8 GPU + CPU cap; queued behind e278–e293) | The best cell found on hopper/cheetah generalizes to a dense, already-easy task without cost — cartpole's own Director/masked baselines are all ≥650 (§1), so this checks the mechanism doesn't quietly tax an easy task even where sparsity pressure isn't needed to survive |
+| e295 | 4668646 | acrobot swingup | BIG | identical to e294 | PENDING (same queue) | Acrobot has failed under every restricted recipe tried so far (F12, e176/e177/e192/e199, alive only under unrestricted Director e180) — this is the first test of the reuse-mechanism family on acrobot specifically; a clean readout either extends the "hopper needed the credit-assignment fix, not sparsity" story (Finding 6/F19) to a third sparse-ish task, or shows acrobot has its own distinct failure mode as F12 already flagged |
+
+Both queued behind the 8/8-GPU `gpu-a100` cap (all 8 slots held by the still-running
+e278–e293 BIG cells above); will start automatically as those complete. `RUN_STEPS=4000000`,
+`SEED=0`, single seed each.
+
+**e279/e283/e288/e289 cancelled (2026-07-22, ~84–98%/4M budget) — all 4 hopper-small
+cells, obviously dead, freed for e294/e295's queue.** Live pull immediately before
+cancelling: `e279` (family A, target 0.8) trail300 **0.3**, trail50 0.4, peak only 14.9;
+`e283` (family B) trail300 **0.9**, trail50 0.5, peak 28.6 (early, decayed); `e288`
+(family C struct+ratchet) trail300 **0.0**, trail50 0.1, peak 15.6 (early, decayed);
+`e289` (family C ratchet-only) trail300 **1.2**, trail50 1.8, peak 76.2 (reached mid-run,
+fully decayed back down) — all indistinguishable from the pre-existing small-hopper dead
+floor (e213 ≈1, F15) regardless of mechanism or target, at 84–98% of budget with no
+recovery in sight. The other 4 small-scale cells (e281, e285, e292, e293, all cheetah)
+and all 6 remaining BIG-scale cells (e278, e280, e282, e284, e286, e287, e290, e291) are
+clearly alive (91–353 trailing) and were left running — including e278, which has
+declined from its 327 peak to ~91–99 but is nowhere near the dead floor these four show.
+Archived to `/bucket/.../results/dreamerv3/` (`SKIP_REPLAY=1`, slurm logs included,
+copies verified before deleting from `/work`); this does not free `gpu-a100` capacity for
+e294/e295 (the cancelled cells were on `gpu-v100`), only `gpu-v100` slots.
+
+---
+
+### Prior state (2026-07-22, morning — e278–e293 INTERIM at 73–89%/4M steps: the lower,
+better-calibrated target rescues almost every cell, reversing F19's headline claim for
+BIG-scale hopper). Retest of the same 3 reuse-mechanism families as e258–e277, with a
+looser ratchet (~2M steps instead of ~1M) and lower targets (`goal_reuse_target=0.8`, was
+0.95; `goal_soft_reuse_target=0.5`, was 0.7), testing F19's hypothesis that the collapse
+is caused by the target being too aggressive relative to each mechanism's own achievable
+range, not by the mechanism itself. All 16 RUNNING (`gpu-v100` small cells + `gpu-a100`
+BIG cells), no job has crashed or been requeued. Design mirrors e258–e277 exactly (same
+task×scale×family×struct grid, `RECIPE=director`, `MGR_FREQ=8`, `RUN_STEPS=4000000`,
+`SEED=0`), only the two targets and their ratchet velocities changed:
+`GOAL_REUSE_TARGET_VEL` = 6.3e-6 (BIG) / 1.7e-6 (small) for the 0→0.8 ratchet;
+`GOAL_SOFT_REUSE_TARGET_VEL` = 3.9e-6 (BIG) / 1.0e-6 (small) for the 0→0.5 ratchet.
+
+**Readout logic (pre-registered), restated:** compare each cell directly against its
+e258–e277 counterpart on (1) whether the Lagrange scale still rails at its ceiling — if
+it now settles interior, the target is within the mechanism's reachable range; (2) task
+score relative to the ≈300/≈300–435/≈100/≈1(dead) baselines; (3) whether hopper stays
+dead at the lower target too, or whether its failure was target-magnitude-dependent.
+
+**Interim results (2026-07-22, pulled directly from each run's live `scores.jsonl` /
+`metrics.jsonl`; all 16 cells 73–89% through the 4M-step budget, none finished).** `Score`
+= mean `episode/score` over the trailing 300 logged episodes as of this pull; `Trend` =
+that trailing-300 mean vs. the preceding 300-episode window (rising/flat/falling — note a
+"falling" cell can still be far above the dead floor); `Scale/target` = the mechanism's
+own Lagrange multiplier and its current ratchet target.
+
+| Exp | Job | Task | Scale | Family | Score (trail300) | Trend | Peak (step) | Reuse-or-overlap / target | Lagrange scale | vs. e258–e277 counterpart |
+|---|---|---|---|---|---|---|---|---|---|---|
+| e278 | 4668382 | hopper | BIG | A: code+decoded input | **240.6** | rising | 327 (@2.71M) | sim 0.860/0.80 | 0.05 (near floor) | e258 **0.001 → 240.6** |
+| e279 | 4668383 | hopper | small | A | **0.07** | rising (noise) | 12.6 (@3.06M) | sim 0.810/0.80 | 0.02 (near floor) | e260 0.002 → 0.07 (still dead) |
+| e280 | 4668384 | cheetah | BIG | A | **309.1** | rising | 333 (@2.87M) | sim 0.884/0.80 | ~0 (floor) | e262 **1.85 → 309.1** |
+| e281 | 4668385 | cheetah | small | A | **142.2** | flat | 201 (@2.56M) | sim 0.928/0.80 | ~0 (floor) | e264 **3.47 → 142.2** |
+| e282 | 4668386 | hopper | BIG | B: decoded-only input | **287.5** | rising | 347 (@2.64M) | sim 0.797/0.80 | 0.01 (near floor) | e274 **0.004 → 287.5** |
+| e283 | 4668387 | hopper | small | B | **0.99** | falling | 28.6 (@0.86M) | sim 0.805/0.80 | 0.09 | e275 0.001 → 0.99 (still dead) |
+| e284 | 4668388 | cheetah | BIG | B | **146.7** | flat | 188 (@2.66M) | sim 0.954/0.80 | ~0 (floor) | e276 **7.24 → 146.7** |
+| e285 | 4668389 | cheetah | small | B | **196.2** | flat | 236 (@2.80M) | sim 0.975/0.80 | ~0 (floor) | e277 **7.57 → 196.2** |
+| e286 | 4668390 | hopper | BIG | C: struct+ratchet | **358.3** | falling (still high) | 424 (@2.91M) | ov 0.503/0.50 | 0.06 (near floor) | e266 **1.75 → 358.3** |
+| e287 | 4668391 | hopper | BIG | C: ratchet-only | **186.7** | falling (still high) | 283 (@2.55M) | ov 0.498/0.50 | 0.19 | e267 **0.19 → 186.7** |
+| e288 | 4668392 | hopper | small | C: struct+ratchet | **0.16** | flat | 15.6 (@0.37M) | ov 0.510/0.50 | 0.01 (floor) | e268 0.30 → 0.16 (still dead) |
+| e289 | 4668393 | hopper | small | C: ratchet-only | **0.60** | falling | 76.2 (@1.11M) | ov 0.510/0.50 | 0.18 | e269 0.004 → 0.60 (still dead) |
+| e290 | 4668394 | cheetah | BIG | C: struct+ratchet | **404.5** | rising | 449 (@3.06M) | ov 0.501/0.50 | 0.43 | e270 **70.4 → 404.5** |
+| e291 | 4668395 | cheetah | BIG | C: ratchet-only | **132.6** | flat | 215 (@1.13M) | ov 0.517/0.50 | 20.0 (elevated) | e271 **182.0 → 132.6 (down)** |
+| e292 | 4668396 | cheetah | small | C: struct+ratchet | **80.3** | falling | 192 (@1.38M) | ov 0.510/0.50 | 0.01 (floor) | e272 73.3 → 80.3 |
+| e293 | 4668397 | cheetah | small | C: ratchet-only | **201.6** | flat, near peak | 298 (@3.08M) | ov 0.494/0.50 | ~0 (floor) | e273 **111.3 → 201.6** |
+
+Baselines for reference (unchanged): hopper BIG ≈300 (e124), cheetah BIG ≈300–435
+(e123/e191), cheetah small ≈100 (e212), hopper small ≈1 (e213, dead even unrestricted).
+
+**Interim readout — branch 1 (Lagrange scale) fires clean, 14/16 cells:** in every cell
+except e287/e289 (moderate, 0.18–0.19) and e291 (elevated, 20.0), the multiplier has
+settled at or within a few multiples of its numerical floor (1e-5–0.4), not railed at its
+100.0 ceiling the way every e258–e277 cell was. The 0.8/0.5 targets are within reach at
+essentially no pressure — confirming the pre-registered "target was too aggressive, not
+the mechanism" branch, decisively.
+
+**Branch 2 (task score) fires clean for BIG scale, both tasks, all three families:**
+every one of the 6 BIG-scale cells that was dead or near-dead in e258–e277 is now within
+20–35% of, or above, its Director baseline: e278 240.6 (was 0.001), e280 309.1 (was
+1.85, now essentially at the ≈300–435 baseline), e282 287.5 (was 0.004), e284 146.7 (was
+7.24), e286 358.3 (was 1.75, now *above* the ≈300 baseline), e290 404.5 (was 70.4, now
+*above* the ≈300–435 baseline). Small-scale cheetah improves similarly (e281 142.2,
+e285 196.2, e293 201.6 — all above the ≈100 baseline; e292 80.3 roughly matches it). The
+lone regression is e291 (cheetah BIG, family C ratchet-only): 182.0 → 132.6, *down*
+despite the looser target — its Lagrange scale (20.0) is also the only one of the 6
+"healthy" BIG cells not near its floor, suggesting this specific cell hasn't yet found the
+cheap equilibrium the others have; worth rechecking once it finishes.
+
+**Branch 3 (hopper) is scale-dependent, not resolved uniformly:** hopper BIG is alive in
+all 6 cells across all three families for the first time under any reuse/sparsity
+mechanism in the project (187–358, vs. F19's 0.001–1.75) — directly overturning F19's
+"hopper fails under every mechanism except the unrestricted single-head design" for the
+BIG-scale, well-calibrated-target case. Hopper SMALL stays dead in all 4 cells
+(0.07–0.99), indistinguishable from the small-hopper noise floor under pure unrestricted
+Director (e213 ≈1, F15) — this reads as the pre-existing small-scale hopper limitation,
+not a reuse-mechanism failure, and was never claimed to be mechanism-specific.
+
+**Why this reads as a real reversal, not a transient:** in e258–e277, every cell that
+eventually collapsed did so once its ratchet finished tightening (~1M steps) and never
+recovered over the remaining 3M steps. These interim cells are 2.6–3.6M steps in — 1.6–2.6M
+steps past their own (slower, ~2M-step) ratchet completion — and show no such collapse
+signature; several are still rising. The 4M-step checkpoints (all 16 cells) will confirm,
+but the diagnostic window that mattered in the prior batch has already been crossed here
+without incident.
+
+**One finding likely needs revision once complete:** F19 stated struct is "safe only as
+the sole sparsity lever" because struct+ratchet halved cheetah's score vs. ratchet-only
+under the 0.7 target (e270 70 vs. e271 182). At the 0.5 target the direction **flips**:
+struct+ratchet now clearly beats ratchet-only on cheetah BIG (e290 404.5 vs. e291 132.6)
+and roughly matches it on cheetah small (e292 80.3 vs. e293 201.6, the one place the
+old ordering survives). Struct's cost/benefit against a direct reuse loss looks
+target-dependent, not fixed — do not generalize F19's struct-stacking conclusion beyond
+the 0.7-target regime until this batch finishes.
+
+**Not yet closed:** whether the "healthy at floor" BIG-scale cells hold their score
+through to 4M steps (esp. e286/e287, currently the two *falling*-trend cells, albeit from
+a very high level); `goal_delta_mode`'s own marginal contribution, still untested at
+scale (both its scheduled A/Bs were cancelled pre-readout, §7); a second seed on any
+promoted configuration before this enters the paper as a finding.
+
+---
+
+### Prior state (2026-07-21 — e258–e277 (16 cells, 3 mechanism families) all
+COMPLETED the full 4M-step budget; nothing currently running — **F19**: every
+differentiable reuse/sparsity mechanism tested reproduces F18's magnitude-domination
+collapse on hopper (16/16 hopper-adjacent... see below, all 4 hopper cells per family
+dead); cheetah survives partially, and only under the discrete block-overlap loss
+(family C), best when NOT stacked with struct. Full readout in the per-batch sections
+below and Finding F19 in §3. e266–e273 (`goal_soft_reuse_adapt`, direct/differentiable
+block-overlap sparsity) × {hopper,cheetah} × {small,BIG} × {struct+ratchet,
+ratchet-only}, full 4M-step budget, all 8 COMPLETED. e258/e260/e262/e264
+(`goal_reuse_adapt` "direct" cells, continuous goal-space Lagrangian, ratcheted 0→0.95
+over ~1M steps, no struct, `mgr_cond_goalcode=True`) × {hopper,cheetah} × {small,BIG},
+full 4M-step budget, all 4 COMPLETED. e259/e261/e263/e265 (the `goal_delta_mode` "delta"
+counterparts) were CANCELLED ~3h10m in, no readout, superseded by e274–e277 (a
+manager-input ablation instead of a delta-mode comparison) (a first submission with the
+target fixed at 0.95 from step 0 was cancelled within ~2 minutes and relaunched
+ratcheted). e274–e277 (`goal_reuse_adapt`, `mgr_cond_goalcode=False`, manager sees
+decoded goal only, no raw code) × {hopper,cheetah} × {small,BIG}, full 4M-step budget,
+all 4 COMPLETED. e250–e257 (struct/ratchet retest under `goal_delta_mode`, full 4M-step
+budget), launched earlier the same day, were CANCELLED ~3.5h in and archived (no
+readout), superseded by e258–e265. e234–e249, the implicit-sparsity matrix, COMPLETED
+07-15/16 at the full 1M-step budget: struct-only survives in 4/4 cells, the REINFORCE
+implicit-sparsity controller (ratchet/direct/struct+ratchet) collapses 12/12 cells —
+**F18**. e230–e233 cancelled 07-15 at 15–17% of budget to free hardware for the e234
+launch; final partial numbers below suggest the looser 0.5 target substantially recovers
+hopper vs. the 0.3-target predecessors, but the runs never finished. Prior state:
+e178–e211 cancelled/archived 07-14, replaced by the single-head mask campaign
+e212–e229; e226 was the project's first alive sparse-task cell (F17))
+
+### Results board — 16 cells, all COMPLETED at the full 4M-step budget, all
+`RECIPE=director` (fixed K=8, plain whole-code goal blocks, no masking/var-K), `SEED=0`.
+Three mechanism families, all targeting some form of goal reuse/sparsity without the
+abandoned explicit-mask design. `Score` = mean `episode/score` over the last ~300
+logged episodes (`Peak` = best mean-episode score reached at any point, with the step it
+was reached); `Reuse@end` = the mechanism's own achieved-similarity/overlap metric,
+averaged over the same trailing window, vs. its target. Director-recipe reference
+baselines (no reuse mechanism, same hardware): hopper BIG ≈300 (e124), cheetah BIG
+≈300–435 (e123/e191, noisy), cheetah small ≈100 (e212), hopper small ≈1 (e213, dead even
+unrestricted — F15). Dead floor for both tasks is score ≈0–1.
+
+| Exp | Job | Task | Scale | Family | Config vs. family default | Score (last~300) | Peak (step) | Reuse@end / target | Hypothesis |
+|---|---|---|---|---|---|---|---|---|---|
+| e258 | 4664904 | hopper | BIG | A: `goal_reuse_adapt`, code+decoded input | `MGR_COND_GOALCODE=True` (manager sees raw one-hot code **and** decoded goal) | **0.001** | 51 (@480k) | sim 0.973 / 0.95 | Continuous decoded-goal-space similarity loss alone (no code-level mechanism) reaches ~0.95 mean similarity at reasonable task return, without needing `goal_delta_mode`'s code recombination |
+| e260 | 4664906 | hopper | small | A | vel 3.9e-6 (small-scale calibration) | **0.002** | 17 (@176k) | sim 0.917 / 0.95 | same, at small scale |
+| e262 | 4664908 | cheetah | BIG | A | — | **1.85** | 203 (@945k) | sim 0.953 / 0.95 | same, cheetah |
+| e264 | 4664910 | cheetah | small | A | vel 3.9e-6 | **3.47** | 138 (@881k) | sim 0.957 / 0.95 | same, cheetah/small |
+| e274 | 4664976 | hopper | BIG | B: `goal_reuse_adapt`, decoded-only input | `MGR_COND_GOALCODE=False` (manager sees **only** decoded goal + world state, no raw code) | **0.004** | 138 (@504k) | sim 0.949 / 0.95 | Manager doesn't need the exact discrete code to satisfy the similarity target — decoded goal alone is sufficient input; compare directly against e258 (same config otherwise) |
+| e275 | 4664978 | hopper | small | B | vel 3.9e-6 | **0.001** | 28 (@256k) | sim 0.917 / 0.95 | same, vs. e260 |
+| e276 | 4664977 | cheetah | BIG | B | — | **7.24** | 175 (@737k) | sim 0.932 / 0.95 | same, vs. e262 |
+| e277 | 4664979 | cheetah | small | B | vel 3.9e-6 | **7.57** | 132 (@817k) | sim 0.946 / 0.95 | same, vs. e264 |
+| e266 | 4664964 | hopper | BIG | C: `goal_soft_reuse_adapt`, struct+ratchet | `STRUCT_ADAPT=True` (target 0.01) | **1.75** | 209 (@625k) | overlap 0.594 / 0.7 | Differentiable block-overlap loss on the manager's own softmax (no REINFORCE, no sample recombination) reaches the 0.7 overlap target at reasonable return — resolves F18 via a cheaper mechanism than `goal_delta_mode`; struct-adapt isolates whether the known-safe indirect lever still helps on top |
+| e267 | 4664965 | hopper | BIG | C: ratchet-only | `STRUCT_ADAPT=False` | **0.19** | 51 (@440k) | overlap 0.603 / 0.7 | isolates the ratchet controller alone vs. e266's struct+ratchet |
+| e268 | 4664968 | hopper | small | C: struct+ratchet | vel 2.9e-6 | **0.30** | 14 (@3.56M) | overlap 0.589 / 0.7 | same as e266, small scale |
+| e269 | 4664969 | hopper | small | C: ratchet-only | vel 2.9e-6 | **0.004** | 44 (@416k) | overlap 0.559 / 0.7 | same as e267, small scale |
+| e270 | 4664966 | cheetah | BIG | C: struct+ratchet | — | **70.4** | 113 (@336k) | overlap 0.559 / 0.7 | same as e266, cheetah |
+| e271 | 4664967 | cheetah | BIG | C: ratchet-only | — | **182.0** | 365 (@808k) | overlap 0.569 / 0.7 | same as e267, cheetah |
+| e272 | 4664970 | cheetah | small | C: struct+ratchet | vel 2.9e-6 | **73.3** | 151 (@545k) | overlap 0.599 / 0.7 | same as e266, cheetah/small |
+| e273 | 4664971 | cheetah | small | C: ratchet-only | vel 2.9e-6 | **111.3** | 155 (@3.09M) | overlap 0.601 / 0.7 | same as e267, cheetah/small |
+
+**Family defaults:** A/B share `GOAL_REUSE_ADAPT=True`, `GOAL_REUSE_TARGET=0.95`
+ratcheted from `GOAL_REUSE_TARGET_INIT=0.0` (vel 1.5e-5 BIG unless noted),
+`GOAL_DELTA_MODE=False`, `STRUCT_W=0.0`, `IMPL_MODE=none`. C shares
+`GOAL_SOFT_REUSE_ADAPT=True`, `GOAL_SOFT_REUSE_TARGET=0.7` ratcheted from
+`GOAL_SOFT_REUSE_TARGET_INIT=0.0` (vel 1.1e-5 BIG unless noted), `MGR_COND_GOALCODE=True`,
+`STRUCT_W=0.0`, `GOAL_REUSE_ADAPT=False`, `IMPL_MODE=none`.
+
+**Cross-family readout (2026-07-21, all 16 cells at full budget):**
+- **A vs. B** (raw code channel load-bearing?): no. Removing the one-hot code channel
+  from the manager's input (B) does not rescue any cell and does not clearly hurt either
+  — both hit the same collapse. If anything B's cheetah cells hold a slightly higher
+  score at the end (e276 7.24 vs e262 1.85; e277 7.57 vs e264 3.47) and slightly higher
+  peaks on hopper (e274 138 vs e258 51; e275 28 vs e260 17), but both are dead by any
+  task-relevant standard. **Verdict: the raw code channel is not load-bearing — but moot,
+  since the mechanism it's an input to collapses regardless of whether it's present.**
+- **A/B vs. C** (continuous goal-space loss vs. discrete block-overlap loss): C is
+  decisively better on cheetah (70–182 vs. 1.85–7.57, i.e. roughly an order of magnitude
+  closer to the ≈300–435 Director baseline) and no worse on hopper (both families dead:
+  A/B 0.001–0.004, C 0.004–1.75 — C's hopper numbers are nominally higher but still 2–3
+  orders of magnitude below the ≈300 baseline, not a real rescue). **Verdict: the
+  discrete block-overlap loss (family C) is the least-bad mechanism, but still fails to
+  reach its own target (overlap plateaus 0.56–0.60 vs. a 0.7 target, scale railed at/near
+  its ceiling — same signature as A/B's railed `reuse_adapt_scale_mean` and F18's railed
+  REINFORCE multiplier) and still fails hopper outright.**
+- **struct+ratchet vs. ratchet-only within C** (does the known-safe F18 struct lever
+  still help once a direct reuse loss is applied?): no — it actively hurts cheetah.
+  Ratchet-only beats struct+ratchet at both scales (e271 182 vs. e270 70 BIG; e273 111
+  vs. e272 73 small), roughly halving cheetah's score when struct is stacked on. On
+  hopper the direction flips (struct+ratchet e266/e268 > ratchet-only e267/e269) but both
+  members of each pair are already dead, so this is noise near the floor, not a real
+  benefit. **Verdict: struct is not a free stabilizer once a direct differentiable reuse
+  loss already targets the same quantity — stacking two constraints on the same code
+  compounds rather than helps, refining F18's "struct is safe" to "safe only as the sole
+  lever."**
+
+### 2026-07-16 · e266–e273 — `goal_soft_reuse_adapt`: direct (REINFORCE-free)
+implicit sparsity via a block-overlap loss
+
+**Motivation.** F18 root-caused the original `impl_sparsity_mode` controller's
+collapse to having no differentiable representation of "kept" under plain
+sampling — the only channel was a stop-gradiented reward penalty through
+REINFORCE, the same mechanism Finding 1 already showed rails and kills reward.
+`goal_delta_mode` fixed this by recombining the SAMPLE itself with the past
+(votes added to the previous distribution before sampling). This is a third,
+cheaper mechanism that leaves sampling completely untouched — plain/direct
+prediction, mutually exclusive with `goal_delta_mode` — and instead: (1) feeds
+the manager the previous decision's own soft distribution `p_{t-1}` as an input
+(replacing the one-hot channel, same input-side trick `goal_delta_mode` uses),
+and (2) adds an ordinary differentiable loss on the block-level OVERLAP between
+this decision's plain softmax `p_t` and `p_{t-1}`:
+`overlap = mean_blocks(sum_classes p_t * p_{t-1})`, bounded in [0,1] by
+Cauchy-Schwarz (the probability an independent draw from each distribution
+lands on the same class). No sampling, no decoder pass, no reward shaping —
+backprops straight into both steps' own logits through their softmax. A
+dual-ascent Lagrange multiplier (`goal_soft_reuse_adapter`, `inverse=True`,
+same sense as `goal_reuse_adapter`) holds mean overlap AT a target, ratcheted
+0→0.7 over ~1M steps exactly like the original `impl_sparsity_target` ramp.
+Implementation: `agent.py` `goal_soft_reuse_adapt` (`_emit_manager`'s plain-
+softmax branch, `_mgr_input`'s soft conditioning channel, the new
+`preedit_eff['skill_probs']` threading through all 3 imagination-loss branches,
+and the new loss block after `impl_sparsity_mode`'s); `configs.yaml`
+`goal_soft_reuse_*`; `run_v3_prior_vargoal_{small,big_a100}.sbatch`
+`GOAL_SOFT_REUSE_*` env-var flags. Smoke-tested (`run_smoke_goal_soft_reuse.sbatch`,
+job 4664962, PASSED): 3 legs (mechanism off — regression check for the shared
+`skill_probs` plumbing now also gating on this flag; on with a fixed target;
+on with a fast-vel ratchet) all crash-free, `goal/soft_reuse_overlap_mean`
+correctly bounded in [0,1], `goal/soft_reuse_target_now` ratchets 0.2→0.7
+monotonically within the 1000-step smoke budget, `losses['goal_soft_reuse']`
+matches the expected `-scale·overlap` value exactly (-12.52 at scale≈100,
+overlap≈0.125), no NaN/Inf anywhere, and the off-leg carries zero `soft_reuse`
+keys (clean gating).
+
+| Exp | Job | Task | Scale | Condition |
+|---|---|---|---|---|
+| e266 | 4664964 | hopper | BIG | struct-adapt 0.01 + ratchet→0.7 |
+| e267 | 4664965 | hopper | BIG | ratchet→0.7 only |
+| e268 | 4664968 | hopper | small | struct-adapt 0.01 + ratchet→0.7 |
+| e269 | 4664969 | hopper | small | ratchet→0.7 only |
+| e270 | 4664966 | cheetah | BIG | struct-adapt 0.01 + ratchet→0.7 |
+| e271 | 4664967 | cheetah | BIG | ratchet→0.7 only |
+| e272 | 4664970 | cheetah | small | struct-adapt 0.01 + ratchet→0.7 |
+| e273 | 4664971 | cheetah | small | ratchet→0.7 only |
+
+All 8: `RECIPE=director`, `MGR_FREQ=8`, `MGR_COND_GOALCODE=True`,
+`GOAL_SOFT_REUSE_ADAPT=True`, `GOAL_SOFT_REUSE_TARGET=0.7`,
+`GOAL_SOFT_REUSE_TARGET_INIT=0.0` (ratchet from 0), `GOAL_SOFT_REUSE_TARGET_VEL`
+= `1.1e-5` (BIG) / `2.9e-6` (small) — reusing the exact `impl_sparsity_target_vel`
+calibration from e250–e257 (identical 0→0.7 distance, identical
+`MGR_FREQ=8`/`RECIPE=director` train-call-to-env-step ratio per scale), `SEED=0`,
+`RUN_STEPS=4000000` (full budget, not a 1M-step probe like e234–e249).
+
+**Readout logic (pre-registered):**
+→ If these cells train reasonably (comparable to the e234–e249/e258–e265
+Director-class controls) while reaching the 0.7 overlap target: the direct
+block-overlap loss is a working, REINFORCE-free sparsity lever — resolves F18
+without needing `goal_delta_mode`'s sampling recombination at all.
+→ If they collapse similarly to the old `impl_sparsity_mode` REINFORCE cells
+(F18) despite having a fully differentiable gradient path: the failure was
+never really about differentiability specifically, but about something else
+common to all three "push kept-fraction toward 0.7" attempts (e.g. the target
+itself being too aggressive relative to the Director-unprompted band of
+0.32–0.45, Table `tab:implbaseline`) — would refocus blame from "no gradient"
+onto "target too far from the natural operating point."
+→ struct+ratchet vs. ratchet-only isolates whether the (known-safe, e234–e249)
+indirect struct lever helps or is neutral/redundant once a direct differentiable
+lever is already applied.
+
+Single seed; not yet compared against `goal_reuse_adapt` (e258–e265, decoded-goal
+space) or `goal_delta_mode` (e250–e257, cancelled) at the same target/budget —
+those are the natural next A/Bs once this batch lands.
+
+**Outcome (2026-07-21, all 8 COMPLETED at the full 4M-step budget).** All 8 trained
+reasonably early (peaks 14–365 between 336k and 3.6M steps — see §2 results board) and
+the overlap target ratchet completed on schedule, but **none reached the 0.7 target**:
+`goal/soft_reuse_overlap_mean` plateaus at 0.56–0.60 across every cell regardless of
+task/scale/struct, with the Lagrange multiplier (`goal_soft_reuse_scale_mean`) railed at
+or near its 100.0 ceiling throughout — the same magnitude-domination signature as F18's
+REINFORCE controller and as A/B's `goal_reuse_adapt_scale_mean`, just reached via a
+genuinely differentiable path. **The second pre-registered branch fired**: this was
+never about differentiability specifically. Task outcome is task-dependent, though: all
+4 hopper cells collapse to the dead floor (0.004–1.75, vs. the ≈300 baseline) exactly
+like every other reuse mechanism tried (F18, A, B) — hopper appears uniquely fragile to
+*any* secondary manager-side objective, not specifically to non-differentiable ones. But
+cheetah **survives substantially** (70–182, roughly 20–60% of the ≈300–435 baseline),
+an order of magnitude better than families A/B's cheetah cells (1.85–7.57) — this is the
+first reuse mechanism of the four tried (F18's REINFORCE controller, A, B, C) where
+cheetah does not fully collapse. The **third branch (struct+ratchet vs. ratchet-only)**
+also fired cleanly and unexpectedly: ratchet-only beats struct+ratchet on cheetah at
+both scales (e271 182 vs. e270 70; e273 111 vs. e272 73) — struct is not neutral here,
+it actively costs cheetah roughly half its score once a direct reuse loss already
+targets the same code, refining F18's "struct is safe" to "safe only as the sole lever."
+See Finding F19 (§3) for the cross-family synthesis.
+
+### 2026-07-16 · e250–e257 — struct/ratchet retest under `goal_delta_mode`
+
+**Motivation.** F18 found the `impl_sparsity_mode=reinforce` controller catastrophic
+in every one of 12 tested cells (e235/e236/e237/e239/e240/e241/e243/e244/e245/e247/
+e248/e249), root-caused (§7) to the controller being architecturally forced into a
+non-differentiable, stop-gradiented reward-penalty mechanism — plain Director had no
+way to express "keep this block" except by coincidence. `goal_delta_mode` (implemented
+today, §7) fixes exactly that: the manager's votes combine additively with the
+previous decision's real confidence-weighted distribution (`skill_probs`), giving
+reuse an explicit, gradient-carrying channel, and the actor loss is re-derived under
+the same combined distribution so the REINFORCE gradient itself is taken correctly.
+This batch re-runs the same struct/ratchet cells from e234–e249 (target 0.7 kept,
+ratchet 0→0.7, `struct_adapt_target=0.01`) with `goal_delta_mode=True` layered on top,
+at the full 4M-step budget (e234–e249 were 1M-step probes) — the question is whether a
+differentiable reuse pathway changes the outcome, or whether the REINFORCE-reward
+mechanism itself is the problem regardless of what it acts on.
+
+**Ratchet calibration fix.** e234–e249 used the same `impl_sparsity_target_vel=1.1e-5`
+at both scales; checking the actual trajectories (this session) shows this was
+correctly calibrated for BIG (ratchet completes at ≈1.02M env-steps, extrapolated from
+the linear ramp) but **not** for small (completes at ≈262k steps — 4× too fast, never
+spent most of training at the intended target-approach dynamics). Recalibrated small to
+`impl_sparsity_target_vel=2.9e-6` (≈1.1e-5 × 262k/1M) so the ratchet takes the full ~1M
+env-steps at both scales, matching the request and matching the earlier
+`mask_sparsity_target_vel` calibration convention (2.8e-6 small / 1.12e-5 BIG for the
+same 0.7-distance/1M-step ramp — the near-identical small value cross-checks the
+derivation). BIG's vel is unchanged (already correct).
+
+**Template changes.** Both `run_v3_prior_vargoal_{small,big_a100}.sbatch` gained
+`GOAL_DELTA_MODE`/`GOAL_DELTA_CLIP` env-var-driven flags (default `False`/`1.0`,
+no-op unless set), following the existing `IMPL_MODE`/`MGR_COND_GOALCODE` convention.
+
+| Exp | Job | Task | Scale | Condition | struct_adapt_target | impl_target_vel |
+|---|---|---|---|---|---|---|
+| e250 | 4664853 | hopper | BIG | struct+ratchet+delta | 0.01 | 1.1e-5 |
+| e251 | 4664854 | hopper | BIG | ratchet+delta | — | 1.1e-5 |
+| e252 | 4664855 | hopper | small | struct+ratchet+delta | 0.01 | 2.9e-6 |
+| e253 | 4664856 | hopper | small | ratchet+delta | — | 2.9e-6 |
+| e254 | 4664857 | cheetah | BIG | struct+ratchet+delta | 0.01 | 1.1e-5 |
+| e255 | 4664858 | cheetah | BIG | ratchet+delta | — | 1.1e-5 |
+| e256 | 4664859 | cheetah | small | struct+ratchet+delta | 0.01 | 2.9e-6 |
+| e257 | 4664860 | cheetah | small | ratchet+delta | — | 2.9e-6 |
+
+All 8: `RECIPE=director`, `MGR_FREQ=8`, `IMPL_MODE=reinforce`, `IMPL_TARGET=0.7`,
+`IMPL_TARGET_INIT=0.0`, `IMPL_ONE_SIDED=True`, `MGR_COND_GOALCODE=True`,
+`GOAL_DELTA_MODE=True`, `GOAL_DELTA_CLIP=1.0`, `RUN_STEPS=4000000`, `SEED=0`.
+
+**Readout logic (pre-registered):**
+→ If these cells train reasonably (comparable to or above e234–e249's struct-only
+cells — cheetah BIG ≈330, hopper BIG ≈115 at 1M steps, presumably higher by 4M) while
+also reaching the 0.7 kept-target: `goal_delta_mode` resolves F18 — the REINFORCE
+penalty was never inherently catastrophic, it only had nothing differentiable to act
+on before.
+→ If these cells still collapse to near-zero score similarly to e234–e249's
+ratchet/struct+ratchet cells: the magnitude-domination failure is independent of
+whether a differentiable pathway exists for the thing being penalized — the
+REINFORCE-reward mechanism itself is the problem, and F18's fix needs to happen at the
+controller/loss level (e.g. a differentiable loss reading `skill_probs` directly
+instead of a stop-gradiented reward penalty), not just at the sampling-mechanism
+level.
+→ A split outcome (e.g. struct+ratchet cells collapse but ratchet-only cells don't, or
+hopper differs from cheetah) would separate the struct term's own contribution from
+the ratchet controller's, and is itself informative — not pre-empted by either branch
+above.
+
+Single seed; `goal_delta_mode` itself is smoke-tested only (not yet validated at scale)
+going into this launch — treat as a combined validation of both goal_delta_mode at
+scale AND the F18 follow-up question.
+
+**Outcome: cancelled 2026-07-16 at ~3.5h (well short of the 4M-step budget), superseded
+by e258–e265's `goal_reuse_adapt` direct/delta comparison, which targets the same
+question with a cleaner, continuous-target design. Archived to
+`/bucket/.../results/dreamerv3/` (`SKIP_REPLAY=1`); no readout — none of the
+pre-registered branches above were reached.**
+
+### 2026-07-16 · e258–e265 — `goal_reuse_adapt` (continuous goal-space target),
+no struct, ratcheted 0→0.95 over ~1M steps
+
+**Motivation.** Direct follow-up to F18/`goal_reuse`: code-level reuse (block class
+identity, targeted by `goal_delta_mode` and the old `impl_sparsity_mode` controller) is
+only a proxy for what the worker actually needs — a stable *decoded* goal
+(`goal_reward_cosine_max(goal_deter, feat)` is computed entirely in continuous deter
+space, never in code space). This batch drops the code-level reuse controller
+(`IMPL_MODE=none`) and the struct correlation term entirely (`STRUCT_ADAPT=False`,
+`STRUCT_W=0.0` — explicitly not needed if the thing we actually care about, the decoded
+goal, is targeted directly) in favor of `goal_reuse_adapt`, a dual-ascent Lagrange
+multiplier holding mean decoded-goal similarity at a target — see §7 for the mechanism
+(gradient into the manager only, decoder gradient blocked; verified in isolation and via
+matched `opt/goal_grad_norm` in the full pipeline).
+
+**Target ratcheted, not fixed from step 0.** The first submission of this batch (jobs
+4664890–4664897) set `goal_reuse_target=0.95` fixed from step 0 and was cancelled within
+~2 minutes (no meaningful training elapsed, run dirs deleted, not archived) before
+relaunch: correctly mirrors `impl_sparsity_target`'s own ratchet — start at
+`goal_reuse_target_init=0.0` (no pressure; realized similarity at random init is
+~0.2–0.3, already above 0.0, so the adapter's scale starts at its floor) and ramp to the
+final `goal_reuse_target=0.95` over ~1M env-steps, giving the manager time to establish
+basic task competence before the similarity constraint tightens. `goal_reuse_target_vel`
+recalibrated for the larger distance (0.95 vs. the impl_sparsity ratchet's 0.7) from the
+same per-scale env-steps-per-train-call relationship: `1.5e-5` (BIG) / `3.9e-6` (small) —
+scaled directly from the already-validated `1.1e-5`/`2.9e-6` (§ e250–e257) by the
+distance ratio `0.95/0.7`. Verified via a fast-vel smoke leg
+(`run_smoke_goal_reuse_ratchet.sbatch`, job 4664903, PASSED): `goal/reuse_target_now`
+ramped `0.175 → 0.950` monotonically within a 1000-step run, correctly capped at 0.95.
+
+| Exp | Job | Task | Scale | Mechanism |
+|---|---|---|---|---|
+| e258 | 4664904 | hopper | BIG | direct (plain Director) |
+| e259 | 4664905 | hopper | BIG | delta (`goal_delta_mode`) |
+| e260 | 4664906 | hopper | small | direct |
+| e261 | 4664907 | hopper | small | delta |
+| e262 | 4664908 | cheetah | BIG | direct |
+| e263 | 4664909 | cheetah | BIG | delta |
+| e264 | 4664910 | cheetah | small | direct |
+| e265 | 4664911 | cheetah | small | delta |
+
+All 8: `RECIPE=director`, `MGR_FREQ=8`, `STRUCT_ADAPT=False`, `STRUCT_W=0.0`,
+`IMPL_MODE=none`, `GOAL_REUSE_ADAPT=True`, `GOAL_REUSE_TARGET=0.95`,
+`GOAL_REUSE_TARGET_INIT=0.0`, `MGR_COND_GOALCODE=True`, `RUN_STEPS=4000000`, `SEED=0`;
+`GOAL_DELTA_MODE={False,True}` per mechanism column, `GOAL_DELTA_CLIP=1.0` where
+applicable.
+
+**Readout logic (pre-registered):**
+→ If "direct" cells (e258/e260/e262/e264) reach high similarity (~0.95) at reasonable
+task return, comparable to their `goal_delta_mode` counterparts: the differentiable
+goal-space loss alone is sufficient, and `goal_delta_mode`'s code-level machinery is
+unnecessary for reuse specifically (though it may still matter for other reasons, e.g.
+sample efficiency of reaching a given code).
+→ If "delta" cells clearly outperform "direct" cells (higher achieved similarity at the
+same task-return cost, or the same similarity at lower cost): the code-level
+differentiable-reuse pathway (`goal_delta_mode`) and the goal-space loss are
+complementary, not redundant — delta mode gives the manager an easier gradient path to
+actually *reach* high code-level reuse, which the goal-space loss alone has to discover
+through the straight-through gradient of a plain categorical.
+→ Watch `goal/reuse_adapt_scale_mean` for railing at its ceiling (100.0, matching the
+smoke test's random-init behavior) persisting long after the target ratchet completes
+(~1M steps) — that would mean 0.95 is unreachable at reasonable task-return cost, the
+same magnitude-domination shape as F18, just via a genuinely differentiable path this
+time (gradient magnitude domination in the combined weighted loss sum, not
+reward-poisoning) rather than a structurally different failure mode.
+
+Single seed; combined validation of `goal_reuse_adapt` at scale (smoke-tested only going
+into this launch) and the "is code-level reuse still needed once goal-space reuse is
+targeted directly" question.
+
+**Delta cells cancelled 2026-07-16 at ~3h10m** (e259 job 4664905, e261 job 4664907, e263
+job 4664909, e265 job 4664911) — no readout taken (short of the 4M-step budget);
+superseded by e274–e277 below, a manager-input ablation on the surviving "direct" cells
+rather than a delta-mode comparison.
+
+**Outcome (2026-07-21, all 4 "direct" cells COMPLETED at the full 4M-step budget).** The
+target was reached — `goal/reuse_sim_mean` sits at 0.92–0.97 against the 0.95 target in
+all 4 cells, close enough that the third pre-registered watch-for ("scale railed at
+ceiling persisting long after ratchet completes") is the operative reading: 3 of 4 cells
+(e260 hopper-small, e262 cheetah-BIG, e264 cheetah-small) have `reuse_adapt_scale_mean`
+pinned at its 100.0 ceiling; e258 (hopper-BIG) sits at 67.6, not fully railed but still
+very high. **All 4 cells collapse in task score regardless**: hopper 0.001–0.002 (vs.
+≈300 baseline — total collapse) and cheetah 1.85 (BIG) / 3.47 (small) (vs. ≈300–435 /
+≈100 baselines — collapse to 1–4% of baseline). Trajectories (see §2 Peak column) show
+this is not a failure to ever learn: every cell rises to a real peak early (51–203,
+reached between 176k and 945k steps, i.e. before or right around the ~1M-step point the
+similarity ratchet finishes tightening) and then **collapses to the floor and stays
+there for the remaining 3M steps** — the same shape as F18's REINFORCE cells and the
+duration-reg cliff (§7): a soft prior that is fine while loose becomes catastrophic once
+the target fully engages. This is the "reach 0.95 unreachable at reasonable task-return
+cost" branch, confirmed, via a genuinely differentiable gradient path this time (no
+REINFORCE) — direct falsification of the batch's central hypothesis that a continuous
+goal-space loss alone (no code-level mechanism) would be a cheap, safe reuse lever.
+Since the `goal_delta_mode` "delta" counterparts (e259/e261/e263/e265) were cancelled
+without a readout, whether code-level recombination would have changed this outcome is
+untested — see F19 (§3).
+
+### 2026-07-16 · e274–e277 — `goal_reuse_adapt`, manager sees decoded goal only (no raw code)
+
+**Motivation.** e258/e260/e262/e264 (kept running) already pass BOTH the raw one-hot
+running code (`mgr_cond_goalcode=True`, 64-dim) and the decoded previous goal
+(`mgr_cond_decgoal`, forced on by `goal_reuse_adapt=True`) to the manager — see
+`_mgr_input` (`agent.py:1379`). This makes it hard to attribute reuse behavior: the
+manager could be keying off the exact discrete code (a trivial identity/copy channel)
+rather than actually using the continuous goal-space signal the `goal_reuse_adapt` loss
+targets. e274–e277 replace those 4 BIG/small direct cells with an otherwise-identical
+config but `MGR_COND_GOALCODE=False`, so the manager's input is *only*
+`feat2tensor(feat)` (world-model deter+stoch) concatenated with the decoded previous
+goal (`goal_dec` output, stop-gradiented) — no raw code channel at all. Everything else
+(RECIPE=director fixed-K8 plain goal-blocks, `GOAL_DELTA_MODE=False`,
+`GOAL_REUSE_TARGET=0.95` ratcheted from 0.0, vel/struct/impl settings, batch/imag/
+train_ratio/envs/steps/seed/hardware) is identical to e258/e260/e262/e264.
+
+| Exp | Job | Task | Scale | Manager input |
+|---|---|---|---|---|
+| e274 | 4664976 | hopper | BIG | decoded goal + world state (no code) |
+| e275 | 4664978 | hopper | small | decoded goal + world state (no code) |
+| e276 | 4664977 | cheetah | BIG | decoded goal + world state (no code) |
+| e277 | 4664979 | cheetah | small | decoded goal + world state (no code) |
+
+All 4: `RECIPE=director`, `MGR_FREQ=8`, `STRUCT_ADAPT=False`, `STRUCT_W=0.0`,
+`IMPL_MODE=none`, `GOAL_DELTA_MODE=False`, `GOAL_REUSE_ADAPT=True`,
+`GOAL_REUSE_TARGET=0.95`, `GOAL_REUSE_TARGET_INIT=0.0`, `GOAL_REUSE_TARGET_VEL=1.5e-5`
+(BIG) / `3.9e-6` (small), **`MGR_COND_GOALCODE=False`**, `RUN_STEPS=4000000`, `SEED=0`.
+
+**Readout logic (pre-registered):** compare against e258/e260/e262/e264 (same recipe,
+`MGR_COND_GOALCODE=True`) on task return and achieved `goal/reuse_sim_mean` at the
+`goal_reuse_target` ratchet. If e274–e277 reach comparable similarity/return to their
+code-conditioned counterparts, the raw discrete code channel is not load-bearing for
+reuse — the decoded-goal signal alone is sufficient for the manager to satisfy the
+continuous target. If they lag noticeably (lower achieved similarity, or collapsed
+return), the manager needs the exact discrete code (not just its lossy decoded
+projection) to reliably reproduce a block.
+
+**Outcome (2026-07-21, all 4 COMPLETED at the full 4M-step budget).** The **first
+pre-registered branch fired**: e274–e277 reach comparable (if anything marginally
+higher) similarity to their code-conditioned counterparts — `reuse_sim_mean` 0.92–0.95
+vs. e258/e260/e262/e264's 0.92–0.97 — and comparable task collapse. The raw discrete
+code channel is not load-bearing: hopper is dead either way (e274 0.004 / e275 0.001 vs.
+e258 0.001 / e260 0.002 — no meaningful difference, both total collapse vs. ≈300 and
+≈1(dead) baselines) and cheetah is dead either way, though B is consistently a bit less
+dead than A (e276 7.24 vs. e262 1.85 BIG; e277 7.57 vs. e264 3.47 small — roughly 2–4×
+higher, but still 2–15% of the ≈300–435/≈100 baselines, i.e. still collapsed by any
+task-relevant standard). Peaks tell the same story: B's hopper-BIG cell (e274) peaks
+notably higher than A's (138 @504k vs. 51 @480k), and B's other 3 cells peak within noise
+of A's, before both collapse to the floor by ~1M steps. **Conclusion:** the manager does
+not need the exact discrete code as input to satisfy a continuous similarity target —
+but this ablation ends up moot, since the mechanism it's isolating (`goal_reuse_adapt`)
+collapses task learning regardless of what conditions the manager. See F19 (§3).
+
+### 2026-07-15 · Pivot to *implicit* sparsity (masking abandoned) + e212–e233 cancelled
+
+**Design change.** Explicit block-masking/abstain is dropped. Rationale: masking was
+only ever a *proxy* for "keep part of the goal unchanged", and the discarded-content /
+abstain machinery hurts credit assignment. Instead the manager **regenerates the whole
+goal code each decision** (plain Director), and we simply **measure** how much it chose to
+keep — *implicit* (effective) sparsity — and add incentives to raise it:
+- New metrics (all HRL runs, incl. plain Director), `agent.py` imagine path:
+  `goal/implicit_sparsity_block` = fraction of goal-code blocks whose class is identical to
+  the previous goal (1 = regenerated identical, 0 = all-new); `goal/implicit_sparsity_cont`
+  = decoded-goal cosine_max to the previous goal, mapped to [0,1]. Measured at
+  manager-decision steps only.
+- `mask_viz` yellow overlay now marks blocks **changed vs the previous goal** (new
+  `last_change_mask` carry), not the edit selector.
+- New **implicit-sparsity controller** (`agent.impl_sparsity_mode=reinforce`,
+  `impl_sparsity_target/_init/_vel/_one_sided`): a mask-free per-decision REINFORCE cost
+  `λ·change_frac` (λ dual-ascent toward the annealed kept-target) drives measured implicit
+  block sparsity to a target. `direct` = fixed target; `ratchet` = anneal 0→target,
+  one-sided λ.
+- `mgr_cond_goalcode` **ungated from masked goals**: plain Director now conditions the
+  manager on the previous goal code so it can *deliberately* reuse blocks (else keeping is
+  incidental). All e234+ runs use it.
+
+**e212–e233 (18 runs) cancelled + archived 2026-07-15** (single-head mask campaign,
+superseded by the implicit-sparsity design): e212 cheetah-director-small, e213
+hopper-director-small, e214–e221 small joint sweep, e222/e223/e226/e227 BIG joint,
+e230–e233 BIG ratchet retest. All rsynced to bucket (`SKIP_REPLAY=1`) then deleted from
+`/work`.
+
+**Director baseline implicit sparsity (measured 2026-07-15** at final checkpoints, new
+code, `impl_sparsity_block` = kept-block fraction, `_cont` = decoded-goal cosine):
+
+| Baseline | scale | kept (block) | cont |
+|---|---|---|---|
+| e212 cheetah (Director) | small | 0.445 | 0.971 |
+| e213 hopper  (Director) | small | 0.414 | 0.887 |
+| e123 cheetah (Director) | BIG   | 0.316 | 0.980 |
+| e124 hopper  (Director) | BIG   | 0.367 | 0.849 |
+| e125 acrobot (Director) | BIG   | 0.395 | 0.770 |
+| e115 cartpole | BIG | **N/A** | — |
+
+A *trained* Director already keeps ~0.32–0.45 of blocks per decision unprompted (vs ~1/8
+random early); small keeps more than BIG. e115 is `director_match masked_goals variable`
+(not a clean Director) **and** its pre-redesign masked checkpoint no longer shape-matches
+current code (chex shape assert on load) — not measured.
+
+**e234–e249, launched 2026-07-15, COMPLETED 07-15/16** (jobs 4664279–4664294) — the
+implicit-sparsity matrix: pure Director copy (`RECIPE=director`, `MGR_FREQ=8`,
+`mgr_cond_goalcode=True`, 1M steps) × {hopper, cheetah} × {small (v100) e234–e241, BIG
+(a100) e242–e249} × 4 conditions: **struct** (struct-adapt target 0.01, no impl
+controller), **struct+ratchet**, **ratchet** (impl controller ratchet kept 0→0.7 over the
+run, one-sided), **direct** (impl controller fixed kept-target 0.7 from step 0). **Target
+0.7 kept = 0.3 change** (chosen above the ~0.32–0.45 baseline so the controller actively
+*raises* sparsity). Pre-registered hypothesis: struct raises implicit sparsity indirectly
+(temporal code correlation) while the ratchet/direct REINFORCE controller raises it
+directly; question was which reaches ~0.7 kept at least task-return cost.
+
+**Result: the question as posed doesn't arise — struct is the only lever that doesn't
+break the task.** Full-budget (1M step) numbers, `train/goal/*` tail-5 averages at the
+final checkpoint:
+
+| exp | env | scale | condition | last15 (peak15) | kept `s` final | `s` target | λ (impl_sparsity_scale) | struct_loss |
+|---|---|---|---|---|---|---|---|---|
+| e234 | hopper | small | struct | 1.9 (46.5) | 0.357 | n/a | n/a | 0.0103 |
+| e235 | hopper | small | struct+ratchet | 0.0 (0.7) | 0.563 | 0.70 | **5.00 (railed)** | 0.0104 |
+| e236 | hopper | small | ratchet | 0.0 (0.6) | 0.560 | 0.70 | **5.00 (railed)** | — |
+| e237 | hopper | small | direct | 0.0 (0.5) | 0.562 | 0.70 | **5.00 (railed)** | — |
+| e238 | cheetah | small | struct | 117.8 (159.0) | 0.259 | n/a | n/a | 0.0103 |
+| e239 | cheetah | small | struct+ratchet | 3.0 (5.0) | 0.561 | 0.70 | **5.00 (railed)** | 0.0102 |
+| e240 | cheetah | small | ratchet | 2.2 (4.6) | 0.510 | 0.70 | **5.00 (railed)** | — |
+| e241 | cheetah | small | direct | 1.4 (4.2) | 0.563 | 0.70 | **5.00 (railed)** | — |
+| e242 | hopper | BIG | struct | **115.1 (115.7)** | 0.379 | n/a | n/a | 0.0100 |
+| e243 | hopper | BIG | struct+ratchet | 0.0 (0.2) | 0.530 | 0.68 | **5.00 (railed)** | 0.0101 |
+| e244 | hopper | BIG | ratchet | 0.0 (1.0) | 0.485 | 0.68 | **5.00 (railed)** | — |
+| e245 | hopper | BIG | direct | 0.0 (0.6) | 0.510 | 0.70 | **5.00 (railed)** | — |
+| e246 | cheetah | BIG | struct | **329.8 (335.4)** | 0.195 | n/a | n/a | 0.0103 |
+| e247 | cheetah | BIG | struct+ratchet | 3.4 (6.1) | 0.515 | 0.68 | **5.00 (railed)** | 0.0101 |
+| e248 | cheetah | BIG | ratchet | 4.1 (8.6) | 0.534 | 0.68 | **5.00 (railed)** | — |
+| e249 | cheetah | BIG | direct | 3.4 (7.9) | 0.551 | 0.70 | **5.00 (railed)** | — |
+
+**Per-cell readout (H: as stated above for the whole matrix):**
+- **e234/e238/e242/e246 (struct, no controller) — H partially confirmed, reframed.** Task
+  return survives in all 4 cells: cheetah BIG (e246, 330/335) lands within noise of the
+  contemporaneous pure-Director-at-1M-steps comparators (e123 runs read 250–305 at the same
+  step count), i.e. near-zero cost; cheetah small (e238, 118/159) and hopper BIG (e242,
+  115/116, still climbing at the 1M cutoff) are clearly alive but well below their
+  Director-at-1M references (e123-class ≈250–305, e124 ≈295 at 1M though e124 itself later
+  *declined* to 196 by its own final checkpoint) — a real, partial cost, not a free lunch.
+  Hopper small (e234, 1.9/46.5) stays at noise floor, consistent with F15 (hopper never
+  learns at small scale under any recipe) and uninformative about struct specifically. The
+  reframe: struct's own *measured* implicit sparsity (`kept` 0.195–0.379) is **not** higher
+  than the unprompted Director baselines (0.32–0.45, §2 table above) — on 3 of 4 cells it is
+  *lower* — so on the discrete block-identity metric struct does not clearly raise reuse at
+  all (caveat: those baselines were measured on checkpoints trained without
+  `mgr_cond_goalcode`, so the comparison is suggestive, not a controlled ablation). What
+  struct reliably buys is task-safety, not demonstrated sparsity.
+- **e235–e237, e239–e241, e243–e245, e247–e249 (any cell with the REINFORCE controller —
+  12/12) — H refuted, decisively.** Every controller-bearing cell collapses to a score of
+  0.0–8.6 (vs. struct-only's 1.9–330 in the matched cell), regardless of task, scale, or
+  whether struct is stacked on top. The controller does not even reach its own objective:
+  `impl_sparsity_scale_mean` (the dual multiplier λ) rails to its ceiling (5.0) in every one
+  of the 12 cells, typically within the first 30–50% of training, while the realized change
+  fraction plateaus at 0.44–0.52 — well short of the 0.3 implied by the 0.7 kept-target.
+  This is the same **magnitude-domination/railing** failure mode already seen twice before
+  in this project (the duration-reg cliff, §7; one-sided edit/switch costs, F2) — a per-step
+  REINFORCE cost on `(1 − kept_frac)` is too strong relative to the task-return gradient at
+  any of the weights explored, and dual ascent's only response to being short of target is
+  to keep growing the multiplier, which does not help once other manager gradients are
+  already drowned out. struct vs. no-struct makes no difference once the controller is
+  active (struct+ratchet ≈ ratchet ≈ direct in every cell) — struct's stabilizing role
+  established elsewhere (F11) does not rescue a controller-induced collapse.
+
+**Implication for the project.** The pivot's original question — "does implicit sparsity
+cost anything, and can we raise it" — is answered asymmetrically: *measuring* it is free
+and informative (kept the metrics), *nudging* it via struct is safe but unproven as a
+sparsity lever, and *forcing* it via REINFORCE is destructive at every setpoint/task/scale
+tried so far, mirroring F2/F17's ratchet result under the old single-head design. No further
+implicit-sparsity-controller cells are planned pending a much weaker controller weight or a
+different mechanism (e.g. clipping λ well below 5.0, or switching to a KL-to-prior penalty
+instead of REINFORCE). struct-only is now the safe default for future sparsity-adjacent
+runs; the controller (`agent.impl_sparsity_mode`) should stay off by default.
 
 **Dense tasks: solved at Director-comparable cost, and countdown found a second,
 simpler route there.** Best cartpole: combined recipe BIG → 833/869 (e157), reproduced
@@ -89,22 +777,30 @@ stable 697/757 (e187) — countdown alone rescues the exact failure struct used 
 needed for, at small scale. Director-matched controls for both dense tasks are running
 (e190 714/747 @63%, still climbing; e191 non-monotonic, peak ~500) to pin the denominators.
 
-**Sparse tasks: the open problem, now sharper.** Hopper and acrobot score ~0 under EVERY
-restricted variant ever run (20+ hopper cells), while pure Director learns hopper (180/326,
-e124) and is climbing on acrobot (197/295 @83%, e180). Cleanest attribution used to be
-"variable duration alone kills hopper" (e169 vs e124, τ_d=4, 0 vs ~300) — that still holds,
-but the mask-only fixed-K8 pair (e164/e165, 0/4.5) shows masking alone, with the *same*
-fixed schedule as the alive baseline, is **independently** also sufficient to kill it. Raising
-τ_d to 8 gives a real-but-weak, non-rising pulse (e178: noisy 0–5e-3 through 3.2M, never
-sustains above the 1e-2 alive bar). Countdown does not rescue hopper (e185 ≈ e178) or
-acrobot (e192 dead while e180 climbs) — it is a dense-task-only fix so far. Struct shows
-both faces on live cells: kills the hopper pulse further (e189, struct_corr 0.94) but is
-load-bearing for the *dense* combined recipe too, not just plain var-K (e160 collapses
-138→22 with struct=0). Remaining live cells: struct-adapt (e195), full stack (e196–e199,
-transfers on cartpole but not cheetah so far), and the still-open struct×countdown hopper
-cell. See §6 for per-experiment interim readouts and the paper's Outlook for the revised
-escalation order (worker task-reward mixing, then non-local goal proposals) if these
-also fail.
+**Sparse tasks: no longer a uniform dead end — the single-head design breaks the pattern.**
+Every dual-head (skill + mask) restricted variant ever run died on hopper/acrobot (20+
+cells, F12). The single-head redesign (`agent.mask_joint_edit`: one C+1-way categorical per
+block, class 0 = abstain — removes the discarded-content REINFORCE confound by
+construction) changes this: **e226** (single-head, struct off, ratchet off, BIG, fully
+free) is alive on hopper — reward_rate 0.245 (vs. the 1e-2 "alive" bar and vs. e178's dead
+0–5e-3 pulse under the old design), score climbing to a 280–286 last-15 plateau by 1.6–2.1M
+steps, ahead of even the pure-Director reference (e124, 196/326). It does this without
+actually editing sparsely: `goal/mask_frac_mean` sits at 0.94–0.97 throughout training — left
+free, the manager never chooses to abstain much; the win is from the single-head mechanism,
+not from achieving sparsity. Forcing sparsity costs performance in every cell tested: struct
+(e227, single-head + struct) nearly halves the score (141/165) but — unlike e189 under the
+old design — no longer kills it outright; the mask-sparsity-target ratchet (e228, forces
+abstain-rate up to a 0.3 non-abstain target by ~1.1M steps) **refutes** the exploration-
+starvation hypothesis it was built to test — score stays flat 1–20 the whole run, well below
+the free variant, and struct+ratchet combined (e229) produces an outright collapse (208 peak
+@500k → <10 for the remaining 2M+ steps). The pattern replicates on cheetah (dense-hard):
+free/struct-on single-head cells (e222 434 peak, e223 455 peak) beat Director-comparable
+levels, ratchet-on cells plateau 2–3× lower (e224 143, e225 201) — the ratchet is not
+dense-regression-neutral either. The rescue is **BIG-scale-only so far**: at small scale,
+hopper stays dead under every single-head cell (e218–e221, all rise-then-decay or flat,
+matching the small pure-Director control e213's own floor) — consistent with F15. Acrobot
+was not re-run under single-head this campaign; still open. Full per-cell numbers: single-head
+campaign table below; supersedes F12, see new finding F17 (§3).
 
 **New mechanism, 07-14: mask-sparsity-target ratchet (e204–e211).** Motivating question:
 under the mask, is the manager's exploration-reward advantage (`_mgr_expl_reward`, dense
@@ -127,11 +823,16 @@ opt-in (`target_init == target` by default → no-op, byte-identical to prior ru
 Smoke-tested (`run_smoke_mask_ratchet.sbatch`, job 4662316): ratchet observed 0.8→0.3
 monotonic + correctly clipped, full combined-recipe smoke leg (prob_entropy + var-K
 Lagrangian + struct-adapt + countdown + ratchet together) trains without error. e204–e211
-port the e200–e203 cell (full stack, τ8, struct 200+adapt dual-ascent target 0.006) to all
-4 tasks × both scales with the ratchet added — the acrobot/hopper cells (e208/e209/e210/
-e211) are the actual test of the exploration-starvation hypothesis; cartpole/cheetah
-(e204–e207) are dense-task regression checks (ratchet should be return-neutral there, since
-e196/e200/e198/e201 already work without it).
+(full stack + ratchet on the old dual-head design) were cancelled+archived 07-14 before
+producing results, to free hardware for the single-head campaign — the ratchet hypothesis
+was tested there instead, as the "R1" cells of e212–e229's 2×2 (§2 single-head table). Verdict
+(2026-07-15): **refuted**. `mask_frac_mean` confirms the ratchet ramps correctly (0.89→0.30 by
+~1.1M steps on both e224/cheetah and e228/hopper) but every ratchet-on cell underperforms its
+free (R0) counterpart — e228 (22/52) vs e226 (214/302) on hopper, e224 (134/143) vs e222
+(181/434) on cheetah — and stacking it with struct causes outright collapse (e229: 208 peak
+@500k → <10 for the rest of training). The exploration-starvation mechanism the ratchet was
+designed to fix does not appear to be what was killing sparse tasks under the old design; see
+F17.
 
 ### Best known configs
 
@@ -197,26 +898,26 @@ Ratchet on the non-abstain probability}. Small = size6m/v100·p100; BIG = direct
 BIG Director baselines reused: cheetah **e191**, hopper **e124**. Cell code Sx Ry = struct x /
 ratchet y.
 
-| exp | job | recipe | env | size | hypothesis / expected | status |
+| exp | job | recipe | env | size | hypothesis / expected | status (2026-07-15 interim, last15/peak15, % of 4M) |
 |---|---|---|---|---|---|---|
-| e212 | 4662391 | pure Director (fixed-K) baseline | cheetah | small | small Director control for the campaign | launched 07-14 |
-| e213 | 4662392 | pure Director (fixed-K) baseline | hopper | small | small Director control | launched 07-14 |
-| e214 | 4662393 | **single-head** S0R0 (struct off, ratchet off — fully free) | cheetah | small | minimal single-head vs Director e212: clean per-block credit ⇒ ≥ baseline | launched 07-14 |
-| e215 | 4662394 | single-head S1R0 (struct-adapt 0.006, ratchet off) | cheetah | small | +struct locality on top of single-head | launched 07-14 |
-| e216 | 4662395 | single-head S0R1 (struct off, ratchet on) | cheetah | small | +ratchet: full-edit early → sparse; dense regression-neutral | launched 07-14 |
-| e217 | 4662396 | single-head S1R1 (struct-adapt 0.006 + ratchet on) | cheetah | small | struct×ratchet combined | launched 07-14 |
-| e218 | 4662397 | single-head S0R0 | hopper | small | single-head on sparse-hard small (long shot) | launched 07-14 |
-| e219 | 4662398 | single-head S1R0 | hopper | small | +struct | launched 07-14 |
-| e220 | 4662399 | single-head S0R1 | hopper | small | +ratchet: does full-goal-edit early aid sparse exploration? | launched 07-14 |
-| e221 | 4662400 | single-head S1R1 | hopper | small | struct×ratchet | launched 07-14 |
-| e222 | 4662401 | single-head S0R0 | cheetah | BIG | single-head vs Director e191 at scale | launched 07-14 |
-| e223 | 4662402 | single-head S1R0 | cheetah | BIG | +struct | launched 07-14 |
-| e224 | 4662403 | single-head S0R1 | cheetah | BIG | +ratchet | launched 07-14 |
-| e225 | 4662404 | single-head S1R1 | cheetah | BIG | struct×ratchet | launched 07-14 |
-| e226 | 4662405 | single-head S0R0 | hopper | BIG | **key**: single-head vs Director e124 on sparse-hard | launched 07-14 |
-| e227 | 4662406 | single-head S1R0 | hopper | BIG | +struct | launched 07-14 |
-| e228 | 4662407 | single-head S0R1 | hopper | BIG | **key**: ratchet rescue of hopper? | launched 07-14 |
-| e229 | 4662408 | single-head S1R1 | hopper | BIG | struct×ratchet | launched 07-14 |
+| e212 | 4662391 | pure Director (fixed-K) baseline | cheetah | small | small Director control for the campaign | 100/111 @71% |
+| e213 | 4662392 | pure Director (fixed-K) baseline | hopper | small | small Director control | 1/40 @71% — small hopper dead even under the unrestricted base |
+| e214 | 4662393 | **single-head** S0R0 (struct off, ratchet off — fully free) | cheetah | small | minimal single-head vs Director e212: clean per-block credit ⇒ ≥ baseline | 111/157 @54%, rising — **H confirmed**, ≥ e212 with less training |
+| e215 | 4662394 | single-head S1R0 (struct-adapt 0.006, ratchet off) | cheetah | small | +struct locality on top of single-head | 174/194 @54%, still rising — best small-cheetah cell |
+| e216 | 4662395 | single-head S0R1 (struct off, ratchet on) | cheetah | small | +ratchet: full-edit early → sparse; dense regression-neutral | 145/238 @54%, early spike (181) then decays to ~145 — **H refuted**, not regression-neutral |
+| e217 | 4662396 | single-head S1R1 (struct-adapt 0.006 + ratchet on) | cheetah | small | struct×ratchet combined | 50/67 @54% — weakest cheetah cell at any scale |
+| e218 | 4662397 | single-head S0R0 | hopper | small | single-head on sparse-hard small (long shot) | 1/125 @54%, rises to 83 @545k then decays to ~1 — long shot fails, mirrors e213's floor |
+| e219 | 4662398 | single-head S1R0 | hopper | small | +struct | 7/117 @54%, same rise-then-decay shape as e218 |
+| e220 | 4662399 | single-head S0R1 | hopper | small | +ratchet: does full-goal-edit early aid sparse exploration? | 24/81 @64%, low flat trace, no transient bump — **H refuted** |
+| e221 | 4662400 | single-head S1R1 | hopper | small | struct×ratchet | 10/21 @64% — weakest hopper cell at small scale |
+| e222 | 4662401 | single-head S0R0 | cheetah | BIG | single-head vs Director e191 at scale | 181/434 @63%, peaked 413 @1.5M then noisy — ≥ Director-comparable |
+| e223 | 4662402 | single-head S1R0 | cheetah | BIG | +struct | 205/455 @65%, cleanest trajectory, plateau 320–434 from 0.5–1.8M — best BIG-cheetah cell |
+| e224 | 4662403 | single-head S0R1 | cheetah | BIG | +ratchet | 134/143 @64%, flat plateau ~110–140 from 700k — **H refuted**, ~3× below e222/e223. **CANCELLED+archived 07-15** to free A100 for e232 |
+| e225 | 4662404 | single-head S1R1 | cheetah | BIG | struct×ratchet | 79/201 @64%, flat low plateau + late decline. **CANCELLED+archived 07-15** to free A100 for e230 |
+| e226 | 4662405 | single-head S0R0 | hopper | BIG | **key**: single-head vs Director e124 on sparse-hard | **214/302 @65%**, rises to 280–286 plateau by 1.6–2.1M; reward_rate 0.245, mask_frac 0.95 — **H confirmed decisively: first alive sparse-task cell in the project** (F17). Kept running (campaign champion) |
+| e227 | 4662406 | single-head S1R0 | hopper | BIG | +struct | 141/165 @65%, smooth plateau, no collapse — struct costs ~half of e226 but no longer fatal (contra F11 under the old design). Kept running (comparator) |
+| e228 | 4662407 | single-head S0R1 | hopper | BIG | **key**: ratchet rescue of hopper? | 22/52 @65%, flat/noisy all run, mask_frac tracks target to 0.30 by 1.1M and never recovers — **H refuted**: forcing sparsity is worse than never forcing it. **CANCELLED+archived 07-15** to free A100 for e233 |
+| e229 | 4662408 | single-head S1R1 | hopper | BIG | struct×ratchet | 4/268(peak) @65% — tracks e226 to 208 @500k then **collapses** to <10 for the remaining 2M+ steps once the ratchet target locks in. **CANCELLED+archived 07-15** to free A100 for e231 |
 
 Verified at launch (07-14): all 18 RUNNING; e216 (ratchet) step 4544 shows
 `mask_sparsity_target_now`≈1.0 annealing down, `mask_frac_mean`≈0.89 (full-edit early),
@@ -232,17 +933,77 @@ checkpoints preserved and resumable, freed 4×A100 + 4×V100 for the mask-ratche
 e204–e211): e179/e180/e190/e191 (A100) and e186/e187/e188/e193 (V100). Detailed hypotheses
 & readout logic: §6.
 
-### Interim hyperparameter comparison table (2026-07-14, live campaign + controls)
+### Ratchet-target 0.5 / struct-adapt 0.01 retest (e230–e233, launched 07-15)
 
-All current-campaign rows (no `†`) are **still running** (50–83% of a 4M-step budget) —
+Follow-up to the single-head campaign's R1 cells (e224/e225/e228/e229), which all
+underperformed their free/struct-only siblings and were cancelled+archived 07-15 (65% of
+budget) to free their 4 A100 slots for this batch. Motivating question: were the old
+ratchet(target 0.3, vel tuned to ~1.1M steps)/struct-adapt(target 0.006) settings simply
+too aggressive, or does forcing edit-fraction sparsity cost performance at any setpoint
+under the single-head design? This batch loosens both: mask-sparsity-target ratchet now
+anneals `mask_sparsity_target_init=1.0` → `mask_sparsity_target=0.5` (was 0.3) — half the
+prior distance (0.5 vs 0.7) — over the same ~1M-env-step horizon, via a recalibrated
+`mask_sparsity_target_vel=8.0e-6` (`= 1.12e-5 × 0.5/0.7`, BIG scale; old velocity/distance
+ratio preserved). Struct-adapt target loosened `0.006` → `0.01` (dual-ascent, two-sided,
+default `goal_struct_adapt_one_sided=False`). Both on together (S1R1 cell) — extended to
+**all 4 tasks** this time (cartpole, acrobot new; cheetah, hopper repeat at the new
+setpoints), since e230/e231 give the first single-head data point on cartpole/acrobot at
+any hyperparameters.
+
+| Exp | Job | Task | Hypothesis / expected | Status |
+|---|---|---|---|---|
+| e230 | 4664145 | cartpole | dense control: does S1R1 at looser targets close the gap to e222/e223-class free/struct performance? First single-head cartpole data point. | **CANCELLED 07-15 @17% (680k/4M)** to free A100 for e234 launch — final: 435/479, mask_frac 0.68 (still ramping toward 0.5), still climbing when cut |
+| e231 | 4664146 | acrobot | first single-head data point on acrobot at any setting; H: fails like e224/e225's dual-head predecessors (e176/e177), or single-head's hopper rescue mechanism generalizes | **CANCELLED 07-15 @15% (594k/4M)** — final: 54/84, mask_frac 0.71 — weak but non-zero, unlike every prior dual-head acrobot cell (e176/e177 ≈0–2.5); too early to call, run never finished |
+| e232 | 4664147 | cheetah | vs e224/e225 (0.3/0.006, dead-ish plateau ~110–140): does 0.5/0.01 recover toward e222/e223's 400+ plateau, or does any forced sparsity cap cheetah near the same ceiling regardless of setpoint? | **CANCELLED 07-15 @16% (649k/4M)** — final: 173/178, mask_frac 0.69 — clears the 0.3-target predecessors' ~110–140 plateau already, partial recovery toward e222/e223, run never finished |
+| e233 | 4664148 | hopper | **key**: vs e228/e229 (0.3/0.006, flat ~22 / collapsed): does a looser ratchet target let the manager keep enough of the free-run edit behavior (e226: mask_frac 0.95) to preserve the hopper rescue, or does *any* imposed sparsity target — regardless of how loose — reproduce the same collapse/flatline? | **CANCELLED 07-15 @17% (665k/4M)** — final: **215/216**, mask_frac 0.68 — far above e228's final 22/52 and inside e226's alive plateau (280–286) at less than a fifth of the training budget; **the "any imposed target collapses" branch looks refuted at 0.5**, but the run was cut before a stable late-training verdict (recall e226/e227 also looked alive at a similar fraction of budget before declining, §2 correction note) |
+
+GPU occupancy after this swap (07-15): A100 8/8 (e222/e223/e226/e227 single-head champions
++ e230–e233 this batch, until e230–e233 were themselves cancelled 07-15 to free all 4 A100s
+for the e234–e249 implicit-sparsity launch — see above). e224/e225/e228/e229 archived to
+`/bucket/DoyaU/vasilache/bucket/results/dreamerv3/`, deleted from `/work` (~42GB freed);
+e230–e233 archived the same way when cancelled.
+
+**Caveat on all four e230–e233 numbers:** none of these runs reached even 20% of budget,
+and the single-head board's own history (e226/e227) shows an early-looks-alive cell can
+decline substantially by 3M+ steps. Treat e233's promising early read as a lead for a
+follow-up run, not a settled rescue.
+
+### Interim hyperparameter comparison table (2026-07-15, live campaign + controls)
+
+All current-campaign rows (no `†`) are **still running** (8–89% of a 4M-step budget) —
 read as a snapshot, not a landed result. `†` rows are finished/archived comparators pulled
-in for contrast. `works?`: ✅ alive/on-reference, ❌ dead or collapsed, ~ mixed/partial/still
-resolving. `score` = last-15 (peak-15) episode return. `blk/step` = realized
-`mask_frac×8/duration` (masking off ⇒ whole code re-written every switch, so it reduces to
-`8/duration`; Director's own fixed-K8 baseline = 1.00). `goal length` = `fix 8` (Director's
-fixed switch interval) or `var τ{4,8} (reg|lagr)` (soft fixed-prior vs. duration-Lagrangian
-control mode). Struct `+adapt` = `goal_struct_adapt` Lagrangian on top of the listed init
-weight.
+in for contrast; `‡` rows use the **single-head (joint) masked manager**
+(`agent.mask_joint_edit`, §2/§3 F17) — a one-categorical-per-block design that replaced the
+dual-head skill+mask design used by every other row in this table. `works?`: ✅ alive/on-
+reference, ❌ dead or collapsed, ~ mixed/partial/still resolving. `score` = last-15 (peak-15)
+episode return. `blk/step` = realized `mask_frac×8/duration` (masking off ⇒ whole code
+re-written every switch, so it reduces to `8/duration`; Director's own fixed-K8 baseline =
+1.00; for `‡` rows K is always fixed at 8, so blk/step reduces to `mask_frac` directly).
+`goal length` = `fix 8` (Director's fixed switch interval) or `var τ{4,8} (reg|lagr)` (soft
+fixed-prior vs. duration-Lagrangian control mode). Struct `+adapt` = `goal_struct_adapt`
+Lagrangian on top of the listed init weight; `(dual, targetX)` = two-sided dual-ascent
+toward raw struct-loss setpoint `X`. `goal mask` for `‡` rows: `joint free` = no sparsity
+penalty (`mask_sparsity_mode=none`, edit fraction shaped only by task-return REINFORCE);
+`joint ratchet→X` = `mask_sparsity_mode=prob` with the target ratcheted from 1.0 down to
+`X` over ~1M env-steps (§sec:ratchet). `§` rows (e230–e249) are a **third, distinct design**
+from either `†`/plain or `‡`/single-head: plain pure Director (no mask of any kind, whole
+goal code always redrawn) with `mgr_cond_goalcode=True` so the manager can *choose* to
+reproduce blocks, plus the **implicit-sparsity controller** (§2, F18) — a REINFORCE cost on
+`1 − kept_frac` where `kept_frac` is *measured*, not masked. `blk/step` is n/a for `§` rows
+(there is no edit mask; `goal mask` column instead reports the controller config and
+`kept` = `goal/implicit_sparsity_block` at the final checkpoint). `impl struct-only` = no
+controller, struct-adapt only; `impl ratchet→0.7kept` = controller target ramped 0→0.7 kept
+over training, one-sided; `impl direct 0.7kept` = controller target fixed at 0.7 kept from
+step 0; `impl struct+ratchet→0.7kept` = both. All 16 `§` rows completed the full 1M-step
+budget (not interim). **Correction (2026-07-15):** e226/e227 — read as
+"H confirmed"/decisively alive in the 07-14 interim readout at 65% — have since **declined
+substantially** in large-window trend (e226: peak ~290 @1.9M → ~75 in the last ~270-episode
+window @3.2M; e227: peak ~150 @1–2.4M → ~24 @3.2M), while internal signals
+(`mgr_extr_adv`, `wkr_goal_rew`) show no classic collapse signature (advantage stays small,
+worker reward is still rising) — this does not match F11's collapse anatomy and is
+unexplained; treat e226 as "was alive, now declining" rather than a settled rescue until
+investigated. Cheetah `‡` cells (e222/e223) show no equivalent decline over the same
+window.
 
 | exp | env | size | works? | score | blk/step | struct | goal mask | goal length | reward agg | wkr countdown | mask ratchet |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -288,18 +1049,56 @@ weight.
 | e197 | hopper | small | ❌ | 0.23 (3.1) | 1.07 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
 | e198 | cheetah | small | ❌ | 100 (122) | 1.17 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
 | e199 | acrobot | small | ❌ | 3.4 (21.9) | 0.60 | 200+adapt | prob_entropy | var τ4 (lagr) | mean | **yes** | no |
-| e200 | cartpole | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
-| e201 | cheetah | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
-| e202 | hopper | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
-| e203 | acrobot | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
-| e204 | cartpole | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
-| e205 | cartpole | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
-| e206 | cheetah | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
-| e207 | cheetah | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
-| e208 | hopper | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
-| e209 | hopper | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
-| e210 | acrobot | small | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
-| e211 | acrobot | BIG | - | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e200 | cartpole | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e201 | cheetah | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e202 | hopper | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e203 | acrobot | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | no |
+| e204 | cartpole | small | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e205 | cartpole | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e206 | cheetah | small | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e207 | cheetah | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e208 | hopper | small | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e209 | hopper | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e210 | acrobot | small | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e211 | acrobot | BIG | ❌ cancelled, no results (freed for e212+) | - | - | 200+adapt(dual, target0.006) | prob_entropy | var τ8 (lagr) | mean | **yes** | **yes** |
+| e212 | cheetah | small | ~ (noisy, windowed trend rising ~140) | 71 (193) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e213 | hopper | small | ❌ | 2 (40) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e214‡ | cheetah | small | ✅ | 151 (169) | 0.83 | 0 | joint free | fix 8 | mean | no | no |
+| e215‡ | cheetah | small | ✅ | 159 (197) | 0.82 | 200+adapt(dual, target0.006) | joint free | fix 8 | mean | no | no |
+| e216‡ | cheetah | small | ~ | 124 (239) | 0.30 | 0 | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e217‡ | cheetah | small | ❌ | 44 (66) | 0.31 | 200+adapt(dual, target0.006) | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e218‡ | hopper | small | ❌ | 0.6 (125) | 0.93 | 0 | joint free | fix 8 | mean | no | no |
+| e219‡ | hopper | small | ~ | 60 (117) | 0.94 | 200+adapt(dual, target0.006) | joint free | fix 8 | mean | no | no |
+| e220‡ | hopper | small | ❌ | 20 (81) | 0.30 | 0 | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e221‡ | hopper | small | ❌ | 8 (21) | 0.30 | 200+adapt(dual, target0.006) | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e222‡ | cheetah | BIG | ✅ | 425 (438) | 0.96 | 0 | joint free | fix 8 | mean | no | no |
+| e223‡ | cheetah | BIG | ✅ | 360 (455) | 0.95 | 200+adapt(dual, target0.006) | joint free | fix 8 | mean | no | no |
+| e224‡ | cheetah | BIG | ❌ cancelled 07-15 | 134 (143) | 0.32 | 0 | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e225‡ | cheetah | BIG | ❌ cancelled 07-15 | 79 (201) | 0.30 | 200+adapt(dual, target0.006) | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e226‡ | hopper | BIG | ~ (was ✅ @65%, now declining — see note above) | 87 (302) | 0.96 | 0 | joint free | fix 8 | mean | no | no |
+| e227‡ | hopper | BIG | ❌ (was ~ @65%, now declined) | 19 (165) | 0.94 | 200+adapt(dual, target0.006) | joint free | fix 8 | mean | no | no |
+| e228‡ | hopper | BIG | ❌ cancelled 07-15 | 22 (52) | 0.30 | 0 | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e229‡ | hopper | BIG | ❌ cancelled 07-15 (collapsed) | 4 (268) | ~0.31 | 200+adapt(dual, target0.006) | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
+| e230‡ | cartpole | BIG | ~ cancelled @17%, still climbing | 435 (479) | 0.68 (ramping to 0.5, cut early) | 200+adapt(dual, target0.01) | joint ratchet→0.5 | fix 8 | mean | no | **yes** |
+| e231‡ | acrobot | BIG | ~ cancelled @15%, weak but alive | 54 (84) | 0.71 (ramping to 0.5, cut early) | 200+adapt(dual, target0.01) | joint ratchet→0.5 | fix 8 | mean | no | **yes** |
+| e232‡ | cheetah | BIG | ~ cancelled @16%, > e224/e225 already | 173 (178) | 0.69 (ramping to 0.5, cut early) | 200+adapt(dual, target0.01) | joint ratchet→0.5 | fix 8 | mean | no | **yes** |
+| e233‡ | hopper | BIG | ~ cancelled @17%, ≫ e228 at 1/5 budget | **215 (216)** | 0.68 (ramping to 0.5, cut early) | 200+adapt(dual, target0.01) | joint ratchet→0.5 | fix 8 | mean | no | **yes** |
+| e234§ | hopper | small | ~ (F15 floor, uninformative) | 1.9 (46.5) | n/a (no mask; kept 0.36) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
+| e235§ | hopper | small | ❌ | 0.0 (0.7) | n/a (kept 0.56, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e236§ | hopper | small | ❌ | 0.0 (0.6) | n/a (kept 0.56, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e237§ | hopper | small | ❌ | 0.0 (0.5) | n/a (kept 0.56, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
+| e238§ | cheetah | small | ~ (below Director-at-1M) | 117.8 (159.0) | n/a (no mask; kept 0.26) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
+| e239§ | cheetah | small | ❌ | 3.0 (5.0) | n/a (kept 0.56, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e240§ | cheetah | small | ❌ | 2.2 (4.6) | n/a (kept 0.51, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e241§ | cheetah | small | ❌ | 1.4 (4.2) | n/a (kept 0.56, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
+| e242§ | hopper | BIG | ~ (partial, still climbing @1M) | 115.1 (115.7) | n/a (no mask; kept 0.38) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
+| e243§ | hopper | BIG | ❌ | 0.0 (0.2) | n/a (kept 0.53, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e244§ | hopper | BIG | ❌ | 0.0 (1.0) | n/a (kept 0.49, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e245§ | hopper | BIG | ❌ | 0.0 (0.6) | n/a (kept 0.51, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
+| e246§ | cheetah | BIG | ✅ (≈ Director-at-1M control) | **329.8 (335.4)** | n/a (no mask; kept 0.20) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
+| e247§ | cheetah | BIG | ❌ | 3.4 (6.1) | n/a (kept 0.52, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e248§ | cheetah | BIG | ❌ | 4.1 (8.6) | n/a (kept 0.53, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e249§ | cheetah | BIG | ❌ | 3.4 (7.9) | n/a (kept 0.55, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
 
 Reading the columns together: every ✅ dense-task row sits at blk/step ≥1.0 by the end of
 training (Director-dense or denser) except e170/e186/e196 (0.61–0.72) — high final blk/step
@@ -406,6 +1205,135 @@ tasks look fragile to *any* deviation from vanilla Director, not to one specific
   six suppression mechanisms it identified (off-manifold partial edits, var-K variance,
   untuned reward-unit regularizers, larger action space, sum agg, cond input) have each
   since been tested — the survivors are the duration/horizon/struct threads of §2.
+- **F17. The single-head masked manager rescues hopper; F12 was diagnosing the dual-head
+  design, not sparsity itself (2026-07-15).** `agent.mask_joint_edit` (one C+1-way
+  categorical per block, class 0 = abstain — removes the discarded-content REINFORCE
+  confound of the old skill+mask dual-head design by construction) is alive on hopper at
+  BIG scale when left fully free (e226: reward_rate 0.245, score 214/302, rising to a
+  280–286 plateau by 1.6–2.1M) — the first alive sparse-task cell after 20+ dead dual-head
+  cells (F12). It does this **without** editing sparsely: `mask_frac_mean` sits at
+  0.94–0.97 throughout — left free, the manager never chooses to abstain much, so the win
+  is attributable to the single-head credit-assignment mechanism, not to achieving
+  sparsity. F12's individual claims stand (dual-head masking/var-K did kill hopper), but
+  its implicit generalization — "sparse tasks die under every restricted variant" — no
+  longer holds; scope F12 to the dual-head design. Forcing sparsity still costs
+  performance under the new design too: struct (e227) nearly halves the score (141/165)
+  but, unlike e189 under the old design, no longer kills it outright; the mask-sparsity
+  ratchet (e228, forces the edit fraction down to a 0.3 target by ~1.1M steps) stays flat
+  at 22/52 the whole run — refuting the exploration-starvation hypothesis it was built to
+  test (§2) — and struct+ratchet combined (e229) collapses outright (208 peak @500k → <10
+  for the remaining 2M+ steps), the same collapse signature as F11's dual-head cells. The
+  rescue is **BIG-scale-only**: at small scale every single-head hopper cell
+  (e218–e221) rises transiently then decays or stays flat, matching the small
+  pure-Director control's own dead floor (e213: 1/40) — consistent with F15. Acrobot
+  untested under single-head so far. Single seed; re-run e226/e223 (best cheetah cell)
+  with a second seed before promoting to the default recipe.
+- **F18. A REINFORCE cost on implicit sparsity rails and kills the task in every cell
+  tested; only the indirect (struct) lever is safe (2026-07-16, e234–e249, full 1M-step
+  budget, 16/16 cells).** Testing whether to *raise* measured implicit goal-code reuse
+  (`goal/implicit_sparsity_block`, the un-masked analogue of mask_frac introduced with the
+  pivot away from explicit masking, §2) costs task return, and whether an indirect lever
+  (struct-adapt) or a direct one (a dual-ascent REINFORCE penalty on `1 − kept_frac`,
+  modes `ratchet`/`direct`) is cheaper: struct-only preserves learning in all 4 cells
+  tried (hopper/cheetah × small/BIG) — cheetah BIG lands within noise of its
+  contemporaneous Director control, hopper BIG and cheetah small pay a real but partial
+  cost, hopper small stays at the F15 small-hopper noise floor uninformatively. Every one
+  of the other 12 cells (ratchet, direct, or struct+ratchet, both scales, both tasks)
+  collapses to a score of 0–8.6, regardless of struct being stacked on or not. The
+  controller does not even reach its own target: `impl_sparsity_scale_mean` (the dual
+  multiplier) rails to its configured ceiling (5.0) in every one of the 12 cells, usually
+  within the first third of training, while the realized change-fraction plateaus at
+  0.44–0.52 — well short of the 0.3 implied by the 0.7 kept-target. Same
+  magnitude-domination signature as the duration-reg cliff (§7) and the one-sided
+  edit/switch costs of F2, and consistent with the single-head mask ratchet's failure
+  under the old design (F17, e228/e229) — this is now the third independent mechanism
+  where forcing a sparsity metric via an aggressive per-step penalty destroys learning,
+  while a softer/indirect lever (soft prior, struct) does not. Caveat: struct's own kept
+  fraction (0.20–0.38) is not clearly *higher* than the unprompted Director baseline
+  (0.32–0.45, measured on pre-`mgr_cond_goalcode` checkpoints, so not a fully controlled
+  comparison) — struct is established here as *safe*, not as a working sparsity lever.
+  `agent.impl_sparsity_mode` should stay off (`none`) by default pending a much weaker
+  controller weight or a non-REINFORCE mechanism.
+
+  **Root cause (2026-07-16, code-level): the implicit controller is architecturally
+  forced into the one mechanism F1 already found broken.** Under the explicit single-head
+  mask (`mode='prob'`/`prob_entropy`, what e224–e229 used), abstain is class 0 of each
+  block's own categorical, and the sparsity penalty is built from `self._mask_prob()`
+  (`agent.py:1281`) — `sigmoid(logit)`, differentiable — added as a genuine loss term
+  (`agent.py:2483–2506`) that backprops directly into each block's own logit: exact,
+  low-variance, per-block credit, and a dedicated "keep" outcome one bit away. Under the
+  implicit controller there is no abstain action — every block always redraws a real
+  class — so "kept" can only be measured post-hoc as `argmax(Z_t) == argmax(Z_{t-1})`
+  (`agent.py:2534–2540`), which has **no gradient by construction**. The code marks this
+  explicitly with `sg(chg)` and instead subtracts `impl_scale * chg` from the manager's
+  extrinsic reward (`agent.py:2555–2560`) — the *only* remaining channel is REINFORCE
+  through the actor-critic return, sharing the same reward stream as the task signal
+  itself. This is structurally the same mechanism as the explicit-mask framework's own
+  `mode='reinforce'` (`agent.py:2448–2462`), which **F1 already found rails and kills
+  reward**, in the earliest bring-up runs (e10/e11) — dropping the mask didn't just
+  remove the discarded-content confound (the intended win of the pivot), it also removed
+  access to a differentiable sparsity proxy, forcing the new controller into the one mode
+  already known broken. Consistent with this: raw scores show the implicit-controller
+  cells are dead from step 0 (e243/e244 hopper BIG: 0.0, peak ≤1.0, no initial rise),
+  whereas the explicit-mask ratchet cells at least achieved partial or transient learning
+  before degrading (e228 22/52; e229 rose to 208 before collapsing @500k) — the
+  differentiable per-block loss shaped behavior carefully early on; the reward-mediated
+  scalar penalty never got the chance to.
+
+- **F19. Making the reuse pressure genuinely differentiable does not fix F18 — it
+  reproduces the same magnitude-domination collapse via a cleaner gradient path
+  (2026-07-21, e258–e277, three mechanism families, 16/16 cells at the full 4M-step
+  budget).** F18 blamed REINFORCE specifically: the implicit-sparsity controller had no
+  gradient path for "kept," so its only lever was a stop-gradiented reward penalty, the
+  same mechanism F1 already found rails and kills reward. Two follow-up mechanisms give
+  the manager a real, backprop-carrying channel instead — `goal_reuse_adapt` (dual-ascent
+  Lagrangian on continuous decoded-goal cosine similarity, families A/B) and
+  `goal_soft_reuse_adapt` (dual-ascent Lagrangian on a discrete block-overlap loss on the
+  manager's own softmax, family C) — and both still collapse task learning in every
+  hopper cell tried (8/8: A+B, 0.001–0.004 vs. an ≈300 baseline) once their similarity
+  ratchet fully engages (~1M steps): every cell rises to a real peak early (17–365,
+  reached 176k–945k steps) and then falls to the floor and stays there for the remaining
+  3M steps, with the Lagrange multiplier railed at or near its configured ceiling
+  throughout — the identical shape as F18's REINFORCE multiplier and the duration-reg
+  cliff (§7), just reached with an unambiguous gradient path this time. **Differentiability
+  was never the root cause; a soft prior that behaves while loose becomes catastrophic
+  once its target fully engages, regardless of which mechanism carries the pressure.**
+  Family C is the partial exception and the most promising lead so far: it does not
+  reach its own 0.7 overlap target either (plateaus 0.56–0.60, scale still railed), and
+  still fails hopper outright, but cheetah survives at 20–60% of baseline (70–182 vs.
+  1.85–7.57 for families A/B) — the first reuse mechanism of the four tried (F18's
+  REINFORCE controller, A, B, C) where cheetah does not fully collapse. Two secondary
+  ablations, both clean: (1) the raw one-hot code channel is not load-bearing for the
+  manager to satisfy a continuous similarity target (family B, no code input, matches or
+  slightly beats family A on every cell) — moot, since A collapses regardless; (2)
+  stacking the known-safe F18 struct lever on top of a direct reuse loss is not neutral,
+  it actively costs cheetah roughly half its score (family C struct+ratchet vs.
+  ratchet-only: 70 vs. 182 BIG, 73 vs. 111 small) — refines F18's "struct is safe" to
+  "safe only as the sole sparsity lever; stacking constraints on the same code
+  compounds." **Net state:** hopper has now failed under every sparsity/reuse mechanism
+  tried project-wide except the unrestricted single-head design (F17) — it reads as
+  uniquely fragile to *any* secondary manager-side objective, not specifically to
+  non-differentiable or REINFORCE-based ones. Cheetah's partial survival under family C
+  is the one live thread: worth a direct A/B against a lower overlap target (matching the
+  unprompted 0.32–0.45 band from Table `tab:implbaseline` rather than 0.7) before
+  concluding the mechanism itself is exhausted. `goal_reuse_adapt` (either manager-input
+  variant) should stay off by default pending a much weaker target/multiplier ceiling;
+  `goal_soft_reuse_adapt` ratchet-only (no struct) is the least-bad configuration found
+  to date for cheetah specifically. `goal_delta_mode`'s own contribution is still
+  untested at scale (its two scheduled A/Bs, e250–e257 and e259/e261/e263/e265, were both
+  cancelled before a readout) — open question, not closed by F19.
+
+  **Interim update (2026-07-22, pending — e278–e293, 73–89%/4M steps, not yet a numbered
+  finding).** F19's "hopper fails under every reuse mechanism" and "struct-stacking always
+  costs cheetah" both look target-magnitude-specific rather than fixed, based on a direct
+  retest at lower targets (0.8 decoded-similarity / 0.5 block-overlap, vs. 0.95/0.7): 6/6
+  BIG-scale cells across all three families are now alive (hopper 187–358 vs. F19's
+  0.001–1.75; cheetah 147–405, several above the ≈300–435 baseline), with the Lagrange
+  multiplier settled near its floor in nearly every cell instead of railed at ceiling —
+  and struct+ratchet now beats ratchet-only on cheetah BIG (404.5 vs. 132.6), the reverse
+  of F19's ordering. Hopper SMALL is still dead in all 4 cells, matching the pre-existing
+  small-scale floor (F15), not a mechanism failure. See §2 for the full interim table and
+  caveats; not promoted to a finding number until the 4M-step checkpoints land.
 
 ---
 
@@ -549,6 +1477,83 @@ now `run_v3_prior_vargoal_big_a100.sbatch`-native via new `STRUCT_ADAPT`/
 `STRUCT_ADAPT_TARGET` env knobs + countdown) at BIG scale on all 4 tasks, struct-adapt
 target lowered to **0.006** (untried at any scale before this). Replaces the 4 dead
 hopper/acrobot BIG cells e178/e185/e189/e192, cancelled the same day to free the A100s.
+e178–e211 all cancelled+archived 07-14 to free hardware for the single-head campaign below
+(see §2 for cancellation reasons per run).
+
+### e212–e229 · Single-head mask campaign (see §2 table, §3 F17)
+Launched 07-14, single-head (`mask_joint_edit`) 2×2 struct×ratchet on cheetah/hopper ×
+small/BIG, against pure-Director controls (e212/e213 small; e124/e191 BIG, reused). Interim
+readout below is 2026-07-15, 54–72% of a 4M-step budget — single seed, still training.
+
+| Exp | Cell | Task/Scale | last15 (peak15) | Note |
+|---|---|---|---|---|
+| e212/e213 | Director baseline | cheetah/hopper small | 100 (111) / 1 (40) | small-scale denominators; small hopper dead even unrestricted |
+| e214/e215 | single-head S0R0/S1R0 | cheetah small | 111 (157) / 174 (194) | ≥ baseline; struct helps |
+| e216/e217 | single-head S0R1/S1R1 | cheetah small | 145 (238) / 50 (67) | ratchet costs plateau; combined worst |
+| e218/e219 | single-head S0R0/S1R0 | hopper small | 1 (125) / 7 (117) | transient rise, decays — small-scale ceiling holds regardless of design |
+| e220/e221 | single-head S0R1/S1R1 | hopper small | 24 (81) / 10 (21) | ratchet suppresses even the transient bump |
+| e222/e223 | single-head S0R0/S1R0 | cheetah BIG | 181 (434) / **205 (455)** | ≥ Director-comparable; struct is the best BIG-cheetah cell |
+| e224/e225 | single-head S0R1/S1R1 | cheetah BIG | 134 (143) / 79 (201) | ratchet ~3× below free/struct; not regression-neutral |
+| **e226** | single-head S0R0 | hopper BIG | **214 (302)**, rising to ~285 | **first alive sparse-task cell (F17)**; beats e124 196(326) |
+| e227 | single-head S1R0 | hopper BIG | 141 (165) | struct costs ~half but no longer fatal (contra old-design F11) |
+| e228 | single-head S0R1 | hopper BIG | 22 (52) | **ratchet-rescue hypothesis refuted** — flat all run |
+| e229 | single-head S1R1 | hopper BIG | 4 (268) | rises to 208 @500k then **collapses** to <10 once ratchet target locks in |
+
+e224/e225/e228/e229 cancelled+archived 07-15 (65%) to free A100s for e230–e233, a
+looser-setpoint (ratchet target 0.5, struct-adapt target 0.01) retest on all 4 tasks —
+see §2.
+
+### e230–e233 · Looser ratchet-target retest, single-head design (see §2)
+Launched 07-15, cancelled 07-15 at 15–17% of a 4M-step budget to free hardware for the
+e234–e249 launch — no final verdict, but the partial trend is informative.
+
+| Exp | Cell | Task | Step (% budget) | last15 (peak15) | Note |
+|---|---|---|---|---|---|
+| e230 | single-head S1R1, target 0.5/0.01 | cartpole | 680k (17%) | 435 (479) | still climbing when cut; first single-head cartpole datum |
+| e231 | single-head S1R1, target 0.5/0.01 | acrobot | 594k (15%) | 54 (84) | weak but non-zero — every dual-head acrobot cell before this was ≈0–2.5 |
+| e232 | single-head S1R1, target 0.5/0.01 | cheetah | 649k (16%) | 173 (178) | already above e224/e225's 0.3-target plateau (~110–140) |
+| e233 | single-head S1R1, target 0.5/0.01 | hopper | 665k (17%) | **215 (216)** | far above e228's final 22(52); inside e226's alive-plateau range at <1/5 the budget |
+
+### e234–e249 · Implicit-sparsity matrix (see §2 table, §3 F18)
+Launched 07-15, **completed 07-15/16 at the full 1M-step budget** (all 16 jobs COMPLETED,
+no cancellations). Pure Director base (`mgr_cond_goalcode=True`) × {hopper, cheetah} ×
+{small, BIG} × {struct, struct+ratchet, ratchet, direct}. Full numbers and per-cell
+readout: §2. One-line verdict: struct-only survives in 4/4 cells; every REINFORCE
+implicit-sparsity-controller cell (12/12) collapses — new finding F18.
+
+| Exp | Cell | Task/Scale | last15 (peak15) | Note |
+|---|---|---|---|---|
+| e234/e238 | struct | hopper/cheetah small | 1.9 (46.5) / 118 (159) | hopper small uninformative (F15 floor); cheetah small alive, below Director-at-1M |
+| e235–e237 | struct+ratchet/ratchet/direct | hopper small | 0.0 (0.7) / 0.0 (0.6) / 0.0 (0.5) | dead; λ railed to ceiling (5.0) in all three |
+| e239–e241 | struct+ratchet/ratchet/direct | cheetah small | 3.0 (5.0) / 2.2 (4.6) / 1.4 (4.2) | dead; λ railed in all three |
+| e242/e246 | struct | hopper/cheetah BIG | 115 (116) / **330 (335)** | cheetah BIG ≈ Director-at-1M control; hopper BIG partial, still climbing at cutoff |
+| e243–e245 | struct+ratchet/ratchet/direct | hopper BIG | 0.0 (0.2) / 0.0 (1.0) / 0.0 (0.6) | dead; λ railed in all three |
+| e247–e249 | struct+ratchet/ratchet/direct | cheetah BIG | 3.4 (6.1) / 4.1 (8.6) / 3.4 (7.9) | dead; λ railed in all three |
+
+### e250–e277 · Differentiable reuse mechanisms, three families (see §2 results board, §3 F19)
+e250–e257 (`goal_delta_mode` struct/ratchet retest) launched 07-16, **cancelled ~3.5h in,
+no readout** (superseded by e258–e265). e259/e261/e263/e265 (`goal_delta_mode` "delta"
+counterparts of e258–e265) launched 07-16, **cancelled ~3h10m in, no readout**
+(superseded by e274–e277). The remaining 16 cells across three mechanism families —
+e258/e260/e262/e264 (A: `goal_reuse_adapt`, code+decoded manager input), e274–e277
+(B: `goal_reuse_adapt`, decoded-only manager input), e266–e273 (C: `goal_soft_reuse_adapt`,
+discrete block-overlap loss, ×{struct+ratchet, ratchet-only}) — all launched 07-16,
+**all 16 COMPLETED 07-21 at the full 4M-step budget.** Full numbers and per-cell readout:
+§2. One-line verdict: every family collapses hopper to the dead floor (8/8 A+B: 0.001–
+0.004; 4/4 C: 0.004–1.75, all vs. an ≈300 baseline); families A/B additionally collapse
+cheetah (1.85–7.57 vs. ≈300–435/≈100 baselines); family C's cheetah cells partially
+survive (70–182), best at ratchet-only without struct — new finding F19.
+
+| Exp | Cell | Task/Scale | Score last~300 (peak) | Note |
+|---|---|---|---|---|
+| e258/e260 | A: `goal_reuse_adapt`, code+decoded | hopper BIG/small | 0.001 (51) / 0.002 (17) | dead; sim 0.92–0.97 achieved, scale railed near ceiling |
+| e262/e264 | A | cheetah BIG/small | 1.85 (203) / 3.47 (138) | dead; sim ≈0.95 achieved, scale railed |
+| e274/e275 | B: `goal_reuse_adapt`, decoded-only | hopper BIG/small | 0.004 (138) / 0.001 (28) | dead; ≈ family A, code channel not load-bearing |
+| e276/e277 | B | cheetah BIG/small | 7.24 (175) / 7.57 (132) | dead but ~2–4× less dead than family A |
+| e266/e268 | C struct+ratchet | hopper BIG/small | 1.75 (209) / 0.30 (14) | dead; overlap 0.59 vs. 0.7 target, scale railed |
+| e267/e269 | C ratchet-only | hopper BIG/small | 0.19 (51) / 0.004 (44) | dead; struct+ratchet slightly less dead here |
+| e270/e272 | C struct+ratchet | cheetah BIG/small | 70.4 (113) / 73.3 (151) | partial survival, but struct costs ~half vs. ratchet-only |
+| e271/e273 | C ratchet-only | cheetah BIG/small | **182.0** (365) / **111.3** (155) | best cheetah cells of all 16 — 40–60% of baseline |
 
 ---
 
@@ -793,6 +1798,197 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
   assumption. Old struct-adapt runs (e195–e199) are **not** directly comparable
   to any struct-adapt run launched after this date — re-run before drawing
   conclusions about the adaptive-vs-static struct comparison.
+- **mask_viz "changed" overlay was masked-goals-only; plain-Director +
+  implicit-sparsity runs (e234–e249) never rendered white (kept) blocks
+  (fixed 2026-07-16).** `_manager_skill_step`'s sticky `last_change_mask` — the
+  carry the mask_viz panel reads for its yellow-vs-white overlay (§2) — was only
+  populated `if self.use_masked_goals`; the plain-Director path hard-coded
+  `edit = ones(...)` ("every block treated as changed"), a holdover from before
+  `mgr_cond_goalcode` gave plain Director the ability to deliberately reuse a
+  block. Fixed by tracking `last_change_mask` (and the `prev_code`/`base_code`
+  reference it needs) unconditionally for any HRL run, masked or plain —
+  `argmax(new code) != argmax(previous code)`, refreshed only on a manager
+  switch, cleared at episode reset. `agent.py`: `init_policy`/`_unpack_carry`
+  (unconditional carry alloc), `_manager_skill_step` (unified `prev_code`
+  capture + change computation), `policy()`'s panel builder (drops the
+  `use_masked_goals` branch, always reads `last_change_mask`). Byte-identical
+  for masked-goals runs; changes ONLY the rendered overlay for plain-Director
+  runs (no effect on training, since mask_viz is a `log/`-only diagnostic).
+- **`goal_delta_mode`: differentiable "reuse" for plain-Director goal
+  generation (2026-07-16, F18 follow-up).** F18 found the implicit-sparsity
+  REINFORCE controller catastrophic because "keep this block" had no
+  differentiable representation — reuse was only ever a coincidence, measured
+  post-hoc via a stop-gradiented `argmax==argmax` comparison. `goal_delta_mode`
+  (opt-in, mutually exclusive with `use_masked_goals`) changes *how the goal
+  code is sampled*, per block (all `L=8` blocks handled independently — the
+  combine step below is purely elementwise over `(..., L, C)`, no cross-block
+  coupling; only the shared network trunk producing the logits can correlate
+  blocks): the manager's per-class logits pass through an **unnormalized,
+  independent sigmoid** ("votes", NOT softmax — the point is that all classes
+  can be driven to ~0 simultaneously, which a normalized distribution can
+  never do) that gets **added** to the previous goal code's distribution
+  before the categorical sample (`agent._delta_combine_skill`). All-~0 votes
+  for a block ⇒ its combined distribution is numerically unchanged from
+  before ⇒ the same class stays most likely — an explicit, gradient-carrying
+  default, as opposed to actively re-voting the same class (which still
+  shifts its margin and so still carries gradient, keeping "lazy default" and
+  "active re-confirmation" distinguishable to any downstream loss).
+  `goal_delta_clip` (default 1.0, a no-op at sigmoid's natural ceiling) caps a
+  single vote before the add. Implies `mgr_cond_goalcode=True` (forced in
+  `__init__`) — the manager needs to see what it's adding to. Applied
+  consistently at all 9 `_emit_manager` call sites (online policy, both
+  imagination-rollout paths, replay re-derivation) via a new `prev_mgr_skill`
+  parameter, AND re-derived identically at the actor-loss reconstruction site
+  (`agent.py` ~2456) so REINFORCE logp/entropy are computed under the
+  distribution that was actually sampled from, not the raw pre-combination
+  network output — this second site is easy to miss and was the trickiest part
+  to get right. Also carries `minent`/`maxent` over from the original head
+  (needed by the adaptive entropy regularizer; a freshly-built `OneHot` has
+  neither).
+  **Refined same day: the additive base is the previous decision's real
+  pre-sample probabilities (`skill_probs`), not its collapsed one-hot.** A
+  one-hot is a lossy view of the previous decision — a 55%-confident pick and
+  a 99%-confident pick both collapse to an identical one-hot once sampled —
+  so basing "how much to trust the standing choice" on the one-hot silently
+  maxes out trust at 1.0 regardless of how contested the decision actually
+  was, capping every single-vote switch at a coin-flip tie no matter what.
+  Using the real `skill_probs` instead makes a block's stickiness scale with
+  its actual prior confidence: a decisively-won class (prob ≈1.0) still caps
+  a fresh vote at a tie (unchanged from before), but a contested class (e.g.
+  0.55/0.45) can be outright overtaken by one strong vote on the alternative
+  (0.45+~1.0 clearly beats 0.55+~0) — a genuinely decisive switch, not just a
+  coin flip. Falls back to the one-hot when no `skill_probs` exists yet
+  (synthetic seed dicts at episode start / report-time proposals, which
+  aren't a real manager decision — treating those as a firm commitment is the
+  right default). This reuses the SAME `skill_probs` carry field introduced
+  for the input-conditioning follow-up below, now doing double duty as both
+  the manager's next-step input AND the next decision's combination base.
+  The manager's own INPUT conditioning channel (`mgr_cond_goalcode` in
+  `_mgr_input`) was switched, under delta mode, from the collapsed one-hot to
+  this same soft pre-sample distribution (new carry field `skill_probs`,
+  threaded through `_emit_manager`'s result and `skill_switch` like any other
+  skill field) — strictly richer (the one-hot is a lossy argmax of it), and
+  additionally tells the manager how *contested* its last decision was, not
+  just which class won.
+  **Smoke-tested on cartpole, PASSED** (`run_smoke_goal_delta.sbatch`, job
+  4664845 — final, `skill_probs`-based-combination version; two earlier
+  submissions superseded: job 4664816 failed on a `skill_switch`
+  dict-key-mismatch from reading `agent.py` mid-edit, not a real bug; job
+  4664824 validated the pre-refinement one-hot-based combination). Three
+  legs, all COMPLETED (exit 0): baseline (delta off, byte-identical-path
+  check), delta-on at clip 1.0, delta-on at clip 0.5 — all trained ~1000
+  steps crash-free through the online policy path, both imagination-rollout
+  paths, AND the actor-loss re-derivation site, with zero NaN/Inf across
+  every logged scalar. `goal/implicit_sparsity_block` ≈0.13 in both delta
+  legs, close to baseline's ≈0.13 (vs. ≈0.30 under the pre-refinement
+  one-hot-based combination) — expected at random init, since `skill_probs`
+  starts near-uniform (1/8) rather than a hard one-hot, so early behavior
+  resembles a fresh decision rather than an artificially sticky one; not yet
+  informative about the mechanism's effect once trained. Not yet run as a
+  real experiment — next step is an e-numbered A/B against the existing
+  plain-Director + `impl_sparsity_mode` cells (e234–e249).
+- **`goal_reuse_adapt`/`goal_reuse_weight`: differentiable CONTINUOUS-goal-space
+  reuse loss (2026-07-16, targets the thing that actually matters instead of a
+  proxy for it; refined same day — decoder gradient blocked, made adaptive).**
+  Both F18's original REINFORCE controller and `goal_delta_mode` above operate
+  at the goal-CODE level (block class identity). But code-level reuse is only
+  a proxy: an unchanged code doesn't guarantee an unchanged DECODED goal
+  (`goal_dec` need not be locally smooth there), and a changed code doesn't
+  guarantee a changed one — while worker success is entirely a function of the
+  DECODED goal (`goal_reward_cosine_max(goal_deter, feat)`), never the code
+  directly. `goal_struct_weight` already tries to address this, but
+  indirectly and globally (forces code-space distances to correlate with
+  deter-space distances across the whole manifold); `goal_reuse` targets the
+  SPECIFIC quantity that matters — this decision's decoded goal vs. the
+  previous one — directly, every decision, with a real gradient path.
+  Mechanism: `goal/implicit_sparsity_cont` already computes almost exactly
+  this similarity as a *metric*, but is fed from `goals`, which is
+  deliberately stop-gradiented twice over (`sg(self._goals_from_skills(
+  jax.tree.map(sg, mgr_skills), bdims=2))`) so worker-target conditioning
+  never leaks gradient into the manager — same disease as F18's root cause, a
+  real signal with no gradient path. Fix: decode the sampled code
+  (`post_code_impl = self._running_goal_code(mgr_skills)`, which — unlike
+  `goals` — was never separately stop-gradiented, so it still carries the
+  straight-through gradient into the manager's logits, regardless of which
+  goal-generation mechanism produced it) a SECOND time, through
+  `self._decode_goal_no_decoder_grad(post_code_impl, 2)`.
+  **Decoder-gradient block (refined 07-16):** the fresh decode initially used
+  a plain `self.goal_dec(...)` call, which — since `MultiOptimizer` does one
+  combined backward pass and routes gradient to each module's own optimizer
+  purely by which params the forward computation touched, with NO other
+  isolation — meant `goal_dec`'s own weights also got a gradient contribution
+  from this manager-shaping loss. Per instruction, this is now blocked:
+  `_decode_goal_no_decoder_grad` implements `g(params, x) = f(sg(params), x)`
+  by temporarily swapping `goal_dec`'s live parameter values for
+  stop-gradiented copies of the SAME values (`.values`/`.write()`, the same
+  primitives `embodied.jax.utils.SlowModel` already uses for a different
+  purpose), decoding, then restoring — gradient into the decoder's params is
+  now exactly zero, gradient into the code (hence the manager) is unchanged.
+  **Verified in isolation** (`test_freeze_grad.py` + `run_smoke_freeze_grad.sbatch`,
+  job 4664883, a minimal ninjax module outside the full agent): forward value
+  matches the unfrozen call exactly, gradient w.r.t. the decoder's parameter
+  is exactly `0.0`, gradient w.r.t. the input matches the unfrozen call
+  exactly (`36.0` vs `36.0` in the test's toy example) — the three properties
+  that together prove the construction does exactly what it's supposed to.
+  **Adaptive Lagrangian (refined 07-16):** mirrors `goal_struct_weight`/
+  `goal_struct_adapt`'s existing dual-mode pattern. `goal_reuse_weight`
+  (fixed, unconditional push toward similarity 1) is kept as a simple
+  ablation; the new, recommended mode is `goal_reuse_adapt` (bool) +
+  `goal_reuse_target` (target similarity, default 0.9) +
+  `goal_reuse_adapt_{init,min,max,vel,one_sided}` — a dual-ascent Lagrange
+  multiplier (`embodied.jax.AutoAdapt`, `inverse=True`, the same sense used
+  for entropy regularizers: "push up when below target") that grows while
+  mean realized similarity sits below `goal_reuse_target` and shrinks while
+  above, self-tuning the pressure to HOLD similarity at the target rather
+  than driving it unconditionally to 1. The two modes are mutually exclusive
+  (raises if both set), matching struct's convention exactly. Loss key
+  `goal_reuse` (own scale in `loss_scales`, conditionally registered — off
+  leaves the scales/losses key sets byte-identical to before). New metrics:
+  `goal/reuse_sim_mean` (realized similarity), `goal/reuse_adapt_scale_mean`
+  (the Lagrange multiplier, adapt mode only).
+  **Manager input:** `mgr_cond_decgoal` ("concat decoded previous goal") already
+  existed but was gated to `use_masked_goals` only (same over-restriction
+  `mgr_cond_goalcode` had before the delta-mode fix) — un-gated, and either
+  `goal_reuse_weight > 0` or `goal_reuse_adapt` now forces it on (the manager
+  needs to see the previous decoded goal to reason about how far it's moving
+  it).
+  **Smoke-tested on cartpole, PASSED** (`run_smoke_goal_reuse.sbatch`, final
+  version job 4664884, superseding the pre-refinement job 4664875): 4 legs,
+  all COMPLETED exit 0 — baseline (off, no key leakage), `goal_reuse_weight`
+  fixed mode, `goal_reuse_adapt` (target 0.9), and adapt mode combined with
+  `goal_delta_mode` (compatibility). All trained ~1000 steps crash-free with
+  `goal/reuse_sim_mean` finite and in `[-1,1]`, `goal/reuse_adapt_scale_mean`
+  finite and within `[min,max]` in both adapt legs, zero NaN/Inf anywhere.
+  Not yet run as a real experiment.
+- **`goal_soft_reuse_adapt`: direct (REINFORCE-free) implicit sparsity via a
+  block-overlap loss (2026-07-16, third F18 follow-up, see §2 e266–e273).**
+  Leaves sampling exactly as plain/direct Director (mutually exclusive with
+  `goal_delta_mode`, which recombines the sample itself) and instead: feeds the
+  manager `p_{t-1}` (previous decision's own softmax, not the one-hot) as an
+  input via the SAME `mgr_cond_goalcode` channel `goal_delta_mode` repurposes
+  (`_mgr_input`, now gated on `_mgr_needs_skill_probs = goal_delta_mode or
+  goal_soft_reuse_adapt` instead of `goal_delta_mode` alone), and adds an
+  ordinary loss on `overlap = mean_blocks(sum_classes p_t * p_{t-1})` (bounded
+  [0,1], Cauchy-Schwarz), backpropagating through both steps' own softmax —
+  no sampling, no decoder pass, no reward shaping. `_emit_manager` computes
+  `skill_probs` as the manager's plain softmax (not a delta-combined
+  distribution) whenever this flag is set; the online/imagination carry init
+  sites (`init_policy`, `_unpack_carry`, `_imagine_with_manager`) all broadened
+  their `skill_probs` zero-init from `goal_delta_mode`-only to
+  `_mgr_needs_skill_probs`, so `mgr_skills['skill_probs']` is a genuine
+  per-decision stacked field (threaded through the scan like `goal_code`) —
+  no onehot fallback needed at the loss-recomputation site, unlike
+  `goal_delta_mode`'s own (separately, not fixed here) `preedit_eff`
+  construction. Dual-ascent Lagrange multiplier `goal_soft_reuse_adapter`
+  (`inverse=True`, same sense as `goal_reuse_adapter`) + `Ratchet`-annealed
+  target (`goal_soft_reuse_target_{init,vel}`), mirroring `impl_sparsity`'s own
+  ratchet exactly. Loss key `goal_soft_reuse` (own scale). New metrics:
+  `goal/soft_reuse_overlap_mean`, `goal/soft_reuse_target_now`,
+  `goal/soft_reuse_scale_mean`. **Smoke-tested, PASSED**
+  (`run_smoke_goal_soft_reuse.sbatch`, job 4664962): 3 legs (off/regression,
+  fixed target, fast-vel ratchet), all crash-free, overlap correctly bounded,
+  ratchet monotonic 0→0.7, loss value matches `-scale·overlap` exactly, zero
+  NaN/Inf, zero key leakage on the off leg.
 
 ## 8. Config flags & metrics reference
 
@@ -820,10 +2016,44 @@ All flags default to DreamerV3/pre-HRL behavior.
 - **Worker:** `worker_timed_goals` (countdown conditioning, 07-13).
 - **Manager misc:** `mgr_cond_goalcode`, `mgr_cond_achieve`, `mgr_reward_agg {mean,sum}`,
   `mgr_expl_weight`.
+- **Implicit sparsity:** `impl_sparsity_mode {none,reinforce}` + `impl_sparsity_target(_init,_vel,_one_sided,_min,_max)`
+  (F18: catastrophic in every cell tested — leave `none`). **`goal_soft_reuse_adapt` +
+  `goal_struct_adapt` are now `True` by default (2026-07-22)**, target 0.5 / 0.01
+  respectively, ratcheted at the BIG-scale rate (`goal_soft_reuse_target_vel: 3.9e-6`) —
+  the e286/e290 recipe (§2), currently the best-performing cell in the project (both
+  above their Director baseline late in training). Override to `False`/old targets for a
+  clean baseline; override `goal_soft_reuse_target_vel` to `1.0e-6` at small scale. See
+  `dreamerv3/configs.yaml` `defaults.agent` for the exact shipped values. `goal_delta_mode` +
+  `goal_delta_clip` (07-16, F18 follow-up, mutually exclusive with
+  `use_masked_goals`): differentiable reuse via additive sigmoid-vote combination
+  with the previous goal code, see §7. Carry field `skill_probs` (delta mode
+  only) does double duty: it's the soft pre-sample distribution the NEXT
+  decision's votes get added to (so stickiness scales with how confidently a
+  block was last chosen, not a flat 1.0), and it also feeds `mgr_cond_goalcode`'s
+  next-step conditioning instead of the collapsed one-hot. `goal_reuse_adapt`
+  (recommended) / `goal_reuse_weight` (fixed ablation) (07-16, targets the
+  DECODED goal directly rather than code identity, see §7): own loss key
+  `goal_reuse`, metrics `goal/reuse_sim_mean` + `goal/reuse_adapt_scale_mean`
+  (adapt mode); compatible with any goal-generation mechanism (plain, masked,
+  joint, delta). Gradient reaches `manager_pol` (via the code's
+  straight-through gradient) but NOT `goal_dec`'s own weights — blocked via
+  `_decode_goal_no_decoder_grad` (`.values`/`.write()`-based parameter
+  freeze, verified in isolation, `test_freeze_grad.py`). `goal_reuse_target`
+  (adapt mode, default 0.9) is the similarity setpoint a dual-ascent Lagrange
+  multiplier holds, `inverse=True` sense (push up when below target).
+  `goal_reuse_target_init`/`_vel` (07-16) ratchet the target itself (`agent.Ratchet`,
+  same mechanism as `impl_sparsity_target_init/_vel`) from `_init` up to
+  `goal_reuse_target` over training instead of imposing the final target from step 0;
+  default `_init == goal_reuse_target` (no-op). Mutually exclusive with
+  `goal_reuse_weight` (raises if both set). Forces `mgr_cond_decgoal` on (also
+  un-gated from `use_masked_goals` this session — was over-restricted the same
+  way `mgr_cond_goalcode` was before the delta-mode fix).
 - **Template env knobs** (`run_v3_prior_vargoal_{small,big_a100,short_a100}.sbatch`):
   `RECIPE={vark_masked,mask_fixedk,plain_vark}`, `DUR_TARGET`, `DUR_MODE={fixed,lagrangian}`,
   `MASK_MODE`, `STRUCT_W`, `STRUCT_ADAPT`, `WORKER_TIMED_GOALS`, `MGR_REWARD_AGG`,
-  `MGR_EXPL_W`, `MGR_FREQ`, `SEED`, `RUN_STEPS`, `RUN_DIR` (fixed = resumable).
+  `MGR_EXPL_W`, `MGR_FREQ`, `SEED`, `RUN_STEPS`, `RUN_DIR` (fixed = resumable),
+  `GOAL_DELTA_MODE`, `GOAL_DELTA_CLIP`, `GOAL_REUSE_WEIGHT`, `GOAL_REUSE_ADAPT`,
+  `GOAL_REUSE_TARGET(_INIT,_VEL)`.
 - **Key metrics:** `goal/mask_frac_mean`, `goal/mask_prob_mean`, `goal/struct_corr`,
   `goal/rec_mean`, `goal/mgr_duration_mean/std`, `goal/mgr_switch_rate`, `wkr_goal_rew`,
   `wkr_ent/action`, `mgr_extr_rew(_block)`, `mgr_extr_adv`, `epstats/reward_rate`,
