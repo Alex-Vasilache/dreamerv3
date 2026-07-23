@@ -5,8 +5,8 @@ Director-style hierarchical RL on DreamerV3, studying whether the manager can ac
 choosing how long each goal is held (variable durations). Companion working paper:
 `paper/main.pdf` (self-contained method + results). Full narrative history of everything
 below is preserved verbatim in `EXPERIMENTS_ARCHIVE_20260713.md` (and git); this file is
-the restructured, maintained log. `HYPERPARAMETER_COMPARISON.md` holds the 2026-07-15
-94-row cross-cell hyperparameter comparison table (e46–e249), split out to keep this file
+the restructured, maintained log. `HYPERPARAMETER_COMPARISON.md` holds the full
+cross-cell hyperparameter comparison table (e46–e303), split out to keep this file
 condensed (§2).
 
 **Structure of this file:**
@@ -181,6 +181,18 @@ hold-length variation (closer to e169's dead τ4) is worse than longer (closer t
 weak-pulse τ8) under the tighter Lagrangian tracking (F7: ~20× tighter than the reg
 prior) — if τ8-lagr survives where τ8-reg (e178) only pulsed, tracking precision itself
 would be implicated as a lever, not just target length.
+
+**Paper updated (2026-07-23):** added a new §"Variable-duration option: mechanism
+reference" to `paper/main.tex` (after "The combined recipe", before "Experimental
+setup") — a self-contained diagram + equations + per-network I/O/loss table for the
+var-K machinery alone (decision-timing recurrence, the two manager credit-assignment
+resolutions, the duration prior/Lagrangian), plus a "Status" subsection answering the
+"is this a bug?" question raised by e296–e299 (hopper/acrobot dead again under plain
+var-K post-fix): no — three points argue against an implementation defect (reproduced
+across two independent code revisions; the countdown/`worker_timed_goals` fix rescues
+a collapsing *dense*-task var-K run 5.4× but leaves hopper/acrobot exactly as dead;
+the same tasks are solvable by an unrestricted manager). Flags var-K × single-head
+(F17) as the one still-untested combination that could still change this reading.
 
 ---
 
@@ -1106,12 +1118,10 @@ and the single-head board's own history (e226/e227) shows an early-looks-alive c
 decline substantially by 3M+ steps. Treat e233's promising early read as a lead for a
 follow-up run, not a settled rescue.
 
-### Interim hyperparameter comparison table (2026-07-15, live campaign + controls)
+### Hyperparameter comparison table
 
-Moved to its own file, `HYPERPARAMETER_COMPARISON.md` (2026-07-23) — a single dense
-94-row cross-cell table (e46/e124 through e249) with its own column legend, kept
-verbatim as a historical snapshot. It predates the differentiable-reuse campaign
-(e250 onward, F19/F20) below.
+Moved to its own file, `HYPERPARAMETER_COMPARISON.md` (2026-07-23, updated through
+e303) — a bare cross-cell table, no legend or prose.
 
 ---
 

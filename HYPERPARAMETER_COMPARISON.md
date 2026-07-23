@@ -1,53 +1,3 @@
-# Hyperparameter comparison table (2026-07-15 snapshot)
-
-Split out of `EXPERIMENTS.md` §2 (2026-07-23) to keep that file condensed per its own
-stated convention (§1 "Style"). This is a single dense cross-cell table from the
-2026-07-15 live campaign + controls, covering e46/e124 through e249 — kept verbatim for
-reference. It predates the differentiable-reuse campaign (e250 onward, F19/F20) and the
-single-head board's later declines noted in `EXPERIMENTS.md` §2/§3; read it as a
-historical snapshot, not current best-configs. Current state, live findings, and the
-experiment ledger all live in `EXPERIMENTS.md`.
-
----
-
-### Interim hyperparameter comparison table (2026-07-15, live campaign + controls)
-
-All current-campaign rows (no `†`) are **still running** (8–89% of a 4M-step budget) —
-read as a snapshot, not a landed result. `†` rows are finished/archived comparators pulled
-in for contrast; `‡` rows use the **single-head (joint) masked manager**
-(`agent.mask_joint_edit`, EXPERIMENTS.md §2/§3 F17) — a one-categorical-per-block design
-that replaced the dual-head skill+mask design used by every other row in this table.
-`works?`: ✅ alive/on-reference, ❌ dead or collapsed, ~ mixed/partial/still resolving.
-`score` = last-15 (peak-15) episode return. `blk/step` = realized `mask_frac×8/duration`
-(masking off ⇒ whole code re-written every switch, so it reduces to `8/duration`;
-Director's own fixed-K8 baseline = 1.00; for `‡` rows K is always fixed at 8, so blk/step
-reduces to `mask_frac` directly). `goal length` = `fix 8` (Director's fixed switch
-interval) or `var τ{4,8} (reg|lagr)` (soft fixed-prior vs. duration-Lagrangian control
-mode). Struct `+adapt` = `goal_struct_adapt` Lagrangian on top of the listed init weight;
-`(dual, targetX)` = two-sided dual-ascent toward raw struct-loss setpoint `X`. `goal mask`
-for `‡` rows: `joint free` = no sparsity penalty (`mask_sparsity_mode=none`, edit fraction
-shaped only by task-return REINFORCE); `joint ratchet→X` = `mask_sparsity_mode=prob` with
-the target ratcheted from 1.0 down to `X` over ~1M env-steps (§sec:ratchet). `§` rows
-(e230–e249) are a **third, distinct design** from either `†`/plain or `‡`/single-head:
-plain pure Director (no mask of any kind, whole goal code always redrawn) with
-`mgr_cond_goalcode=True` so the manager can *choose* to reproduce blocks, plus the
-**implicit-sparsity controller** (EXPERIMENTS.md §2, F18) — a REINFORCE cost on
-`1 − kept_frac` where `kept_frac` is *measured*, not masked. `blk/step` is n/a for `§`
-rows (there is no edit mask; `goal mask` column instead reports the controller config and
-`kept` = `goal/implicit_sparsity_block` at the final checkpoint). `impl struct-only` = no
-controller, struct-adapt only; `impl ratchet→0.7kept` = controller target ramped 0→0.7 kept
-over training, one-sided; `impl direct 0.7kept` = controller target fixed at 0.7 kept from
-step 0; `impl struct+ratchet→0.7kept` = both. All 16 `§` rows completed the full 1M-step
-budget (not interim). **Correction (2026-07-15):** e226/e227 — read as
-"H confirmed"/decisively alive in the 07-14 interim readout at 65% — have since **declined
-substantially** in large-window trend (e226: peak ~290 @1.9M → ~75 in the last ~270-episode
-window @3.2M; e227: peak ~150 @1–2.4M → ~24 @3.2M), while internal signals
-(`mgr_extr_adv`, `wkr_goal_rew`) show no classic collapse signature (advantage stays small,
-worker reward is still rising) — this does not match F11's collapse anatomy and is
-unexplained; treat e226 as "was alive, now declining" rather than a settled rescue until
-investigated. Cheetah `‡` cells (e222/e223) show no equivalent decline over the same
-window.
-
 | exp | env | size | works? | score | blk/step | struct | goal mask | goal length | reward agg | wkr countdown | mask ratchet |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | e46† | cartpole | small | ✅ | 724 (755) | 1.00 | 200 | off | var τ8 (reg) | mean | no | no |
@@ -118,7 +68,7 @@ window.
 | e223‡ | cheetah | BIG | ✅ | 360 (455) | 0.95 | 200+adapt(dual, target0.006) | joint free | fix 8 | mean | no | no |
 | e224‡ | cheetah | BIG | ❌ cancelled 07-15 | 134 (143) | 0.32 | 0 | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
 | e225‡ | cheetah | BIG | ❌ cancelled 07-15 | 79 (201) | 0.30 | 200+adapt(dual, target0.006) | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
-| e226‡ | hopper | BIG | ~ (was ✅ @65%, now declining — see note above) | 87 (302) | 0.96 | 0 | joint free | fix 8 | mean | no | no |
+| e226‡ | hopper | BIG | ~ (was ✅ @65%, now declining) | 87 (302) | 0.96 | 0 | joint free | fix 8 | mean | no | no |
 | e227‡ | hopper | BIG | ❌ (was ~ @65%, now declined) | 19 (165) | 0.94 | 200+adapt(dual, target0.006) | joint free | fix 8 | mean | no | no |
 | e228‡ | hopper | BIG | ❌ cancelled 07-15 | 22 (52) | 0.30 | 0 | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
 | e229‡ | hopper | BIG | ❌ cancelled 07-15 (collapsed) | 4 (268) | ~0.31 | 200+adapt(dual, target0.006) | joint ratchet→0.3 | fix 8 | mean | no | **yes** |
@@ -142,27 +92,57 @@ window.
 | e247§ | cheetah | BIG | ❌ | 3.4 (6.1) | n/a (kept 0.52, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e248§ | cheetah | BIG | ❌ | 4.1 (8.6) | n/a (kept 0.53, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e249§ | cheetah | BIG | ❌ | 3.4 (7.9) | n/a (kept 0.55, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
-
-Reading the columns together: every ✅ dense-task row sits at blk/step ≥1.0 by the end of
-training (Director-dense or denser) except e170/e186/e196 (0.61–0.72) — high final blk/step
-is **not** on its own a collapse signature (e171/e175 are campaign champions at 1.05–1.13);
-what distinguishes e160/e197/e198 is that mask_frac is already inflated mid-run while score
-is still low, not just a late-training drift after success. The τ4-vs-τ8 columns line up
-cleanly with the struct column: every working τ4 var-K cell (e46 doesn't apply — that's τ8;
-e170/e171/e174/e175/e187/e196) either has struct on or has countdown standing in for it
-(e187); every dead-or-weak τ4 cell without either (e166/e167/e169/e176/e193/e195) stays low.
-τ8 cells (e178/e179/e181/e185/e189/e192/e194) are struct-independent on cartpole (e179/e194
-split by scale, see §6) but never rescue hopper/acrobot regardless of struct or countdown.
-
-The mask-only fixed-K8 cluster (e162–e165) sharpens the sparse-task question further. On
-cartpole, masking alone (no var-K at all) gets a real but modest score (270–412) — below
-the full combined recipe (653–843) but clearly non-zero, confirming masking is an
-independent, if weaker, dense-task mechanism (blk/step 0.31, properly sparse). On hopper,
-the *same* fixed-K8-plus-masking recipe (e164/e165) is dead (0.0–0.3), even though it uses
-the exact fixed duration (K=8) that keeps e124/e180 alive. Combined with e169/e168/e173/e172
-(masking off or on, var-K on, also all dead on hopper) and e178/e179's split (var-K alone is
-fine on cartpole, dead on hopper), the honest reading is: **masking alone and variable
-duration alone are each independently sufficient to kill hopper/acrobot**, while vanilla
-fixed-K8 whole-code Director (neither mechanism) is the only thing that survives. This is a
-stronger claim than "variable duration is the culprit" (§6, e160 interim note) — sparse
-tasks look fragile to *any* deviation from vanilla Director, not to one specific mechanism.
+| e250 | hopper | BIG | ❌ cancelled ~3.5h, no readout | - | - | 200+adapt(dual, target0.01) | impl delta struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e251 | hopper | BIG | ❌ cancelled ~3.5h, no readout | - | - | 0 | impl delta ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e252 | hopper | small | ❌ cancelled ~3.5h, no readout | - | - | 200+adapt(dual, target0.01) | impl delta struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e253 | hopper | small | ❌ cancelled ~3.5h, no readout | - | - | 0 | impl delta ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e254 | cheetah | BIG | ❌ cancelled ~3.5h, no readout | - | - | 200+adapt(dual, target0.01) | impl delta struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e255 | cheetah | BIG | ❌ cancelled ~3.5h, no readout | - | - | 0 | impl delta ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e256 | cheetah | small | ❌ cancelled ~3.5h, no readout | - | - | 200+adapt(dual, target0.01) | impl delta struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e257 | cheetah | small | ❌ cancelled ~3.5h, no readout | - | - | 0 | impl delta ratchet→0.7kept | fix 8 | mean | no | **yes** |
+| e258 | hopper | BIG | ❌ | 0.001 (51) | 1.00 | 0 | reuseA sim→0.95 | fix 8 | mean | no | no |
+| e259 | hopper | BIG | ❌ cancelled ~3h10m, no readout | - | - | 0 | reuseA delta sim→0.95 | fix 8 | mean | no | no |
+| e260 | hopper | small | ❌ | 0.002 (17) | 1.00 | 0 | reuseA sim→0.95 | fix 8 | mean | no | no |
+| e261 | hopper | small | ❌ cancelled ~3h10m, no readout | - | - | 0 | reuseA delta sim→0.95 | fix 8 | mean | no | no |
+| e262 | cheetah | BIG | ❌ | 1.85 (203) | 1.00 | 0 | reuseA sim→0.95 | fix 8 | mean | no | no |
+| e263 | cheetah | BIG | ❌ cancelled ~3h10m, no readout | - | - | 0 | reuseA delta sim→0.95 | fix 8 | mean | no | no |
+| e264 | cheetah | small | ❌ | 3.47 (138) | 1.00 | 0 | reuseA sim→0.95 | fix 8 | mean | no | no |
+| e265 | cheetah | small | ❌ cancelled ~3h10m, no readout | - | - | 0 | reuseA delta sim→0.95 | fix 8 | mean | no | no |
+| e266 | hopper | BIG | ❌ | 1.75 (209) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.7 | fix 8 | mean | no | no |
+| e267 | hopper | BIG | ❌ | 0.19 (51) | 1.00 | 0 | softreuse ratchet-only ov→0.7 | fix 8 | mean | no | no |
+| e268 | hopper | small | ❌ | 0.30 (14) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.7 | fix 8 | mean | no | no |
+| e269 | hopper | small | ❌ | 0.004 (44) | 1.00 | 0 | softreuse ratchet-only ov→0.7 | fix 8 | mean | no | no |
+| e270 | cheetah | BIG | ~ | 70.4 (113) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.7 | fix 8 | mean | no | no |
+| e271 | cheetah | BIG | ~ | 182.0 (365) | 1.00 | 0 | softreuse ratchet-only ov→0.7 | fix 8 | mean | no | no |
+| e272 | cheetah | small | ~ | 73.3 (151) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.7 | fix 8 | mean | no | no |
+| e273 | cheetah | small | ~ | 111.3 (155) | 1.00 | 0 | softreuse ratchet-only ov→0.7 | fix 8 | mean | no | no |
+| e274 | hopper | BIG | ❌ | 0.004 (138) | 1.00 | 0 | reuseB sim→0.95 | fix 8 | mean | no | no |
+| e275 | hopper | small | ❌ | 0.001 (28) | 1.00 | 0 | reuseB sim→0.95 | fix 8 | mean | no | no |
+| e276 | cheetah | BIG | ❌ | 7.24 (175) | 1.00 | 0 | reuseB sim→0.95 | fix 8 | mean | no | no |
+| e277 | cheetah | small | ❌ | 7.57 (132) | 1.00 | 0 | reuseB sim→0.95 | fix 8 | mean | no | no |
+| e278 | hopper | BIG | ~ (noisy, never settles) | 163.0 (326.8) | 1.00 | 0 | reuseA sim→0.8 | fix 8 | mean | no | no |
+| e279 | hopper | small | ❌ cancelled @84%, dead floor | - (14.9) | 1.00 | 0 | reuseA sim→0.8 | fix 8 | mean | no | no |
+| e280 | cheetah | BIG | ✅ | 296.6 (333.0) | 1.00 | 0 | reuseA sim→0.8 | fix 8 | mean | no | no |
+| e281 | cheetah | small | ✅ | 292.9 (351.7) | 1.00 | 0 | reuseA sim→0.8 | fix 8 | mean | no | no |
+| e282 | hopper | BIG | ❌ terminal collapse @98.6% | 230.2→1.6 (347.3) | 1.00 | 0 | reuseB sim→0.8 | fix 8 | mean | no | no |
+| e283 | hopper | small | ❌ cancelled @84%, dead floor | - (28.6) | 1.00 | 0 | reuseB sim→0.8 | fix 8 | mean | no | no |
+| e284 | cheetah | BIG | ✅ (still rising) | 198.2 (226.6) | 1.00 | 0 | reuseB sim→0.8 | fix 8 | mean | no | no |
+| e285 | cheetah | small | ✅ | 180.1 (289.3) | 1.00 | 0 | reuseB sim→0.8 | fix 8 | mean | no | no |
+| e286 | hopper | BIG | ✅ (above baseline) | **330.5** (430.6) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e287 | hopper | BIG | ✅ | 199.4 (298.8) | 1.00 | 0 | softreuse ratchet-only ov→0.5 | fix 8 | mean | no | no |
+| e288 | hopper | small | ❌ cancelled @84%, dead floor | - (15.6) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e289 | hopper | small | ❌ cancelled @98%, dead floor | - (76.2) | 1.00 | 0 | softreuse ratchet-only ov→0.5 | fix 8 | mean | no | no |
+| e290 | cheetah | BIG | ✅ | 325.9 (449.4) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e291 | cheetah | BIG | ~ | 160.6 (214.8) | 1.00 | 0 | softreuse ratchet-only ov→0.5 | fix 8 | mean | no | no |
+| e292 | cheetah | small | ~ | 107.0 (191.8) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e293 | cheetah | small | ✅ | 259.2 (342.1) | 1.00 | 0 | softreuse ratchet-only ov→0.5 | fix 8 | mean | no | no |
+| e294 | cartpole | BIG | ~ RUNNING @35% | 635.8 (754.4) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e295 | acrobot | BIG | ~ RUNNING @28%, falling | 40.6 (264.6) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e296 | hopper | BIG | ❌ RUNNING @56%, dead floor | 0.07 (8.1) | 2.04 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e297 | hopper | BIG | ❌ RUNNING @57%, dead floor | 0.32 (15.5) | 1.01 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e298 | acrobot | BIG | ~ RUNNING @55%, falling | 2.8 (153.9) | 2.00 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e299 | acrobot | BIG | ~ RUNNING @52%, falling | 4.8 (165.3) | 1.00 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e300 | cartpole | BIG | ✅ RUNNING @43% | 601.0 (651.9) | 2.01 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e301 | cartpole | BIG | ✅ RUNNING @41% | 748.7 (849.0) | 1.01 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e302 | cheetah | BIG | ✅ RUNNING @42%, rising | 97.2 (137.9) | 2.04 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e303 | cheetah | BIG | ✅ RUNNING @40%, rising | 184.9 (219.3) | 1.01 | 0 | off | var τ8 (lagr) | mean | no | no |
