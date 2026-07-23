@@ -1,0 +1,147 @@
+exp,env,size,works?,score,blk/step,struct,goal mask,goal length,reward agg,wkr countdown,mask ratchet
+e46†,cartpole,small,✅,724 (755),1.00,200,off,var τ8 (reg),mean,no,no
+e124†,hopper,BIG,✅,196 (326),1.00,0,off,fix 8,mean,no,no
+e162†,cartpole,small,~,270 (565),0.31,200,prob,fix 8,mean,no,no
+e163†,cartpole,BIG,~,364 (412),0.31,200,prob,fix 8,mean,no,no
+e164†,hopper,small,❌,0.0 (3.7),0.30,200,prob,fix 8,mean,no,no
+e165†,hopper,BIG,❌,0.3 (3.9),0.31,200,prob,fix 8,mean,no,no
+e166†,cartpole,small,❌,129 (185),2.00,0,off,var τ4 (reg),mean,no,no
+e167†,cartpole,BIG,❌,98 (650),2.00,0,off,var τ4 (reg),mean,no,no
+e168†,hopper,small,❌,0.3 (3.1),2.02,0,off,var τ4 (reg),mean,no,no
+e169†,hopper,BIG,❌,0.0 (2.4),2.01,0,off,var τ4 (reg),mean,no,no
+e170†,cartpole,small,✅,653 (785),0.61,200,prob_entropy,var τ4 (lagr),mean,no,no
+e171†,cartpole,BIG,✅,776 (843),1.13,200,prob_entropy,var τ4 (lagr),mean,no,no
+e172†,hopper,small,❌,0.7 (4.3),1.03,200,prob_entropy,var τ4 (lagr),mean,no,no
+e173†,hopper,BIG,❌,0.0 (3.9),1.33,200,prob_entropy,var τ4 (lagr),mean,no,no
+e174†,cheetah,small,~,165 (171),1.05,200,prob_entropy,var τ4 (lagr),mean,no,no
+e175†,cheetah,BIG,✅,463 (502),1.05,200,prob_entropy,var τ4 (lagr),mean,no,no
+e176†,acrobot,small,❌,1.9 (12.3),0.54,200,prob_entropy,var τ4 (lagr),mean,no,no
+e177†,acrobot,BIG,❌,2.5 (25.9),0.75,200,prob_entropy,var τ4 (lagr),mean,no,no
+e161†,hopper,BIG,❌ cancelled,0.4 (1.5),1.17,0,prob_entropy,var τ4 (lagr),mean,no,no
+e181†,hopper,BIG,❌ cancelled,0.0 (3.0),1.00,0,off,var τ8 (reg),sum,no,no
+e182†,hopper,BIG,❌ cancelled,0.1 (1.6),0.50,200,prob_entropy,var τ8 (lagr),mean,no,no
+e183†,hopper,BIG,❌ cancelled,0.0 (0.4),0.94,200,prob_entropy,var τ4 (lagr),"mean, expl_w=1.0 (10×)",no,no
+e184†,acrobot,BIG,❌ cancelled,0.4 (17.6),0.30,200,prob_entropy,var τ8 (lagr),mean,no,no
+e160,cartpole,BIG,❌,22 (182),1.04,0,prob_entropy,var τ4 (lagr),mean,no,no
+e178,hopper,BIG,❌,0.03 (3.1),1.00,0,off,var τ8 (reg),mean,no,no
+e179,cartpole,BIG,✅,740 (755),1.00,0,off,var τ8 (reg),mean,no,no
+e180,acrobot,BIG,~ (climbing),177 (262),1.00,0,off,fix 8,mean,no,no
+e185,hopper,BIG,❌,0.03 (0.9),1.00,0,off,var τ8 (reg),mean,yes,no
+e186,cartpole,small,✅,695 (766),0.72,200,prob_entropy,var τ4 (lagr),mean,yes,no
+e187,cartpole,small,✅,697 (757),2.00,0,off,var τ4 (reg),mean,yes,no
+e188,cartpole,small,~,254 (347),0.29,200,prob,fix 8,mean,yes,no
+e189,hopper,BIG,❌,0.0 (1.7),1.00,200,off,var τ8 (reg),mean,no,no
+e190,cartpole,BIG,✅ (climbing),714 (747),1.00,0,off,fix 8,mean,no,no
+e191,cheetah,BIG,~ (non-monotonic),293 (499),1.00,0,off,fix 8,mean,no,no
+e192,acrobot,BIG,❌,8.1 (19.4),1.00,0,off,var τ8 (reg),mean,yes,no
+e193,cartpole,small,❌,42 (203),2.00,200,off,var τ4 (reg),mean,no,no
+e194,cartpole,small,❌,152 (285),1.00,0,off,var τ8 (reg),mean,no,no
+e195,cartpole,small,~,175 (352),2.00,200+adapt,off,var τ4 (reg),mean,no,no
+e196,cartpole,small,✅,648 (683),0.71,200+adapt,prob_entropy,var τ4 (lagr),mean,yes,no
+e197,hopper,small,❌,0.23 (3.1),1.07,200+adapt,prob_entropy,var τ4 (lagr),mean,yes,no
+e198,cheetah,small,❌,100 (122),1.17,200+adapt,prob_entropy,var τ4 (lagr),mean,yes,no
+e199,acrobot,small,❌,3.4 (21.9),0.60,200+adapt,prob_entropy,var τ4 (lagr),mean,yes,no
+e200,cartpole,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,no
+e201,cheetah,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,no
+e202,hopper,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,no
+e203,acrobot,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,no
+e204,cartpole,small,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e205,cartpole,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e206,cheetah,small,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e207,cheetah,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e208,hopper,small,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e209,hopper,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e210,acrobot,small,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e211,acrobot,BIG,"❌ cancelled, no results (freed for e212+)",-,-,"200+adapt(dual, target0.006)",prob_entropy,var τ8 (lagr),mean,yes,yes
+e212,cheetah,small,"~ (noisy, windowed trend rising ~140)",71 (193),1.00,0,off,fix 8,mean,no,no
+e213,hopper,small,❌,2 (40),1.00,0,off,fix 8,mean,no,no
+e214‡,cheetah,small,✅,151 (169),0.83,0,joint free,fix 8,mean,no,no
+e215‡,cheetah,small,✅,159 (197),0.82,"200+adapt(dual, target0.006)",joint free,fix 8,mean,no,no
+e216‡,cheetah,small,~,124 (239),0.30,0,joint ratchet→0.3,fix 8,mean,no,yes
+e217‡,cheetah,small,❌,44 (66),0.31,"200+adapt(dual, target0.006)",joint ratchet→0.3,fix 8,mean,no,yes
+e218‡,hopper,small,❌,0.6 (125),0.93,0,joint free,fix 8,mean,no,no
+e219‡,hopper,small,~,60 (117),0.94,"200+adapt(dual, target0.006)",joint free,fix 8,mean,no,no
+e220‡,hopper,small,❌,20 (81),0.30,0,joint ratchet→0.3,fix 8,mean,no,yes
+e221‡,hopper,small,❌,8 (21),0.30,"200+adapt(dual, target0.006)",joint ratchet→0.3,fix 8,mean,no,yes
+e222‡,cheetah,BIG,✅,425 (438),0.96,0,joint free,fix 8,mean,no,no
+e223‡,cheetah,BIG,✅,360 (455),0.95,"200+adapt(dual, target0.006)",joint free,fix 8,mean,no,no
+e224‡,cheetah,BIG,❌ cancelled 07-15,134 (143),0.32,0,joint ratchet→0.3,fix 8,mean,no,yes
+e225‡,cheetah,BIG,❌ cancelled 07-15,79 (201),0.30,"200+adapt(dual, target0.006)",joint ratchet→0.3,fix 8,mean,no,yes
+e226‡,hopper,BIG,"~ (was ✅ @65%, now declining)",87 (302),0.96,0,joint free,fix 8,mean,no,no
+e227‡,hopper,BIG,"❌ (was ~ @65%, now declined)",19 (165),0.94,"200+adapt(dual, target0.006)",joint free,fix 8,mean,no,no
+e228‡,hopper,BIG,❌ cancelled 07-15,22 (52),0.30,0,joint ratchet→0.3,fix 8,mean,no,yes
+e229‡,hopper,BIG,❌ cancelled 07-15 (collapsed),4 (268),~0.31,"200+adapt(dual, target0.006)",joint ratchet→0.3,fix 8,mean,no,yes
+e230‡,cartpole,BIG,"~ cancelled @17%, still climbing",435 (479),"0.68 (ramping to 0.5, cut early)","200+adapt(dual, target0.01)",joint ratchet→0.5,fix 8,mean,no,yes
+e231‡,acrobot,BIG,"~ cancelled @15%, weak but alive",54 (84),"0.71 (ramping to 0.5, cut early)","200+adapt(dual, target0.01)",joint ratchet→0.5,fix 8,mean,no,yes
+e232‡,cheetah,BIG,"~ cancelled @16%, > e224/e225 already",173 (178),"0.69 (ramping to 0.5, cut early)","200+adapt(dual, target0.01)",joint ratchet→0.5,fix 8,mean,no,yes
+e233‡,hopper,BIG,"~ cancelled @17%, ≫ e228 at 1/5 budget",215 (216),"0.68 (ramping to 0.5, cut early)","200+adapt(dual, target0.01)",joint ratchet→0.5,fix 8,mean,no,yes
+e234§,hopper,small,"~ (F15 floor, uninformative)",1.9 (46.5),n/a (no mask; kept 0.36),"200+adapt(dual, target0.01)",impl struct-only,fix 8,mean,no,no
+e235§,hopper,small,❌,0.0 (0.7),"n/a (kept 0.56, λ railed 5.0)","200+adapt(dual, target0.01)",impl struct+ratchet→0.7kept,fix 8,mean,no,yes
+e236§,hopper,small,❌,0.0 (0.6),"n/a (kept 0.56, λ railed 5.0)",0,impl ratchet→0.7kept,fix 8,mean,no,yes
+e237§,hopper,small,❌,0.0 (0.5),"n/a (kept 0.56, λ railed 5.0)",0,impl direct 0.7kept,fix 8,mean,no,no
+e238§,cheetah,small,~ (below Director-at-1M),117.8 (159.0),n/a (no mask; kept 0.26),"200+adapt(dual, target0.01)",impl struct-only,fix 8,mean,no,no
+e239§,cheetah,small,❌,3.0 (5.0),"n/a (kept 0.56, λ railed 5.0)","200+adapt(dual, target0.01)",impl struct+ratchet→0.7kept,fix 8,mean,no,yes
+e240§,cheetah,small,❌,2.2 (4.6),"n/a (kept 0.51, λ railed 5.0)",0,impl ratchet→0.7kept,fix 8,mean,no,yes
+e241§,cheetah,small,❌,1.4 (4.2),"n/a (kept 0.56, λ railed 5.0)",0,impl direct 0.7kept,fix 8,mean,no,no
+e242§,hopper,BIG,"~ (partial, still climbing @1M)",115.1 (115.7),n/a (no mask; kept 0.38),"200+adapt(dual, target0.01)",impl struct-only,fix 8,mean,no,no
+e243§,hopper,BIG,❌,0.0 (0.2),"n/a (kept 0.53, λ railed 5.0)","200+adapt(dual, target0.01)",impl struct+ratchet→0.7kept,fix 8,mean,no,yes
+e244§,hopper,BIG,❌,0.0 (1.0),"n/a (kept 0.49, λ railed 5.0)",0,impl ratchet→0.7kept,fix 8,mean,no,yes
+e245§,hopper,BIG,❌,0.0 (0.6),"n/a (kept 0.51, λ railed 5.0)",0,impl direct 0.7kept,fix 8,mean,no,no
+e246§,cheetah,BIG,✅ (≈ Director-at-1M control),329.8 (335.4),n/a (no mask; kept 0.20),"200+adapt(dual, target0.01)",impl struct-only,fix 8,mean,no,no
+e247§,cheetah,BIG,❌,3.4 (6.1),"n/a (kept 0.52, λ railed 5.0)","200+adapt(dual, target0.01)",impl struct+ratchet→0.7kept,fix 8,mean,no,yes
+e248§,cheetah,BIG,❌,4.1 (8.6),"n/a (kept 0.53, λ railed 5.0)",0,impl ratchet→0.7kept,fix 8,mean,no,yes
+e249§,cheetah,BIG,❌,3.4 (7.9),"n/a (kept 0.55, λ railed 5.0)",0,impl direct 0.7kept,fix 8,mean,no,no
+e250,hopper,BIG,"❌ cancelled ~3.5h, no readout",-,-,"200+adapt(dual, target0.01)",impl delta struct+ratchet→0.7kept,fix 8,mean,no,yes
+e251,hopper,BIG,"❌ cancelled ~3.5h, no readout",-,-,0,impl delta ratchet→0.7kept,fix 8,mean,no,yes
+e252,hopper,small,"❌ cancelled ~3.5h, no readout",-,-,"200+adapt(dual, target0.01)",impl delta struct+ratchet→0.7kept,fix 8,mean,no,yes
+e253,hopper,small,"❌ cancelled ~3.5h, no readout",-,-,0,impl delta ratchet→0.7kept,fix 8,mean,no,yes
+e254,cheetah,BIG,"❌ cancelled ~3.5h, no readout",-,-,"200+adapt(dual, target0.01)",impl delta struct+ratchet→0.7kept,fix 8,mean,no,yes
+e255,cheetah,BIG,"❌ cancelled ~3.5h, no readout",-,-,0,impl delta ratchet→0.7kept,fix 8,mean,no,yes
+e256,cheetah,small,"❌ cancelled ~3.5h, no readout",-,-,"200+adapt(dual, target0.01)",impl delta struct+ratchet→0.7kept,fix 8,mean,no,yes
+e257,cheetah,small,"❌ cancelled ~3.5h, no readout",-,-,0,impl delta ratchet→0.7kept,fix 8,mean,no,yes
+e258,hopper,BIG,❌,0.001 (51),1.00,0,reuseA sim→0.95,fix 8,mean,no,no
+e259,hopper,BIG,"❌ cancelled ~3h10m, no readout",-,-,0,reuseA delta sim→0.95,fix 8,mean,no,no
+e260,hopper,small,❌,0.002 (17),1.00,0,reuseA sim→0.95,fix 8,mean,no,no
+e261,hopper,small,"❌ cancelled ~3h10m, no readout",-,-,0,reuseA delta sim→0.95,fix 8,mean,no,no
+e262,cheetah,BIG,❌,1.85 (203),1.00,0,reuseA sim→0.95,fix 8,mean,no,no
+e263,cheetah,BIG,"❌ cancelled ~3h10m, no readout",-,-,0,reuseA delta sim→0.95,fix 8,mean,no,no
+e264,cheetah,small,❌,3.47 (138),1.00,0,reuseA sim→0.95,fix 8,mean,no,no
+e265,cheetah,small,"❌ cancelled ~3h10m, no readout",-,-,0,reuseA delta sim→0.95,fix 8,mean,no,no
+e266,hopper,BIG,❌,1.75 (209),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.7,fix 8,mean,no,no
+e267,hopper,BIG,❌,0.19 (51),1.00,0,softreuse ratchet-only ov→0.7,fix 8,mean,no,no
+e268,hopper,small,❌,0.30 (14),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.7,fix 8,mean,no,no
+e269,hopper,small,❌,0.004 (44),1.00,0,softreuse ratchet-only ov→0.7,fix 8,mean,no,no
+e270,cheetah,BIG,~,70.4 (113),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.7,fix 8,mean,no,no
+e271,cheetah,BIG,~,182.0 (365),1.00,0,softreuse ratchet-only ov→0.7,fix 8,mean,no,no
+e272,cheetah,small,~,73.3 (151),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.7,fix 8,mean,no,no
+e273,cheetah,small,~,111.3 (155),1.00,0,softreuse ratchet-only ov→0.7,fix 8,mean,no,no
+e274,hopper,BIG,❌,0.004 (138),1.00,0,reuseB sim→0.95,fix 8,mean,no,no
+e275,hopper,small,❌,0.001 (28),1.00,0,reuseB sim→0.95,fix 8,mean,no,no
+e276,cheetah,BIG,❌,7.24 (175),1.00,0,reuseB sim→0.95,fix 8,mean,no,no
+e277,cheetah,small,❌,7.57 (132),1.00,0,reuseB sim→0.95,fix 8,mean,no,no
+e278,hopper,BIG,"~ (noisy, never settles)",163.0 (326.8),1.00,0,reuseA sim→0.8,fix 8,mean,no,no
+e279,hopper,small,"❌ cancelled @84%, dead floor",- (14.9),1.00,0,reuseA sim→0.8,fix 8,mean,no,no
+e280,cheetah,BIG,✅,296.6 (333.0),1.00,0,reuseA sim→0.8,fix 8,mean,no,no
+e281,cheetah,small,✅,292.9 (351.7),1.00,0,reuseA sim→0.8,fix 8,mean,no,no
+e282,hopper,BIG,❌ terminal collapse @98.6%,230.2→1.6 (347.3),1.00,0,reuseB sim→0.8,fix 8,mean,no,no
+e283,hopper,small,"❌ cancelled @84%, dead floor",- (28.6),1.00,0,reuseB sim→0.8,fix 8,mean,no,no
+e284,cheetah,BIG,✅ (still rising),198.2 (226.6),1.00,0,reuseB sim→0.8,fix 8,mean,no,no
+e285,cheetah,small,✅,180.1 (289.3),1.00,0,reuseB sim→0.8,fix 8,mean,no,no
+e286,hopper,BIG,✅ (above baseline),330.5 (430.6),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e287,hopper,BIG,✅,199.4 (298.8),1.00,0,softreuse ratchet-only ov→0.5,fix 8,mean,no,no
+e288,hopper,small,"❌ cancelled @84%, dead floor",- (15.6),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e289,hopper,small,"❌ cancelled @98%, dead floor",- (76.2),1.00,0,softreuse ratchet-only ov→0.5,fix 8,mean,no,no
+e290,cheetah,BIG,✅,325.9 (449.4),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e291,cheetah,BIG,~,160.6 (214.8),1.00,0,softreuse ratchet-only ov→0.5,fix 8,mean,no,no
+e292,cheetah,small,~,107.0 (191.8),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e293,cheetah,small,✅,259.2 (342.1),1.00,0,softreuse ratchet-only ov→0.5,fix 8,mean,no,no
+e294,cartpole,BIG,~ RUNNING @35%,635.8 (754.4),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e295,acrobot,BIG,"~ RUNNING @28%, falling",40.6 (264.6),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e296,hopper,BIG,"❌ RUNNING @56%, dead floor",0.07 (8.1),2.04,0,off,var τ4 (lagr),mean,no,no
+e297,hopper,BIG,"❌ RUNNING @57%, dead floor",0.32 (15.5),1.01,0,off,var τ8 (lagr),mean,no,no
+e298,acrobot,BIG,"~ RUNNING @55%, falling",2.8 (153.9),2.00,0,off,var τ4 (lagr),mean,no,no
+e299,acrobot,BIG,"~ RUNNING @52%, falling",4.8 (165.3),1.00,0,off,var τ8 (lagr),mean,no,no
+e300,cartpole,BIG,✅ RUNNING @43%,601.0 (651.9),2.01,0,off,var τ4 (lagr),mean,no,no
+e301,cartpole,BIG,✅ RUNNING @41%,748.7 (849.0),1.01,0,off,var τ8 (lagr),mean,no,no
+e302,cheetah,BIG,"✅ RUNNING @42%, rising",97.2 (137.9),2.04,0,off,var τ4 (lagr),mean,no,no
+e303,cheetah,BIG,"✅ RUNNING @40%, rising",184.9 (219.3),1.01,0,off,var τ8 (lagr),mean,no,no
