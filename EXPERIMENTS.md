@@ -74,18 +74,23 @@ the restructured, maintained log.
 
 ---
 
-## 2. Current state (2026-07-22, afternoon — `goal_soft_reuse_adapt`
-(struct+ratchet, target 0.5) promoted to the config default; e294/e295 launched to test
-the identical e286/e290 recipe on cartpole BIG and acrobot BIG.)
+## 2. Current state (2026-07-23 — e278–e293 (16 cells, lower-target reuse retest)
+all COMPLETED the full 4M-step budget; final numbers supersede the 07-22 interim pull
+and reveal one late-training collapse the interim read missed — see **F20**. e294–e303
+(9 cells: two task-generalization ports of the e286/e290 recipe + the plain-var-K
+Lagrangian isolation matrix) are RUNNING.)
 
 **Default changed.** `dreamerv3/configs.yaml` `defaults.agent` now ships with the e286
 (hopper BIG)/e290 (cheetah BIG) recipe on by default — `goal_soft_reuse_adapt: True`,
 `goal_soft_reuse_target: 0.5` (ratcheted from `goal_soft_reuse_target_init: 0.0` at
 `goal_soft_reuse_target_vel: 3.9e-6`, the BIG-scale calibration), `goal_struct_adapt:
 True`, `goal_struct_adapt_target: 0.01`. This is currently the best-performing cell of
-the whole project: both e286 and e290 sit *above* their Director baseline late in
-training (§3 below), and it's the first reuse/sparsity mechanism that doesn't collapse
-hopper. `mgr_cond_goalcode` stays `False` in the YAML (unchanged) since `agent.py`
+the whole project: e286 (hopper BIG) finishes clearly *above* its Director baseline
+(330.5 trail300 vs. ≈300, F20) and e290 (cheetah BIG) finishes inside the top of its own
+noisy baseline band (325.9 vs. ≈300–435 — walked back from the 07-22 interim's "above,"
+which was read off a since-decayed peak, see F20), and it's the first reuse/sparsity
+mechanism family that doesn't collapse hopper outright. `mgr_cond_goalcode` stays `False`
+in the YAML (unchanged) since `agent.py`
 already force-enables it whenever `goal_soft_reuse_adapt` is set
 (`self.mgr_cond_goalcode = True` at the point the flag is read, `agent.py:547`) —
 confirmed by reading the code, not just the comment, so no config-level side effect
@@ -101,14 +106,16 @@ default is BIG-calibrated, matching "the params in e286 and e290" literally.
 tasks, using explicit flags (not relying on the new ambient default, for the project's
 usual explicit-repro convention):
 
-| Exp | Job | Task | Scale | Config | Status | Hypothesis |
+| Exp | Job | Task | Scale | Config | Status (2026-07-23 pull) | Hypothesis |
 |---|---|---|---|---|---|---|
-| e294 | 4668645 | cartpole swingup | BIG | identical to e286/e290 (`RECIPE=director`, `MGR_FREQ=8`, `STRUCT_ADAPT=True` target 0.01, `MGR_COND_GOALCODE=True`, `GOAL_SOFT_REUSE_ADAPT=True` target 0.5 ratcheted from 0 at vel 3.9e-6) | PENDING (`gpu-a100` at 8/8 GPU + CPU cap; queued behind e278–e293) | The best cell found on hopper/cheetah generalizes to a dense, already-easy task without cost — cartpole's own Director/masked baselines are all ≥650 (§1), so this checks the mechanism doesn't quietly tax an easy task even where sparsity pressure isn't needed to survive |
-| e295 | 4668646 | acrobot swingup | BIG | identical to e294 | PENDING (same queue) | Acrobot has failed under every restricted recipe tried so far (F12, e176/e177/e192/e199, alive only under unrestricted Director e180) — this is the first test of the reuse-mechanism family on acrobot specifically; a clean readout either extends the "hopper needed the credit-assignment fix, not sparsity" story (Finding 6/F19) to a third sparse-ish task, or shows acrobot has its own distinct failure mode as F12 already flagged |
+| e294 | ~~4668645~~ → **4668658** (original a100 submission CANCELLED at 0:00 elapsed — never dispatched, `sacct` shows `CANCELLED+`/`None assigned`; resubmitted same-day to `gpu-v100`) | cartpole swingup | BIG | identical to e286/e290 (`RECIPE=director`, `MGR_FREQ=8`, `STRUCT_ADAPT=True` target 0.01, `MGR_COND_GOALCODE=True`, `GOAL_SOFT_REUSE_ADAPT=True` target 0.5 ratcheted from 0 at vel 3.9e-6) | RUNNING, `gpu-v100`, 1.41M/4M steps (35%): trail300 **635.8**, trail50 727.4, peak 754.4 @1.37M — in range of cartpole's ≥650 baseline family, no sign of the mechanism taxing an easy task | The best cell found on hopper/cheetah generalizes to a dense, already-easy task without cost — cartpole's own Director/masked baselines are all ≥650 (§1), so this checks the mechanism doesn't quietly tax an easy task even where sparsity pressure isn't needed to survive |
+| e295 | ~~4668646~~ → **4668659** (same cancel/resubmit as e294) | acrobot swingup | BIG | identical to e294 | RUNNING, `gpu-v100`, 1.11M/4M steps (28%): trail300 **40.6**, trail50 35.0 (falling), peak 264.6 @1.03M then decayed — early trend leans toward "acrobot fails again," not a clean rescue, but too early (28%) to call | Acrobot has failed under every restricted recipe tried so far (F12, e176/e177/e192/e199, alive only under unrestricted Director e180) — this is the first test of the reuse-mechanism family on acrobot specifically; a clean readout either extends the "hopper needed the credit-assignment fix, not sparsity" story (Finding 6/F19) to a third sparse-ish task, or shows acrobot has its own distinct failure mode as F12 already flagged |
 
-Both queued behind the 8/8-GPU `gpu-a100` cap (all 8 slots held by the still-running
-e278–e293 BIG cells above); will start automatically as those complete. `RUN_STEPS=4000000`,
-`SEED=0`, single seed each.
+Both were originally queued behind the 8/8-GPU `gpu-a100` cap but that submission never
+dispatched and was cancelled outright (`sacct`: `CANCELLED+`, 0:00 elapsed, no node ever
+assigned — not a preemption, the jobs simply never left the queue); both were resubmitted
+the same day to `gpu-v100` (jobs 4668658/4668659) and are running normally there.
+`RUN_STEPS=4000000`, `SEED=0`, single seed each.
 
 **e279/e283/e288/e289 cancelled (2026-07-22, ~84–98%/4M budget) — all 4 hopper-small
 cells, obviously dead, freed for e294/e295's queue.** Live pull immediately before
@@ -125,6 +132,135 @@ declined from its 327 peak to ~91–99 but is nowhere near the dead floor these 
 Archived to `/bucket/.../results/dreamerv3/` (`SKIP_REPLAY=1`, slurm logs included,
 copies verified before deleting from `/work`); this does not free `gpu-a100` capacity for
 e294/e295 (the cancelled cells were on `gpu-v100`), only `gpu-v100` slots.
+
+**e296–e303 launched (2026-07-22) — plain var-K Lagrangian isolation, τ∈{4,8}, all 4
+tasks, BIG.** Fills a gap F12/F7 left open: `DUR_MODE=lagrangian` (e171's exact duration
+mechanism — `goal_duration_lagrange True`, `goal_duration_reg 0.0`, `goal_duration_adapt
+False`) has only ever been run bundled with masking+struct200 (`RECIPE=vark_masked`,
+e170–e177) or, pre-fix, in the e144–e159 symmetry matrix (group C, cartpole-only, 557,
+predates the 07-10 forward-fill/one-sided-controller fixes). It has never been isolated
+post-fix with `RECIPE=plain_vark` (struct forced to 0, no mask flags at all) the way the
+fixed-prior duration mechanism already was in e166–e169/e178/e179. `run_v3_prior_vargoal_big_a100.sbatch`'s
+`plain_vark` branch + `DUR_MODE=lagrangian` is exactly "pure Director + only variable
+goal length, e171-style, nothing else":
+
+| Exp | Job | Task | τ target | Config | Status (2026-07-23 pull, all RUNNING on `gpu-a100`) |
+|---|---|---|---|---|---|
+| e296 | 4668663 | hopper hop | 4 | `RECIPE=plain_vark, DUR_MODE=lagrangian, DUR_TARGET=4.0` | 2.26M/4M (56%): trail300 **0.07**, trail50 0.01, peak only 8.1 @921k — already indistinguishable from the F12/F15 dead floor |
+| e297 | 4668664 | hopper hop | 8 | same, `DUR_TARGET=8.0` | 2.28M/4M (57%): trail300 **0.32**, trail50 0.03, peak 15.5 @2.07M (transient, decayed) — same dead floor, τ8 no better than τ4 |
+| e298 | 4668665 | acrobot swingup | 4 | `RECIPE=plain_vark, DUR_MODE=lagrangian, DUR_TARGET=4.0` | 2.22M/4M (55%): trail300 **2.8**, trail50 4.0, falling from a 154 peak @2.08M — decaying toward the dead floor, not yet at it |
+| e299 | 4668666 | acrobot swingup | 8 | same, `DUR_TARGET=8.0` | 2.10M/4M (52%): trail300 **4.8**, trail50 6.9, falling from a 165 peak @224k (very early) — same decay pattern as e298 |
+| e300 | 4668667 | cartpole swingup | 4 | `RECIPE=plain_vark, DUR_MODE=lagrangian, DUR_TARGET=4.0` | 1.71M/4M (43%): trail300 **601.0**, trail50 579.7, peak 651.9 @961k — clearly alive, dense-task baseline range |
+| e301 | 4668668 | cartpole swingup | 8 | same, `DUR_TARGET=8.0` | 1.66M/4M (41%): trail300 **748.7**, trail50 754.4, peak 849.0 @1.37M — alive and stronger than τ4 |
+| e302 | 4668669 | cheetah run | 4 | `RECIPE=plain_vark, DUR_MODE=lagrangian, DUR_TARGET=4.0` | 1.67M/4M (42%): trail300 **97.2**, trail50 113.6 (rising), peak 137.9 @1.30M — alive, mid-training |
+| e303 | 4668670 | cheetah run | 8 | same, `DUR_TARGET=8.0` | 1.61M/4M (40%): trail300 **184.9**, trail50 196.3 (rising), peak 219.3 @1.60M (still climbing) — alive and stronger than τ4, same τ4<τ8 pattern as cartpole |
+
+All 8: `MGR_FREQ` n/a (variable-K), `STRUCT_W=0.0` (plain_vark default), no mask flags,
+`MGR_COND_GOALCODE=False` (plain_vark default — unconditioned manager, unlike the reuse
+family), `RUN_STEPS=4000000`, `SEED=0`. Job ids in `e296_303_job_ids.tsv`.
+**Early readout (40–57% through budget, not final):** hopper is already at the dead
+floor at both τ, matching F12's prediction exactly. Acrobot has NOT reached the floor yet
+but is falling steadily from an early peak at both τ — consistent with F12's "acrobot has
+its own (slower) failure mode," not yet distinguishable from "will eventually flatten
+somewhere above zero." Cartpole and cheetah are both alive and, at both tasks, τ8 clearly
+beats τ4 (cartpole 748.7 vs. 601.0; cheetah 184.9 vs. 97.2) — the first clean signal on
+the τ4-vs-τ8 question this matrix was designed to answer, though still early enough that
+cheetah's τ4 leg is trending up and could close the gap.
+
+**Hypothesis:** given F12 (masking-alone and var-K-alone were each independently
+sufficient to kill hopper/acrobot in the *fixed-prior* isolation, e168/e169/e178/e179) and
+F17 (the dual-head credit-assignment confound, not sparsity/duration-variability per se,
+was the actual culprit for masking), the Lagrangian duration controller alone should
+behave like the fixed-prior one did: alive on cartpole/cheetah (dense-reward, e46-style),
+dead or near-dead on hopper/acrobot regardless of τ — since nothing here touches the
+dual-head goal-content mechanism F17 implicated, only the switch-timing mechanism F12
+already showed was independently fatal. τ4 vs τ8 tests whether shorter/more frequent
+hold-length variation (closer to e169's dead τ4) is worse than longer (closer to e178's
+weak-pulse τ8) under the tighter Lagrangian tracking (F7: ~20× tighter than the reg
+prior) — if τ8-lagr survives where τ8-reg (e178) only pulsed, tracking precision itself
+would be implicated as a lever, not just target length.
+
+---
+
+### FINAL results (2026-07-23) — e278–e293, all 16 cells COMPLETED the full 4M-step
+budget. Supersedes the 07-22 interim pull below; full finding is **F20** (§3).
+
+All 12 non-cancelled cells finished (`sacct`: `COMPLETED`, exit 0:0); the 4 hopper-small
+cells (e279/e283/e288/e289) were cancelled 07-22 (already dead, see above) and archived.
+`Score` = mean `episode/score` over the trailing 300 logged episodes at the 4M-step
+finish; `Trail50` = trailing 50 (volatility/endpoint check); `Peak` unchanged from the
+interim pull. Pulled directly from each run's final `scores.jsonl`/`metrics.jsonl` in
+`/work` (not yet archived to `/bucket` as of this write-up).
+
+| Exp | Job | Task | Scale | Family | Score (trail300) | Trail50 | Peak (step) | Reuse/overlap final | Lagrange scale final | vs. interim (07-22) | vs. Director baseline |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| e278 | 4668382 | hopper | BIG | A: code+decoded input | **163.0** | 222.3 | 326.8 (@2.71M) | sim 0.81/0.80 | 0.0001 (floor) | 240.6 → 163.0 (down, noisy — see chunked trace below) | below ≈300, alive not collapsed |
+| e280 | 4668384 | cheetah | BIG | A | **296.6** | 291.7 | 333.0 (@2.87M) | sim 0.88/0.80 | 0.0 (floor) | 309.1 → 296.6 (stable) | at low end of ≈300–435 |
+| e281 | 4668385 | cheetah | small | A | **292.9** | 288.4 | 351.7 (@3.75M) | sim 0.94/0.80 | 0.0 (floor) | 142.2 → 292.9 (up, still rising) | well above ≈100 |
+| e282 | 4668386 | hopper | BIG | B: decoded-only input | **230.2** | **1.6** | 347.3 (@2.64M) | sim 0.81/0.80 | 0.13 (spiked from floor) | 287.5 → 230.2/**1.6** (TERMINAL COLLAPSE, see F20) | trail300 near baseline but trail50 is the honest read: dead |
+| e284 | 4668388 | cheetah | BIG | B | **198.2** | 208.2 | 226.6 (@4.0M, still climbing at cutoff) | sim 0.96/0.80 | 0.0 (floor) | 146.7 → 198.2 (up) | below ≈300–435 but alive and rising |
+| e285 | 4668389 | cheetah | small | B | **180.1** | 235.0 | 289.3 (@3.73M) | sim 0.93/0.80 | 0.0 (floor) | 196.2 → 180.1 (trail50 recovering to 235) | above ≈100 |
+| e286 | 4668390 | hopper | BIG | C: struct+ratchet | **330.5** | 325.7 | 430.6 (@3.69M) | ov 0.50/0.50 | 0.17 | 358.3 → 330.5 (declined from peak, stable plateau, no collapse) | **above ≈300 — best hopper cell in the project** |
+| e287 | 4668391 | hopper | BIG | C: ratchet-only | **199.4** | 185.6 | 298.8 (@3.84M) | ov 0.50/0.50 | 0.36 | 186.7 → 199.4 (stable, mild recovery) | below ≈300, alive, stable plateau |
+| e290 | 4668394 | cheetah | BIG | C: struct+ratchet | **325.9** | 332.4 | 449.4 (@3.06M) | ov 0.50/0.50 | 1.21 | 404.5 → 325.9 (down from peak) | inside ≈300–435, not clearly above once baseline noise is considered |
+| e291 | 4668395 | cheetah | BIG | C: ratchet-only | **160.6** | 167.5 | 214.8 (@1.13M) | ov 0.50/0.50 | 15.6 (still elevated, not at floor) | 132.6 → 160.6 (up) | well below ≈300–435, weakest BIG cheetah cell |
+| e292 | 4668396 | cheetah | small | C: struct+ratchet | **107.0** | 149.7 | 191.8 (@1.38M) | ov 0.50/0.50 | 23.9 (elevated, oscillating hard all run) | 80.3 → 107.0 (up) | roughly matches ≈100 |
+| e293 | 4668397 | cheetah | small | C: ratchet-only | **259.2** | 277.8 | 342.1 (@3.68M) | ov 0.50/0.50 | 0.28 | 201.6 → 259.2 (up) | well above ≈100, strongest small-scale cell |
+
+Baselines unchanged from the interim pull: hopper BIG ≈300 (e124), cheetah BIG ≈300–435
+(e123/e191, noisy), cheetah small ≈100 (e212), hopper small ≈1 (e213, dead even
+unrestricted).
+
+**Headline correction to the interim readout: e282 (family B, hopper BIG) did not
+survive to the finish.** Its `episode/score` sat on a stable 200–230 plateau through
+step 3.94M (98.6% of budget), matching the interim's "rising, near-baseline" read. At
+step 3,939,344 `train/goal/reuse_adapt_scale_mean` — flat at 0.0002–0.0005 (its floor)
+for the preceding ~3.9M steps, like every other cell in the table — jumped to 0.18, then
+0.21 by step 3,943,600, then 0.09 by 3,947,776; `train/wkr_goal_rew` fell in lockstep
+(0.53 → 0.35 → 0.33) and `episode/score` crashed to ~0 starting the very next logged
+episode (step 3,947,937) and stayed there (occasional 1–17-point blips, mean 1.6 over the
+last 50 episodes) through the 4M cutoff — roughly the last 1.4% of training, no time
+to recover before the budget ran out. This is the *same* signature F18/F19 already
+named (a railed Lagrange multiplier dominating the loss and destroying the policy) —
+just triggered ~2.9M steps later than any F19 cell, and well past the point the interim
+pull judged the multiplier "settled near its floor" (it had been, for essentially the
+entire run, until it wasn't). All 15 other cells show smaller scale excursions
+throughout training (see raw `metrics.jsonl` — jumps to 1–20+ are common and self-correct
+within tens of thousands of steps) but none of the other 15 fails to recover before 4M.
+Full chunked (10-bucket) score trajectories for the 6 BIG hopper/cheetah-A/C cells, and
+the reuse-scale spike detection, are in the analysis scripts used for this pull
+(not checked in; re-derivable from `scores.jsonl`/`metrics.jsonl` directly).
+
+**Struct-stacking reversal (F19 → interim → final) holds at BIG scale but NOT at small
+scale — scale-dependent, not just target-dependent.** BIG: struct+ratchet still clearly
+beats ratchet-only on cheetah (e290 325.9 vs. e291 160.6), same direction as the interim
+pull. Small: ratchet-only clearly beats struct+ratchet (e293 259.2 vs. e292 107.0) — the
+*original* F19 (0.7-target) ordering, not the reversed one. The interim pull's own note
+already flagged small scale as "the one place the old ordering survives" using
+partial numbers (e292 80.3 vs. e293 201.6); the final numbers confirm that read rather
+than reversing it further. Net: struct-stacking's cost/benefit depends on both target
+*and* scale — do not generalize a single "struct helps/hurts" rule across cells.
+
+**e278 (family A, hopper BIG) is volatile, not a clean rescue.** Chunked into 10 equal
+step-windows, its per-window mean score is 42 → 119 → 259 → 289 → 135 → 100 → 264 → 139
+→ 68 → 142 — repeatedly rising above 250 and falling back below 100, never settling.
+Ends at a mediocre 163 (trail300) despite a trailing-50 of 222 (the last 50 episodes
+happen to sit in an up-swing). This is qualitatively different from e286's trajectory
+(monotonic rise to a ~350–390 plateau, then a mild, stable decline) — family A "survives"
+hopper in the sense of never reaching the dead floor, but does not deliver a stable
+policy the way family C does.
+
+**Bottom line for F20:** of the 6 BIG-scale hopper/cheetah cells that were dead or
+near-dead under F19's 0.95/0.7 targets, 5 are genuinely alive and stable at the lower
+0.8/0.5 targets by the 4M-step finish (e278 noisy-but-alive, e280, e284, e286, e287,
+e290, e291 all clear of the floor); the 6th (e282) demonstrates the underlying
+magnitude-domination fragility F18/F19 identified is still latent in family B — it did
+not go away at the lower target, it just took longer to trigger. Family C
+(`goal_soft_reuse_adapt`, the promoted config default) is the only family with zero
+collapse events across all 6 of its cells (hopper+cheetah × BIG+small × struct/no-struct)
+and the only one with a cell (e286) finishing clearly above its Director baseline —
+the strongest evidence yet that the discrete block-overlap loss, not the continuous
+decoded-goal-similarity loss (families A/B), is the mechanism worth building on.
 
 ---
 
@@ -1323,17 +1459,52 @@ tasks look fragile to *any* deviation from vanilla Director, not to one specific
   untested at scale (its two scheduled A/Bs, e250–e257 and e259/e261/e263/e265, were both
   cancelled before a readout) — open question, not closed by F19.
 
-  **Interim update (2026-07-22, pending — e278–e293, 73–89%/4M steps, not yet a numbered
-  finding).** F19's "hopper fails under every reuse mechanism" and "struct-stacking always
-  costs cheetah" both look target-magnitude-specific rather than fixed, based on a direct
-  retest at lower targets (0.8 decoded-similarity / 0.5 block-overlap, vs. 0.95/0.7): 6/6
-  BIG-scale cells across all three families are now alive (hopper 187–358 vs. F19's
-  0.001–1.75; cheetah 147–405, several above the ≈300–435 baseline), with the Lagrange
-  multiplier settled near its floor in nearly every cell instead of railed at ceiling —
-  and struct+ratchet now beats ratchet-only on cheetah BIG (404.5 vs. 132.6), the reverse
-  of F19's ordering. Hopper SMALL is still dead in all 4 cells, matching the pre-existing
-  small-scale floor (F15), not a mechanism failure. See §2 for the full interim table and
-  caveats; not promoted to a finding number until the 4M-step checkpoints land.
+- **F20. Lowering the reuse/overlap target rescues 5 of 6 dead BIG-scale F19 cells at the
+  full 4M-step budget — but the 6th shows the same collapse can still fire, just later,
+  so "settled near floor" is not a stability guarantee (2026-07-23, e278–e293, all 16
+  cells COMPLETED).** Direct retest of F19's three mechanism families at a lower,
+  better-calibrated target (decoded-similarity 0.8 vs. 0.95; block-overlap 0.5 vs. 0.7,
+  same ratchet shape stretched to ~2M steps instead of ~1M): confirms the 07-22 interim
+  read for 5 of the 6 BIG-scale hopper/cheetah cells that were dead or near-dead under
+  F19 — e278 163.0 (noisy, never settles, but never returns to the floor either), e280
+  296.6, e284 198.2, e286 330.5, e287 199.4, e290 325.9, e291 160.6 (all vs. F19's
+  0.001–70.4 for the same cells) — with the Lagrange multiplier finishing at or near its
+  numerical floor in most of them, confirming the interim's "target was too aggressive,
+  not the mechanism" diagnosis for these cells specifically. **The 6th cell, e282
+  (family B, hopper BIG), reproduces F18/F19's magnitude-domination collapse late instead
+  of avoiding it**: `episode/score` held a stable 200–230 plateau through 98.6% of the
+  4M-step budget, then `train/goal/reuse_adapt_scale_mean` — flat at its 0.0002–0.0005
+  floor for the preceding ~3.9M steps, same as every other cell in the batch — jumped to
+  0.09–0.21 within a single ~8k-step logging window at step 3,939,344, `wkr_goal_rew`
+  dropped in lockstep (0.53→0.33), and `episode/score` crashed to a trailing-50 mean of
+  1.6 with no recovery before the run ended ~50k steps later. This is not evidence the
+  lower target is unsafe in general — the other 15 cells show comparably large scale
+  excursions throughout training and self-correct within tens of thousands of steps — but
+  it does mean a cell that "looks settled" at 73–98% of budget is not thereby proven
+  stable, and the interim readout's confidence (branch 1: "in every cell... the
+  multiplier has settled... not railed") should have been scoped to "as of this pull,"
+  not stated as a durable property of the retest. Struct-stacking's cost/benefit is
+  confirmed scale-dependent as well as target-dependent: at BIG scale struct+ratchet
+  still beats ratchet-only on cheetah (e290 325.9 vs. e291 160.6, same direction as the
+  interim pull, reversing F19's 0.7-target ordering), but at small scale ratchet-only
+  still wins (e293 259.2 vs. e292 107.0) — the *original* F19 ordering survives at small
+  scale even under the lower target. **Net effect on F19:** "hopper fails under every
+  reuse/sparsity mechanism except the unrestricted single-head design" no longer holds as
+  a project-wide statement — family C (`goal_soft_reuse_adapt`) keeps hopper alive and
+  stable (e286, e287, no collapse anywhere in its 6-cell family) — but "a soft prior that
+  behaves while loose becomes catastrophic once its target fully engages" (F19's causal
+  claim) is *not* refuted, only shown to depend on the target being low enough relative
+  to the mechanism's own reachable range for a given family+task+scale, and even then
+  not to be a permanent guarantee within a fixed training budget. Family C
+  (`goal_soft_reuse_adapt`, now the config default alongside `goal_struct_adapt`, §2) is
+  the only one of the three families with zero collapse events across all 6 of its
+  BIG/small × hopper/cheetah × struct/no-struct cells, and the only one with a cell
+  (e286) finishing clearly above its Director baseline — the strongest evidence yet that
+  the discrete block-overlap loss is the more robust mechanism of the three, not just the
+  better-performing one at the old target. `goal_reuse_adapt` (families A/B) should stay
+  off by default even at the lower target given e282's late failure; `goal_soft_reuse_adapt`
+  is the recommended mechanism pending a second seed. Full per-cell table and the e282
+  collapse trace: §2.
 
 ---
 
@@ -1554,6 +1725,47 @@ survive (70–182), best at ratchet-only without struct — new finding F19.
 | e267/e269 | C ratchet-only | hopper BIG/small | 0.19 (51) / 0.004 (44) | dead; struct+ratchet slightly less dead here |
 | e270/e272 | C struct+ratchet | cheetah BIG/small | 70.4 (113) / 73.3 (151) | partial survival, but struct costs ~half vs. ratchet-only |
 | e271/e273 | C ratchet-only | cheetah BIG/small | **182.0** (365) / **111.3** (155) | best cheetah cells of all 16 — 40–60% of baseline |
+
+### e278–e293 · Lower-target reuse/overlap retest, same 3 families (see §2 FINAL results, §3 F20)
+Same design as e250–e277 (`RECIPE=director`, `MGR_FREQ=8`, `SEED=0`, `RUN_STEPS=4000000`)
+with the reuse/overlap target lowered (decoded-similarity 0.8 vs. 0.95; block-overlap 0.5
+vs. 0.7) and the ratchet stretched to ~2M steps instead of ~1M. Launched 07-21, 4
+hopper-small cells (e279/e283/e288/e289) cancelled 07-22 at 84–98% of budget (already at
+the F15 dead floor, no recovery in sight); the other 12 all COMPLETED 07-23 at the full
+4M-step budget. Full numbers, per-cell trajectory notes, and the e282 collapse trace: §2.
+One-line verdict: F19's "hopper dead in every family" reverses for 5/6 BIG cells (family
+A noisy-alive, family B alive-then-terminal-collapse in the hopper cell, family C
+stable-and-above-baseline); struct-stacking's cheetah cost/benefit is confirmed both
+target- and scale-dependent — new finding F20.
+
+| Exp | Cell | Task/Scale | Score trail300 (trail50) | Peak | Note |
+|---|---|---|---|---|---|
+| e278 | A: `goal_reuse_adapt`, code+decoded | hopper BIG | 163.0 (222.3) | 326.8 | alive, never settles — repeatedly 250+ then <100 across training |
+| e279 | A | hopper small | — | 14.9 | CANCELLED 07-22 @84%, dead floor (F15) |
+| e280 | A | cheetah BIG | 296.6 (291.7) | 333.0 | stable, low end of ≈300–435 baseline |
+| e281 | A | cheetah small | 292.9 (288.4) | 351.7 | well above ≈100 baseline, still rising at cutoff |
+| e282 | B: `goal_reuse_adapt`, decoded-only | hopper BIG | 230.2 (**1.6**) | 347.3 | **terminal collapse @3.94M (98.6% of budget)** — see F20 |
+| e283 | B | hopper small | — | 28.6 | CANCELLED 07-22 @84%, dead floor (F15) |
+| e284 | B | cheetah BIG | 198.2 (208.2) | 226.6 | alive, still rising at 4M cutoff |
+| e285 | B | cheetah small | 180.1 (235.0) | 289.3 | alive, above ≈100 baseline |
+| e286 | C struct+ratchet | hopper BIG | **330.5** (325.7) | 430.6 | **above ≈300 baseline — best hopper cell in the project**; config default |
+| e287 | C ratchet-only | hopper BIG | 199.4 (185.6) | 298.8 | alive, stable plateau below baseline |
+| e288 | C struct+ratchet | hopper small | — | 15.6 | CANCELLED 07-22 @84%, dead floor (F15) |
+| e289 | C ratchet-only | hopper small | — | 76.2 | CANCELLED 07-22 @98%, dead floor (F15) despite transient peak |
+| e290 | C struct+ratchet | cheetah BIG | 325.9 (332.4) | 449.4 | inside ≈300–435 band; config default |
+| e291 | C ratchet-only | cheetah BIG | 160.6 (167.5) | 214.8 | weakest BIG cheetah cell; Lagrange scale still elevated (15.6) at finish |
+| e292 | C struct+ratchet | cheetah small | 107.0 (149.7) | 191.8 | roughly matches ≈100 baseline; struct costs vs. e293 (small-scale reversal, F20) |
+| e293 | C ratchet-only | cheetah small | **259.2** (277.8) | 342.1 | well above ≈100 baseline; strongest small-scale cell |
+
+### e294–e303 · Task-generalization + plain-var-K Lagrangian isolation (RUNNING, see §2)
+e294/e295 (cartpole/acrobot BIG, e286/e290's exact recipe ported to two untested tasks)
+launched 07-22; original `gpu-a100` submissions (jobs 4668645/4668646) never dispatched
+and were cancelled (`sacct`: 0:00 elapsed, no node assigned), resubmitted same-day to
+`gpu-v100` as jobs 4668658/4668659. e296–e303 (`plain_vark` + `DUR_MODE=lagrangian`,
+τ∈{4,8} × {hopper,acrobot,cartpole,cheetah}, isolating the duration-Lagrangian mechanism
+alone with no masking/struct/reuse) launched 07-22 on `gpu-a100`. All 10 cells RUNNING as
+of 2026-07-23, 28–57% through their 4M-step budgets — see §2 for current trailing scores
+and per-cell status; not final.
 
 ---
 

@@ -1371,38 +1371,65 @@ top of it. Cheetah is the one place F19 leaves a live, partially positive
 result --- the discrete block-overlap loss without struct
 (\S\ref{sec:softreuse}) keeps 40--60\% of baseline score while measurably
 raising reuse above the unprompted band, worth a follow-up at a lower,
-better-calibrated target before the mechanism itself is written off.
+better-calibrated target before the mechanism itself is written off. That
+follow-up (F20, below) substantially revises this picture for hopper.
 
-\paragraph{Interim update (2026-07-22, pending).} A direct retest of all three
-reuse mechanisms at a lower, better-calibrated target (decoded-goal
-similarity $0.8$ instead of $0.95$; block-overlap $0.5$ instead of $0.7$,
-same ratchet shape stretched over $\sim\!2$M steps instead of $\sim\!1$M) is
-77--93\% through its 4M-step budget and, read at this point, contradicts two
-of F19's claims (BIG-scale figures for two of the three families in
-Figs.~\ref{fig:reusecont}--\ref{fig:reuseblock}, \S\ref{sec:goalreuse}/
-\S\ref{sec:softreuse}). First, hopper is alive at BIG scale in all 6 cells
-tried across all three families at some point in training (peaks
-187--431, against F19's 0.001--1.75 and a $\approx 300$ baseline) --- the
-Lagrange multiplier in nearly every cell has settled near its numerical
-floor rather than railing at its ceiling, meaning the lower target is
-within each mechanism's reach at essentially no pressure. Cheetah improves
-in every cell as well, several now at or above baseline throughout (e.g.\
-$336.1$ trailing for block-overlap with struct at BIG scale, against
-$71.8$ at the old target). Second, the struct-stacking cost F19 reports
-reverses in direction at this target: struct plus the ratchet now
-\emph{beats} the ratchet-only leg on cheetah BIG, opposite the
-$0.7$-target ordering (\S\ref{sec:softreuse}). Hopper at small scale is
-unaffected and stays dead in all 4 cells, consistent with the pre-existing
-small-scale floor (Finding 5) rather than a reuse-specific failure. The
-picture is not uniformly clean, though: one cell (e278, goal-space reuse,
-hopper BIG, target $0.8$) peaked at $326.8$ around step $2.7$M and has
-since declined to a trailing score of $97.8$ at $80\%$ of budget --- either
-a slower version of F19's own collapse reasserting itself past the point
-the earlier batch failed at, or a separate late-training effect; the other
-5 BIG cells show no such decline as of this pull. Not final until the
-4M-step checkpoints land; see \texttt{EXPERIMENTS.md} \S2 for the full
-interim table. If confirmed for the cells that hold, this would mean F19's
-magnitude-domination collapse is a property of the
-\emph{target}, not of hopper or of any of the three mechanisms tested.
+\paragraph{F20 (2026-07-23, final): the lower target rescues 5 of 6 dead
+BIG-scale F19 cells, but the 6th shows the collapse can still fire late.} A
+direct retest of all three reuse mechanisms at a lower, better-calibrated
+target (decoded-goal similarity $0.8$ instead of $0.95$; block-overlap $0.5$
+instead of $0.7$, same ratchet shape stretched over $\sim\!2$M steps instead
+of $\sim\!1$M) completed its full 4M-step budget for all 12 non-cancelled
+cells (4 hopper-small cells were cancelled early, already at the
+pre-existing small-scale dead floor of Finding~5). Five of the six BIG-scale
+hopper/cheetah cells that were dead or near-dead under F19's $0.95$/$0.7$
+targets finish genuinely alive: hopper $163$--$330$ (family A noisy but
+never re-collapses; family C $199$--$331$, stable) against F19's
+$0.001$--$1.75$ and a $\approx 300$ baseline; cheetah $161$--$326$ across
+all three families, several inside or above their own $\approx 300$--$435$
+band. The Lagrange multiplier finishes at or near its numerical floor in
+most of these cells, confirming the lower target is within each mechanism's
+reach. \textbf{The sixth cell, e282 (family B, hopper BIG), reproduces F18/
+F19's magnitude-domination collapse late rather than avoiding it}: its score
+held a stable $200$--$230$ plateau through step $3.94$M ($98.6\%$ of
+budget), matching every other healthy cell in the batch, then
+\texttt{goal/reuse\_adapt\_scale\_mean} --- flat at its numerical floor for
+the preceding $\sim\!3.9$M steps, indistinguishable from the five surviving
+cells at that point --- jumped by two orders of magnitude within a single
+logging window, the worker's goal-reward dropped in lockstep, and the score
+crashed to a trailing-50 mean of $1.6$ with no recovery before the budget
+ran out roughly $50$k steps later. The other 15 cells in the batch show
+comparably large scale excursions throughout training and self-correct
+within tens of thousands of steps; e282 differs only in when its excursion
+happened, too close to the end of the budget to recover. This means a cell
+whose Lagrange multiplier looks settled at 73--98\% of a fixed training
+budget is not thereby proven stable — the interim reading's confidence that
+"the multiplier has settled ... not railed" held only as a snapshot, not a
+durable property. The struct-stacking reversal reported at interim also
+turns out to be scale-dependent, not only target-dependent: struct$+$ratchet
+still beats ratchet-only on cheetah at BIG scale ($325.9$ vs.\ $160.6$,
+opposite the $0.7$-target ordering) but ratchet-only still wins at small
+scale ($259.2$ vs.\ $107.0$, the \emph{original} F19 ordering) --- struct's
+cost/benefit depends on both target and scale, not a single rule. Net effect
+on F19: ``hopper fails under every mechanism except the unrestricted
+single-head design'' no longer holds project-wide, since family C
+(\texttt{goal\_soft\_reuse\_adapt}) keeps hopper alive and stable with zero
+collapse events across all six of its cells and one cell (e286, hopper BIG)
+finishing clearly above its Director baseline --- but F19's underlying
+causal claim, that a soft prior which behaves while loose becomes
+catastrophic once its target fully engages, is not refuted, only shown to
+depend on the target being low enough for a given family/task/scale, and
+even then not guaranteed to hold for the full training budget. Family C is
+now the config default (\texttt{goal\_soft\_reuse\_adapt} $+$
+\texttt{goal\_struct\_adapt}, targets $0.5$/$0.01$); families A/B
+(\texttt{goal\_reuse\_adapt}) stay off by default given e282's late failure.
+Two ports of the e286/e290 recipe to previously-untested tasks (cartpole,
+acrobot, both BIG) and an isolation matrix for the plain variable-duration
+Lagrangian alone (no masking/struct/reuse, $\tau\in\{4,8\}$, all four tasks)
+are running as of this writing (\texttt{EXPERIMENTS.md} \S2); early acrobot
+numbers under the e286/e290 recipe are declining from an early peak rather
+than stabilizing, tentatively consistent with acrobot's own distinct
+failure mode (Finding 12) rather than a third rescue, but too early
+($<30\%$ of budget) to call.
 
 \end{document}
