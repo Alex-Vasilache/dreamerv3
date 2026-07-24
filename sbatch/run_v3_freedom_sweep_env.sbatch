@@ -24,7 +24,7 @@
 #   sbatch -J e94_acrobot --export=ALL,EXP_TAG=e94,ENV_NAME=acrobot,\
 #     TASK=dmc_acrobot_swingup,DUR_REG=0.01,MASK_MODE=none,MGR_REWARD_AGG=sum,\
 #     DUR_MAX=32,SWITCH_COST=0.02,PERBLOCK_CREDIT=True,PERBLOCK_EDIT_COST=0.3 \
-#     run_v3_freedom_sweep_env.sbatch
+#     sbatch/run_v3_freedom_sweep_env.sbatch
 set -euo pipefail
 
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh

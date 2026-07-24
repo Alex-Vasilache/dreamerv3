@@ -29,7 +29,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 #   PERBLOCK_EDIT_COST 0.0       Tier 2 tie-break edit cost
 # Submit with EXP_TAG and the knobs you want, e.g.:
 #   sbatch -J e66_cartpole --export=ALL,EXP_TAG=e66,MGR_REWARD_AGG=sum,DUR_REG=0.0 \
-#     run_v3_cartpole_freedom_sweep.sbatch
+#     sbatch/run_v3_cartpole_freedom_sweep.sbatch
 EXP_TAG="${EXP_TAG:?set EXP_TAG=e66...}"
 MGR_REWARD_AGG="${MGR_REWARD_AGG:-mean}"
 DUR_REG="${DUR_REG:-0.0}"

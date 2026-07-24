@@ -23,7 +23,7 @@
 # conv is broken on V100 by an unrelated cuDNN/CUDA version drift.
 # Submit with EXP_TAG, TASK, and the same RECIPE/*_TARGET/*_ADAPT flags as the
 # A100 template. Example (restart a pending A100 job on V100 instead):
-#   sbatch -J e294_cartpole_BIG --export=ALL,EXP_TAG=e294,TASK=dmc_cartpole_swingup,RECIPE=director,... run_v3_prior_vargoal_big_multiv100_routeA.sbatch
+#   sbatch -J e294_cartpole_BIG --export=ALL,EXP_TAG=e294,TASK=dmc_cartpole_swingup,RECIPE=director,... sbatch/run_v3_prior_vargoal_big_multiv100_routeA.sbatch
 set -uo pipefail
 
 CLONE=/work/DoyaU/vasilache/work/dreamerv3_env_routeA

@@ -28,7 +28,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 #     defaults to 0 -- isolates the var-K machinery from the masking package).
 # SEED: replicate index (default 0).
 # Example:
-#   sbatch -J e139_cheetah --export=ALL,EXP_TAG=e139,TASK=dmc_cheetah_run,DUR_TARGET=4.0 run_v3_prior_vargoal_small.sbatch
+#   sbatch -J e139_cheetah --export=ALL,EXP_TAG=e139,TASK=dmc_cheetah_run,DUR_TARGET=4.0 sbatch/run_v3_prior_vargoal_small.sbatch
 EXP_TAG="${EXP_TAG:?set EXP_TAG}"
 TASK="${TASK:-dmc_cartpole_swingup}"
 DUR_TARGET="${DUR_TARGET:-4.0}"

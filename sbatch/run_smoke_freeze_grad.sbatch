@@ -10,4 +10,4 @@
 
 set -euo pipefail
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
-python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/test_freeze_grad.py
+python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/tools/test_freeze_grad.py

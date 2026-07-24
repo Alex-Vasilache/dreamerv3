@@ -20,7 +20,7 @@
 # starting a fresh run.
 # Example:
 #   RUN_DIR=/work/DoyaU/vasilache/work/e160_... (mktemp'd by the caller)
-#   sbatch -J e160_cartpole_BIG --export=ALL,EXP_TAG=e160,TASK=dmc_cartpole_swingup,RUN_DIR="$RUN_DIR",STRUCT_W=0.0 run_v3_prior_vargoal_short_a100.sbatch
+#   sbatch -J e160_cartpole_BIG --export=ALL,EXP_TAG=e160,TASK=dmc_cartpole_swingup,RUN_DIR="$RUN_DIR",STRUCT_W=0.0 sbatch/run_v3_prior_vargoal_short_a100.sbatch
 set -euo pipefail
 
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh

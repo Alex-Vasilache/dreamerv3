@@ -14,7 +14,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 # Masked + variable-K + soft fixed duration prior (e46 prior × e56 masked recipe).
 # Submit with EXP_TAG, DUR_TARGET, and optional DUR_MAX (must be >= DUR_TARGET).
 # Example:
-#   sbatch -J e57_cartpole --export=ALL,EXP_TAG=e57,DUR_TARGET=4.0 run_v3_cartpole_vargoal_masked_durreg_soft.sbatch
+#   sbatch -J e57_cartpole --export=ALL,EXP_TAG=e57,DUR_TARGET=4.0 sbatch/run_v3_cartpole_vargoal_masked_durreg_soft.sbatch
 EXP_TAG="${EXP_TAG:?set EXP_TAG=e57|e58|e59|e60}"
 DUR_TARGET="${DUR_TARGET:?set DUR_TARGET=4|8|16|32}"
 DUR_MIN="${DUR_MIN:-1}"

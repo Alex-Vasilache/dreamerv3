@@ -20,7 +20,7 @@
 # explicit prior flags (this script), not hrl_auto's adaptive Lagrange targets.
 # Submit with EXP_TAG, TASK, and optional DUR_TARGET/MASK_TARGET.
 # Example:
-#   sbatch -J e141_cartpole_BIG --export=ALL,EXP_TAG=e141,TASK=dmc_cartpole_swingup run_v3_prior_vargoal_big_a100.sbatch
+#   sbatch -J e141_cartpole_BIG --export=ALL,EXP_TAG=e141,TASK=dmc_cartpole_swingup sbatch/run_v3_prior_vargoal_big_a100.sbatch
 set -euo pipefail
 
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh

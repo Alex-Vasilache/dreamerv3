@@ -22,8 +22,8 @@
 set -euo pipefail
 cd /apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 
-CART=run_v3_cartpole_freedom_sweep.sbatch
-ENVSB=run_v3_freedom_sweep_env.sbatch
+CART=sbatch/run_v3_cartpole_freedom_sweep.sbatch
+ENVSB=sbatch/run_v3_freedom_sweep_env.sbatch
 
 # Common e88 base knobs (NO duration prior; switch cost set per-run below).
 BASE="MGR_REWARD_AGG=sum,DUR_REG=0.0,DUR_TARGET=4.0,DUR_MAX=32,PERBLOCK_CREDIT=True,PERBLOCK_EDIT_COST=0.3"

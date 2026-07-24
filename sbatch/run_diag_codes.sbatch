@@ -19,7 +19,7 @@ OUT="${OUT:-/work/DoyaU/vasilache/work/slurm_logs/diag_codes_${SLURM_JOB_ID}.npz
 
 cd /apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 
-python -u diag_codes.py \
+python -u tools/diag_codes.py \
   --run_dir "$RUN_DIR" \
   --batches "$BATCHES" \
   --out "$OUT"

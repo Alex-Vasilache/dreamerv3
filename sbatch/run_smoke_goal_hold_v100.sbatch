@@ -20,7 +20,7 @@ mkdir -p "$BASE"
 echo "BASE=$BASE"
 
 echo "=================== LEG 1: goal_deter hold invariant (GPU) ==================="
-python -u "$ROOT/smoke_goal_hold.py"
+python -u "$ROOT/tools/smoke_goal_hold.py"
 echo "LEG 1 OK"
 
 echo "=================== LEG 2: short train + mask_viz (GPU) ==================="

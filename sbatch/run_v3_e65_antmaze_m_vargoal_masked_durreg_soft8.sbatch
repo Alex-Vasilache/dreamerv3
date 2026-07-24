@@ -19,7 +19,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 #
 # Walltime is 48h (gpu-v100 assoc MaxWall cap); RUN_STEPS targets 10M, so this will
 # NOT finish in one window. Resume to continue: re-run with the SAME --logdir
-#   RUN_DIR=<this run dir> sbatch run_v3_e65_antmaze_m_vargoal_masked_durreg_soft8.sbatch
+#   RUN_DIR=<this run dir> sbatch sbatch/run_v3_e65_antmaze_m_vargoal_masked_durreg_soft8.sbatch
 DUR_MIN="${DUR_MIN:-1}"
 DUR_MAX="${DUR_MAX:-16}"
 DUR_REG="${DUR_REG:-0.01}"
