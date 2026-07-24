@@ -7,3 +7,7 @@ MUJOCO_LOG.TXT
 wandb/
 hrl_director_fixes_todo.md
 
+# Raw Claude Code terminal-session transcripts saved into the repo root
+# (e.g. 2026-07-14-135544-local-command-caveat....txt) -- not source/data.
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9]*.txt
+

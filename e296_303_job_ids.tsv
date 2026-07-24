@@ -1,0 +1,8 @@
+e296	e296_plainvark_lagr_hopper_t4_BIG	4668663	BIG	TASK=dmc_hopper_hop,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e297	e297_plainvark_lagr_hopper_t8_BIG	4668664	BIG	TASK=dmc_hopper_hop,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0
+e298	e298_plainvark_lagr_acrobot_t4_BIG	4668665	BIG	TASK=dmc_acrobot_swingup,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e299	e299_plainvark_lagr_acrobot_t8_BIG	4668666	BIG	TASK=dmc_acrobot_swingup,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0
+e300	e300_plainvark_lagr_cartpole_t4_BIG	4668667	BIG	TASK=dmc_cartpole_swingup,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e301	e301_plainvark_lagr_cartpole_t8_BIG	4668668	BIG	TASK=dmc_cartpole_swingup,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0
+e302	e302_plainvark_lagr_cheetah_t4_BIG	4668669	BIG	TASK=dmc_cheetah_run,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=4.0
+e303	e303_plainvark_lagr_cheetah_t8_BIG	4668670	BIG	TASK=dmc_cheetah_run,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0

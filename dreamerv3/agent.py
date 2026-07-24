@@ -308,7 +308,7 @@ def variable_block_director_tensors(rew, con, expl, switch_mask, horizon,
   """
   sw = f32(switch_mask)
   n_sw = jnp.sum(sw, axis=-1, keepdims=True)
-  n_blocks = jnp.maximum(n_sw - 1, 1)
+  n_blocks = jnp.maximum(n_sw, 1)
   block_mask = f32(jnp.arange(horizon - 1)[None, :] < n_blocks)
 
   pooled_extr = aggregate_mgr_extr_rew_variable(
@@ -365,6 +365,36 @@ def downsample_at_switch_mask(feat, switch_mask):
   return jax.tree.map(
       lambda x: jax.vmap(compact_row)(x, sw),
       feat)
+
+
+def relabel_truncated_last_duration(mgr_skills_eff, switch_mask, dur_min, dur_max):
+  """Hindsight-relabel the LAST decision's duration class when its hold was cut
+  short by the imagination horizon rather than by a real switch, so REINFORCE
+  credits the manager for the duration it actually got to run, not the one it
+  sampled. Only the final real decision in a rollout can be truncated this way
+  -- every earlier one is, by construction, followed by a genuine switch, so it
+  always ran its full sampled duration and is left untouched. Only the
+  ``duration`` field changes; the goal-code choice itself isn't invalidated by
+  running short, only how long it got to hold."""
+  if 'duration' not in mgr_skills_eff:
+    return mgr_skills_eff
+  sw = f32(switch_mask)                                    # (B, T)
+  B, T = sw.shape
+  n_sw = jnp.sum(sw, axis=-1)                               # (B,) real decisions
+  idx = jnp.arange(T)[None, :]                              # (1, T)
+  last_switch_pos = jnp.max(jnp.where(sw > 0.5, idx, -1), axis=-1)  # (B,)
+  avail = f32(T) - f32(last_switch_pos)   # real steps from the last switch through rollout end, inclusive
+  dur_idx = mgr_skills_eff['duration']                       # (B, n_mgr) int class index
+  n_mgr = dur_idx.shape[1]
+  is_last_slot = (jnp.arange(n_mgr)[None, :] == (n_sw - 1)[:, None])  # (B, n_mgr)
+  orig_idx_at_last = jnp.sum(jnp.where(is_last_slot, dur_idx, 0), axis=-1)  # (B,)
+  orig_dur = f32(dur_min) + f32(orig_idx_at_last)
+  truncated = avail < orig_dur
+  relabel_dur = jnp.clip(avail, dur_min, dur_max)
+  relabel_idx = i32(relabel_dur - dur_min)
+  new_last_idx = jnp.where(truncated, relabel_idx, orig_idx_at_last.astype(i32))
+  new_dur = jnp.where(is_last_slot, new_last_idx[:, None], dur_idx)
+  return {**mgr_skills_eff, 'duration': new_dur}
 
 
 def downsample_manager_states(feat, k):
@@ -658,6 +688,14 @@ class Agent(embodied.jax.Agent):
     self.mgr_reward_agg = str(getattr(config, 'mgr_reward_agg', 'mean'))
     self.variable_goal_block_rew = bool(getattr(
         config, 'variable_goal_block_rew', False))
+    # Hindsight-relabel a block-pooled decision's duration class when its hold
+    # was cut short by the imagination horizon (rather than a real switch), so
+    # REINFORCE credits the duration actually realized, not the one sampled --
+    # see relabel_truncated_last_duration. Only meaningful when
+    # variable_goal_block_rew is also set; default True (the fix), off is an
+    # explicit ablation switch.
+    self.goal_duration_relabel_truncated = bool(getattr(
+        config, 'goal_duration_relabel_truncated', True))
     self.goal_duration_fixed = int(getattr(config, 'goal_duration_fixed', 0))
     # Set unconditionally so the manager loss call site can read it even in fixed-K
     # mode; the adapter itself is only built under ``variable_goal_length`` below.
@@ -2642,6 +2680,10 @@ class Agent(embodied.jax.Agent):
       # duration segment and downsample to switch steps (Director-style credit).
       if self.variable_goal_block_rew:
         mgr_skills_eff = downsample_at_switch_mask(mgr_skills, switch_mask)
+        if self.goal_duration_relabel_truncated:
+          mgr_skills_eff = relabel_truncated_last_duration(
+              mgr_skills_eff, switch_mask, self.goal_duration_min,
+              self.goal_duration_max)
         imgfeat_eff = downsample_at_switch_mask(imgfeat, switch_mask)
         inp_eff = self.feat2tensor(imgfeat_eff)
         n_mgr = imgfeat_eff['deter'].shape[1]

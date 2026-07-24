@@ -135,13 +135,31 @@ e290,cheetah,BIG,✅,325.9 (449.4),1.00,"200+adapt(dual, target0.01)",softreuse 
 e291,cheetah,BIG,~,160.6 (214.8),1.00,0,softreuse ratchet-only ov→0.5,fix 8,mean,no,no
 e292,cheetah,small,~,107.0 (191.8),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
 e293,cheetah,small,✅,259.2 (342.1),1.00,0,softreuse ratchet-only ov→0.5,fix 8,mean,no,no
-e294,cartpole,BIG,~ RUNNING @35%,635.8 (754.4),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
-e295,acrobot,BIG,"~ RUNNING @28%, falling",40.6 (264.6),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
-e296,hopper,BIG,"❌ RUNNING @56%, dead floor",0.07 (8.1),2.04,0,off,var τ4 (lagr),mean,no,no
-e297,hopper,BIG,"❌ RUNNING @57%, dead floor",0.32 (15.5),1.01,0,off,var τ8 (lagr),mean,no,no
-e298,acrobot,BIG,"~ RUNNING @55%, falling",2.8 (153.9),2.00,0,off,var τ4 (lagr),mean,no,no
-e299,acrobot,BIG,"~ RUNNING @52%, falling",4.8 (165.3),1.00,0,off,var τ8 (lagr),mean,no,no
-e300,cartpole,BIG,✅ RUNNING @43%,601.0 (651.9),2.01,0,off,var τ4 (lagr),mean,no,no
-e301,cartpole,BIG,✅ RUNNING @41%,748.7 (849.0),1.01,0,off,var τ8 (lagr),mean,no,no
-e302,cheetah,BIG,"✅ RUNNING @42%, rising",97.2 (137.9),2.04,0,off,var τ4 (lagr),mean,no,no
-e303,cheetah,BIG,"✅ RUNNING @40%, rising",184.9 (219.3),1.01,0,off,var τ8 (lagr),mean,no,no
+e294,cartpole,BIG,✅ RUNNING @83%,625.7 (754.4),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e295,acrobot,BIG,"❌ RUNNING @76%, collapsed from peak",19.4 (347.6),1.00,"200+adapt(dual, target0.01)",softreuse struct+ratchet ov→0.5,fix 8,mean,no,no
+e296,hopper,BIG,"❌ cancelled @74%, dead floor",0.09 (8.1),2.05,0,off,var τ4 (lagr),mean,no,no
+e297,hopper,BIG,"❌ cancelled @75%, dead floor",1.21 (15.5),1.00,0,off,var τ8 (lagr),mean,no,no
+e298,acrobot,BIG,"❌ cancelled @73%, decayed from peak",2.8 (153.9),1.97,0,off,var τ4 (lagr),mean,no,no
+e299,acrobot,BIG,"~ cancelled @70%, decayed from peak",22.3 (165.3),0.99,0,off,var τ8 (lagr),mean,no,no
+e300,cartpole,BIG,✅ cancelled @60%,616.2 (662.9),1.98,0,off,var τ4 (lagr),mean,no,no
+e301,cartpole,BIG,✅ cancelled @59%,850.0 (865.5),1.00,0,off,var τ8 (lagr),mean,no,no
+e302,cheetah,BIG,✅ cancelled @59%,107.6 (169.7),2.04,0,off,var τ4 (lagr),mean,no,no
+e303,cheetah,BIG,✅ cancelled @58%,194.5 (245.0),1.01,0,off,var τ8 (lagr),mean,no,no
+e304,hopper,BIG,"❌ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e314",0.68 (15.8),0.99,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e305,cheetah,BIG,"~ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e315",61.4 (80.0),0.84,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e306,hopper,BIG,"❌ cancelled @51%, PRE-FIX (n_blocks bug), superseded by e316",0.08 (12.0),0.98,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e307,cheetah,BIG,"~ cancelled @51%, PRE-FIX (n_blocks bug), superseded by e317",56.3 (79.3),0.93,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e308,hopper,BIG,"❌ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e318",3.86 (89.8),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e309,cheetah,BIG,"~ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e319",32.8 (53.1),1.01,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e310,hopper,BIG,"❌ cancelled @55%, PRE-FIX (n_blocks bug), not superseded (mean-agg leg dropped)",0.49 (14.7),1.02,0,off,var τ8 (lagr),"mean, block-rew, no relabel, imag16",no,no
+e311,cheetah,BIG,"~ cancelled @55%, PRE-FIX (n_blocks bug), not superseded (mean-agg leg dropped)",26.4 (45.4),1.01,0,off,var τ8 (lagr),"mean, block-rew, no relabel, imag16",no,no
+e312,cartpole,BIG,pending (queued, not dispatched),- (-),1.00,"200+adapt(dual, target0.01)",off,fix 8,mean,no,no
+e313,acrobot,BIG,pending (queued, not dispatched),- (-),1.00,"200+adapt(dual, target0.01)",off,fix 8,mean,no,no
+e314,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e315,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e316,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e317,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e318,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e319,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e320,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks), dur-entropy ctrl OFF",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no
+e321,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks), dur-entropy ctrl OFF",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no

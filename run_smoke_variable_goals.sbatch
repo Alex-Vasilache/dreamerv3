@@ -61,5 +61,38 @@ python -u "$MAIN" --logdir "$BASE/var_masked" \
   --agent.mgr_cond_goalcode True
 echo "LEG 3 OK"
 
+echo "=================== LEG 4: block-rew + SUM agg + duration near imag_length ====="
+# Regression test for relabel_truncated_last_duration: goal_duration_max ==
+# imag_length forces frequent horizon-truncated holds (the manager routinely
+# samples durations that can't fully fit in the 16-step imagined rollout), and
+# variable_goal_block_rew + mgr_reward_agg=sum is exactly the combination that
+# fed a truncated-but-mislabeled reward into REINFORCE before the fix. Also
+# exercises the Lagrangian duration prior (the plain_vark launch recipe) since
+# that reads the duration distribution directly, unaffected by relabeling, and
+# should keep training as normal alongside it.
+python -u "$MAIN" --logdir "$BASE/var_plain_blockrew_sum_trunc" \
+  --configs size6m debug "${COMMON[@]}" \
+  --agent.variable_goal_length True \
+  --agent.variable_goal_block_rew True \
+  --agent.mgr_reward_agg sum \
+  --agent.goal_duration_min 1 --agent.goal_duration_max 16 \
+  --agent.goal_duration_target 8.0 \
+  --agent.goal_duration_reg 0.0 --agent.goal_duration_adapt False \
+  --agent.goal_duration_lagrange True
+echo "LEG 4 OK"
+
+echo "=================== LEG 5: same as LEG 4 but relabel fix OFF (ablation) ========"
+python -u "$MAIN" --logdir "$BASE/var_plain_blockrew_sum_trunc_norelabel" \
+  --configs size6m debug "${COMMON[@]}" \
+  --agent.variable_goal_length True \
+  --agent.variable_goal_block_rew True \
+  --agent.goal_duration_relabel_truncated False \
+  --agent.mgr_reward_agg sum \
+  --agent.goal_duration_min 1 --agent.goal_duration_max 16 \
+  --agent.goal_duration_target 8.0 \
+  --agent.goal_duration_reg 0.0 --agent.goal_duration_adapt False \
+  --agent.goal_duration_lagrange True
+echo "LEG 5 OK"
+
 echo "ALL SMOKE LEGS PASSED"
 exit 0

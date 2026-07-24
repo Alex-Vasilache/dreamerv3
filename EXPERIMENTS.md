@@ -5,8 +5,8 @@ Director-style hierarchical RL on DreamerV3, studying whether the manager can ac
 choosing how long each goal is held (variable durations). Companion working paper:
 `paper/main.pdf` (self-contained method + results). Full narrative history of everything
 below is preserved verbatim in `EXPERIMENTS_ARCHIVE_20260713.md` (and git); this file is
-the restructured, maintained log. `HYPERPARAMETER_COMPARISON.md` holds the full
-cross-cell hyperparameter comparison table (e46–e303), split out to keep this file
+the restructured, maintained log. `HYPERPARAMETER_COMPARISON.csv` holds the full
+cross-cell hyperparameter comparison table (e46–e321), split out to keep this file
 condensed (§2).
 
 **Structure of this file:**
@@ -76,11 +76,171 @@ condensed (§2).
 
 ---
 
-## 2. Current state (2026-07-23 — e278–e293 (16 cells, lower-target reuse retest)
-all COMPLETED the full 4M-step budget; final numbers supersede the 07-22 interim pull
-and reveal one late-training collapse the interim read missed — see **F20**. e294–e303
-(9 cells: two task-generalization ports of the e286/e290 recipe + the plain-var-K
-Lagrangian isolation matrix) are RUNNING.)
+## 2. Current state (2026-07-24, later same day — root-caused and fixed the e304–e311
+cheetah/duration anomalies to a real off-by-one bug in the block-pooled manager return;
+e304–e311 CANCELLED and superseded by e314–e321 under the fix.) Investigating e305's
+"low expl return" and railed `mgr_ent_loss`/`mgr_actent_duration_scale_mean` (both
+flagged during live analysis of the e304–e311 pull above) traced to
+`variable_block_director_tensors` (`agent.py:300`, the `variable_goal_block_rew` credit
+path e304–e311 all use): `n_blocks = jnp.maximum(n_sw - 1, 1)` (was line 311) drops the
+LAST real manager decision of every imagined rollout from the pooled reward/continuation
+fed to the critic, so `mgr_cont` reads "episode ends" one decision early and the λ-return
+loses essentially all of its value-function bootstrap. Confirmed via the return/reward
+ratio: e303 (no block-rew, full-resolution path) ≈300–500×, e294 (fixed-K Director,
+same general block-pooled mechanism but the correct, non-buggy convention) ≈110–160×,
+e305/e307/e309/e311 (all four `variable_goal_block_rew` cells checked) ≈1.3–1.5× — a
+near-total collapse of the bootstrap horizon, not just a smaller value. This single bug
+plausibly explains the whole cluster of anomalies found this session: the runaway
+duration drift (§7 "duration-prior skyrocket"), the railed duration-entropy controller
+(`mgr_actent_duration_scale_mean` → its 100.0 ceiling), and cheetah running below the
+plain-var-K comparison cells despite fixing the two credit-assignment bugs (relabel +
+`sum` agg) that this same batch was built to test. **Fix (2026-07-24):**
+`n_blocks = jnp.maximum(n_sw, 1)` — matches the fixed-K analog `aggregate_mgr_cont`
+(`agent.py:135`), which never subtracts 1 from its block count. Smoke-tested clean
+(`run_smoke_variable_goals.sbatch`, job 4668996, all 5 legs incl. both block-rew legs
+PASSED, zero NaN/Inf) — the smoke debug net trains only 800 steps so reward is still
+~0 everywhere, making the return/reward ratio itself uninformative at that scale; real
+confirmation of the magnitude fix requires the BIG-scale relaunch below. **e304–e311
+CANCELLED** (were running the pre-fix code the whole time, all 8 cells compromised for
+their original credit-assignment question) and superseded by **e314–e321** (jobs
+4668997–4669004, all RUNNING on `gpu-a100`, launched immediately after cancellation
+freed the 8-GPU cap):
+
+| Exp | Job | Task | Reward agg | Relabel | Dur mode | Dur-entropy ctrl | `imag_length` |
+|---|---|---|---|---|---|---|---|
+| e314 | 4668997 | hopper hop | sum | ON | lagrangian τ8 | default (target 0.5) | 16 |
+| e315 | 4668998 | cheetah run | sum | ON | lagrangian τ8 | default | 16 |
+| e316 | 4668999 | hopper hop | sum | ON | lagrangian τ8 | default | 32 |
+| e317 | 4669000 | cheetah run | sum | ON | lagrangian τ8 | default | 32 |
+| e318 | 4669001 | hopper hop | sum | OFF | lagrangian τ8 | default | 16 |
+| e319 | 4669002 | cheetah run | sum | OFF | lagrangian τ8 | default | 16 |
+| e320 | 4669003 | hopper hop | sum | ON | none (`DUR_REG=0`) | **off** (`DUR_ACTENT_TARGET=0.0`, new knob) | 16 |
+| e321 | 4669004 | cheetah run | sum | ON | none (`DUR_REG=0`) | **off** | 16 |
+
+All 8: `RECIPE=plain_vark`, `VARIABLE_GOAL_BLOCK_REW=True`, `RUN_STEPS=4000000`, `SEED=0`,
+BIG scale, under the `n_blocks` fix. e320/e321 exercise a new script knob,
+`DUR_ACTENT_TARGET` (`run_v3_prior_vargoal_big_a100.sbatch`, wired to
+`--agent.manager_actent_duration_target`) — set to `0.0` to neutralize the duration-head
+entropy regularizer (`mgr_dur_actent`) as an ablation: with an unreachably-low target the
+controller's multiplier just relaxes to its floor and never pushes back. No boolean
+disable flag exists for it in `agent.py`, so this is the practical off-switch within the
+current flag surface.
+
+**Hypotheses:** (i) e314/e315 vs. the OLD (buggy) e305/e309/e311 pulls — does hopper stay
+dead and does cheetah's score/duration-drift/entropy-collapse signature go away now that
+the critic sees every real decision? (ii) e314 vs. e316 (hopper, imag16 vs. imag32) —
+re-test of the original imag_length question now that the credit signal itself isn't
+truncated. (iii) e314 vs. e318 (relabel ON vs. OFF, both now under the fix) — does the
+relabel fix's own effect (previously entangled with the n_blocks bug) look different once
+isolated. (iv) e320/e321 vs. e314/e315 — with both the duration-target Lagrangian AND the
+duration-entropy controller neutralized, does cheetah's duration still drift under `sum`
+agg, isolating whether the `sum`-reward pull itself (not the controllers failing to
+resist it) is the primary force, now that the return-construction bug no longer amplifies
+it.
+
+### Prior state (2026-07-24, earlier same day — live pull across the four batches spawned by F20.
+e278–e293 unchanged (F20, final, §3). e294/e295 (task-generalization) now 76–83%/4M:
+cartpole (e294) holds its ≥650 baseline band with no sign of cost; acrobot (e295) has
+now fully decayed from its 347.6 peak to a trail300 of 19.4, confirming the 07-23
+tentative "declining, not stabilizing" read as a third acrobot failure under F12's
+pattern. e296–e303 (plain-var-K Lagrangian isolation, τ∈{4,8}) stayed **CANCELLED**
+07-23 at 58–75%/4M — final pre-cancellation numbers below replicate F12 exactly (hopper
+dead both τ, acrobot decaying both τ, cartpole/cheetah alive with τ8>τ4 at both). e304–
+e311 (block-pooled var-K credit, two implementation fixes) now ~55%/4M: hopper dead in
+all 4 cells regardless of relabel/agg setting; cheetah alive in all 4 but running
+noticeably *below* the plain-var-K comparison cells (e302/e303) at a matched training
+fraction — an unexpected below-par reading, not yet explained, worth watching to 4M
+before concluding the fixes help. e312/e313 (struct-only ablation) and the e242/e246
+resumes are still `PENDING` (`AssocGrpGRES`, queued behind e294/e295 on `gpu-v100`) —
+no data yet.
+
+| Exp | Job | Task | Config | Progress | Score (trail300/trail50) | Peak (step) | Reuse/overlap | vs. hypothesis |
+|---|---|---|---|---|---|---|---|---|
+| e294 | 4668658 | cartpole swingup | `RECIPE=director`, `MGR_FREQ=8`, `STRUCT_ADAPT` target 0.01, `MGR_COND_GOALCODE=True`, `GOAL_SOFT_REUSE_ADAPT` target 0.5 (vel 3.9e-6) | 3.33M/4M (83%) | **625.7** / 624.6 | 754.4 @1.37M | ov 0.512/0.50, struct_corr 0.918 | Confirms: e286/e290 recipe still costs nothing on an easy dense task |
+| e295 | 4668659 | acrobot swingup | identical to e294 | 3.03M/4M (76%) | **19.4** / 19.4 | 347.6 @1.36M | ov 0.527/0.50, struct_corr 0.869 | Refutes rescue: full decay from peak, matches F12's acrobot-specific failure, not a fourth F20-style save |
+| e296 | 4668663 | hopper hop | `RECIPE=plain_vark`, `DUR_MODE=lagrangian`, τ=4, `STRUCT_W=0`, `MGR_COND_GOALCODE=False` | 2.95M/4M (74%), CANCELLED at pull | **0.09** / 0.03 | 8.1 @921k | n/a | Confirms F12: dead floor regardless of τ |
+| e297 | 4668664 | hopper hop | same, τ=8 | 2.99M/4M (75%), CANCELLED | **1.21** / 0.87 | 15.5 @2.07M | n/a | Confirms F12: τ8 no better than τ4 |
+| e298 | 4668665 | acrobot swingup | same, τ=4 | 2.93M/4M (73%), CANCELLED | **2.83** / 0.88 | 153.9 @2.08M | n/a | Confirms F12: decaying from early peak, acrobot's own slow failure |
+| e299 | 4668666 | acrobot swingup | same, τ=8 | 2.79M/4M (70%), CANCELLED | **22.3** / 27.7 | 165.3 @224k | n/a | Same decay pattern as e298, τ has not rescued it |
+| e300 | 4668667 | cartpole swingup | same, τ=4 | 2.41M/4M (60%), CANCELLED | **616.2** / 630.5 | 662.9 @1.77M | n/a | Alive, dense-task control as expected |
+| e301 | 4668668 | cartpole swingup | same, τ=8 | 2.35M/4M (59%), CANCELLED | **850.0** / 851.4 | 865.5 @2.02M | n/a | Alive, τ8 clearly beats τ4 (850 vs. 616) |
+| e302 | 4668669 | cheetah run | same, τ=4 | 2.37M/4M (59%), CANCELLED | **107.6** / 95.2 | 169.7 @2.15M | n/a | Alive, mid-pack |
+| e303 | 4668670 | cheetah run | same, τ=8 | 2.31M/4M (58%), CANCELLED | **194.5** / 231.7 | 245.0 @2.30M | n/a | Alive, τ8 clearly beats τ4 (195 vs. 108), same pattern as cartpole |
+| e304 | 4668889 | hopper hop | `RECIPE=plain_vark`, block-rew `sum`, relabel **ON**, `imag_length=16` | 2.19M/4M (55%) | **0.68** / 0.01 | 15.8 @1.93M | n/a | Confirms hyp. (i): credit-assignment fix does not rescue hopper |
+| e305 | 4668890 | cheetah run | same | 2.22M/4M (55%) | **61.4** / 74.3 (rising) | 80.0 @2.22M (still climbing) | n/a | Alive but well below e302/e303 at matched %, unexpectedly weak so far |
+| e306 | 4668891 | hopper hop | same, `imag_length=32` | 2.06M/4M (51%) | **0.08** / 0.08 | 12.0 @921k | n/a | Confirms hyp. (i)/(ii): longer imagination horizon doesn't rescue hopper either |
+| e307 | 4668892 | cheetah run | same | 2.03M/4M (51%) | **56.3** / 55.4 | 79.3 @521k | n/a | Alive, close to e305 — `imag_length` 16 vs. 32 not yet differentiating |
+| e308 | 4668893 | hopper hop | block-rew `sum`, relabel **OFF**, `imag_length=16` | 2.20M/4M (55%) | **3.86** / 3.31 | 89.8 @1.32M | n/a | Still dead but nominally highest of the 4 hopper cells — watch, not yet a rescue |
+| e309 | 4668894 | cheetah run | same | 2.20M/4M (55%) | **32.8** / 29.7 | 53.1 @1.74M | n/a | Alive but weaker than the relabel-ON legs (e305/e307) — tentative relabel-helps-cheetah signal |
+| e310 | 4668895 | hopper hop | block-rew `mean`, relabel **OFF**, `imag_length=16` | 2.21M/4M (55%) | **0.49** / 0.60 | 14.7 @929k | n/a | Dead, in line with hopper's other 3 cells |
+| e311 | 4668896 | cheetah run | same | 2.19M/4M (55%) | **26.4** / 27.5 | 45.4 @1.67M | n/a | Weakest of the 4 cheetah cells so far — tentative `sum`-beats-`mean` signal, consistent with hyp. #1 in the launch note |
+
+Pulled directly from each run's live `scores.jsonl` in `/work` (not yet archived). None
+of e304–e311 are final; the cheetah below-baseline reading and the relabel/agg orderings
+above are provisional until 4M. Full per-cell hyperparameters (struct weight, mask mode,
+duration mode, reward agg, countdown, ratchet) for these and every prior experiment are
+in `HYPERPARAMETER_COMPARISON.csv`, updated through e321 in this same pass.
+
+**e296–e303 cancelled (2026-07-23), e304–e311 launched — block-pooled var-K credit,
+with two implementation fixes.** Investigating the block-pooled manager credit path
+(`variable_goal_block_rew=True`, never exercised post-fix, see §7 "Block-pooled
+var-K credit assignment") surfaced two concrete implementation gaps in
+`imag_loss_mgr`/`_imagine_with_manager`, both fixed same-day:
+1. **`mgr_reward_agg=mean`** (the existing default) gives the manager literally zero
+   reward-side signal that a longer hold accrued more value — a 4-step and 16-step
+   block earning reward every step both pool to the same mean. Worked example: same
+   total reward, `mean` reports identical `G_t` for 1×16-step vs 2×8-step splits;
+   `sum` correctly favors more total reward. This is the likely mechanistic
+   explanation for e62's old, previously-unexplained "duration drifted to 2.48, block-
+   rew alone did not fix no-prior collapse" result (`mgr_reward_agg` was at its
+   default `mean` there too).
+2. **Horizon-truncated holds were mislabeled.** When a sampled duration doesn't fit in
+   the remaining `imag_length` (structurally likely near the tail of every rollout,
+   and guaranteed whenever `goal_duration_max == imag_length`), the manager was
+   credited with the *sampled* duration class against a reward that only covers the
+   *realized* (shorter) segment — a spurious bias against long durations sampled late
+   in a fixed-length window. Fixed via hindsight relabeling
+   (`agent.relabel_truncated_last_duration`, new): only the last real decision in a
+   rollout can be truncated (every earlier one is, by construction, followed by a
+   genuine switch); its `duration` class gets swapped to the realized length before
+   REINFORCE runs. New flag `goal_duration_relabel_truncated` (default `True`;
+   `False` = old, biased behavior) makes this ablatable. The duration Lagrangian
+   prior and the worker's countdown are both deliberately left untouched by this fix
+   (see §7 for why each is a different case).
+
+Both fixes smoke-tested clean before launch: `run_smoke_variable_goals.sbatch` LEG 4
+(job 4668864, relabel ON, `goal_duration_max=16=imag_length` to force frequent
+truncation) and a standalone LEG 5 rerun (job 4668885, relabel OFF) — both
+`ALL SMOKE LEGS PASSED`/`OK`, exit 0, zero NaN/Inf, duration stats sane
+(mean≈8.2–8.8 vs τ=8, spread across all quartiles incl. 16–34% in the 13–16 bucket).
+
+| Exp | Job | Task | Config | Status |
+|---|---|---|---|---|
+| e304 | 4668889 | hopper hop | block-rew, `sum`, relabel **ON**, `imag_length=16` | RUNNING, gpu-a100 |
+| e305 | 4668890 | cheetah run | block-rew, `sum`, relabel **ON**, `imag_length=16` | RUNNING, gpu-a100 |
+| e306 | 4668891 | hopper hop | block-rew, `sum`, relabel **ON**, `imag_length=32` | RUNNING, gpu-a100 |
+| e307 | 4668892 | cheetah run | block-rew, `sum`, relabel **ON**, `imag_length=32` | RUNNING, gpu-a100 |
+| e308 | 4668893 | hopper hop | block-rew, `sum`, relabel **OFF**, `imag_length=16` | RUNNING, gpu-a100 |
+| e309 | 4668894 | cheetah run | block-rew, `sum`, relabel **OFF**, `imag_length=16` | RUNNING, gpu-a100 |
+| e310 | 4668895 | hopper hop | block-rew, `mean`, relabel **OFF**, `imag_length=16` | RUNNING, gpu-a100 |
+| e311 | 4668896 | cheetah run | block-rew, `mean`, relabel **OFF**, `imag_length=16` | RUNNING, gpu-a100 |
+
+All 8: `RECIPE=plain_vark`, `DUR_MODE=lagrangian`, `DUR_TARGET=8.0` (held constant
+across all 8 so the `imag_length` 16-vs-32 contrast isn't confounded by also changing
+target duration), `RUN_STEPS=4000000`, `SEED=0`, BIG scale. `imag_length=32` (e306/
+e307) was previously hardcoded to 16 at this scale ("won't fit BIG" per the original
+script comment) — now overridable; watch for OOM, since BIG's activation memory at
+32 imagined steps is untested at this scale.
+
+**Hypotheses:** (i) e304 vs e308 vs e310 (hopper, relabel-ON/OFF/mean-baseline at
+fixed `imag_length=16`) isolates whether the relabeling fix and the `sum`-vs-`mean`
+choice each independently move the needle, replicating the F12-style dead-floor
+result or not. (ii) e304 vs e306 (hopper, `imag_length` 16 vs 32 at `sum`+relabel-ON)
+tests whether more decisions-per-rollout (per the "~2 decisions at τ=8, H=16" limit
+discussed this session) changes the outcome. (iii) Cheetah legs (e305/e307/e309/e311)
+are the dense-task controls — expected alive regardless, per every prior var-K run —
+so a collapse there would flag a bug in the new code paths rather than a genuine
+finding.
 
 **Default changed.** `dreamerv3/configs.yaml` `defaults.agent` now ships with the e286
 (hopper BIG)/e290 (cheetah BIG) recipe on by default — `goal_soft_reuse_adapt: True`,
@@ -118,6 +278,47 @@ dispatched and was cancelled outright (`sacct`: `CANCELLED+`, 0:00 elapsed, no n
 assigned — not a preemption, the jobs simply never left the queue); both were resubmitted
 the same day to `gpu-v100` (jobs 4668658/4668659) and are running normally there.
 `RUN_STEPS=4000000`, `SEED=0`, single seed each.
+
+**e312/e313 launched (2026-07-23) — struct-only ablation of e294/e295, queued behind
+them on `gpu-v100`.** Identical config to e294/e295 (`RECIPE=director`, `MGR_FREQ=8`,
+`STRUCT_ADAPT=True` target 0.01, `MGR_COND_GOALCODE=True`) with the single change
+`GOAL_SOFT_REUSE_ADAPT=False` (was `True` target 0.5, ratcheted from 0 at vel 3.9e-6) —
+isolates the struct-correlation term alone, with no forced-implicit-sparsity (reuse)
+loss active. `mask_sparsity_*`/masking is inactive either way under `RECIPE=director`
+(no `masked_goals` config block), so this is a clean single-flag ablation of the reuse
+mechanism only, not a masking-vs-no-masking comparison. **Originally launched as
+e304/e305** but renumbered within minutes of submission after an unrelated concurrent
+session claimed e304–e311 for the block-pooled var-K credit matrix (see entry above,
+jobs 4668889–4668896, submitted 15:19:36 vs. this batch's original 15:16:14) — the
+first pair (jobs 4668886/4668887) was cancelled before it ever started (still `PENDING`,
+no `RUN_DIR` created) and resubmitted clean as e312/e313 to avoid a duplicate-number
+collision in this log.
+
+Same struct-only ablation extended to hopper/cheetah, **resumed from the existing
+e242/e246 checkpoints** (BIG, `struct` condition, part of the e234–e249 implicit-sparsity
+matrix, §7) rather than started fresh — those stopped at ~995k/1M steps on 2026-07-15/16,
+before `goal_soft_reuse_adapt` existed, so this simply continues them to the same
+4M-step budget as e294/e295/e312/e313 with the (now-ambient-default-since-07-22) reuse
+term explicitly held off. Checkpoints restored from
+`/bucket/.../results/dreamerv3/{e242_dmc_hopper_hop_director_BIG_j4664287,e246_dmc_cheetah_run_director_BIG_j4664291}/`
+back to `/work` (rsync, 900MB each, `logdir/ckpt/latest` verified present pre-launch) and
+`RUN_DIR` pointed at the restored path so `main.py` resumes from checkpoint in place;
+config flags otherwise copied verbatim from each run's original `job.env` (notably
+`STRUCT_W=200.0`, carried forward even though `RECIPE=director`'s own script default is
+`0.0` — the original launch set it explicitly and resuming preserves the exact
+loss-scale history rather than silently changing it mid-run).
+
+| Exp | Job | Task | Scale | Config | Status (2026-07-23 launch) | Hypothesis |
+|---|---|---|---|---|---|---|
+| e312 | 4668901 | cartpole swingup | BIG | identical to e294 except `GOAL_SOFT_REUSE_ADAPT=False` | PENDING (`gpu-v100`, `AssocGrpGRES` — queued behind e294/4668658 and e295/4668659, dispatches automatically as GPUs free) | If e294 (struct+reuse) and e312 (struct-only) land in the same ≥650 range, the reuse/implicit-sparsity term isn't doing anything on cartpole either way (consistent with cartpole being easy/dense enough that neither mechanism matters); a gap would isolate which term (struct correlation vs. forced reuse) drives any difference from plain Director |
+| e313 | 4668902 | acrobot swingup | BIG | identical to e295 except `GOAL_SOFT_REUSE_ADAPT=False` | PENDING (`gpu-v100`, `AssocGrpGRES` — queued behind e294/4668658 and e295/4668659, dispatches automatically as GPUs free) | e295 (struct+reuse) trended toward acrobot failing again (F12 pattern); e313 tests whether struct correlation alone, without the reuse loss, changes that outcome — separates "does struct correlation help/hurt acrobot" from "does the forced-reuse mechanism help/hurt acrobot" |
+| e242 (resumed) | 4668898 | hopper hop | BIG | struct-only, resumed from ~995k/4M steps (was 1M-budget original) | PENDING (`gpu-v100`, `AssocGrpGRES` — queued behind e294/e295 and e312/e313) | e242 (struct, no controller) was alive but still climbing at its original 1M cutoff (115/116, well below the ~250–305 Director-at-1M reference, §7); extending to 4M checks whether it keeps closing that gap given more budget, now under the same full-budget comparison as e294/e295/e312/e313 |
+| e246 (resumed) | 4668899 | cheetah run | BIG | struct-only, resumed from ~996k/4M steps (was 1M-budget original) | PENDING (`gpu-v100`, `AssocGrpGRES` — queued behind e294/e295 and e312/e313) | e246 (struct, no controller) was already within noise of Director-at-1M (330/335 vs. e123-class 250–305, §7); extending to 4M checks whether that parity holds or decays over a full run, same comparison basis as e294/e295/e312/e313 |
+
+`RUN_STEPS=4000000`, `SEED=0`, single seed each. Both queue behind e294/e295 on the
+8/8-GPU `gpu-v100` account cap (no explicit `--dependency`, same natural-queueing
+precedent as e294/e295's own a100→v100 move above) — SLURM holds them `PENDING` with
+reason `AssocGrpGRES` and dispatches as soon as GPUs free.
 
 **e279/e283/e288/e289 cancelled (2026-07-22, ~84–98%/4M budget) — all 4 hopper-small
 cells, obviously dead, freed for e294/e295's queue.** Live pull immediately before
@@ -1120,8 +1321,9 @@ follow-up run, not a settled rescue.
 
 ### Hyperparameter comparison table
 
-Moved to its own file, `HYPERPARAMETER_COMPARISON.md` (2026-07-23, updated through
-e303) — a bare cross-cell table, no legend or prose.
+Moved to its own file, `HYPERPARAMETER_COMPARISON.csv` (2026-07-24, updated through
+e313 — e312/e313 are placeholder rows, still `PENDING`/no data) — a bare cross-cell
+table, no legend or prose.
 
 ---
 
@@ -2064,6 +2266,41 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
   fixed target, fast-vel ratchet), all crash-free, overlap correctly bounded,
   ratchet monotonic 0→0.7, loss value matches `-scale·overlap` exactly, zero
   NaN/Inf, zero key leakage on the off leg.
+- **Block-pooled var-K credit assignment (`variable_goal_block_rew=True`) had two
+  unaddressed gaps, both fixed 2026-07-23 (see §2 e304–e311).** This path pools
+  reward/continuation per realized hold segment (`aggregate_mgr_extr_rew_variable`
+  / `aggregate_mgr_cont_variable`, mirroring fixed-K `abstract_traj`) and had only
+  ever been tested with `mgr_reward_agg=mean` and no truncation handling (e44
+  pre-bugfix, e62 masked/no-prior — both dead ends, §4).
+  1. **`mean` gives zero reward-side incentive for longer productive holds** — a
+     4-step and 16-step block earning the same per-step reward pool to an
+     identical number. `sum` fixes this (couples pooled reward to how much was
+     actually earned); a properly-discounted sum (`Σγⁿrₙ`, not implemented) would
+     be more correct still but the flat `sum` in the codebase already closes most
+     of the gap in a worked numeric check.
+  2. **Truncated holds were mislabeled.** A decision sampling duration `d` but
+     only getting `avail < d` real steps before `imag_length` cut it off was
+     credited via REINFORCE against the *sampled* class, not the *realized*
+     one — biasing against long durations sampled late in a rollout (structural,
+     not rare, since every rollout has a fixed length). Fixed by
+     `relabel_truncated_last_duration` (agent.py, called from the
+     `variable_goal_block_rew` branch of the manager-loss body): only the final
+     real decision in a rollout can be truncated (every earlier one is followed
+     by a genuine switch, so it always ran its full sampled duration); its
+     `duration` class gets swapped to `clip(avail, dur_min, dur_max)` before
+     `align_skill_events`/`head_logp_time` compute the REINFORCE log-prob.
+     Gated by new flag `goal_duration_relabel_truncated` (default `True`).
+     Deliberately does **not** touch: the duration Lagrangian prior (already
+     reads `E[d]` off the softmax directly, never the sample, so truncation
+     doesn't reach it) or the worker's countdown input (relabeling it would
+     teach a false "decision imminent" signal that doesn't hold at real acting
+     time, since `imag_length` is a training-time artifact, not a task
+     property).
+  Smoke-tested both settings of the new flag before launch: `ALL SMOKE LEGS
+  PASSED` (`run_smoke_variable_goals.sbatch` job 4668864, relabel ON, LEG 4 with
+  `goal_duration_max=16=imag_length` to force frequent truncation) and a
+  standalone rerun of the OFF leg (job 4668885) — both exit 0, zero NaN/Inf,
+  `mgr_duration_mean` tracking τ=8 with healthy spread across all quartiles.
 
 ## 8. Config flags & metrics reference
 
@@ -2076,7 +2313,9 @@ All flags default to DreamerV3/pre-HRL behavior.
 - **Durations:** `variable_goal_length`, `goal_duration_{min,max,target,reg,fixed}`,
   `goal_duration_adapt(_max)`, `goal_duration_lagrange(_impl,_min,_max,_vel,_init,_tol)`
   (own loss key `goal_duration_prior`; mutually exclusive with adapt),
-  `variable_goal_block_rew`, `goal_switch_cost`, `goal_edit_cost(_ach)`,
+  `variable_goal_block_rew`, `goal_duration_relabel_truncated` (default `True`;
+  hindsight-relabels a block-pooled hold's duration class when `imag_length` cuts
+  it short — see §7), `goal_switch_cost`, `goal_edit_cost(_ach)`,
   `manager_actent_duration_target`.
 - **Struct:** `goal_struct_weight`, `goal_struct_target {deter,feat}`,
   `goal_struct_loss {mse,margin}`,
@@ -2128,7 +2367,10 @@ All flags default to DreamerV3/pre-HRL behavior.
   `MASK_MODE`, `STRUCT_W`, `STRUCT_ADAPT`, `WORKER_TIMED_GOALS`, `MGR_REWARD_AGG`,
   `MGR_EXPL_W`, `MGR_FREQ`, `SEED`, `RUN_STEPS`, `RUN_DIR` (fixed = resumable),
   `GOAL_DELTA_MODE`, `GOAL_DELTA_CLIP`, `GOAL_REUSE_WEIGHT`, `GOAL_REUSE_ADAPT`,
-  `GOAL_REUSE_TARGET(_INIT,_VEL)`.
+  `GOAL_REUSE_TARGET(_INIT,_VEL)`, `VARIABLE_GOAL_BLOCK_REW` (big_a100 only so far,
+  2026-07-23), `GOAL_DURATION_RELABEL_TRUNCATED` (default `True`, big_a100 only),
+  `IMAG_LENGTH` (big_a100 only; was hardcoded 16, now overridable — watch for OOM
+  above 16 at BIG scale, untested).
 - **Key metrics:** `goal/mask_frac_mean`, `goal/mask_prob_mean`, `goal/struct_corr`,
   `goal/rec_mean`, `goal/mgr_duration_mean/std`, `goal/mgr_switch_rate`, `wkr_goal_rew`,
   `wkr_ent/action`, `mgr_extr_rew(_block)`, `mgr_extr_adv`, `epstats/reward_rate`,

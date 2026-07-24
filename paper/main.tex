@@ -6,6 +6,8 @@
 \usepackage{microtype}
 \usepackage[hidelinks]{hyperref}
 \usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{arrows,positioning,calc}
 \captionsetup{font=small,labelfont=bf}
 
 \newcommand{\blkstep}{\mathrm{blk/step}}
@@ -294,6 +296,203 @@ entropy 0.5, duration $\tau_d$ with tolerance 0.1) + structural loss
 $w_s{=}200$. ``Variable-$K$ only'' means variable durations with a weak fixed
 duration prior (weight 0.01) instead of the Lagrangian, no masking, $w_s{=}0$.
 ``Mask only'' means masked edits at fixed $K{=}8$, $w_s{=}200$.
+
+\section{Variable-duration option: mechanism reference}
+\label{sec:vark-mech}
+
+This section gives a self-contained account of how variable durations
+(``var-$K$'') are implemented, independent of masking: every network's inputs,
+outputs, and loss, and the (non-network) counter that ties them together.
+Masking (Eq.~\ref{eq:edit}) composes with this mechanism but is not required
+by it --- ``plain var-$K$'' below means this section's machinery with the
+manager's goal head left as a full overwrite ($Z_t = z_t$ on a decision step),
+no mask head, $w_s{=}0$.
+
+\subsection{Components}
+Beyond the base agent (Sec.~\ref{sec:base}), var-$K$ adds one network output
+(a duration head on the manager) and one piece of non-network state (a
+countdown register). Fig.~\ref{fig:vark-diagram} shows the resulting data
+flow for one environment/imagination step $t$.
+
+\begin{figure}[t]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=8mm and 13mm,
+  box/.style={draw, rounded corners, align=center, font=\small, inner sep=2mm, minimum height=10mm},
+  lbl/.style={font=\scriptsize}
+]
+\node[box] (wm) {World model (RSSM)\\$s_t=(\mathrm{deter}_t,\mathrm{stoch}_t)$};
+\node[box, right=of wm] (mgr) {Manager\\goal head $\to z_t$, duration head $\to d_t$\\\emph{(run only if }$\mathrm{switch}_t${)}\\critics $V^{\mathrm{mgr}}_{\mathrm{extr}}, V^{\mathrm{mgr}}_{\mathrm{expl}}$ \emph{(every step)}};
+\node[box, right=of mgr] (dec) {Goal decoder\\$Z_t \mapsto g_t$};
+\node[box, right=of dec] (wkr) {Worker\\policy $\pi^{\mathrm{wkr}}$, critic $V^{\mathrm{wkr}}$};
+\node[box, right=of wkr] (env) {Env / imagination\\$a_t \to s_{t+1}$};
+
+\draw[->,>=latex'] (wm) -- (mgr) node[lbl,midway,above]{feat};
+\draw[->,>=latex'] (mgr) -- (dec) node[lbl,midway,above]{$Z_t$};
+\draw[->,>=latex'] (dec) -- (wkr) node[lbl,midway,above]{$g_t$};
+\draw[->,>=latex'] (wkr) -- (env) node[lbl,midway,above]{$a_t$};
+\draw[->,>=latex'] (wm.north) to[bend left=20] node[lbl,midway,above]{feat, $[c_t]$} (wkr.north);
+\draw[->,>=latex'] (env.south) to[bend left=20] node[lbl,midway,below]{$s_{t+1}$} (wm.south);
+\end{tikzpicture}%
+}
+\caption{Data flow for one step under var-$K$. All boxes are learned
+networks; the countdown $n_t$ that gates the manager (Eq.~\ref{eq:switch})
+is a register, not shown as a box. The manager's two heads run, and $Z_t$
+is overwritten, only on decision steps ($\mathrm{switch}_t{=}1$); otherwise
+$Z_t$ just holds its previous value (Eq.~\ref{eq:vark-recur}). The manager's
+two critics, like the goal decoder, worker, and world model, run every step.
+$[c_t]$ is the optional countdown input to the worker (timed subgoals,
+Sec.~\ref{sec:timed}); without it the worker sees only $(s_t, g_t)$.}
+\label{fig:vark-diagram}
+\end{figure}
+
+\begin{table}[h]
+\centering\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllll}
+\toprule
+Network & Runs & Input & Output & Trained by \\
+\midrule
+Manager (goal head) & decision steps & feat$(s_t)$ [+cond.] & $z_t\in\{1..C\}^L$ & $\mathcal{L}_{\text{mgr}}$ (Eq.~\ref{eq:mgr}) \\
+Manager (duration head) & decision steps & feat$(s_t)$ [+cond.] & $d_t\in\{1..16\}$ & $\mathcal{L}_{\text{mgr}}$ + \texttt{goal\_duration\_prior} \\
+Manager critics ($\times2$) & every step & feat$(s_t)$ & $V^{\mathrm{mgr}}_{\mathrm{extr}},V^{\mathrm{mgr}}_{\mathrm{expl}}$ & NLL vs.\ $\lambda$-return \\
+Goal decoder & every step & $Z_t$ & $g_t$ (goal in deter space) & $\mathcal{L}_{\text{AE}}$ (Eq.~\ref{eq:ae}), not by $\mathcal{L}_{\text{mgr}}$ \\
+Worker actor & every step & feat$(s_t)$, $g_t$, [$c_t$] & $a_t$ & Eq.~\ref{eq:wkr} REINFORCE \\
+Worker critic & every step & feat$(s_t)$, $g_t$, [$c_t$] & $V^{\mathrm{wkr}}$ & NLL vs.\ Eq.~\ref{eq:wkr} $G_t$ \\
+\bottomrule
+\end{tabular}%
+}
+\caption{Every network touched by var-$K$: what it consumes, what it emits,
+and which loss trains it. ``[+cond.]'' = optional extra manager-conditioning
+inputs (\texttt{mgr\_cond\_*} flags), off in plain var-$K$. ``[$c_t$]'' =
+optional countdown input, off unless \texttt{worker\_timed\_goals}. Goal
+decoder gradient reaching the manager is a separate, orthogonal mechanism
+(\texttt{goal\_reuse\_*}, Sec.~\ref{sec:objective}); the base goal decoder
+itself is trained only by the autoencoder loss, never by $\mathcal{L}_{\text{mgr}}$.}
+\label{tab:vark-networks}
+\end{table}
+
+\subsection{Decision timing}
+Let $n_t\in\{1,\dots,d_{\max}\}$ be the steps remaining on the goal held at
+step $t$, including $t$ itself (already used as the worker's countdown input,
+Eq.~\ref{eq:countdown}). A decision (manager forward pass) occurs at $t$ iff
+the previous step was the last held step of its goal:
+\begin{equation}
+\mathrm{switch}_t = \mathbb{1}[\,n_{t-1} = 1\,], \qquad \mathrm{switch}_1 := 1
+\text{ (also forced at episode reset).}
+\label{eq:switch}
+\end{equation}
+On a decision step the manager samples $z_t$ and $d_t$ and the counter
+reloads; otherwise the running goal and counter both hold:
+\begin{equation}
+Z_t = \begin{cases} z_t & \mathrm{switch}_t \\ Z_{t-1} & \text{else} \end{cases}
+\qquad
+n_t = \begin{cases} d_t & \mathrm{switch}_t \\ n_{t-1} - 1 & \text{else.} \end{cases}
+\label{eq:vark-recur}
+\end{equation}
+The duration head is a categorical over $n_{\text{dur}} = d_{\max}-d_{\min}+1$
+classes ($d_{\min}{=}1$, $d_{\max}{=}16$ by default); its own normalized
+entropy is held near a target
+(\texttt{manager\_actent\_duration\_target}, same dual-ascent form as
+Eq.~\ref{eq:dual}) so it cannot collapse onto a single duration class before
+the duration prior/Lagrangian has a chance to shape it. $g_t = \mathrm{dec}(Z_t)$
+is recomputed from $Z_t$ every step (cheap decode), not cached, except that
+the \emph{worker-visible rendering} of $g_t$ (used for goal-conditioned image
+reconstructions/videos, not for any loss) is cached and refreshed only on
+$\mathrm{switch}_t \lor \mathrm{reset}_t$, matching Eq.~\ref{eq:vark-recur}.
+
+\subsection{Manager credit assignment: two resolutions}
+\label{sec:vark-credit}
+Because $d_t$ varies, the manager's decision boundaries are not evenly
+spaced, unlike fixed-$K$ Director. Two credit-assignment modes are
+implemented, selected by \texttt{variable\_goal\_block\_rew}:
+
+\textbf{Full-resolution (default, used by every plain-var-$K$ run in
+Sec.~\ref{sec:results}).} The manager critics bootstrap on \emph{every}
+imagined step, with continuation $\mathrm{term}=1-\mathrm{con}_t$ exactly
+like the flat/worker critic --- $\bar K$ has no effect on how many value
+targets exist. Only the REINFORCE term of $\mathcal{L}_{\text{mgr}}$
+(Eq.~\ref{eq:mgr}) is masked to decision steps, via $\mathrm{switch}_t$:
+non-decision steps contribute a value-function target but no policy
+gradient.
+
+\textbf{Block-pooled (\texttt{variable\_goal\_block\_rew=True}, Director-style
+option credit).} Rewards are pooled over each \emph{realized} hold segment
+and the whole manager problem is downsampled to one row per decision, mirroring
+fixed-$K$ Director's \texttt{abstract\_traj}:
+\begin{equation}
+\hat r^{\mathrm{mgr}}_{k} = \mathrm{agg}_{t \in \mathrm{seg}(k)}\Big(r_t \textstyle\prod_{t' \le t,\, t' \in \mathrm{seg}(k)} \mathrm{con}_{t'}\Big),
+\qquad \mathrm{agg} \in \{\mathrm{mean}, \mathrm{sum}\},
+\label{eq:vark-pool}
+\end{equation}
+where $\mathrm{seg}(k)$ is the $k$-th realized hold window (length $d_{t_k}$,
+not a constant). \texttt{mean} makes the manager's per-decision return
+invariant to how finely time is partitioned (mirroring Director's own
+per-window mean); \texttt{sum} instead couples return to hold length, giving
+the manager a direct return-side incentive toward longer holds
+(\texttt{mgr\_reward\_agg}). Both the world-model features and the pre-edit
+conditioning code are downsampled to the same $\mathrm{seg}(k)$ boundaries
+before the manager loss is recomputed on them (\texttt{downsample\_at\_switch\_mask}
+in the code).
+
+\subsection{Duration prior / Lagrangian}
+The duration term of the manager loss (already given generically in
+Eq.~\ref{eq:stage2}) is, spelled out for var-$K$ specifically,
+\begin{equation}
+\mathcal{L}_{\text{goal\_duration\_prior}} = \lambda_d\,\big(\mathbb{E}[d]-\tau_d\big)^2,
+\qquad \lambda_d \text{ stepped by Eq.~\eqref{eq:dual} with } x = \mathbb{E}[d],\ \tau = \tau_d,
+\label{eq:vark-dur-prior}
+\end{equation}
+Here $\mathbb{E}[d]$ is the switch-weighted realized mean duration and the
+controller's tolerance is $\mathrm{tol}{=}0.1$; this is the
+\emph{Lagrangian} mode (\texttt{goal\_duration\_lagrange}). A simpler
+fixed-weight
+\emph{regularizer} mode (\texttt{goal\_duration\_reg}, weight $0.01$ in
+``plain var-$K$'', Sec.~\ref{sec:results}) uses the same squared-deviation
+penalty at a constant weight instead of Eq.~\ref{eq:dual}'s adaptive
+$\lambda_d$. Both modes are independent of the mask-side controllers ---
+turning masking off (as plain var-$K$ does) removes \texttt{mask\_sparsity}
+entirely and leaves \texttt{goal\_duration\_prior} as the only manager-side
+constraint term.
+
+\subsection{Status: not attributed to an implementation defect}
+Isolated post-fix re-tests of exactly this mechanism (\texttt{RECIPE=plain\_vark},
+Lagrangian mode, $\tau_d\in\{4,8\}$, all four tasks, e296--e303) reproduce the
+same qualitative split reported for the pre-fix mechanism in
+Sec.~\ref{sec:results} (finding 4) and for masking under the dual-head design
+(finding 4/F17): hopper stays at the dead reward-rate floor at both $\tau_d$
+(e296/e297, indistinguishable from 20+ prior masked/var-$K$ cells); acrobot
+decays from an early peak toward the same floor without reaching it by
+$\sim$55\% of budget (e298/e299); cartpole and cheetah are both clearly alive
+at both $\tau_d$, with $\tau_d{=}8$ consistently ahead of $\tau_d{=}4$
+(cartpole 748.7 vs.\ 601.0; cheetah 184.9 vs.\ 97.2, still rising) --- alive
+but below the fixed-$K{=}8$ Director cheetah baseline (Table~\ref{tab:results},
+$\approx$300--435), i.e.\ var-$K$ alone is not catastrophic on cheetah but is
+not yet a free win either. Three points argue against an implementation bug
+specifically:
+(i) the failure is stable across two independent code revisions (the
+pre-2026-07-10 forward-fill/controller code, e166--e169/e178/e179, and the
+post-fix code reported here), with the same clean single-flag diff (var-$K$
+on vs.\ off, all else equal) reproducing $\mathrm{return}\to 0$ on hopper both
+times;
+(ii) the leading mechanistic hypothesis for \emph{why} --- the worker cannot
+observe its random per-goal deadline, injecting horizon variance into its
+critic (Sec.~\ref{sec:timed}) --- was tested directly by adding the countdown
+input: it rescues a collapsing \emph{dense}-task var-$K$ run 5.4$\times$
+(cartpole, e187) but leaves hopper (e185) and acrobot (e192) exactly as dead
+as without it, so the failure is not simply an unpatched, known-fixable
+observability gap;
+(iii) the same sparse tasks are known to be solvable by an unrestricted
+manager (Director baseline, and the single-head design of finding 4/F17 at
+fixed $K{=}8$), so the failure is specific to \emph{this} mechanism's
+interaction with sparse reward, not a general breakdown of the training
+pipeline. The single-head credit-assignment fix (F17) and var-$K$ have not
+yet been tested \emph{together} on hopper/acrobot --- every single-head
+result to date (e214--e233) used fixed $K{=}8$ --- so whether that fix also
+covers the switch-timing mechanism, or whether a second, duration-specific
+fix is needed, is an open, currently untested combination rather than a
+resolved negative result.
 
 \section{Experimental setup}
 
