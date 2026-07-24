@@ -265,8 +265,17 @@ def aggregate_mgr_cont_variable(con, switch_mask, without_zeros=False):
   continuations are in [0, 1] the cumulative product is non-increasing within a
   segment, so the product == ``segment_min``. (The earlier ``segment_max`` returned
   the segment's *first* step instead -> under-discounted held goals; benign only when
-  cont≈1, e.g. non-terminating cartpole.) Empty trailing segments get 0, not the
-  ``+inf`` ``segment_min`` identity, so the ``* block_mask`` downstream stays finite.
+  cont≈1, e.g. non-terminating cartpole.) Empty segments (zero real steps -- either
+  true padding far beyond the last real decision, or a trailing hold whose switch
+  landed exactly on the rollout's final timestep) get the empty-product identity 1.0,
+  not 0.0 (fixed 2026-07-24): with 0.0 the very first padding slot after the last
+  real decision reads as ``live=0`` in ``lambda_return``, which caps that decision's
+  own bootstrap contribution to a ``(1-lam)``-only fraction of its true value instead
+  of the full lambda-weighted blend fixed-K's exactly-sized (unpadded) arrays get for
+  free -- see EXPERIMENTS.md `2026-07-24` note and
+  ``test_final_bootstrap_bug_is_specific_to_block_pooled_varK``. 1.0 is also finite,
+  so the ``* block_mask`` downstream (which correctly zeroes genuinely-unused slots
+  for the REWARD side) still stays finite.
   """
   sw = f32(switch_mask)
   c = f32(con[:, 1:])
@@ -278,7 +287,7 @@ def aggregate_mgr_cont_variable(con, switch_mask, without_zeros=False):
   def pool_row(cp_row, seg_row):
     seg_min = jax.ops.segment_min(cp_row, seg_row, num_segments=max_seg)
     counts = jax.ops.segment_sum(jnp.ones_like(cp_row), seg_row, num_segments=max_seg)
-    return jnp.where(counts > 0, seg_min, 0.0)
+    return jnp.where(counts > 0, seg_min, 1.0)
 
   block_prod = jax.vmap(pool_row)(cprod, seg)
   if without_zeros:
@@ -317,8 +326,15 @@ def variable_block_director_tensors(rew, con, expl, switch_mask, horizon,
   pooled_expl = aggregate_mgr_extr_rew_variable(
       expl, con, switch_mask, without_zeros=True,
       agg_mode=agg_mode)[:, :horizon - 1] * block_mask
+  # NOT block_mask-multiplied (unlike the reward tensors above): a segment id
+  # >= n_sw can never occur (variable_segment_ids is bounded by cumsum(switch_
+  # mask)-1), so aggregate_mgr_cont_variable's own empty-segment identity (1.0,
+  # fixed 2026-07-24) is already correct at every position past the real
+  # content. Re-zeroing it here would starve the last real decision's
+  # bootstrap back down to a (1-lam)-only fraction of its value -- the exact
+  # bug the identity fix addresses; see that function's docstring.
   pooled_cont = aggregate_mgr_cont_variable(
-      con, switch_mask, without_zeros=True)[:, :horizon - 1] * block_mask
+      con, switch_mask, without_zeros=True)[:, :horizon - 1]
 
   mgr_cont = jnp.concatenate([con[:, :1], pooled_cont], axis=1)[:, :horizon]
   mgr_extr_rew = imag_reward_pad(pooled_extr)[:, :horizon]

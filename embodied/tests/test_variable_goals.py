@@ -138,3 +138,127 @@ def test_switch_rate_matches_mean_duration():
 
 if __name__ == '__main__':
   pytest.main([__file__, '-xvs'])
+
+
+def test_last_decision_bootstrap_when_switch_lands_on_final_step():
+  """Regression probe: does a switch landing exactly on the rollout's last
+  timestep (avail=0 real transitions for the segment it would open) zero out
+  the RETURN for that (real, valid) decision instead of letting it bootstrap
+  purely off its own value? This is the deterministic case
+  ``goal_duration_fixed=8`` hits every single rollout at ``imag_length=16``
+  (switches land exactly at 0, 8, 16 -- t=16 is the last valid index)."""
+  from dreamerv3.agent import lambda_return
+  B, T, k = 1, 17, 8
+  rew = jnp.zeros((B, T), jnp.float32)
+  con = jnp.full((B, T), 0.997, jnp.float32)  # mimic contdisc-baked-in discount
+  sw = _fixed_switch_mask(B, T, k)  # switches at 0, 8, 16
+  n_sw = int(sw.sum())
+  print('n_sw =', n_sw)
+
+  extr, _, cont, switch = variable_block_director_tensors(rew, con, rew, sw, T)
+  print('mgr_extr_rew[0] =', np.asarray(extr[0]))
+  print('mgr_cont[0]     =', np.asarray(cont[0]))
+  print('mgr_switch[0]   =', np.asarray(switch[0]))
+
+  # Fake per-node values: distinct so we can see which one leaks into the return.
+  val = jnp.array([[10.0, 20.0, 30.0] + [30.0] * (T - 3)], jnp.float32)
+  last = jnp.zeros_like(con)
+  term = 1 - cont
+  ret = lambda_return(last, term, extr, val, val, 1.0, 0.95)
+  print('mgr_extr_ret[0] =', np.asarray(ret[0]))
+
+  # Node 2 (state index 2 = t=16, the LAST real decision) has no real trailing
+  # steps within this rollout. Its return should equal its own bootstrap value
+  # (30.0, i.e. a neutral 0-advantage terminal node) -- NOT collapse to 0.
+  # With disc=1.0 (matching the real contdisc=True config, where all decay
+  # lives in ``con`` itself) and the empty-segment identity fix (1.0, not 0.0),
+  # the padding tail beyond node 2 is a lossless V=V=V... chain: this must now
+  # be EXACT, not approximate.
+  r2 = float(ret[0, 2])
+  print('R at last real decision (expected exactly 30.0, i.e. == its own value):', r2)
+  assert abs(r2 - 30.0) < 1e-4, (
+      f'last real decision return={r2}, expected 30.0 (its own bootstrap value); '
+      'a switch landing exactly on the final timestep is zeroing the return '
+      'instead of bootstrapping.')
+
+
+def test_final_bootstrap_bug_is_specific_to_block_pooled_varK():
+  """Does the same 'switch lands on the final timestep' scenario also corrupt
+  (a) the fixed-K Director path and (b) the full-resolution (non-block-pooled)
+  var-K path, or is it specific to variable_goal_block_rew's padded-to-static-
+  horizon construction? Same T=17, k=8 fixture as the previous test."""
+  from dreamerv3.agent import lambda_return
+  B, T, k = 1, 17, 8
+  rew = jnp.zeros((B, T), jnp.float32)
+  con = jnp.full((B, T), 0.997, jnp.float32)
+  sw = _fixed_switch_mask(B, T, k)
+
+  # --- (a) Fixed-K Director path: exactly mirrors the real call site
+  # (agent.py ~2769-2773): _mgr_cont/_mgr_extr_rew, without_zeros=True, no padding.
+  fixedk_cont = aggregate_mgr_cont(con, k, without_zeros=True)          # (B, 3): no padding
+  fixedk_rew = imag_reward_pad(aggregate_mgr_extr_rew(rew, con, k, without_zeros=True))
+  print('fixedk_cont  =', np.asarray(fixedk_cont[0]))
+  print('fixedk_rew   =', np.asarray(fixedk_rew[0]))
+  val_fixedk = jnp.array([[10.0, 20.0, 30.0]], jnp.float32)
+  last_fixedk = jnp.zeros_like(fixedk_cont)
+  term_fixedk = 1 - fixedk_cont
+  ret_fixedk = lambda_return(
+      last_fixedk, term_fixedk, fixedk_rew, val_fixedk, val_fixedk, 1.0, 0.95)
+  print('fixedk_ret   =', np.asarray(ret_fixedk[0]))
+  r2_fixedk = float(ret_fixedk[0, -1])
+  # Fixed-K's array is EXACTLY sized to its 3 real states (no padding), so its
+  # own last exposed slot (index 1, "decision 1") gets rets[-1]=boot[-1]=30.0
+  # as a direct, undiminished base case -- but that base case is then combined
+  # through ONE real (non-identity) transition of its own (con~0.976, a real
+  # 8-step hold), so the expected value is con*30 (a real decay), not exactly
+  # 30 -- 30*0.9762503 = 29.2875.
+  print('fixed-K last-decision return (expect ~29.29, real decay over its own hold):',
+        r2_fixedk)
+
+  # --- (b) Full-resolution var-K path (variable_goal_block_rew=False): mirrors
+  # the real call site (agent.py ~2704-2711) -- mgr_cont = con directly, no
+  # pooling, no padding at all; every one of the T real positions is genuine.
+  val_full = jnp.full((B, T), 30.0, jnp.float32)
+  val_full = val_full.at[0, 0].set(10.0).at[0, 8].set(20.0)
+  last_full = jnp.zeros_like(con)
+  term_full = 1 - con
+  ret_full = lambda_return(
+      last_full, term_full, rew, val_full, val_full, 1.0, 0.95)
+  r_last_full = float(ret_full[0, -1])
+  # Same reasoning: one real (con=0.997) transition into the terminal bootstrap.
+  print('full-resolution var-K final-step return (expect ~29.91 = 0.997*30):',
+        r_last_full)
+
+  # --- (c) Block-pooled var-K path, post both fixes (n_blocks=n_sw AND the
+  # empty-segment continuation identity). The real equivalence claim: decisions
+  # 0 and 1 (the two FULLY-REAL, non-degenerate decisions -- both fixed-K and
+  # block-pooled model these identically) must match fixed-K's own R_0/R_1
+  # exactly, since this T=17/k=8 fixture is exactly what fixed-K computes too.
+  extr, _, cont, _ = variable_block_director_tensors(rew, con, rew, sw, T)
+  val_blockpooled = jnp.array([[10.0, 20.0, 30.0] + [30.0] * (T - 3)], jnp.float32)
+  last_bp = jnp.zeros_like(cont)
+  term_bp = 1 - cont
+  ret_bp = lambda_return(last_bp, term_bp, extr, val_blockpooled, val_blockpooled, 1.0, 0.95)
+  print('block-pooled var-K ret[0:3] =', np.asarray(ret_bp[0, :3]))
+  r0_bp, r1_bp = float(ret_bp[0, 0]), float(ret_bp[0, 1])
+  r2_bp = float(ret_bp[0, 2])
+
+  assert abs(r2_fixedk - 30.0 * 0.9762503) < 1e-3, (
+      f'fixed-K last-decision return={r2_fixedk}, expected ~29.29 (a real, '
+      'expected decay over its own 8-step hold) -- sanity check on the test '
+      'fixture itself, not on any code under test.')
+  assert abs(r_last_full - 30.0 * 0.997) < 1e-3, (
+      f'full-resolution var-K final-step return={r_last_full}, expected ~29.91 '
+      '(a real, expected decay over one step) -- sanity check on the fixture.')
+  assert abs(r0_bp - float(ret_fixedk[0, 0])) < 1e-3, (
+      f'block-pooled R_0={r0_bp} != fixed-K R_0={float(ret_fixedk[0, 0])}: '
+      'the two credit-assignment paths disagree on a fully-real decision.')
+  assert abs(r1_bp - r2_fixedk) < 1e-3, (
+      f'block-pooled R_1={r1_bp} != fixed-K R_1={r2_fixedk}: '
+      'the two credit-assignment paths disagree on a fully-real decision.')
+  assert abs(r2_bp - 30.0) < 1e-4, (
+      f'block-pooled R_2 (the degenerate, zero-trailing-steps 3rd decision '
+      f'fixed-K never has to model) = {r2_bp}, expected exactly 30.0.')
+  print('CONFIRMED: block-pooled var-K (post-fix) matches fixed-K exactly on '
+        'every fully-real decision, and correctly bootstraps the one decision '
+        '(the degenerate trailing one) that fixed-K structurally never creates.')
