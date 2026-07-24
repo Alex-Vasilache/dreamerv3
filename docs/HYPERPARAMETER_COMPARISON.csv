@@ -155,11 +155,31 @@ e310,hopper,BIG,"❌ cancelled @55%, PRE-FIX (n_blocks bug), not superseded (mea
 e311,cheetah,BIG,"~ cancelled @55%, PRE-FIX (n_blocks bug), not superseded (mean-agg leg dropped)",26.4 (45.4),1.01,0,off,var τ8 (lagr),"mean, block-rew, no relabel, imag16",no,no
 e312,cartpole,BIG,pending (queued, not dispatched),- (-),1.00,"200+adapt(dual, target0.01)",off,fix 8,mean,no,no
 e313,acrobot,BIG,pending (queued, not dispatched),- (-),1.00,"200+adapt(dual, target0.01)",off,fix 8,mean,no,no
-e314,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
-e315,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
-e316,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
-e317,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
-e318,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
-e319,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks)",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
-e320,hopper,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks), dur-entropy ctrl OFF",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no
-e321,cheetah,BIG,"~ RUNNING @~0%, POST-FIX (n_blocks), dur-entropy ctrl OFF",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no
+e314,hopper,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY (n_blocks fix, missing cont-identity fix), superseded by e326",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e315,cheetah,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e327",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e316,hopper,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e328",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e317,cheetah,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e329",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e318,hopper,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e330",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e319,cheetah,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e331",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e320,hopper,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e332",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no
+e321,cheetah,BIG,"❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e333",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no
+e322,cartpole,BIG,descoped (pure Director ground truth not needed; see e334/e335),- (-),1.00,0,off,fix 8,mean,no,no
+e323,cheetah,BIG,descoped (pure Director ground truth not needed; see e334/e335),- (-),1.00,0,off,fix 8,mean,no,no
+e324,hopper,BIG,descoped (pure Director ground truth not needed; see e334/e335),- (-),1.00,0,off,fix 8,mean,no,no
+e325,acrobot,BIG,descoped (pure Director ground truth not needed; see e334/e335),- (-),1.00,0,off,fix 8,mean,no,no
+e326,hopper,BIG,"~ RUNNING @~0%, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e327,cheetah,BIG,"~ RUNNING @~0%, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",no,no
+e328,hopper,BIG,"~ RUNNING @~0%, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e329,cheetah,BIG,"~ RUNNING @~0%, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag32",no,no
+e330,hopper,BIG,"~ RUNNING @~0%, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e331,cheetah,BIG,"~ RUNNING @~0%, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, no relabel, imag16",no,no
+e332,hopper,BIG,"~ RUNNING @~0%, BOTH FIXES, dur-entropy ctrl ON (default target)",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no
+e333,cheetah,BIG,"~ RUNNING @~0%, BOTH FIXES, dur-entropy ctrl ON (default target)",- (-),1.00,0,off,"var, no prior (reg0)","sum, block-rew, relabel, imag16",no,no
+e334,hopper,BIG,"pending, BOTH FIXES, goal_duration_fixed=8 equivalence test",- (-),1.00,0,off,"fixed@8 (no controller)","mean, block-rew, imag16",no,no
+e335,cheetah,BIG,"pending, BOTH FIXES, goal_duration_fixed=8 equivalence test",- (-),1.00,0,off,"fixed@8 (no controller)","mean, block-rew, imag16",no,no
+e336,hopper,BIG,"pending, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"mean, block-rew, relabel, imag16",no,no
+e337,cheetah,BIG,"pending, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"mean, block-rew, relabel, imag16",no,no
+e338,hopper,BIG,"pending, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"mean, block-rew, no relabel, imag16",no,no
+e339,cheetah,BIG,"pending, BOTH FIXES",- (-),1.00,0,off,var τ8 (lagr),"mean, block-rew, no relabel, imag16",no,no
+e340,hopper,BIG,"pending, BOTH FIXES, worker sees remaining time",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",yes,no
+e341,cheetah,BIG,"pending, BOTH FIXES, worker sees remaining time",- (-),1.00,0,off,var τ8 (lagr),"sum, block-rew, relabel, imag16",yes,no

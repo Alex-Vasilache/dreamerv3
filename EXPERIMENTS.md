@@ -6,7 +6,7 @@ choosing how long each goal is held (variable durations). Companion working pape
 `paper/main.pdf` (self-contained method + results). Full narrative history of everything
 below is preserved verbatim in `EXPERIMENTS_ARCHIVE_20260713.md` (and git); this file is
 the restructured, maintained log. `HYPERPARAMETER_COMPARISON.csv` holds the full
-cross-cell hyperparameter comparison table (e46–e321), split out to keep this file
+cross-cell hyperparameter comparison table (e46–e341), split out to keep this file
 condensed (§2).
 
 **Structure of this file:**
@@ -76,7 +76,101 @@ condensed (§2).
 
 ---
 
-## 2. Current state (2026-07-24, later same day — root-caused and fixed the e304–e311
+## 2. Current state (2026-07-24, later still — a SECOND block-pooled var-K bug found
+and fixed while building a direct tensor-level equivalence test (not just a training
+curve) against fixed-K Director, per the project's own "100% certainty" bar. e314–e321
+CANCELLED a second time (they only had the first fix) and superseded by a 16-cell batch,
+e326–e341, all under both fixes. `run_v3_prior_vargoal_big_a100.sbatch` gained a second
+new knob, `DUR_FIXED` (wired to `--agent.goal_duration_fixed`, pre-existing in `agent.py`/
+`configs.yaml` but never exposed by this script before).
+
+**Bug 2: empty-segment continuation was `0.0` ("episode ended"), starving the last real
+decision's bootstrap in every block-pooled rollout.** `aggregate_mgr_cont_variable`
+(`agent.py:259`) pools continuation per real segment via `segment_min`; for a segment with
+zero real steps — either genuine padding far past the last real decision, or (the common
+case) the LAST real decision's own trailing hold when its switch happens to land on the
+rollout's final timestep — it filled that with `0.0`. A `0.0` continuation reads as
+`term=1` to `lambda_return`, which caps whatever real decision immediately precedes it to
+only the `(1-λ)` fraction of its bootstrap value, not the full λ-weighted blend. Fixed-K's
+own arrays never hit this: they're sized exactly to their real content (no padding at
+all), so `lambda_return`'s base case (`rets[-1]=boot[-1]`) lands on the true terminal value
+directly, at full weight — this bug is structurally impossible there. Confirmed this is
+block-pooled-var-K-specific (not present in fixed-K or in the full-resolution/non-pooled
+var-K path) via direct tensor comparison, not training curves.
+
+**Fix (2026-07-24, `agent.py`):** empty segments now get the correct empty-product
+identity, `1.0`, not `0.0` (`aggregate_mgr_cont_variable`, line ~281). Also removed the
+redundant `* block_mask` re-masking of the pooled continuation in
+`variable_block_director_tensors` (was undoing the identity fix) — safe because a segment
+id `>= n_sw` can never occur (`variable_segment_ids` is bounded by `cumsum(switch_mask)-1`),
+so `aggregate_mgr_cont_variable`'s own output is already correct at every position past
+the real content; `block_mask` is still needed (and applied) on the reward side.
+
+**Verification — genuine tensor-level equivalence, not just a training-curve match.**
+Two new tests in `embodied/tests/test_variable_goals.py` (10/10 pass): with a
+deterministic τ=8 switch mask on a T=17 rollout (3 decisions: t=0, 8, 16 — exactly what
+`goal_duration_fixed=8` produces at `imag_length=16`), block-pooled var-K's returns for
+the two fully-real decisions now match fixed-K's **exactly, to float precision**
+(`[28.1386, 29.2875]` both), and correctly bootstraps the third (degenerate, zero-trailing-
+step) decision to exactly its own value (`30.0`, was `0.0` pre-fix) — a decision fixed-K's
+own array construction structurally never even creates (its arrays end at 3 states → 2
+exposed returns, not 3; see conversation for the fuller "why 3 vs 2" explanation, not
+reproduced here). A training curve alone could never prove this with certainty (different
+code paths consume RNG and accumulate float rounding differently even under a fixed seed);
+this tensor-for-tensor check is the actual proof.
+
+**Ground-truth baselines changed scope.** e322–e325 (pure fixed-K `RECIPE=director`
+baselines, launched then re-launched earlier this session) were explicitly descoped —
+not needed; the real equivalence claim is proven at the tensor level above, and the
+BIG-scale check that matters is the `goal_duration_fixed=8` cells (e334/e335) below, which
+run the actual var-K/block-pooled code path pinned to behave like Director, not the
+separate never-touches-var-K Director implementation itself.
+
+**Current batch — 16 cells, all under both fixes, `gpu-a100` (8-GPU/128-CPU cap; 8 running,
+8 queued behind on CPU headroom):**
+
+| Exp | Job | Task | Reward agg | Relabel | Dur mode | Worker countdown | `imag_length` | Purpose |
+|---|---|---|---|---|---|---|---|---|
+| e326 | 4669107 | hopper hop | sum | ON | lagrangian τ8 | off | 16 | original 8-cell matrix (§ below), post-fix |
+| e327 | 4669108 | cheetah run | sum | ON | lagrangian τ8 | off | 16 | same |
+| e328 | 4669109 | hopper hop | sum | ON | lagrangian τ8 | off | 32 | same |
+| e329 | 4669110 | cheetah run | sum | ON | lagrangian τ8 | off | 32 | same |
+| e330 | 4669111 | hopper hop | sum | OFF | lagrangian τ8 | off | 16 | same |
+| e331 | 4669112 | cheetah run | sum | OFF | lagrangian τ8 | off | 16 | same |
+| e332 | 4669130 | hopper hop | sum | ON | none (`DUR_REG=0`), dur-entropy **on** (default target) | off | 16 | same |
+| e333 | 4669131 | cheetah run | sum | ON | none (`DUR_REG=0`), dur-entropy **on** (default target) | off | 16 | same |
+| e334 | 4669122 | hopper hop | mean, `goal_duration_fixed=8` | n/a | fixed@8 (deterministic, no controller) | off | 16 | BIG-scale equivalence check vs. Director |
+| e335 | 4669123 | cheetah run | mean, `goal_duration_fixed=8` | n/a | fixed@8 | off | 16 | same |
+| e336 | 4669124 | hopper hop | mean | ON | lagrangian τ8 | off | 16 | `sum` vs `mean` isolation |
+| e337 | 4669125 | cheetah run | mean | ON | lagrangian τ8 | off | 16 | same |
+| e338 | 4669126 | hopper hop | mean | OFF | lagrangian τ8 | off | 16 | same |
+| e339 | 4669127 | cheetah run | mean | OFF | lagrangian τ8 | off | 16 | same |
+| e340 | 4669128 | hopper hop | sum | ON | lagrangian τ8 | **on** | 16 | first block-rew × `worker_timed_goals` combo |
+| e341 | 4669129 | cheetah run | sum | ON | lagrangian τ8 | **on** | 16 | same |
+
+All 16: `RECIPE=plain_vark`, `VARIABLE_GOAL_BLOCK_REW=True`, BIG scale, `SEED=0`,
+`RUN_STEPS=4000000`. e332/e333 relaunched once more mid-batch (jobs 4669113/4669114 →
+4669130/4669131) to flip `DUR_ACTENT_TARGET` back to its default (`-1.0`, entropy
+regularizer **on**) instead of the `0.0`-disabled ablation originally specified — isolates
+"no duration-target prior, but the entropy controller still fighting collapse" as its own
+distinct cell, rather than "no regularization of any kind." No data yet at this pull (all
+launched within the hour); e326–e333
+had already accrued ~10–15 min under the FIRST fix only before being cancelled and
+relaunched fresh under both, so none of their prior progress carried over.
+
+**New hypotheses this batch adds on top of (i)–(iv) above:** (v) e334/e335 — does
+block-pooled var-K pinned to a constant duration=8 actually train indistinguishably from
+plain Director (e124/e123-class scores), confirming the tensor-level equivalence holds
+end-to-end, not just for the pooling math in isolation? (vi) e326/e330 vs. e336/e338
+(sum vs. mean, both relabel ON/OFF) — does the duration-collapse pressure identified in
+the earlier e305 investigation (duration Lagrangian + entropy controller both railing)
+appear under `mean` too, or is it specific to `sum`'s pro-length incentive? (vii) e340/e341
+— does giving the worker its remaining-hold-time as an input change anything now that the
+credit-assignment path itself is correct (previously tested only under the OLD, buggy
+credit assignment via e185/F13, which found no effect — worth re-checking since the
+worker's own value target depends on the same bootstrap machinery just fixed).
+
+### Prior state (2026-07-24, root-caused and fixed the e304–e311
 cheetah/duration anomalies to a real off-by-one bug in the block-pooled manager return;
 e304–e311 CANCELLED and superseded by e314–e321 under the fix.) Investigating e305's
 "low expl return" and railed `mgr_ent_loss`/`mgr_actent_duration_scale_mean` (both
@@ -179,7 +273,8 @@ Pulled directly from each run's live `scores.jsonl` in `/work` (not yet archived
 of e304–e311 are final; the cheetah below-baseline reading and the relabel/agg orderings
 above are provisional until 4M. Full per-cell hyperparameters (struct weight, mask mode,
 duration mode, reward agg, countdown, ratchet) for these and every prior experiment are
-in `HYPERPARAMETER_COMPARISON.csv`, updated through e321 in this same pass.
+in `HYPERPARAMETER_COMPARISON.csv`, updated through e341 in this same pass (e322–e325
+marked descoped; e314–e321 marked cancelled/superseded a second time).
 
 **e296–e303 cancelled (2026-07-23), e304–e311 launched — block-pooled var-K credit,
 with two implementation fixes.** Investigating the block-pooled manager credit path
