@@ -47,6 +47,21 @@ def init(
 
   fn = jax.jit(fn, static_argnums=static_argnums)
 
+  if jax.config.jax_disable_jit:
+    # With jit disabled, jax.jit is a pass-through that re-executes the
+    # underlying ninjax module tree from scratch on every call. That breaks
+    # the separate eval_shape pre-pass below: ninjax's Tree module caches its
+    # layout as a persistent Python attribute across calls, so the shape-only
+    # eval_shape() call and the real fn() call end up out of sync and ninjax
+    # raises a key-mismatch assertion. Derive sharding from a single real
+    # call instead of a separate eval_shape trace.
+    params = fn(*dummy_inputs)
+    params_sharding, grouping = resolve_rules(
+        params, param_partition_rules, mesh)
+    if print_partition:
+      print_grouping(grouping)
+    return params, params_sharding
+
   params_shapes = fn.eval_shape(*dummy_inputs)
   params_sharding, grouping = resolve_rules(
       params_shapes, param_partition_rules, mesh)

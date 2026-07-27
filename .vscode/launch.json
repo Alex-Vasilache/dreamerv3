@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "DreamerV3: debug (crafter, CPU)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/dreamerv3/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "--logdir", "/tmp/dreamer_debug/{timestamp}",
+        "--configs", "crafter", "debug",
+        "--jax.platform", "cpu"
+      ]
+    }
+  ]
+}

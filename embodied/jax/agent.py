@@ -338,7 +338,10 @@ class Agent(embodied.Agent):
 
   @elements.timer.section('jaxagent_save')
   def save(self):
-    with self.train_lock:
+    with self.train_lock, jax.disable_jit(False):
+      # gather_fn/shard_fn are AOT-lowered, which JAX refuses to call while
+      # jit is globally disabled (e.g. --jax.jit False for debugging), so
+      # force it back on locally for this checkpoint I/O.
       params = {}
       for keys, gather_fn, _ in self._ckpt_groups:
         group = {k: self.params[k] for k in keys}
@@ -360,6 +363,10 @@ class Agent(embodied.Agent):
     with contextlib.ExitStack() as stack:
       stack.enter_context(self.train_lock)
       stack.enter_context(self.policy_lock)
+      # gather_fn/shard_fn (and ckpt_fn below) are AOT-lowered, which JAX
+      # refuses to call while jit is globally disabled (e.g. --jax.jit False
+      # for debugging), so force it back on locally for this checkpoint I/O.
+      stack.enter_context(jax.disable_jit(False))
 
       with self.n_updates.lock:
         self.n_updates.value = int(data['counters']['updates'])
