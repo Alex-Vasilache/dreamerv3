@@ -165,6 +165,12 @@ def to_local(x):
 
 def _to_local(x):
   shape, sharding = x.shape, x.sharding
+  if not isinstance(sharding, jax.sharding.NamedSharding):
+    # With jit disabled, eagerly-computed arrays don't carry mesh-based
+    # NamedSharding info (e.g. plain SingleDeviceSharding instead). There is
+    # no global-vs-local distinction to make without a mesh, so this is a
+    # no-op.
+    return x
   spec, mesh = sharding.spec, sharding.mesh
   fullspec = [*spec, *([None] * (len(shape) - len(spec)))]
   assert len(shape) == len(fullspec)
@@ -195,6 +201,12 @@ def to_global(x, global_sharding):
 
 def _to_global(x, global_sharding):
   shape, sharding = x.shape, x.sharding
+  if not isinstance(sharding, jax.sharding.NamedSharding):
+    # With jit disabled, eagerly-computed arrays don't carry mesh-based
+    # NamedSharding info (e.g. plain SingleDeviceSharding instead). There is
+    # no local shard structure to reason about without a mesh, so just place
+    # the array directly onto the requested sharding.
+    return jax.device_put(x, global_sharding)
   spec = sharding.spec
   fullspec = [*spec, *([None] * (len(shape) - len(spec)))]
   assert len(shape) == len(fullspec)
@@ -279,9 +291,13 @@ def ckpt_fn(params, compile=True):
   keys = params.keys()
   original = {k: params[k].sharding for k in keys}
   inspec = {k: struct(params[k], original[k]) for k in keys}
-  gather_fn = jax.jit(lambda x: x, (original,), mirrored).lower(inspec)
-  inspec = {k: struct(params[k], mirrored) for k in keys}
-  shard_fn = jax.jit(lambda x: x, (mirrored,), original).lower(inspec)
+  with jax.disable_jit(False):
+    # AOT lowering (.lower()) is unsupported when jit is globally disabled
+    # (e.g. --jax.jit False for debugging), so force it back on locally;
+    # checkpoint I/O needs a real compiled function either way.
+    gather_fn = jax.jit(lambda x: x, (original,), mirrored).lower(inspec)
+    inspec = {k: struct(params[k], mirrored) for k in keys}
+    shard_fn = jax.jit(lambda x: x, (mirrored,), original).lower(inspec)
   if compile:
     gather_fn = gather_fn.compile()
     shard_fn = shard_fn.compile()
