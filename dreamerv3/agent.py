@@ -383,6 +383,46 @@ def downsample_at_switch_mask(feat, switch_mask):
       feat)
 
 
+def patch_trailing_replay_state(x_down, x_full, switch_mask):
+  """Overwrite the first padding slot (index ``n_sw``, right after the last
+  real switch) of a ``downsample_at_switch_mask`` result with the window's
+  TRUE final state/value, mirroring fixed-K's ``downsample_manager_states``
+  convention of always appending the window's genuine final state as an
+  extra bootstrap anchor even when it isn't a real decision boundary.
+
+  Without this, that slot holds a stale, forward-filled repeat of the last
+  real switch's own state instead -- see EXPERIMENTS.md/paper 'replay
+  downsample trailing-state asymmetry' (2026-07-27) and
+  ``test_downsample_at_switch_mask_omits_fixed_k_trailing_state_on_remainder``.
+  Training batch windows (length ``batch_length``) essentially never end
+  exactly on a decision boundary for a fixed-length hold (only 1 of ``hold``
+  possible phases aligns), so this fires on most replay-side manager value
+  updates. No-op (returns ``x_down`` unchanged at that slot) whenever the
+  last switch already lands on the window's final timestep.
+
+  ``x_down``/``x_full`` may be a single array or a matching pytree (e.g. the
+  ``feat`` dict); ``jax.tree.map`` treats a plain array as its own trivial
+  leaf, so this works uniformly for both.
+  """
+  sw = f32(switch_mask)
+  B, T = sw.shape
+  n_sw = jnp.sum(sw, axis=-1).astype(i32)              # (B,) real decisions/row
+  idx = jnp.clip(n_sw, 0, T - 1)                        # first padding slot
+  needs_patch = n_sw < T                                # a trailing remainder exists
+
+  def patch(down, full):
+    true_final = full[:, -1]
+    old = jnp.take_along_axis(
+        down, idx.reshape((B,) + (1,) * (down.ndim - 1)), axis=1)[:, 0]
+    # needs_patch/idx already carry the batch dim -- only pad with as many
+    # extra singleton dims as true_final/old have BEYOND that batch dim.
+    m = needs_patch.reshape((B,) + (1,) * (true_final.ndim - 1))
+    new_val = jnp.where(m, true_final, old)
+    return down.at[jnp.arange(B), idx].set(new_val)
+
+  return jax.tree.map(patch, x_down, x_full)
+
+
 def relabel_truncated_last_duration(mgr_skills_eff, switch_mask, dur_min, dur_max):
   """Hindsight-relabel the LAST decision's duration class when its hold was cut
   short by the imagination horizon rather than by a real switch, so REINFORCE
@@ -3121,6 +3161,7 @@ class Agent(embodied.jax.Agent):
             self.mgr_dur_reg_adapter if self.goal_duration_adapt else None),
         mgr_dur_lagrange_adapter=(
             self.mgr_dur_lagrange_adapter if self.goal_duration_lagrange else None),
+        duration_fixed=self.goal_duration_fixed > 0,
         switch_mask=mgr_switch,
         dur_reg_weight=float(getattr(self.config, 'goal_duration_reg', 0.0)),
         dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
@@ -3227,6 +3268,12 @@ class Agent(embodied.jax.Agent):
           repl_skills_full.pop('countdown', None)
           repl_switch = self._switch_mask_from_skills(repl_skills_full)
           feat_down = downsample_at_switch_mask(feat, repl_switch)
+          # Patch the stale forward-filled trailing slot to the window's TRUE
+          # final state (fixed 2026-07-27 -- see patch_trailing_replay_state's
+          # docstring): without this, the manager's replay-side value target
+          # for the last real decision in almost every batch window bootstraps
+          # off a repeated old state instead of the actual final replayed one.
+          feat_down = patch_trailing_replay_state(feat_down, feat, repl_switch)
           inp_down = self.feat2tensor(feat_down)
           n_mgr = feat_down['deter'].shape[1]
           repl_mgr_extr_rew, repl_mgr_expl_rew, repl_mgr_cont, valid_mgr = (
@@ -3234,7 +3281,9 @@ class Agent(embodied.jax.Agent):
                   repl_rew_full, repl_con_full, repl_expl_full,
                   repl_switch, n_mgr, agg_mode=self.mgr_reward_agg))
           last_down = downsample_at_switch_mask(
-              {'last': last.astype(f32)}, repl_switch)['last'].astype(last.dtype)
+              {'last': last.astype(f32)}, repl_switch)['last']
+          last_down = patch_trailing_replay_state(
+              last_down, last.astype(f32), repl_switch).astype(last.dtype)
           term_down = (1.0 - repl_mgr_cont).astype(term.dtype)
         else:
           feat_down = feat
@@ -3637,6 +3686,28 @@ class Agent(embodied.jax.Agent):
     return optax.chain(*chain)
 
 
+def manager_reinforce_policy(manager_policy, duration_fixed):
+  """Heads that participate in the manager's REINFORCE log-prob sum.
+
+  Excludes 'duration' when ``goal_duration_fixed`` makes its sample causally
+  inert (it cannot move switch timing, see ``_duration_steps``) -- otherwise
+  the duration head is pushed every decision by an advantage caused entirely
+  by the skill/code choice, never by duration itself: a nuisance training
+  signal true fixed-K Director never carries (it has no duration head at
+  all). Confirmed live via a standalone gradient test before this fix
+  (``test_duration_head_reinforce_is_live_under_fixed_duration``, 2026-07-27).
+  Does NOT affect ``mgr_ents`` (still computed over every head by the caller,
+  used only for logging/entropy-regularizer bookkeeping, never REINFORCE'd
+  directly since the adaptive-entropy branch is always taken in practice) or
+  the soft duration-prior branches (already separately gated on their own
+  weight/adapter args, which callers leave at their off defaults whenever
+  ``goal_duration_fixed`` is set).
+  """
+  if not duration_fixed:
+    return manager_policy
+  return {k: v for k, v in manager_policy.items() if k != 'duration'}
+
+
 def align_skill_events(skills, policy):
   """Match skill samples to policy head ``pred()`` shape for ``logp`` / ``entropy``."""
   events = {}
@@ -3885,6 +3956,7 @@ def imag_loss_mgr(
     mgr_dur_actent_adapter=None,
     mgr_dur_reg_adapter=None,
     mgr_dur_lagrange_adapter=None,
+    duration_fixed=False,
     switch_mask=None,
     dur_reg_weight=0.0,
     dur_reg_target=0.0,
@@ -3962,12 +4034,13 @@ def imag_loss_mgr(
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 
   skill_events = align_skill_events(skills, manager_policy)
+  reinforce_policy = manager_reinforce_policy(manager_policy, duration_fixed)
   mask_logpi = None
   mask_adv_normed = None
   if mask_perblock_credit and 'mask' in manager_policy:
     mgr_logpi = sum([
         head_logp_time(v, skill_events[k])
-        for k, v in manager_policy.items() if k != 'mask'])
+        for k, v in reinforce_policy.items() if k != 'mask'])
     mask_adv_blk = mask_perblock_advantages(
         feat_inp, goal_code, pre_goal_code, emit_skill, manager_policy['mask'],
         mgr_goal_q_module, mgr_goal_q_valnorm, rscale_extr, perblock_edit_cost)
@@ -3978,7 +4051,7 @@ def imag_loss_mgr(
     metrics['goal/mask_perblock_adv_spread'] = jnp.abs(mask_adv_blk).mean()
   else:
     mgr_logpi = sum([
-        head_logp_time(v, skill_events[k]) for k, v in manager_policy.items()])
+        head_logp_time(v, skill_events[k]) for k, v in reinforce_policy.items()])
   mgr_ents = {k: head_entropy_time(v) for k, v in manager_policy.items()}
 
   # Director-style adaptive normalized entropy regularizer (per-categorical

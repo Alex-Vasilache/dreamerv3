@@ -76,7 +76,204 @@ condensed (§2).
 
 ---
 
-## 2. Current state (2026-07-24, later still — a SECOND block-pooled var-K bug found
+## 2. Current state (2026-07-27 — e326–e341 16-cell batch finished @4M, plus
+e294/e295/e242/e246 finals and e312/e313 live pull. Headline: the tensor-level
+equivalence proof (below) does NOT translate into trained equivalence — e334/e335
+(block-pooled var-K pinned to `goal_duration_fixed=8`) trains far below true Director
+even under both bugfixes. Full raw pull and hypothesis-by-hypothesis verdicts follow;
+older narrative for how the two bugs were found/fixed is preserved below under
+"Prior state".)
+
+**e342/e343 launched (2026-07-27) — e334/e335 rerun under TWO NEW agent.py fixes,
+full 4M-step budget.** A deeper pipeline audit of the e334/e335 gap (tensor/gradient-
+level tests, not training curves — `embodied/tests/test_variable_goals.py`, 23/23
+passing) found and fixed two real issues, neither previously known:
+1. **Duration-head REINFORCE noise.** `imag_loss_mgr` summed EVERY manager head's
+   log-prob into the REINFORCE term unconditionally, including `duration` even when
+   `goal_duration_fixed>0` makes its sample provably unable to affect switch timing
+   (`_duration_steps` already overrides it). The duration head was still being pushed
+   every decision by an advantage caused entirely by the skill/code choice — a
+   nuisance signal true fixed-K Director never carries (no duration head at all).
+   Confirmed live via a gradient test (nonzero gradient, 0.0728, into the duration
+   head's own params, reaching the shared trunk too). **Fix:** new
+   `manager_reinforce_policy(manager_policy, duration_fixed)` (agent.py) excludes
+   `'duration'` from the REINFORCE sum whenever `goal_duration_fixed>0`; wired via a
+   new `duration_fixed` param on `imag_loss_mgr`. Gradient into the duration head is
+   now exactly 0.0; skill-head/trunk gradients unaffected (bit-identical to a
+   skill-only computation).
+2. **Replay-side trailing-state asymmetry (the stronger candidate).** Fixed-K's
+   replay downsample (`downsample_manager_states`) always appends the training
+   window's TRUE final state as an extra bootstrap anchor, even when it isn't a real
+   decision boundary. Block-pooled var-K's replay downsample
+   (`downsample_at_switch_mask`) had no such provision — it only ever forward-fills
+   the LAST REAL SWITCH's stale state into that slot instead. Since `batch_length=64`
+   essentially never divides evenly by an 8-step hold (only 1 of 8 possible phases
+   aligns — see the modular-arithmetic derivation in conversation), this fires on
+   ~7/8 of replay-side manager value updates, every training step, unlike the
+   duration-head issue which only touches imagination. **Fix:** new
+   `patch_trailing_replay_state(x_down, x_full, switch_mask)` (agent.py) overwrites
+   the stale slot with the window's true final value; applied to both `feat_down`
+   (the value-prediction input) and `last_down` (the episode-boundary flag) at the
+   real replay call site. Verified correct on the original bug fixture, a no-op on
+   the exact-multiple (imagination) case, per-row-correct on a heterogeneous batch,
+   correctly propagates a genuine terminal flag, and composes cleanly with the
+   existing (2026-07-24) truncated-duration relabeling. Explicitly NOT fixed: the
+   trailing partial segment's own real reward is still not pooled as its own
+   credited block (a separate, larger design question, left alone deliberately).
+
+Both fixes are tensor/gradient-level verified only — neither has yet been shown to
+move a real training score. **e342 (hopper) / e343 (cheetah)** relaunch e334/e335's
+exact config (`RECIPE=plain_vark, DUR_MODE=fixed, DUR_FIXED=8, DUR_TARGET=8.0,
+DUR_ACTENT_TARGET=0.0, MGR_REWARD_AGG=mean, VARIABLE_GOAL_BLOCK_REW=True, SEED=0`,
+BIG scale, `gpu-a100`, `RUN_STEPS=4000000`) under both fixes, to test whether hopper
+(target: e124's 279.4) and cheetah (target: e191's 290.0) close the gap that e334/e335
+showed (0.06 and 25.2 respectively). Job ids: e342=4671225, e343=4671226, both
+RUNNING as of launch. The original e334/e335 runs' own trajectories already settled
+by 750k–1M steps (hopper flat-dead from 250k on; cheetah oscillating in a ~15–26 band
+from 750k on, barely different from its 4M-step final value of 25.2) — so an early
+interim pull well before 4M should already be informative, even though the full
+budget was requested.
+
+**e344–e349 launched (2026-07-27) — reruns of six of the e326–e341 matrix cells under
+the replay-trailing-state fix, full 4M budget.** All six have `goal_duration_fixed=0`
+(duration is learned/variable, not pinned), so **the duration-head REINFORCE fix is a
+no-op for every one of these six** — only `patch_trailing_replay_state` can change
+their behavior, since all six use `variable_goal_block_rew=True`. Exact 1:1 config
+reruns (verified against each original's `job.env`, differing only in job id/`RUN_DIR`):
+
+| New | Job | Old | Old score (trail300, peak) | Config |
+|---|---|---|---|---|
+| e344 | 4671258 | e326 (hopper) | 0.08 (9.2), dead floor | sum, relabel ON, lagr τ8, imag16 |
+| e345 | 4671259 | e327 (cheetah) | 50.8 (196.0), collapsed late (trail50 7.3) | same |
+| e346 | 4671260 | e330 (hopper) | 0.27 (11.9), dead floor | sum, relabel OFF, lagr τ8, imag16 |
+| e347 | 4671261 | e331 (cheetah) | **124.7 (216.6), best cheetah cell in the matrix** | same |
+| e348 | 4671262 | e332 (hopper) | 0.23 (13.3), dead floor | no dur-reg (reg0), dur-entropy default target |
+| e349 | 4671263 | e333 (cheetah) | 6.9 (113.4), worst cheetah cell (duration collapsed to 3.55) | same |
+
+All RUNNING on `gpu-a100` as of launch. Hypotheses: (i) does the trailing-state fix
+rescue hopper in any of the three configs (unlikely, given hopper's project-wide
+pattern of failing under every mechanism tried except the unrestricted single-head
+design, but worth checking since credit-assignment fixes are exactly the category
+that previously mattered for hopper, e.g. Finding 6/F19); (ii) does e345 (cheetah,
+relabel ON) stop collapsing late in training now that its replay-side value target is
+correct — this was the single most-visibly-broken trajectory in the original matrix;
+(iii) does e347's already-best cheetah cell hold or improve; (iv) does e349's
+duration-collapse-driven weak cheetah score change at all, given the fix touches the
+replay value target, not the (still-unfixed) mechanism that let duration collapse to
+3.55 in the first place.
+
+**e326–e341 (16 cells, `gpu-a100`, all COMPLETED exit 0, full 4M-step budget) — final
+numbers, from each run's `scores.jsonl`/`metrics.jsonl` in `/work` (not yet archived).**
+Score = trailing-300-episode mean (trailing-50 in parens where it diverges sharply from
+peak, noted in the text); peak = single highest raw episode score reached at any point.
+`blk/step = L / mgr_duration_mean` (`L=8`, mask off in every cell here so every switch
+edits the full code) computed from each run's final `goal/mgr_duration_mean`.
+
+| Exp | Job | Task | Config vs. e326 baseline | Score (trail300, peak) | Final `mgr_duration_mean` | blk/step | Verdict |
+|---|---|---|---|---|---|---|---|
+| e326 | 4669107 | hopper hop | baseline: sum, relabel ON, lagr τ8, imag16 | 0.08 (9.2) | 8.06 | 0.99 | Dead floor — hopper unrescued (again) |
+| e327 | 4669108 | cheetah run | same | 50.8 (196.0); trail50 only 7.3 | 8.03 | 1.00 | Alive but collapses late in training |
+| e328 | 4669109 | hopper hop | imag_length=32 | 0.25 (14.8) | 7.90 | 1.01 | Dead floor, longer horizon no rescue |
+| e329 | 4669110 | cheetah run | imag_length=32 | 46.1 (123.4), stable | 7.91 | 1.01 | Alive, stable — no late collapse (unlike e327) |
+| e330 | 4669111 | hopper hop | relabel OFF | 0.27 (11.9) | 8.08 | 0.99 | Dead floor, relabel-off no rescue |
+| e331 | 4669112 | cheetah run | relabel OFF | **124.7 (216.6)**, stable/rising | 8.07 | 0.99 | **Best cheetah cell in the matrix** |
+| e332 | 4669130 | hopper hop | no dur-reg (reg0), dur-entropy ctrl on | 0.23 (13.3) | 5.04 | 1.59 | Dead floor; duration collapses below τ8 |
+| e333 | 4669131 | cheetah run | no dur-reg, dur-entropy ctrl on | 6.9 (113.4) | 3.55 | 2.25 | **Worst cheetah cell** — duration collapse tanks score |
+| e334 | 4669122 | hopper hop | `goal_duration_fixed=8`, mean agg (equivalence check) | 0.06 (13.7) | 8.00 (exact) | 1.00 | **EQUIVALENCE CHECK FAILS** — still dead vs. e242's 90.8 |
+| e335 | 4669123 | cheetah run | `goal_duration_fixed=8`, mean agg (equivalence check) | 25.2 (58.7) | 8.00 (exact) | 1.00 | **EQUIVALENCE CHECK FAILS** — 25 vs. e246's 352.4 (7×) |
+| e336 | 4669124 | hopper hop | mean agg, relabel ON | 0.18 (18.9) | 7.95 | 1.01 | Dead floor, mean-agg no rescue |
+| e337 | 4669125 | cheetah run | mean agg, relabel ON | 60.2 (153.8), still climbing | 7.93 | 1.01 | Alive, stable |
+| e338 | 4669126 | hopper hop | mean agg, relabel OFF | 0.16 (14.2) | 7.97 | 1.00 | Dead floor |
+| e339 | 4669127 | cheetah run | mean agg, relabel OFF | 14.3 (49.2), still climbing | 7.92 | 1.01 | Alive but weak |
+| e340 | 4669128 | hopper hop | worker countdown ON | 1.04 (17.7) | 8.03 | 1.00 | Nominally highest hopper score, still ~dead |
+| e341 | 4669129 | cheetah run | worker countdown ON | 57.4 (164.1), decayed from early (600k) peak | 8.04 | 1.00 | Alive, countdown ~no effect vs. e326/e327 |
+
+**Hypothesis verdicts (vs. the (v)–(vii) stated at launch, §2 prior-state below):**
+- **(v) e334/e335, block-pooled var-K pinned to `goal_duration_fixed=8` trains
+  indistinguishably from true Director — REFUTED.** Hopper stays at the dead floor
+  (0.06 vs. e242's 90.8) and cheetah reaches only 25.2 vs. e246's 352.4 (≈7× below) —
+  even below the non-block-pooled `plain_vark` τ8 Lagrangian comparison cell (e303,
+  194.5) that shares every other setting. The tensor-level proof that the pooled-return
+  *arithmetic* matches fixed-K exactly (prior-state section below) does not imply the
+  *trained* model matches — some further discrepancy in the block-pooled λ-return
+  construction, not caught by the unit test, remains. This is the batch's central
+  negative result and the next debugging priority before block-pooled var-K can be
+  trusted for anything.
+- **(vi) sum vs. mean reward aggregation, both relabel ON/OFF — duration-collapse
+  pressure is NOT specific to `sum`, and in fact doesn't appear at all once both bugs
+  are fixed.** e326/e330 (sum) and e336/e338 (mean) all track τ=8 cleanly
+  (`mgr_duration_mean` 7.90–8.08 across all four) — the runaway/collapse behavior seen
+  in the pre-fix e304–e311 pull was an artifact of the two credit-assignment bugs, not
+  of the aggregation choice. The one condition that DOES collapse duration is removing
+  the prior anchor entirely (e332/e333, see below) — orthogonal to sum-vs-mean.
+- **(vii) worker countdown (`worker_timed_goals`) re-tested under the fixed credit path
+  — still no effect.** e340/e341 vs. e326/e327 (their only-difference twins): hopper
+  1.04 vs. 0.08 (both at the dead floor, not a real rescue) and cheetah 57.4 vs. 50.8
+  (within noise of each other, though e341 decays less catastrophically than e327's
+  crash to trail50 7.3). Confirms the earlier (pre-fix, F13/e185) null result still
+  holds now that the credit-assignment bugs are fixed.
+- **New finding — removing the duration-prior anchor collapses duration SHORTER, not
+  longer, and costs cheetah most of its score.** e332/e333 (`DUR_REG=0`, entropy
+  controller only, no Lagrangian target) let `mgr_duration_mean` fall to 5.04 (hopper)
+  / 3.55 (cheetah) — well below τ=8, the opposite direction the `sum`-aggregation
+  long-hold incentive would predict. Cheetah craters to 6.9 (trail50 4.35), the weakest
+  cheetah cell in the whole matrix, roughly 4–9× below every anchored cheetah cell
+  (46–125). Without an explicit target, the manager does not drift toward exploiting
+  `sum`'s pro-length reward incentive — if anything it prefers shorter, more frequent
+  goal changes, at real cost to task performance.
+- **New finding — truncated-hold relabeling REVERSES direction under the fix, and its
+  effect is now a stability story, not a bias-correction story.** The pre-fix, live
+  pull tentatively read relabel-ON as helping cheetah (e305 > e309). Under the fixed
+  code the opposite holds cleanly: relabel-OFF (e331, 124.7, stable/rising, no late
+  collapse) is the single best cheetah cell in the entire 16-cell matrix, while its
+  relabel-ON twin (e327) collapses late in training (trail300 50.8 but trail50 only
+  7.3 — a real crash, not noise). Tentatively implicates the relabeling correction
+  itself as a source of late-training instability in this credit path, not the
+  truncation bias it was designed to fix.
+- **New finding — `imag_length=32` avoids the late cheetah collapse seen at 16, but
+  does not rescue hopper.** e328/e329 (imag32) vs. e326/e327 (imag16): hopper stays
+  dead either way (0.25 vs. 0.08), but cheetah is stable/no-collapse at imag32 (46.1,
+  trail50 47.4 ≈ trail300) vs. imag16's late crash (50.8 trail300, trail50 7.3) —
+  suggests the imag16 collapse is a horizon-length artifact of this specific credit
+  path, worth using imag32 as the default for any future block-pooled var-K cell on
+  cheetah-like dense tasks.
+
+**e242/e246 (struct-only ablation, resumed to full 4M) — final.** e242 (hopper, BIG,
+`RECIPE=director`, struct 200+adapt target 0.01, no reuse term) finishes at trailing-300
+**90.8** (peak 219.9 raw episode, reached late at 2.34M then decayed) — well below the
+e124 pure-Director baseline (≈300) and, notably, DOWN from the 115.1 interim read at its
+original 1M-step cutoff: more budget did not close the gap, it reopened it. e246
+(cheetah, same ablation) finishes at **352.4** (peak 420.9) — inside/above the e123-class
+250–435 band, holding parity with Director. Struct-only is safe for cheetah but does not
+rescue hopper even given 4× the original training budget — refines "struct is a safe,
+no-cost stabilizer" (F18) to "safe and neutral for cheetah; does not by itself rescue
+hopper," consistent with hopper's project-wide pattern of failing under every mechanism
+except the unrestricted single-head design (Finding 6).
+
+**e294/e295 (Family-C recipe on cartpole/acrobot) — final; e312/e313 (struct-only
+ablation of the same) — live pull.** e294 (cartpole) finishes at **639.5** (peak 754.4),
+just inside cartpole's ≥650 Director-baseline band — "costs nothing" holds, but only
+marginally (down from the 754.4 peak, and below e312's live read, next). e295 (acrobot)
+fully decays from its 347.6 interim peak to **19.2** — a clean fourth confirmation of
+F12's acrobot-specific failure, not a rescue. e312 (cartpole, struct-only, reuse term
+OFF), read at 66% of budget, is **already ahead of e294's finished score** (695.1 vs.
+639.5) — a concrete, if not yet final, signal that the forced-reuse term costs cartpole
+a small amount of score rather than being free (neither cell is anywhere near cartpole's
+dead floor, so this is about the *last mile* of score, not survival). e313 (acrobot,
+struct-only), read at 58% of budget, decays earlier and harder than e295 (trail300 4.6
+vs. e295's 19.2, despite less training) — struct correlation alone does not rescue
+acrobot either, ruling out the reuse term specifically as acrobot's problem.
+
+**e296–e303 (plain var-K Lagrangian isolation, τ∈{4,8}) — final at cancellation
+(58–75% of budget, cancelled once the pattern was unambiguous).** hopper dead both τ
+(0.09/1.21); acrobot decaying from an early peak both τ (2.8/22.3), never recovering;
+cartpole and cheetah alive both τ with **τ8 clearly beating τ4 on both tasks**
+(cartpole 850.0 vs. 616.2; cheetah 194.5 vs. 107.6, ≈1.4× on both) — exactly replicates
+F12's prediction (switch-timing variability alone is sufficient to kill hopper/acrobot,
+independent of masking/struct/reuse) and gives the cleanest τ4-vs-τ8 read in the project:
+longer, precisely-tracked commitments help dense tasks by a wide, consistent margin.
+
+### Prior state (2026-07-24, later still — a SECOND block-pooled var-K bug found
 and fixed while building a direct tensor-level equivalence test (not just a training
 curve) against fixed-K Director, per the project's own "100% certainty" bar. e314–e321
 CANCELLED a second time (they only had the first fix) and superseded by a 16-cell batch,
@@ -153,10 +350,10 @@ All 16: `RECIPE=plain_vark`, `VARIABLE_GOAL_BLOCK_REW=True`, BIG scale, `SEED=0`
 4669130/4669131) to flip `DUR_ACTENT_TARGET` back to its default (`-1.0`, entropy
 regularizer **on**) instead of the `0.0`-disabled ablation originally specified — isolates
 "no duration-target prior, but the entropy controller still fighting collapse" as its own
-distinct cell, rather than "no regularization of any kind." No data yet at this pull (all
-launched within the hour); e326–e333
-had already accrued ~10–15 min under the FIRST fix only before being cancelled and
-relaunched fresh under both, so none of their prior progress carried over.
+distinct cell, rather than "no regularization of any kind." **[Superseded — all 16 cells
+finished @4M on 2026-07-27; final numbers and hypothesis verdicts are at the top of §2.]**
+e326–e333 had already accrued ~10–15 min under the FIRST fix only before being cancelled
+and relaunched fresh under both, so none of their prior progress carried over.
 
 **New hypotheses this batch adds on top of (i)–(iv) above:** (v) e334/e335 — does
 block-pooled var-K pinned to a constant duration=8 actually train indistinguishably from

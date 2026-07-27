@@ -1625,10 +1625,130 @@ now the config default (\texttt{goal\_soft\_reuse\_adapt} $+$
 Two ports of the e286/e290 recipe to previously-untested tasks (cartpole,
 acrobot, both BIG) and an isolation matrix for the plain variable-duration
 Lagrangian alone (no masking/struct/reuse, $\tau\in\{4,8\}$, all four tasks)
-are running as of this writing (\texttt{EXPERIMENTS.md} \S2); early acrobot
-numbers under the e286/e290 recipe are declining from an early peak rather
-than stabilizing, tentatively consistent with acrobot's own distinct
-failure mode (Finding 12) rather than a third rescue, but too early
-($<30\%$ of budget) to call.
+were running as of the prior writing; both have since completed and are
+reported below, alongside a substantial new debugging thread on the
+block-pooled variable-duration credit path.
+
+\paragraph{F20 follow-through (2026-07-27, final): the recipe transfers to
+cartpole at no measurable cost, but not to acrobot, and the reuse term's own
+contribution on cartpole is a small net negative, not a free ride.} e294
+(cartpole, full recipe) finishes at trailing-300 $639.5$ (peak $754.4$),
+inside but near the bottom of cartpole's $\geq\!650$ Director-baseline band
+(\S\ref{sec:restrictions}) --- consistent with ``costs nothing,'' but only
+marginally so. e295 (acrobot, identical recipe) fully decays from an early
+$347.6$ peak to a trailing-300 of $19.2$, matching acrobot's own failure
+mode (Finding 12) exactly rather than extending Family C's hopper/cheetah
+rescue to a third task. A same-day struct-only ablation (e312/e313: same
+configs with \texttt{goal\_soft\_reuse\_adapt} off) isolates the reuse
+term's own marginal effect: e312 (cartpole, struct-only), read at $66\%$ of
+budget, is already \emph{ahead} of e294's finished trail ($695.1$ vs.\
+$639.5$) --- a tentative but concrete signal that the forced-reuse term
+costs cartpole a small amount of score rather than being free, even though
+neither cell threatens the $\geq\!650$ floor. e313 (acrobot, struct-only)
+decays earlier and harder than e295 (trailing-300 $4.6$ at $58\%$ of budget,
+against e295's $19.2$ at $100\%$) --- struct correlation alone does not
+rescue acrobot either, so the failure is not attributable to the reuse term
+specifically.
+
+The plain variable-duration Lagrangian isolation (e296--e303, $\tau\in\{4,8\}$,
+struct forced to $0$, no masking, no reuse) completed at cancellation
+(70--75\% of budget for hopper/acrobot, once the dead-floor/decay pattern
+was unambiguous; 58--60\% for cartpole/cheetah): hopper dead at both $\tau$
+($0.09$/$1.21$), acrobot decaying from an early peak at both $\tau$
+($2.8$/$22.3$), cartpole and cheetah alive at both $\tau$ with $\tau8$
+clearly beating $\tau4$ on both tasks (cartpole $850.0$ vs.\ $616.2$;
+cheetah $194.5$ vs.\ $107.6$). This exactly replicates Finding~12's
+prediction --- switch-timing variability alone is sufficient to kill
+hopper/acrobot and does not interact with the reuse/struct machinery tested
+above --- and adds the first clean $\tau4$-vs-$\tau8$ read for the
+Lagrangian-tracked (as opposed to regularizer-tracked) duration controller:
+longer, more precisely held commitments help the dense tasks by a wide
+margin (roughly $1.4\times$ on both).
+
+\subsection{The block-pooled variable-duration credit path: two bugs, a
+tensor-level equivalence proof, and a training-level equivalence failure}
+\label{sec:blockpooled}
+
+\texttt{variable\_goal\_block\_rew} pools reward and continuation per
+realized hold segment (mirroring the fixed-$K$ \texttt{abstract\_traj} path)
+rather than feeding the manager's critic full-resolution, per-step targets.
+It had only ever been exercised pre-fix (e44, e62), both dead ends. Revisiting
+it surfaced two independent implementation bugs, both fixed 2026-07-24:
+
+\begin{enumerate}
+\item \textbf{Off-by-one block count.} \texttt{variable\_block\_director\_tensors}
+computed \texttt{n\_blocks = max(n\_sw - 1, 1)}, silently dropping the last
+real manager decision of every imagined rollout from the critic's target ---
+the return/reward ratio (a diagnostic for bootstrap horizon) read
+$1.3$--$1.5\times$ under the bug against $110$--$500\times$ for every other
+credit path in the project, a near-total collapse of the value bootstrap.
+Fixed to match the fixed-$K$ analog exactly (\texttt{n\_blocks = max(n\_sw, 1)}).
+\item \textbf{Empty-segment continuation defaulted to $0.0$} (``episode
+ended'') instead of the correct empty-product identity $1.0$, which capped
+the last real decision's bootstrap to only the $(1{-}\lambda)$ fraction of
+its value whenever a hold's switch happened to land on the rollout's final
+timestep --- structurally common, since fixed-$K$'s own arrays are sized to
+have no padding at all and so can never hit this case.
+\end{enumerate}
+
+Both fixes were verified not just on training curves but with a direct
+tensor-level equivalence test (\texttt{test\_variable\_goals.py}): under a
+deterministic $\tau{=}8$ switch mask, block-pooled var-$K$'s returns for
+every fully-real decision now match fixed-$K$'s exactly to float precision,
+and the previously-degenerate trailing decision correctly bootstraps to its
+own value instead of $0$. This is the project's strongest-possible
+correctness claim for the arithmetic in isolation.
+
+\paragraph{Result (2026-07-27, 16 cells, BIG scale, both fixes, full 4M-step
+budget): the tensor-level proof does not translate into trained
+equivalence.} The most direct test, e334/e335, pins
+\texttt{goal\_duration\_fixed=8} --- removing the duration controller
+entirely so the block-pooled path degenerates to exactly Director's own
+fixed-8 switching cadence --- and should, if the fix is complete, train
+indistinguishably from true Director (e242/e246: hopper $90.8$, cheetah
+$352.4$ trailing-300, resumed to a full 4M-step budget). It does not:
+hopper (e334) stays at the dead floor ($0.06$), and cheetah (e335) reaches
+only $25.2$, roughly $7\times$ below the Director control and even below
+the plain (non-block-pooled) $\tau8$ Lagrangian cheetah cell (e303, $194.5$)
+that shares every other setting. \textbf{This is the batch's central
+negative result}: the two bugs fixed above were real and their fix is
+tensor-verified, but block-pooled credit assignment, even pinned to
+Director's exact cadence, still trains substantially worse than either true
+Director or the full-resolution (non-pooled) variable-duration path ---
+some further discrepancy between the block-pooled $\lambda$-return
+construction and true per-step credit assignment remains uncaught.
+
+The other 14 cells (all \texttt{plain\_vark} + block-rew, $\tau8$
+Lagrangian or its ablations) are consistent with this picture and add four
+narrower findings. \emph{Sum vs.\ mean reward aggregation:} contrary to the
+launch hypothesis (that \texttt{mean} gives zero incentive for longer
+holds), both aggregations track the $\tau{=}8$ target cleanly once the two
+bugs are fixed (final \texttt{mgr\_duration\_mean} $7.90$--$8.08$ across
+e326/e330/e336/e338), so the duration-collapse behaviour seen in the
+pre-fix e304--e311 pull was an artifact of the credit-assignment bugs, not
+of the aggregation choice. \emph{Removing the duration-prior anchor}
+(e332/e333: \texttt{DUR\_REG=0}, entropy controller only) lets duration
+collapse to a mean of $5.0$ (hopper) / $3.6$ (cheetah) --- shorter, not
+longer, than the target, opposite the direction the sum-aggregation
+long-hold incentive would predict --- and costs cheetah roughly $4$--$9\times$
+its anchored score ($6.9$ vs.\ $46$--$125$ across the anchored cells),
+making e333 the weakest cheetah cell in the matrix. \emph{Truncated-hold
+relabeling}, tentatively read as helping cheetah in the pre-fix pull,
+reverses direction under the fix: relabel-\textsc{off} (e331, $124.7$) is
+the single best cheetah cell in the matrix and shows no late-training
+collapse, while its relabel-\textsc{on} twin (e327, $50.8$ trailing-300,
+collapsing to a trailing-50 of $7.3$) decays hard late in training ---
+tentatively implicating the relabeling correction itself, rather than
+truncation bias, as a source of late-training instability under this
+credit path. Doubling the imagination horizon (e328/e329, $\texttt{imag\_length}{=}32$)
+does not rescue hopper but does avoid the late cheetah collapse seen at its
+$\texttt{imag\_length}{=}16$ twin (e326/e327), suggesting the collapse is a
+horizon-length artifact of this specific credit path rather than a general
+property of block-pooled var-$K$. Giving the worker its remaining-hold-time
+as an input (e340/e341) shows no meaningful effect on either task under the
+now-fixed credit assignment, consistent with the earlier (pre-fix, F13)
+null result. Across all 16 cells, hopper remains at the dead floor
+regardless of any of these knobs, extending Finding~12's pattern to the
+block-pooled path specifically.
 
 \end{document}

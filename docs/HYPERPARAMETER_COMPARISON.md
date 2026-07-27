@@ -84,11 +84,11 @@
 | e239§ | cheetah | small | ❌ | 3.0 (5.0) | n/a (kept 0.56, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e240§ | cheetah | small | ❌ | 2.2 (4.6) | n/a (kept 0.51, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e241§ | cheetah | small | ❌ | 1.4 (4.2) | n/a (kept 0.56, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
-| e242§ | hopper | BIG | ~ (partial, still climbing @1M) | 115.1 (115.7) | n/a (no mask; kept 0.38) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
+| e242§ | hopper | BIG | ❌ finished@4M, decayed from peak (never closed gap to e124 baseline ≈300) | 90.8 (219.9) | n/a (no mask; kept 0.38) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
 | e243§ | hopper | BIG | ❌ | 0.0 (0.2) | n/a (kept 0.53, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e244§ | hopper | BIG | ❌ | 0.0 (1.0) | n/a (kept 0.49, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e245§ | hopper | BIG | ❌ | 0.0 (0.6) | n/a (kept 0.51, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
-| e246§ | cheetah | BIG | ✅ (≈ Director-at-1M control) | **329.8 (335.4)** | n/a (no mask; kept 0.20) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
+| e246§ | cheetah | BIG | ✅ finished@4M, holds within e123-class Director band | 352.4 (420.9) | n/a (no mask; kept 0.20) | 200+adapt(dual, target0.01) | impl struct-only | fix 8 | mean | no | no |
 | e247§ | cheetah | BIG | ❌ | 3.4 (6.1) | n/a (kept 0.52, λ railed 5.0) | 200+adapt(dual, target0.01) | impl struct+ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e248§ | cheetah | BIG | ❌ | 4.1 (8.6) | n/a (kept 0.53, λ railed 5.0) | 0 | impl ratchet→0.7kept | fix 8 | mean | no | **yes** |
 | e249§ | cheetah | BIG | ❌ | 3.4 (7.9) | n/a (kept 0.55, λ railed 5.0) | 0 | impl direct 0.7kept | fix 8 | mean | no | no |
@@ -136,13 +136,59 @@
 | e291 | cheetah | BIG | ~ | 160.6 (214.8) | 1.00 | 0 | softreuse ratchet-only ov→0.5 | fix 8 | mean | no | no |
 | e292 | cheetah | small | ~ | 107.0 (191.8) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
 | e293 | cheetah | small | ✅ | 259.2 (342.1) | 1.00 | 0 | softreuse ratchet-only ov→0.5 | fix 8 | mean | no | no |
-| e294 | cartpole | BIG | ~ RUNNING @35% | 635.8 (754.4) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
-| e295 | acrobot | BIG | ~ RUNNING @28%, falling | 40.6 (264.6) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
-| e296 | hopper | BIG | ❌ RUNNING @56%, dead floor | 0.07 (8.1) | 2.04 | 0 | off | var τ4 (lagr) | mean | no | no |
-| e297 | hopper | BIG | ❌ RUNNING @57%, dead floor | 0.32 (15.5) | 1.01 | 0 | off | var τ8 (lagr) | mean | no | no |
-| e298 | acrobot | BIG | ~ RUNNING @55%, falling | 2.8 (153.9) | 2.00 | 0 | off | var τ4 (lagr) | mean | no | no |
-| e299 | acrobot | BIG | ~ RUNNING @52%, falling | 4.8 (165.3) | 1.00 | 0 | off | var τ8 (lagr) | mean | no | no |
-| e300 | cartpole | BIG | ✅ RUNNING @43% | 601.0 (651.9) | 2.01 | 0 | off | var τ4 (lagr) | mean | no | no |
-| e301 | cartpole | BIG | ✅ RUNNING @41% | 748.7 (849.0) | 1.01 | 0 | off | var τ8 (lagr) | mean | no | no |
-| e302 | cheetah | BIG | ✅ RUNNING @42%, rising | 97.2 (137.9) | 2.04 | 0 | off | var τ4 (lagr) | mean | no | no |
-| e303 | cheetah | BIG | ✅ RUNNING @40%, rising | 184.9 (219.3) | 1.01 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e294 | cartpole | BIG | ~ finished@4M, settles just under cartpole's ≥650 band, trailing off its own peak | 639.5 (754.4) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e295 | acrobot | BIG | ❌ finished@4M, fully decayed — confirms F12 acrobot failure, no rescue | 19.2 (347.6) | 1.00 | 200+adapt(dual, target0.01) | softreuse struct+ratchet ov→0.5 | fix 8 | mean | no | no |
+| e296 | hopper | BIG | ❌ cancelled @74%, dead floor | 0.09 (8.1) | 2.05 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e297 | hopper | BIG | ❌ cancelled @75%, dead floor | 1.21 (15.5) | 1.00 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e298 | acrobot | BIG | ❌ cancelled @73%, decayed from peak | 2.8 (153.9) | 1.97 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e299 | acrobot | BIG | ~ cancelled @70%, decayed from peak | 22.3 (165.3) | 0.99 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e300 | cartpole | BIG | ✅ cancelled @60% | 616.2 (662.9) | 1.98 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e301 | cartpole | BIG | ✅ cancelled @59% | 850.0 (865.5) | 1.00 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e302 | cheetah | BIG | ✅ cancelled @59% | 107.6 (169.7) | 2.04 | 0 | off | var τ4 (lagr) | mean | no | no |
+| e303 | cheetah | BIG | ✅ cancelled @58% | 194.5 (245.0) | 1.01 | 0 | off | var τ8 (lagr) | mean | no | no |
+| e304 | hopper | BIG | ❌ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e314 | 0.68 (15.8) | 0.99 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e305 | cheetah | BIG | ~ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e315 | 61.4 (80.0) | 0.84 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e306 | hopper | BIG | ❌ cancelled @51%, PRE-FIX (n_blocks bug), superseded by e316 | 0.08 (12.0) | 0.98 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag32 | no | no |
+| e307 | cheetah | BIG | ~ cancelled @51%, PRE-FIX (n_blocks bug), superseded by e317 | 56.3 (79.3) | 0.93 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag32 | no | no |
+| e308 | hopper | BIG | ❌ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e318 | 3.86 (89.8) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e309 | cheetah | BIG | ~ cancelled @55%, PRE-FIX (n_blocks bug), superseded by e319 | 32.8 (53.1) | 1.01 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e310 | hopper | BIG | ❌ cancelled @55%, PRE-FIX (n_blocks bug), not superseded (mean-agg leg dropped) | 0.49 (14.7) | 1.02 | 0 | off | var τ8 (lagr) | mean, block-rew, no relabel, imag16 | no | no |
+| e311 | cheetah | BIG | ~ cancelled @55%, PRE-FIX (n_blocks bug), not superseded (mean-agg leg dropped) | 26.4 (45.4) | 1.01 | 0 | off | var τ8 (lagr) | mean, block-rew, no relabel, imag16 | no | no |
+| e312 | cartpole | BIG | ~ RUNNING @66%, AHEAD of e294 (reuse-off) — tentative reuse-costs-cartpole signal | 695.1 (766.0) | 1.00 | 200+adapt(dual, target0.01) | off | fix 8 | mean | no | no |
+| e313 | acrobot | BIG | ❌ RUNNING @58%, decayed earlier/harder than e295 (reuse-on) — struct-only doesn't rescue acrobot either | 4.6 (283.6) | 1.00 | 200+adapt(dual, target0.01) | off | fix 8 | mean | no | no |
+| e314 | hopper | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY (n_blocks fix, missing cont-identity fix), superseded by e326 | - (-) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e315 | cheetah | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e327 | - (-) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e316 | hopper | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e328 | - (-) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag32 | no | no |
+| e317 | cheetah | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e329 | - (-) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag32 | no | no |
+| e318 | hopper | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e330 | - (-) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e319 | cheetah | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e331 | - (-) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e320 | hopper | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e332 | - (-) | 1.00 | 0 | off | var, no prior (reg0) | sum, block-rew, relabel, imag16 | no | no |
+| e321 | cheetah | BIG | ❌ cancelled @~0%, PARTIAL-FIX ONLY, superseded by e333 | - (-) | 1.00 | 0 | off | var, no prior (reg0) | sum, block-rew, relabel, imag16 | no | no |
+| e322 | cartpole | BIG | descoped (pure Director ground truth not needed; see e334/e335) | - (-) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e323 | cheetah | BIG | descoped (pure Director ground truth not needed; see e334/e335) | - (-) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e324 | hopper | BIG | descoped (pure Director ground truth not needed; see e334/e335) | - (-) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e325 | acrobot | BIG | descoped (pure Director ground truth not needed; see e334/e335) | - (-) | 1.00 | 0 | off | fix 8 | mean | no | no |
+| e326 | hopper | BIG | ❌ finished@4M, hopper dead floor (BOTH FIXES) | 0.08 (9.2) | 0.99 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e327 | cheetah | BIG | ~ finished@4M, alive but collapsed late (peak196→trail50 7.3) | 50.8 (196.0) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e328 | hopper | BIG | ❌ finished@4M, hopper dead floor, imag32 no rescue | 0.25 (14.8) | 1.01 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag32 | no | no |
+| e329 | cheetah | BIG | ~ finished@4M, alive and stable (no late collapse, unlike imag16 twin e327) | 46.1 (123.4) | 1.01 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag32 | no | no |
+| e330 | hopper | BIG | ❌ finished@4M, hopper dead floor, relabel-OFF no rescue | 0.27 (11.9) | 0.99 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e331 | cheetah | BIG | ✅ finished@4M, BEST cheetah cell in matrix, stable/rising — relabel OFF beats relabel ON (e327) | 124.7 (216.6) | 0.99 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e332 | hopper | BIG | ❌ finished@4M, hopper dead floor, no-anchor no rescue | 0.23 (13.3) | 1.59 | 0 | off | var, no prior (reg0) | sum, block-rew, relabel, imag16 | no | no |
+| e333 | cheetah | BIG | ❌ finished@4M, duration collapsed to 3.55 (no anchor) — WORST cheetah cell | 6.9 (113.4) | 2.25 | 0 | off | var, no prior (reg0) | sum, block-rew, relabel, imag16 | no | no |
+| e334 | hopper | BIG | ❌ finished@4M, EQUIVALENCE CHECK FAILS: hopper still dead pinned to dur=8 | 0.06 (13.7) | 1.00 | 0 | off | fixed@8 (no controller) | mean, block-rew, imag16 | no | no |
+| e335 | cheetah | BIG | ❌ finished@4M, EQUIVALENCE CHECK FAILS: cheetah far below Director baseline (25 vs e246's 352) | 25.2 (58.7) | 1.00 | 0 | off | fixed@8 (no controller) | mean, block-rew, imag16 | no | no |
+| e336 | hopper | BIG | ❌ finished@4M, hopper dead floor, mean-agg no rescue | 0.18 (18.9) | 1.01 | 0 | off | var τ8 (lagr) | mean, block-rew, relabel, imag16 | no | no |
+| e337 | cheetah | BIG | ~ finished@4M, alive, stable, still climbing at cutoff | 60.2 (153.8) | 1.01 | 0 | off | var τ8 (lagr) | mean, block-rew, relabel, imag16 | no | no |
+| e338 | hopper | BIG | ❌ finished@4M, hopper dead floor, mean+no-relabel no rescue | 0.16 (14.2) | 1.00 | 0 | off | var τ8 (lagr) | mean, block-rew, no relabel, imag16 | no | no |
+| e339 | cheetah | BIG | ~ finished@4M, alive but weak, still climbing at cutoff | 14.3 (49.2) | 1.01 | 0 | off | var τ8 (lagr) | mean, block-rew, no relabel, imag16 | no | no |
+| e340 | hopper | BIG | ❌ finished@4M, hopper still ~dead (nominal 1.04, no real rescue), worker countdown no effect | 1.04 (17.7) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | yes | no |
+| e341 | cheetah | BIG | ~ finished@4M, alive, decayed from an early (600k) peak, worker countdown ~no effect | 57.4 (164.1) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | yes | no |
+| e342 | hopper | BIG | ~ RUNNING, e334 rerun under BOTH agent.py fixes (duration REINFORCE + replay trailing-state) | - (-) | 1.00 | 0 | off | fixed@8 (no controller) | mean, block-rew, imag16 | no | no |
+| e343 | cheetah | BIG | ~ RUNNING, e335 rerun under BOTH agent.py fixes (duration REINFORCE + replay trailing-state) | - (-) | 1.00 | 0 | off | fixed@8 (no controller) | mean, block-rew, imag16 | no | no |
+| e344 | hopper | BIG | ~ RUNNING, e326 rerun under replay-trailing-state fix (dur-fixed noop) | - (-) | 0.99 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e345 | cheetah | BIG | ~ RUNNING, e327 rerun under replay-trailing-state fix (dur-fixed noop) | - (-) | 1.00 | 0 | off | var τ8 (lagr) | sum, block-rew, relabel, imag16 | no | no |
+| e346 | hopper | BIG | ~ RUNNING, e330 rerun under replay-trailing-state fix (dur-fixed noop) | - (-) | 0.99 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e347 | cheetah | BIG | ~ RUNNING, e331 rerun under replay-trailing-state fix (dur-fixed noop) | - (-) | 0.99 | 0 | off | var τ8 (lagr) | sum, block-rew, no relabel, imag16 | no | no |
+| e348 | hopper | BIG | ~ RUNNING, e332 rerun under replay-trailing-state fix (dur-fixed noop) | - (-) | 1.59 | 0 | off | var, no prior (reg0) | sum, block-rew, relabel, imag16 | no | no |
+| e349 | cheetah | BIG | ~ RUNNING, e333 rerun under replay-trailing-state fix (dur-fixed noop) | - (-) | 2.25 | 0 | off | var, no prior (reg0) | sum, block-rew, relabel, imag16 | no | no |
