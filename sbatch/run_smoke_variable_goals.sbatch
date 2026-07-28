@@ -48,20 +48,10 @@ echo "LEG 2 OK"
 echo "=================== LEG 2b: variable goal length + block manager rewards ======"
 python -u "$MAIN" --logdir "$BASE/var_plain_blockrew" --configs size6m debug "${COMMON[@]}" \
   --agent.variable_goal_length True \
-  --agent.variable_goal_block_rew True \
   --agent.goal_duration_min 1 --agent.goal_duration_max 6
 echo "LEG 2b OK"
 
-echo "=================== LEG 3: variable goal length, MASKED goals (e17 recipe) ====="
-python -u "$MAIN" --logdir "$BASE/var_masked" \
-  --configs size6m debug masked_goals "${COMMON[@]}" \
-  --agent.variable_goal_length True \
-  --agent.goal_duration_min 1 --agent.goal_duration_max 6 \
-  --agent.mask_sparsity_mode prob --agent.mask_sparsity_target 0.3 \
-  --agent.mgr_cond_goalcode True
-echo "LEG 3 OK"
-
-echo "=================== LEG 4: block-rew + SUM agg + duration near imag_length ====="
+echo "=================== LEG 3: block-rew + SUM agg + duration near imag_length ====="
 # Regression test for relabel_truncated_last_duration: goal_duration_max ==
 # imag_length forces frequent horizon-truncated holds (the manager routinely
 # samples durations that can't fully fit in the 16-step imagined rollout), and
@@ -73,24 +63,20 @@ echo "=================== LEG 4: block-rew + SUM agg + duration near imag_length
 python -u "$MAIN" --logdir "$BASE/var_plain_blockrew_sum_trunc" \
   --configs size6m debug "${COMMON[@]}" \
   --agent.variable_goal_length True \
-  --agent.variable_goal_block_rew True \
   --agent.mgr_reward_agg sum \
   --agent.goal_duration_min 1 --agent.goal_duration_max 16 \
   --agent.goal_duration_target 8.0 \
-  --agent.goal_duration_reg 0.0 --agent.goal_duration_adapt False \
   --agent.goal_duration_lagrange True
-echo "LEG 4 OK"
+echo "LEG 3 OK"
 
 echo "=================== LEG 5: same as LEG 4 but relabel fix OFF (ablation) ========"
 python -u "$MAIN" --logdir "$BASE/var_plain_blockrew_sum_trunc_norelabel" \
   --configs size6m debug "${COMMON[@]}" \
   --agent.variable_goal_length True \
-  --agent.variable_goal_block_rew True \
   --agent.goal_duration_relabel_truncated False \
   --agent.mgr_reward_agg sum \
   --agent.goal_duration_min 1 --agent.goal_duration_max 16 \
   --agent.goal_duration_target 8.0 \
-  --agent.goal_duration_reg 0.0 --agent.goal_duration_adapt False \
   --agent.goal_duration_lagrange True
 echo "LEG 5 OK"
 
@@ -104,12 +90,10 @@ echo "=================== LEG 6: duration-pinned Director control (e342/e343) ==
 python -u "$MAIN" --logdir "$BASE/var_blockrew_durfixed8" \
   --configs size6m debug "${COMMON[@]}" \
   --agent.variable_goal_length True \
-  --agent.variable_goal_block_rew True \
   --agent.goal_duration_fixed 8 \
   --agent.manager_sample_freq 8 \
   --agent.goal_duration_min 1 --agent.goal_duration_max 16 \
   --agent.goal_duration_target 8.0 \
-  --agent.goal_duration_reg 0.01 --agent.goal_duration_adapt False \
   --agent.goal_duration_lagrange False
 echo "LEG 6 OK"
 

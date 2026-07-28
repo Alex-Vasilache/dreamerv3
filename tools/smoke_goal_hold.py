@@ -39,13 +39,11 @@ def make_config():
       'agent.variable_goal_length': True,
       'agent.goal_duration_min': 1,
       'agent.goal_duration_max': 8,
-      'agent.mask_sparsity_mode': 'prob',
-      'agent.mask_sparsity_target': 0.3,
       'agent.mgr_cond_goalcode': True,
       'jax.platform': 'cuda',
       'jax.prealloc': False,
   })
-  for name in ('size6m', 'debug', 'masked_goals'):
+  for name in ('size6m', 'debug'):
     block = yaml.YAML(typ='safe').load(
         (folder / 'configs.yaml').read_text())[name]
     config = config.update(block)

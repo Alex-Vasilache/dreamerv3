@@ -2340,7 +2340,89 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
 
 ---
 
+### 2026-07-28 · e372–e377 — 4M A/B of the agent.py modularization (RUNNING)
+
+Full-length V100 validation that the consolidation (see §7, 2026-07-28) is
+behavior-preserving on the paths that survived. Three tasks × two arms, seed 0,
+`sbatch/run_refactor_ab_4m.sbatch`, 4M steps each.
+
+| exp | job | arm | task | tree |
+|---|---|---|---|---|
+| e372 | 4671612 | pre  | cartpole_swingup | `code/dreamerv3` @ b93e8b6 |
+| e373 | 4671613 | post | cartpole_swingup | `code/dreamerv3_refactor` @ 0c90064 |
+| e374 | 4671614 | pre  | cheetah_run      | `code/dreamerv3` @ b93e8b6 |
+| e375 | 4671615 | post | cheetah_run      | `code/dreamerv3_refactor` @ 0c90064 |
+| e376 | 4671616 | pre  | hopper_hop       | `code/dreamerv3` @ b93e8b6 |
+| e377 | 4671617 | post | hopper_hop       | `code/dreamerv3_refactor` @ 0c90064 |
+
+**Recipe (identical both arms)**: the e363/e364 research cell — `plain_vark`,
+block-pooled manager credit, Lagrangian duration prior at target 8,
+`mgr_reward_agg=sum`, relabel OFF, `goal_soft_reuse_adapt=True` ratcheted 0→0.5
+(vel 1e-6, small-scale calibration) so the retained implicit-sparsity mechanism
+is actually exercised. `size6m`, 32×32, 16 envs.
+
+**Why a purpose-built script**: `run_v3_prior_vargoal_small.sbatch` predates
+`variable_goal_block_rew`, so the pre arm would have silently run the
+FULL-RESOLUTION var-K path — the one the refactor deleted — against the post
+arm's block-pooled path. That is a real behavioral difference by construction,
+not an A/B. The new script emits one identical flag list for both trees and adds
+the block-pooling flag only where the key still exists.
+
+**Hypothesis**: the refactor is a pure restructuring of the retained paths, so
+the two arms are the same algorithm at the same seed and should be
+statistically indistinguishable.
+
+**Expected result**: per-task best-15 and trailing-50 within seed noise of each
+other (cartpole is the sharp one — it has the strongest small-scale signal;
+hopper is expected ≈0 on BOTH arms, consistent with F-hopper locality). A
+systematic gap on any task falsifies "behavior-preserving" and the refactor must
+be re-audited before merging.
+
+**Do NOT read this as a mechanism experiment** — both arms are the same recipe;
+the only variable is which tree ran it.
+
 ## 7. Technical notes (implementation facts that bit us)
+
+- **Codebase consolidation (2026-07-28).** `agent.py` had grown to 4535 lines
+  carrying every mechanism ever A/B'd. Cut down to the paths that are production
+  defaults, then split into a `dreamerv3/hrl/` package.
+  **Removed** (all previously-superseded arms): the entire explicit goal-mask head
+  (`use_masked_goals`, `mask_topk`, `mask_sparsemax`, `mask_joint_edit`,
+  `mask_perblock_credit`, every `mask_sparsity_mode`, `mask_actent`/`mask_kl`),
+  the priced-edit costs (`goal_edit_cost*`, `perblock_edit_cost`),
+  `impl_sparsity_mode` (F18: catastrophic), `goal_delta_mode`, and
+  `goal_reuse_weight`/`goal_reuse_adapt` (F19/F20 losing families); the
+  full-resolution variable-K credit path and the `mgr_decision_mean_rescale=False`
+  control; `goal_duration_adapt`.
+  **Kept**: implicit sparsity via `goal_soft_reuse_adapt` (+ `goal_struct_adapt`),
+  block-pooled variable-K credit (now unconditional under `variable_goal_length`,
+  the flag is gone), fixed-K Director as the baseline, and
+  `goal_duration_{reg,lagrange,fixed}`.
+  **Structure**: `agent.py` 4535 -> ~1.5k lines (`Agent` = network wiring,
+  `policy`/`train`/`loss`); helpers now in `dreamerv3.hrl.{tensors,heads,losses,
+  video}` (pure functions) and `dreamerv3.hrl.{goals,manager,reporting}` (mixins).
+  `configs.yaml` lost 65 dead keys plus the `masked_goals`/`hrl_auto` blocks.
+  **Verification** (behavior on the retained paths is unchanged):
+  (1) 230 tests pass, incl. the deterministic block-pooled-vs-fixed-K loss and
+  gradient equivalence tests -- 191 pre-existing (the 3 removed cases existed only
+  to A/B the deleted `mgr_decision_mean_rescale`) plus 39 new packaging guards.
+  (2) GPU A/B, 30k steps on V100, `plain_vark` and `director` recipes, pre vs post:
+  *identical metric key sets* (144 / 118 keys, none added or lost) and the
+  mechanism-specific metrics agree to 1e-5..1e-7 --
+  `mgr_duration_mean` 3.0e-5, `mgr_switch_rate` 1.3e-4,
+  `implicit_sparsity_block` 9.8e-5, `soft_reuse_overlap_mean` 4.5e-7.
+  Losses agree to ~1e-3, episode score to ~3e-2 (short-run variance).
+  **Do not attempt step-exact `metrics.jsonl` parity**: the train loop is not
+  run-to-run reproducible even for byte-identical code. Running the *same*
+  pre-refactor build twice diverges on 146/183, 150/209, 175/235, 176/219 keys
+  per leg -- statistically the same as pre-vs-post (148, 153, 185, 177), and it
+  moves wall-clock/RAM counters (`fps/*`, `usage/psutil/*`) too. Compare
+  trajectories and key sets, not step-aligned scalars.
+  *Gotcha found doing this*: two helpers (`goal_reward_cosine_max`,
+  `pairwise_cosmax`) fell between extraction ranges and vanished silently --
+  `pyflakes` cannot see across modules, so only the test import caught it.
+  `embodied/tests/test_hrl_package.py` now guards submodule imports, `__all__`
+  resolution, and mixin-method reachability.
 
 - **Variable-K repval (fixed 06-18, `9716a78`).** Replay manager-value loss mirrors
   imagination (per-step rewards on full timeline via `_switch_mask_from_skills`), not

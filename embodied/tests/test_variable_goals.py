@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from dreamerv3.agent import (
+from dreamerv3.hrl import (
     aggregate_mgr_cont,
     aggregate_mgr_cont_variable,
     aggregate_mgr_extr_rew,
@@ -155,7 +155,7 @@ def test_last_decision_bootstrap_when_switch_lands_on_final_step():
   purely off its own value? This is the deterministic case
   ``goal_duration_fixed=8`` hits every single rollout at ``imag_length=16``
   (switches land exactly at 0, 8, 16 -- t=16 is the last valid index)."""
-  from dreamerv3.agent import lambda_return
+  from dreamerv3.hrl import lambda_return
   B, T, k = 1, 17, 8
   rew = jnp.zeros((B, T), jnp.float32)
   con = jnp.full((B, T), 0.997, jnp.float32)  # mimic contdisc-baked-in discount
@@ -193,9 +193,9 @@ def test_last_decision_bootstrap_when_switch_lands_on_final_step():
 def test_final_bootstrap_bug_is_specific_to_block_pooled_varK():
   """Does the same 'switch lands on the final timestep' scenario also corrupt
   (a) the fixed-K Director path and (b) the full-resolution (non-block-pooled)
-  var-K path, or is it specific to variable_goal_block_rew's padded-to-static-
+  var-K path, or is it specific to block pooling's padded-to-static-
   horizon construction? Same T=17, k=8 fixture as the previous test."""
-  from dreamerv3.agent import lambda_return
+  from dreamerv3.hrl import lambda_return
   B, T, k = 1, 17, 8
   rew = jnp.zeros((B, T), jnp.float32)
   con = jnp.full((B, T), 0.997, jnp.float32)
@@ -223,9 +223,9 @@ def test_final_bootstrap_bug_is_specific_to_block_pooled_varK():
   print('fixed-K last-decision return (expect ~29.29, real decay over its own hold):',
         r2_fixedk)
 
-  # --- (b) Full-resolution var-K path (variable_goal_block_rew=False): mirrors
-  # the real call site (agent.py ~2704-2711) -- mgr_cont = con directly, no
+  # --- (b) Full-resolution (unpooled) reference: mgr_cont = con directly, no
   # pooling, no padding at all; every one of the T real positions is genuine.
+  # Kept as a contrast case for the padded construction, not as a live code path.
   val_full = jnp.full((B, T), 30.0, jnp.float32)
   val_full = val_full.at[0, 0].set(10.0).at[0, 8].set(20.0)
   last_full = jnp.zeros_like(con)

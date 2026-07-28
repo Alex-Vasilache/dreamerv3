@@ -64,8 +64,7 @@ def main():
 
   config = load_config(args.run_dir)
   print('logdir:', config.logdir)
-  print('use_masked_goals:', config.agent.use_masked_goals,
-        '| skill_shape:', config.agent.skill_shape,
+  print('skill_shape:', config.agent.skill_shape,
         '| manager_sample_freq:', config.agent.manager_sample_freq)
 
   agent = m.make_agent(config)

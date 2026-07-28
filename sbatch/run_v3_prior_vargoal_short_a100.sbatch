@@ -35,12 +35,7 @@ if awk "BEGIN {exit !($DUR_TARGET > $DUR_MAX)}"; then
   DUR_MAX="$DUR_TARGET"
 fi
 
-MASK_TOPK="${MASK_TOPK:-0}"
 STRUCT_W="${STRUCT_W:-200.0}"
-MASK_MODE="${MASK_MODE:-prob}"
-MASK_MAX="${MASK_MAX:-5.0}"
-MASK_TARGET="${MASK_TARGET:-0.3}"
-MGR_ACHIEVE="${MGR_ACHIEVE:-False}"
 DUR_REG="${DUR_REG:-0.01}"
 DUR_MODE="${DUR_MODE:-fixed}"
 DUR_LAGRANGE_MAX="${DUR_LAGRANGE_MAX:-5.0}"
@@ -49,19 +44,17 @@ SEED="${SEED:-0}"
 if [ "$DUR_MODE" = "lagrangian" ]; then
   DUR_FLAGS=(
     --agent.goal_duration_reg 0.0
-    --agent.goal_duration_adapt False
     --agent.goal_duration_lagrange True
     --agent.goal_duration_lagrange_max "$DUR_LAGRANGE_MAX"
   )
 else
   DUR_FLAGS=(
     --agent.goal_duration_reg "$DUR_REG"
-    --agent.goal_duration_adapt False
     --agent.goal_duration_lagrange False
   )
 fi
 
-RUN_SUFFIX="${EXP_TAG}_${TASK}_vargoal_masked_durreg_soft${DUR_TARGET%%.*}_BIG_shortq"
+RUN_SUFFIX="${EXP_TAG}_${TASK}_vargoal_durreg_soft${DUR_TARGET%%.*}_BIG_shortq"
 # Fallback keyed to SLURM_JOB_ID (stable across requeues) so even without a
 # caller-supplied RUN_DIR a requeue resumes from checkpoint, never a fresh dir.
 RUN_DIR="${RUN_DIR:-/work/DoyaU/vasilache/work/${RUN_SUFFIX}_j${SLURM_JOB_ID}}"
@@ -71,10 +64,10 @@ export MUJOCO_GL=egl
 cat > "$RUN_DIR/job.env" <<EOF
 RUN_DIR=$RUN_DIR
 EXP_TAG=$EXP_TAG
-CONFIGS=director_match masked_goals variable_goals
+CONFIGS=director_match variable_goals
 TASK=$TASK
 SIZE=BIG IMAGE=64x64 IMAG=16 BATCH=16x64 TRAIN_RATIO=64 CONV=native
-DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX MASK_TARGET=$MASK_TARGET MASK_MODE=$MASK_MODE STRUCT_W=$STRUCT_W SEED=$SEED
+DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX STRUCT_W=$STRUCT_W SEED=$SEED
 NOTE=Group D (combined) recipe, struct_weight=0 ablation, run on short-a100 (requeue-safe fixed RUN_DIR)
 EOF
 RUN_STEPS="${RUN_STEPS:-4000000}"
@@ -87,13 +80,8 @@ AGENT_FLAGS=(
   --agent.goal_opt.eps 1e-20
   --agent.manager_actent_impl mult
   --agent.manager_actent_target 0.5
-  --agent.mask_topk "$MASK_TOPK"
   --agent.goal_struct_weight "$STRUCT_W"
-  --agent.mask_sparsity_mode "$MASK_MODE"
-  --agent.mask_sparsity_max "$MASK_MAX"
-  --agent.mask_sparsity_target "$MASK_TARGET"
   --agent.mgr_cond_goalcode True
-  --agent.mgr_cond_achieve "$MGR_ACHIEVE"
   --agent.variable_goal_length True
   --agent.goal_duration_min "$DUR_MIN"
   --agent.goal_duration_max "$DUR_MAX"
@@ -116,7 +104,7 @@ trap on_usr1 USR1
 python -u /apps/unit/DoyaU/vasilache/apps/code/dreamerv3/dreamerv3/main.py \
   --logdir "$RUN_DIR/logdir" \
   --seed "$SEED" \
-  --configs director_match masked_goals variable_goals \
+  --configs director_match variable_goals \
   --task "$TASK" \
   --env.dmc.image True \
   --env.dmc.proprio True \
