@@ -1,7 +1,7 @@
 """Director-equivalence tests for the block-pooled variable-K manager path.
 
 Pin ``agent.goal_duration_fixed = agent.manager_sample_freq`` (= K) with
-``agent.variable_goal_block_rew = True`` and the block-pooled variable-K path
+the block-pooled variable-K path
 becomes a pure *reparameterization* of fixed-K Director: every manager decision
 is held for exactly K steps, so the two paths see the same decision states, the
 same block-pooled rewards, the same block continuations and the same policy
@@ -102,7 +102,7 @@ def _manager_tensors(kind, roll):
 
   ``kind='fixed'`` mirrors the ``else`` branch of the ``variable_goal_length``
   test in ``Agent.loss`` (fixed-K Director); ``kind='block'`` mirrors the
-  ``variable_goal_block_rew`` branch with a switch mask pinned to every K steps
+  block-pooled branch with a switch mask pinned to every K steps
   (what ``goal_duration_fixed=K`` produces -- see
   ``test_switch_mask_from_skills_ignores_duration_head_under_fixed_duration``).
   """
@@ -477,98 +477,3 @@ def test_block_pooled_lambda_returns_match_fixed_k_elementwise():
   tail = bl_ret[:, n:]
   np.testing.assert_allclose(
       tail, jnp.broadcast_to(tail[:, :1], tail.shape), rtol=1e-5, atol=1e-6)
-
-
-def _manager_losses_flagged(tensors, logit_w, val_w, rescale_to_decisions):
-  """``_manager_losses`` with the decision-normalization A/B flag exposed."""
-  feat = tensors['feat']
-  policy = {'skill': outs.OneHot(jnp.einsum('mtd,dc->mtc', feat, logit_w))}
-  val = outs.MSE(feat @ val_w)
-  slowval = outs.MSE(0.9 * (feat @ val_w))
-  norms = [RecordingNorm() for _ in range(5)]
-  losses, _, _ = imag_loss_mgr(
-      tensors['skills'], tensors['rew'], tensors['expl'], tensors['con'],
-      policy, val, slowval, val, slowval, *norms,
-      update=True, contdisc=True, slowtar=False, horizon=333,
-      mgr_expl_weight=0.1, actent=3e-4, switch_mask=tensors['switch'],
-      rescale_to_decisions=rescale_to_decisions)
-  return {k: v.mean(1) for k, v in losses.items()}
-
-
-def test_decision_normalization_flag_isolates_exactly_that_fix():
-  """``agent.mgr_decision_mean_rescale`` must toggle the loss SCALE and nothing else.
-
-  This is the knob for the e358/e359 A/B: it has to reproduce the pre-2026-07-27
-  down-weighting exactly (so the arm is a true control) while leaving the
-  trailing-decision exclusion, the masked normalizer statistics and the pooled
-  tensors untouched (so the arm isolates one fix rather than reverting several).
-  """
-  roll = _rollout(seed=5)
-  val_w = jax.random.normal(jax.random.PRNGKey(55), (D,)) * 0.4
-  tensors = _manager_tensors('block', roll)
-  fixed = _manager_losses(_manager_tensors('fixed', roll), roll['logit_w'], val_w)[0]
-
-  on = _manager_losses_flagged(tensors, roll['logit_w'], val_w, True)
-  off = _manager_losses_flagged(tensors, roll['logit_w'], val_w, False)
-
-  n_cols = tensors['switch'].shape[1] - 1          # padded decision axis width
-  n_valid = float(tensors['switch'][0].sum())      # real decisions
-  dilution = n_valid / n_cols
-  assert n_valid == 2 and n_cols == 16
-
-  for key in ('mgr_policy', 'mgr_extr_value', 'mgr_expl_value'):
-    # ON: matches fixed-K Director (the fix).
-    np.testing.assert_allclose(on[key], fixed[key], rtol=1e-5, atol=1e-7)
-    # OFF: exactly the old, diluted value -- Director's loss times the valid
-    # fraction of the axis. Not merely "smaller": the precise pre-fix number.
-    np.testing.assert_allclose(
-        off[key], fixed[key] * dilution, rtol=1e-5, atol=1e-7,
-        err_msg=f'{key}: flag OFF does not reproduce the pre-fix dilution')
-    # ...and the two arms differ by exactly that factor, nothing else.
-    np.testing.assert_allclose(off[key], on[key] * dilution, rtol=1e-5, atol=1e-7)
-
-
-@pytest.mark.parametrize('rescale', [True, False])
-def test_decision_rescale_flag_isolates_the_normalization_fix(rescale):
-  """``agent.mgr_decision_mean_rescale`` must toggle THAT fix and nothing else.
-
-  The A/B run pair differs by this flag alone, so with the flag off it has to
-  reproduce the pre-2026-07-27 padded-axis normalization exactly -- the reduced
-  loss scaled down by the valid fraction of the buffer -- while leaving the
-  trailing-decision exclusion and the valid-decision normalizer statistics
-  (the other fixes) untouched.
-  """
-  roll = _rollout()
-  val_w = jax.random.normal(jax.random.PRNGKey(100), (D,)) * 0.4
-  tensors = _manager_tensors('block', roll)
-  feat = tensors['feat']
-  policy = {'skill': outs.OneHot(jnp.einsum('mtd,dc->mtc', feat, roll['logit_w']))}
-  val = outs.MSE(feat @ val_w)
-  slowval = outs.MSE(0.9 * (feat @ val_w))
-  norms = [RecordingNorm() for _ in range(5)]
-  losses, _, _ = imag_loss_mgr(
-      tensors['skills'], tensors['rew'], tensors['expl'], tensors['con'],
-      policy, val, slowval, val, slowval, *norms,
-      update=True, contdisc=True, slowtar=False, horizon=333,
-      mgr_expl_weight=0.1, actent=3e-4, switch_mask=tensors['switch'],
-      rescale_to_decisions=rescale)
-  reduced = {k: v.mean(1) for k, v in losses.items()}
-
-  fixed_tensors = _manager_tensors('fixed', roll)
-  fixed_reduced, fixed_norms, _ = _manager_losses(
-      fixed_tensors, roll['logit_w'], val_w)
-
-  n_cols = tensors['switch'].shape[1] - 1          # packed decision columns
-  n_valid = float(tensors['switch'][0].sum())      # real decisions
-  factor = 1.0 if rescale else n_valid / n_cols
-
-  for key in ('mgr_policy', 'mgr_extr_value', 'mgr_expl_value'):
-    np.testing.assert_allclose(
-        reduced[key], fixed_reduced[key] * factor, rtol=1e-5, atol=1e-7,
-        err_msg='%s: flag did not produce the expected normalization' % key)
-
-  # The normalizer statistics are a DIFFERENT fix and must not move with it.
-  ret_mean, ret_std = RecordingNorm.moments(norms[0].seen[0])
-  fx_mean, fx_std = RecordingNorm.moments(fixed_norms['extr_ret'].seen[0])
-  np.testing.assert_allclose(ret_mean, fx_mean, rtol=1e-4, atol=1e-6)
-  np.testing.assert_allclose(ret_std, fx_std, rtol=1e-4, atol=1e-6)

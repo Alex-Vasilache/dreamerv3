@@ -99,7 +99,7 @@ defaults:
     profiler: False
 
   agent:
-    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0, mask_sparsity: 1.0, goal_duration_prior: 1.0, goal_reuse: 1.0, goal_soft_reuse: 1.0}
+    loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0, goal_duration_prior: 1.0, goal_soft_reuse: 1.0}
     # Three independent optimizers (Director-style): the world model + heads, the
     # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
     # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
@@ -124,137 +124,11 @@ defaults:
     # Master HRL switch. When False, the agent collapses to the v4-online flat AC:
     # single ``pol``/``val`` over WM features, no manager/goal-VAE, no skill aggregation.
     use_hrl: True
-    # Masked / overwrite goals (opt-in): the manager additionally emits a discrete
-    # block mask m_t that *edits a running goal code* Z (block-overwrite of the
-    # skill code), which is decoded by the standard goal autoencoder. The worker
-    # always chases the full decoded goal (plain cosine reward). False = plain
-    # Director goals (byte-for-byte unchanged). See ``masked_goals`` config block.
-    use_masked_goals: False
-    # Adaptive sparsity: drive the mean fraction of *edited* blocks per command
-    # toward this target so the manager makes minimal tweaks to the running goal.
-    mask_sparsity_target: 0.3
-    # Open-loop anneal of the target above: ramps from mask_sparsity_target_init
-    # toward mask_sparsity_target by at most mask_sparsity_target_vel per training
-    # call (see agent.Ratchet). Default init == target, i.e. off (constant target,
-    # byte-for-byte prior behavior). Opt in per experiment, e.g. init: 1.0 to start
-    # by editing the whole goal (full goal-space exploration) before narrowing to
-    # the sparse target -- for sparse-reward envs (acrobot, hopper) where a fixed
-    # sparse mask from step 0 was suspected to starve exploration in goal space.
-    mask_sparsity_target_init: 0.3
-    mask_sparsity_target_vel: 0.01
-    mask_sparsity_impl: mult
-    # --- Implicit (effective) sparsity controller -------------------------------
-    # Drives the MEASURED implicit block sparsity -- the fraction of goal-code
-    # blocks the manager regenerates IDENTICAL to the previous goal (metric
-    # goal/implicit_sparsity_block) -- toward a target, WITHOUT any edit/abstain
-    # mask. Works with plain full-goal regeneration (Director-style): a per-decision
-    # REINFORCE cost lambda*change_frac is subtracted from the manager reward, where
-    # change_frac = 1 - kept_frac, so the manager is pushed to re-emit the same
-    # blocks. lambda is a dual-ascent AutoAdapt tracking the (annealed) kept target.
-    #   impl_sparsity_mode: none | reinforce  (none = off, byte-for-byte prior).
-    #   impl_sparsity_target: kept-fraction setpoint (0.5 = keep half the blocks).
-    #   impl_sparsity_target_init/_vel: open-loop ramp of the target (Ratchet). Set
-    #       init == target for a DIRECT target (no gradual descent); set init below
-    #       target (e.g. 0.0 -> 0.5) to RATCHET sparsity in across training.
-    #   impl_sparsity_one_sided: True = the Lagrange scale only grows (ratchet), so
-    #       sparsity pressure never relaxes once applied.
-    impl_sparsity_mode: none
-    impl_sparsity_target: 0.5
-    impl_sparsity_target_init: 0.5
-    impl_sparsity_target_vel: 0.01
-    impl_sparsity_impl: mult
-    impl_sparsity_min: 1e-5
-    impl_sparsity_max: 5.0
-    impl_sparsity_vel: 0.1
-    impl_sparsity_init: 1.0
-    impl_sparsity_one_sided: False
-    # How the soft sparsity penalty reaches the discrete mask head:
-    #   sample    = penalize mean of the HARD Bernoulli sample (legacy; the hard
-    #               sample has no gradient to the mask logits, so this is a no-op
-    #               and the adapter rails at ``mask_sparsity_max`` without effect).
-    #   prob (B2) = penalize mean of the sigmoid PROBABILITIES from the in-tape
-    #               manager mask head (differentiable; the adapter actually bites).
-    #   reinforce (C) = subtract sg(scale)*hard_frac from the manager extrinsic
-    #               reward so the mask logp is reinforced toward sparser masks.
-    #   prob_ach (Tier 1) = analytic achievement-gated expected-edit penalty
-    #               lambda * mean_i[achievement * sigma(l_i)]; zero-variance twin
-    #               of B.3 goal_edit_cost_ach (see per_block_credit_plan.md).
-    #   entropy   = ENTROPY-NATIVE (like the action policy): an adaptive entropy
-    #               adapter holds the per-block mask entropy near ``mask_actent_target``
-    #               (fraction of max, keeps the mask stochastic / anti-collapse) while
-    #               an adaptive KL adapter holds KL(mask || Bernoulli(mask_sparse_prior))
-    #               near ``mask_kl_target`` nats (the transferable "prefer not to edit"
-    #               level control — replaces the fixed fraction target + edit costs).
-    #               Task advantage (manager REINFORCE) decides WHICH blocks; the two
-    #               adapters decide exploration + how-sparse, both via dimensionless
-    #               targets that transfer across env / model size. See agent.loss.
-    #   prob_entropy = COMBINES ``prob`` and ``entropy``: the rate adapter
-    #               (mask_sparsity_adapter) targets the batch-mean edit fraction
-    #               (mask_sparsity_target, e.g. 0.3) same as ``prob``, while the
-    #               entropy adapter (mask_actent, + optional mask_kl_adapter) keeps
-    #               individual block probabilities away from 0/1. These are
-    #               complementary, not redundant: ``prob`` alone can hit the mean
-    #               target while a fixed subset of blocks rails to hard 0/1 ("railing
-    #               to a corner" -- mean on target, but no per-block stochasticity).
-    mask_sparsity_mode: prob
-    # Entropy-native mask controls (used when mask_sparsity_mode == 'entropy' or
-    # 'prob_entropy'). Both targets are dimensionless (fraction-of-max entropy; nats)
-    # so they transfer across environment and model size. Off unless one of those
-    # modes is selected.
-    mask_actent_target: 0.5     # per-block mask entropy setpoint (fraction of ln2)
-    mask_actent_impl: mult
-    mask_actent_min: 1e-5
-    mask_actent_max: 1e2
-    mask_actent_vel: 0.1
-    mask_actent_init: 1.0
-    mask_sparse_prior: 0.1      # q of the sparse Bernoulli prior the mask is pulled toward
-    # KL(mask || Bernoulli(q)) term (entropy mode only): off by default. When False,
-    # the entropy-native mask runs on the mask_actent entropy floor alone (no explicit
-    # sparsity pull toward mask_sparse_prior) -- pure anti-collapse, no "prefer not to edit".
-    mask_kl_enable: False
-    mask_kl_target: 0.2         # nats budget for KL(mask || Bernoulli(q)); task may spend up to this
-    mask_kl_impl: mult
-    mask_kl_min: 1e-5
-    mask_kl_max: 1e2
-    mask_kl_vel: 0.1
-    mask_kl_init: 1.0
-    # Tier 1: fixed weight on the prob_ach penalty (only when mode=prob_ach).
-    mask_sparsity_prob_ach_weight: 1.0
-    # B2 ablation: >0 uses a FIXED sparsity multiplier at target 0 (constant
-    # pressure toward editing no blocks, i.e. frozen goal) instead of the adaptive
-    # adapter. Only applies in 'prob' mode. 0 = use the adaptive adapter below.
-    mask_sparsity_fixed_weight: 0.0
-    mask_sparsity_min: 1e-5
-    # Ceiling for the adaptive Lagrange multiplier; must be well above ``init``.
-    mask_sparsity_max: 100.0
-    mask_sparsity_vel: 0.1
-    mask_sparsity_init: 1.0
-    # Hard edit budget: when > 0, force *exactly* this many blocks edited per
-    # manager command (Gumbel-top-k over the mask head), and drop the soft
-    # sparsity penalty entirely. 0 = use the adaptive sparsity penalty above.
-    mask_topk: 0
     # Manager-policy input conditioning (masked goals only; all default off, so the
     # manager input stays exactly feat2tensor(feat)). Each appends a stop-gradient'd
     # channel built from the PRE-edit running code Z so the manager can see what it is
     # editing / whether the standing goal was already reached. See agent._mgr_input.
     mgr_cond_goalcode: False   # concat flattened pre-edit running code Z (L*C dims); auto-forced True below by goal_soft_reuse_adapt regardless of this default
-    mgr_cond_achieve: False    # concat scalar cosine_max(decode(pre-edit Z), deter)
-    mgr_cond_decgoal: False    # (least preferred) concat decoded previous goal (deter dims)
-    # Delta goal generation (opt-in, F18 follow-up; mutually exclusive with
-    # use_masked_goals). Instead of sampling the new goal code from the manager's
-    # own categorical from scratch, its per-class logits pass through an
-    # unnormalized sigmoid ("votes", independent per class, can be driven to
-    # all-~0) that gets ADDED to the previous goal code's one-hot before the
-    # categorical sample -- an explicit, gradient-carrying "reuse the previous
-    # block" default, vs. reuse only ever being a lucky coincidence with no
-    # gradient. Implies mgr_cond_goalcode (forced on in agent.py if set here).
-    # See agent._delta_combine_skill.
-    goal_delta_mode: False
-    # Cap on a single class's vote before adding it to the previous one-hot
-    # (which always contributes exactly 1.0 to its class). <=1.0 (sigmoid's
-    # natural ceiling) is a no-op; lower values soften how strongly one fresh
-    # vote can outweigh the standing class.
-    goal_delta_clip: 1.0
     # Direct (REINFORCE-free) implicit sparsity (2026-07-16, F18 follow-up #2).
     # F18 found impl_sparsity_mode catastrophic because "kept" has no
     # differentiable representation under plain (direct) sampling -- the only
@@ -297,44 +171,6 @@ defaults:
     goal_soft_reuse_adapt_max: 100.0
     goal_soft_reuse_adapt_vel: 0.1
     goal_soft_reuse_adapt_one_sided: False
-    # Differentiable continuous-goal-space reuse loss (2026-07-16). Directly
-    # targets cosine_max(decoded_goal_t, decoded_goal_{t-1}) instead of
-    # relying on code-level reuse (delta mode / implicit sparsity) as a proxy --
-    # worker success is a function of the DECODED goal, never the code
-    # directly, and an unchanged code doesn't guarantee an unchanged decode (or
-    # vice versa). Own loss key (``goal_reuse``, see loss_scales); gradient
-    # flows through goal_dec's INPUT (the code, straight-through into the
-    # manager) but NOT into goal_dec's own parameters -- the goal autoencoder
-    # is trained only by its own reconstruction/struct losses, this mechanism
-    # shapes the manager only (see agent._decode_goal_no_decoder_grad). Works
-    # regardless of which goal-generation mechanism produced the code (plain,
-    # masked, joint, or delta). Implies mgr_cond_decgoal (forced on in
-    # agent.py if either this or goal_reuse_adapt is set) -- the manager needs
-    # to see the previous decoded goal to reason about how far it's moving it.
-    # Two mutually-exclusive modes (mirrors goal_struct_weight/goal_struct_adapt):
-    #   goal_reuse_weight (fixed, default/simple ablation): pushes toward
-    #     similarity=1 unconditionally, weighted by this constant. 0.0 = off.
-    #   goal_reuse_adapt (adaptive, recommended): a dual-ascent Lagrange
-    #     multiplier (embodied.jax.AutoAdapt, inverse=True -- "push up when
-    #     below target", the same sense used for entropy regularizers) that
-    #     grows while mean realized similarity sits BELOW goal_reuse_target and
-    #     shrinks while above, so the pressure self-tunes to hold similarity
-    #     AT the target rather than driving it to 1 unconditionally.
-    goal_reuse_weight: 0.0
-    goal_reuse_adapt: False
-    goal_reuse_target: 0.9
-    # Open-loop anneal of goal_reuse_target itself (agent.Ratchet, same
-    # mechanism as impl_sparsity_target_sched): ramps from
-    # goal_reuse_target_init toward goal_reuse_target by at most
-    # goal_reuse_target_vel per training call. Default init == target -> no-op
-    # (constant target from step 0, byte-for-byte prior behavior).
-    goal_reuse_target_init: 0.9
-    goal_reuse_target_vel: 0.01
-    goal_reuse_adapt_init: 1.0
-    goal_reuse_adapt_min: 1e-5
-    goal_reuse_adapt_max: 100.0
-    goal_reuse_adapt_vel: 0.1
-    goal_reuse_adapt_one_sided: False
     skill_shape: [8, 8]
     skill_classes: 8
     goal_autoencoder_beta: 0.25
@@ -416,16 +252,6 @@ defaults:
     # 0 = off (advantage alone shapes the duration, as before).
     goal_duration_reg: 0.0
     goal_duration_target: 8.0
-    # Adaptive alternative to the fixed ``goal_duration_reg``: when True, an AutoAdapt
-    # Lagrange multiplier (like ``mask_sparsity``/``goal_struct``) auto-tunes the weight
-    # on ``(E[duration] - goal_duration_target)^2`` toward ``goal_duration_adapt_setpoint``
-    # instead of using the fixed ``goal_duration_reg``. ``goal_duration_adapt_max`` HARD-
-    # CAPS the multiplier so the prior can never dominate the manager REINFORCE objective
-    # (the suspected reason fixed reg=0.1 collapsed in e41/e43). 0/False = fixed behavior.
-    goal_duration_adapt: False
-    goal_duration_adapt_setpoint: 0.5
-    goal_duration_adapt_max: 0.05
-    goal_duration_adapt_init: 0.001
     # Mask-style Lagrangian alternative to BOTH ``goal_duration_reg`` (fixed) and
     # ``goal_duration_adapt`` (adapts a squared-error-magnitude proxy toward a
     # nonzero setpoint, so it never fully converges). This adapter regulates the
@@ -450,58 +276,14 @@ defaults:
     # bypassing the duration head sample. >0 enables; used as a control (variable
     # training graph at a fixed K, no duration prior). 0 = use the emitted duration.
     goal_duration_fixed: 0
-    # Normalize the packed (variable-K) manager losses by the number of real
-    # decisions rather than the padded buffer width. True = the 2026-07-27 fix;
-    # False restores the accidental ~K-fold down-weighting of the whole manager,
-    # for A/B'ing that fix on its own. See agent.decision_mean_rescale.
-    mgr_decision_mean_rescale: True
     # Optional per-decision cost subtracted from the manager extrinsic reward at each
     # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
     # shapes the duration.
     goal_switch_cost: 0.0
-    # Optional fixed per-edited-block cost subtracted from the manager extrinsic
-    # reward (sparsity analog of goal_switch_cost). Prices editing without a target
-    # fraction: the manager edits a block only if its task-return gain beats the cost.
-    # 0 = off. Use with mask_sparsity_mode=none for fully free (priced) sparsity.
-    goal_edit_cost: 0.0
-    # B.3: achievability-gated edit cost. Per-command edit cost scaled by how reached
-    # the standing (pre-edit) goal already is (achievement cosine in [0,1]), so churning
-    # an already-satisfied goal is expensive and re-planning an unmet goal is cheap. The
-    # interior edit fraction emerges from the state, no sparsity target. 0 = off. Needs a
-    # mgr_cond_* flag on (so preedit_eff exists). Use with mask_sparsity_mode=none.
-    goal_edit_cost_ach: 0.0
-    # C.5: sparsemax edit gate. Replace the per-block Bernoulli mask with a sparsemax
-    # projection over the L block logits (simplex -> exact zeros), making the edit set
-    # sparse by construction with no sparsity target. Imposes a soft ~1-block edit budget
-    # (decisive edits must concentrate mass). Disables the soft sparsity penalty.
-    mask_sparsemax: False
-    # Tier 2: per-block leave-one-out REINFORCE credit for the edit mask via
-    # goal-conditioned Q_g(s, Z). Requires mgr_cond_* (pre-edit Z). See
-    # per_block_credit_plan.md.
-    mask_perblock_credit: False
-    # Small fixed cost subtracted from each block's counterfactual advantage
-    # (tie-break toward fewer edits when mask_perblock_credit is on).
-    perblock_edit_cost: 0.0
-    # Single-head ("joint") masked manager: merge the separate ``skill`` (content,
-    # L x C onehot) and per-block Bernoulli ``mask`` heads into ONE categorical per
-    # block over C+1 classes -- class 0 = abstain (keep the running block), classes
-    # 1..C = overwrite with content class c. One sample, one log-prob per block, so
-    # the discarded-content REINFORCE confound of the dual-head path (content for a
-    # masked-off block still gets credited) disappears by construction. Free
-    # sparsity: the abstain rate emerges from REINFORCE alone (no init bias, no rate
-    # penalty; ``mask_sparsity_*`` are inert). Requires use_masked_goals; mutually
-    # exclusive with mask_topk / mask_sparsemax / mask_perblock_credit. False = the
-    # dual-head path (byte-for-byte unchanged).
-    mask_joint_edit: False
     # Manager extrinsic-reward block aggregation: 'mean' (per-step average, original)
     # or 'sum' (continuation-weighted SMDP option return). Under per-step block
     # discounting 'mean' under-credits long blocks (short-K bias); 'sum' is K-neutral.
     mgr_reward_agg: mean
-    # When True with ``variable_goal_length``, pool manager extrinsic/exploratory
-    # rewards over each realized duration segment (Director ``abstract_traj`` style)
-    # instead of per-step dense rewards. Downsamples the manager AC timeline to
-    # switch steps only, matching fixed-K credit assignment on adaptive boundaries.
-    variable_goal_block_rew: False
     # Hindsight-relabel a block-pooled decision's duration class when the
     # imagination horizon cuts its hold short (rather than a real switch), so
     # REINFORCE credits the duration actually realized, not the sampled one.
@@ -583,20 +365,6 @@ defaults:
     # Both appear under skill_viz/ and goal_enc_viz/ in WandB.
     report_skill_viz: True
     report_goal_enc_viz: True
-    # Overwrite-goal panel (only when use_masked_goals): an entire-episode online
-    # composite logged as epstats/policy_mask_viz_{key}, 3 rows top->bottom (each
-    # upscaled 10x, e.g. 32->320 px) = [obs | goal code with the most-recently-edited
-    # blocks in yellow | active goal image]. Masked goals: running code Z with the
-    # sticky last-edit blocks yellow (held across empty/held goals). Plain goals: the
-    # emitted skill code, all yellow (whole code replaced each decision). Built in
-    # policy(), like policy_image_with_goal. Any HRL run with an image decoder.
-    report_mask_viz: True
-    # Nearest-neighbor upscale factor for the mask_viz rows (32 px -> scale*32 px).
-    # The panel is stacked into an episode-length gif, so the byte size grows with
-    # scale^2: scale=10 produced ~21 MB gifs that overwhelmed the WandB media sync
-    # (mask_viz then never appeared online). scale=4 (128 px) stays legible while
-    # keeping the gif ~1-3 MB, in line with the other episode videos.
-    report_mask_viz_scale: 4
     # Offline goal-code structure diagnostics (volatility + on-manifold splice test);
     # off by default, enabled only by the diag driver. See Agent._code_diag.
     report_code_diag: False
@@ -604,61 +372,10 @@ defaults:
     # Logged as epstats/policy_image_with_goal. Adds one decoder forward pass per step.
     policy_goal_image: True
 
-masked_goals: &masked_goals
-  agent.use_hrl: True
-  agent.use_masked_goals: True
-
 variable_goals: &variable_goals
   agent.use_hrl: True
   agent.variable_goal_length: True
   agent.imag_length: 32
-
-# Auto-tuning HRL: masked goals + variable-K where EVERY regularizer is an adaptive
-# Lagrange multiplier holding a DIMENSIONLESS target (entropy fraction, KL nats,
-# edit fraction) — no reward-unit costs (those never transfer across env/model size:
-# switch/edit costs only reach corners, duration-reg magnitude-dominates). The only
-# hand-set knobs are dimensionless targets, so one config is meant to transfer across
-# the whole env × size panel. Goal length is explored via the duration head's adaptive
-# entropy (no forced-K prior, no switch cost) with the option-return (block) credit for
-# convergence; mask sparsity via the proven two-sided ``prob`` fraction target (flip
-# ``mask_sparsity_mode`` to ``entropy`` to move to the fully entropy-native mask, whose
-# machinery is built and off-by-default). Manager conditioning OFF (neutral-to-negative,
-# finding #4; also disables per-block credit, which needs the pre-edit Z). See
-# EXPERIMENTS.md "Pure-Director vs masked recipe".
-hrl_auto: &hrl_auto
-  agent.use_hrl: True
-  agent.use_masked_goals: True
-  agent.variable_goal_length: True
-  agent.imag_length: 32
-  # Manager conditioning off (finding #4) -> per-block credit off (it needs pre-edit Z).
-  agent.mgr_cond_goalcode: False
-  agent.mgr_cond_achieve: False
-  agent.mask_perblock_credit: False
-  # Mean dense-reward aggregation; duration credit via the option-return (block) path.
-  agent.mgr_reward_agg: mean
-  agent.variable_goal_block_rew: True
-  # NO reward-unit costs (non-transferable across env / size).
-  agent.goal_switch_cost: 0.0
-  agent.goal_edit_cost: 0.0
-  agent.goal_edit_cost_ach: 0.0
-  agent.perblock_edit_cost: 0.0
-  # NO forced-K duration prior — K is explored by the duration head's adaptive entropy
-  # and pulled to useful values by the option-return credit. Raise the duration entropy
-  # setpoint above the skill target (0.5) to resist the documented short-K collapse.
-  agent.goal_duration_reg: 0.0
-  agent.goal_duration_adapt: False
-  agent.goal_duration_min: 1
-  agent.goal_duration_max: 16
-  agent.manager_actent_duration_target: 0.5
-  # Mask level control: prob-first (adaptive-weight two-sided Lagrangian, proven e57).
-  # Flip to 'entropy' to use the entropy-native mask (mask_actent + mask_kl adapters).
-  agent.mask_sparsity_mode: prob
-  agent.mask_sparsity_target: 0.3
-  agent.mask_sparsity_max: 5.0
-  agent.mask_topk: 0
-  agent.mask_sparsemax: False
-  # Keep the on-manifold struct term (finding #5: healthy, needed for block-splice goals).
-  agent.goal_struct_weight: 200.0
 
 size1m: &size1m
   .*\.rssm: {deter: 512, hidden: 64, classes: 4}
