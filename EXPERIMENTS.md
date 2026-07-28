@@ -2340,6 +2340,47 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
 
 ---
 
+### 2026-07-28 · e372–e377 — 4M A/B of the agent.py modularization (RUNNING)
+
+Full-length V100 validation that the consolidation (see §7, 2026-07-28) is
+behavior-preserving on the paths that survived. Three tasks × two arms, seed 0,
+`sbatch/run_refactor_ab_4m.sbatch`, 4M steps each.
+
+| exp | job | arm | task | tree |
+|---|---|---|---|---|
+| e372 | 4671612 | pre  | cartpole_swingup | `code/dreamerv3` @ b93e8b6 |
+| e373 | 4671613 | post | cartpole_swingup | `code/dreamerv3_refactor` @ 0c90064 |
+| e374 | 4671614 | pre  | cheetah_run      | `code/dreamerv3` @ b93e8b6 |
+| e375 | 4671615 | post | cheetah_run      | `code/dreamerv3_refactor` @ 0c90064 |
+| e376 | 4671616 | pre  | hopper_hop       | `code/dreamerv3` @ b93e8b6 |
+| e377 | 4671617 | post | hopper_hop       | `code/dreamerv3_refactor` @ 0c90064 |
+
+**Recipe (identical both arms)**: the e363/e364 research cell — `plain_vark`,
+block-pooled manager credit, Lagrangian duration prior at target 8,
+`mgr_reward_agg=sum`, relabel OFF, `goal_soft_reuse_adapt=True` ratcheted 0→0.5
+(vel 1e-6, small-scale calibration) so the retained implicit-sparsity mechanism
+is actually exercised. `size6m`, 32×32, 16 envs.
+
+**Why a purpose-built script**: `run_v3_prior_vargoal_small.sbatch` predates
+`variable_goal_block_rew`, so the pre arm would have silently run the
+FULL-RESOLUTION var-K path — the one the refactor deleted — against the post
+arm's block-pooled path. That is a real behavioral difference by construction,
+not an A/B. The new script emits one identical flag list for both trees and adds
+the block-pooling flag only where the key still exists.
+
+**Hypothesis**: the refactor is a pure restructuring of the retained paths, so
+the two arms are the same algorithm at the same seed and should be
+statistically indistinguishable.
+
+**Expected result**: per-task best-15 and trailing-50 within seed noise of each
+other (cartpole is the sharp one — it has the strongest small-scale signal;
+hopper is expected ≈0 on BOTH arms, consistent with F-hopper locality). A
+systematic gap on any task falsifies "behavior-preserving" and the refactor must
+be re-audited before merging.
+
+**Do NOT read this as a mechanism experiment** — both arms are the same recipe;
+the only variable is which tree ran it.
+
 ## 7. Technical notes (implementation facts that bit us)
 
 - **Codebase consolidation (2026-07-28).** `agent.py` had grown to 4535 lines
