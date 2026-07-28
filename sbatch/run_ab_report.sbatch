@@ -47,6 +47,25 @@ OUT="$OUT_DIR/ab_report_${STAMP}.txt"
     esac
   done
   echo
+  echo "--- requeue contamination check ---"
+  # The five pre-side arms read the LIVE tree, which was merged to the
+  # refactored code at 2026-07-29T07:51:44+09:00. Their running processes hold
+  # the old code in memory, but a REQUEUE re-execs and would silently pick up
+  # the new code, invalidating that arm as a "pre" measurement. SLURM keeps one
+  # accounting row per run attempt, so >1 row means the job restarted.
+  MERGE_EPOCH=$(date -d '2026-07-29T07:51:44+09:00' +%s)
+  for j in 4671612 4671614 4671616 4671631 4671632; do
+    n=$(sacct -j "$j" --duplicates --format=JobID -n 2>/dev/null | grep -cE "^ *$j( |$)")
+    start=$(sacct -j "$j" --format=Start -n 2>/dev/null | tail -1 | tr -d ' ')
+    se=$(date -d "$start" +%s 2>/dev/null || echo 0)
+    if [ "${n:-1}" -gt 1 ] || { [ "$se" -gt 0 ] && [ "$se" -gt "$MERGE_EPOCH" ]; }; then
+      echo "  !! $j RESTARTED after the merge -- it is no longer a 'pre' arm."
+      echo "     Discard it; its results now come from the refactored code."
+    else
+      echo "  ok $j (single run attempt, started $start)"
+    fi
+  done
+  echo
   echo "--- comparison (matched step windows, vs same-code control) ---"
   source /apps/unit/DoyaU/vasilache/apps/source_rl_env.sh >/dev/null 2>&1 || true
   python3 "$REPO/tools/compare_refactor_ab.py" 2>&1
