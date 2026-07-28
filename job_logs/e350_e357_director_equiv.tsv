@@ -1,0 +1,10 @@
+e350	4671354	e350_hopper_pinned_BIG	TASK=dmc_hopper_hop,RECIPE=plain_vark,DUR_MODE=fixed,DUR_FIXED=8,DUR_TARGET=8.0,DUR_ACTENT_TARGET=0.0,MGR_REWARD_AGG=mean,VARIABLE_GOAL_BLOCK_REW=True
+e351	4671355	e351_cheetah_pinned_BIG	TASK=dmc_cheetah_run,RECIPE=plain_vark,DUR_MODE=fixed,DUR_FIXED=8,DUR_TARGET=8.0,DUR_ACTENT_TARGET=0.0,MGR_REWARD_AGG=mean,VARIABLE_GOAL_BLOCK_REW=True
+e352	4671356	e352_cheetah_director_BIG	TASK=dmc_cheetah_run,RECIPE=director,MGR_FREQ=8
+e353	4671357	e353_hopper_director_BIG	TASK=dmc_hopper_hop,RECIPE=director,MGR_FREQ=8
+e354	4671358	e354_hopper_relabelON_BIG	TASK=dmc_hopper_hop,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0,MGR_REWARD_AGG=sum,VARIABLE_GOAL_BLOCK_REW=True,GOAL_DURATION_RELABEL_TRUNCATED=True
+e355	4671359	e355_cheetah_relabelON_BIG	TASK=dmc_cheetah_run,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0,MGR_REWARD_AGG=sum,VARIABLE_GOAL_BLOCK_REW=True,GOAL_DURATION_RELABEL_TRUNCATED=True
+e356	4671360	e356_hopper_relabelOFF_BIG	TASK=dmc_hopper_hop,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0,MGR_REWARD_AGG=sum,VARIABLE_GOAL_BLOCK_REW=True,GOAL_DURATION_RELABEL_TRUNCATED=False
+e357	4671361	e357_cheetah_relabelOFF_BIG	TASK=dmc_cheetah_run,RECIPE=plain_vark,DUR_MODE=lagrangian,DUR_TARGET=8.0,MGR_REWARD_AGG=sum,VARIABLE_GOAL_BLOCK_REW=True,GOAL_DURATION_RELABEL_TRUNCATED=False
+e358	4671475	cheetah pinned, fix1 OFF (attribution arm vs e351)
+e359	4671476	cheetah pinned, fix1 ON seed1 (noise bound for e351)

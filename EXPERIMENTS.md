@@ -84,6 +84,53 @@ even under both bugfixes. Full raw pull and hypothesis-by-hypothesis verdicts fo
 older narrative for how the two bugs were found/fixed is preserved below under
 "Prior state".)
 
+**e350–e357 launched (2026-07-27) — the e342–e349 batch relaunched under FIVE new
+block-pooled fixes, plus same-code Director baselines.** e342–e349 were cancelled ~2h in
+(archived to the bucket, deleted from `/work`) after a differential Director-equivalence
+audit found that the block-pooled var-K path diverges from fixed-K Director in five
+places, none of them in the pooling arithmetic the earlier tensor-level proof covered —
+all of them in the **reductions taken over the padded decision axis**
+(`downsample_at_switch_mask` packs decisions into a static H+1=17-wide buffer holding
+**2 real decisions** at H=16/K=8 and forward-fills the tail). Summary, full detail in §7:
+
+| # | Defect | Measured effect | Scope |
+|---|---|---|---|
+| 1 | `Agent.loss` reduces manager losses with `v.mean(1)` over the **buffer width**, not the decision count | manager policy + both critic losses **exactly 8× smaller** than Director's on an identical rollout; ~7× on the replay side | every block-pooled run (e326–e349, e44, e62); weaker form in every var-K run |
+| 2 | `mgr_retnorm`(meanstd)/valnorm/advnorm and the entropy `AutoAdapt`s got the padded tensor unmasked | ~13 of 16 samples were copies of one decision → shrunken return spread → inflated advantages | same |
+| 3 | `mgr_switch` counted a switch on the rollout's final step as trainable | trains a decision owning zero transitions (fixed-K drops it as the bootstrap anchor) | same |
+| 4 | Director's windowed `split_traj` worker credit was gated on `not variable_goal_length` | the duration-pinned **control** trained its worker with a different algorithm than its baseline | duration-pinned runs (e334/e335, e342/e343) |
+| 5 | Pinned duration head still trained via the entropy regularizer and the E[dur] prior | nuisance gradient into the shared manager trunk that Director never carries | same |
+
+All five are fixed and guarded by `embodied/tests/test_block_pooled_equivalence.py`
+(35/35 pass; 8 of those tests fail on the pre-fix code). The suite asserts what the
+helper-level tests could not: under `goal_duration_fixed=K` the **reduced losses that
+reach the optimizer**, the **arguments handed to each running normalizer**, and the
+**gradients** w.r.t. the manager's parameters all match fixed-K Director exactly.
+Training smoke: `sbatch/run_smoke_variable_goals.sbatch` (two new legs — the
+duration-pinned control and a pure fixed-K Director leg).
+
+| Exp | Job | Task | Recipe | Question |
+|---|---|---|---|---|
+| e350 | 4671354 | hopper hop | plain_vark, **pinned** K=8, block-rew, mean | does the equivalence control now reach e124's 279.4? |
+| e351 | 4671355 | cheetah run | plain_vark, **pinned** K=8, block-rew, mean | does it now reach e191's 290.0 (was 25.2 as e335)? |
+| e352 | 4671356 | cheetah run | pure Director, K=8 | same-code baseline: removes code drift as an explanation |
+| e353 | 4671357 | hopper hop | pure Director, K=8 | same-code baseline |
+| e354 | 4671358 | hopper hop | plain_vark, lagr τ8, sum, relabel ON | rerun of e326/e344 under the fixes |
+| e355 | 4671359 | cheetah run | plain_vark, lagr τ8, sum, relabel ON | does the late collapse (trail50 7.3) go away? |
+| e356 | 4671360 | hopper hop | plain_vark, lagr τ8, sum, relabel OFF | rerun of e330/e346 |
+| e357 | 4671361 | cheetah run | plain_vark, lagr τ8, sum, relabel OFF | does the best cheetah cell (124.7) improve? |
+
+Deviation from a 1:1 resubmit: the e348/e349 reruns are dropped to make room for
+e352/e353, since e191 (cheetah 290.0, itself noisy: 225–471, cancelled at 64% budget)
+predates many commits. All BIG scale, `gpu-a100`, 4M steps, SEED=0;
+`sbatch/submit_e350_e357_director_equiv.sh`. **Pre-registered readout:** if defects 1–5
+were the cause, e351 tracks e352 within seed noise; if e351 stays near its old 25.2 while
+e352 reproduces ~290, the entire padded-axis family of explanations is ruled out and the
+λ-return construction itself is the remaining suspect. Live invariant check for the
+pinned control (verified green on the smoke leg): `tools/check_pinned_director_invariants.py`
+asserts `mgr_valid_decisions==2`, `mgr_duration_mean==8`, `mgr_duration_std==0`, and no
+duration-prior loss.
+
 **e342/e343 launched (2026-07-27) — e334/e335 rerun under TWO NEW agent.py fixes,
 full 4M-step budget.** A deeper pipeline audit of the e334/e335 gap (tensor/gradient-
 level tests, not training curves — `embodied/tests/test_variable_goals.py`, 23/23
@@ -2304,6 +2351,81 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
   — run on a V100, not the login node (glibc/Py3.11).
 - **Duration-reg magnitude domination.** Fixed `reg·(E[dur]−τ)²` inside `mgr_policy` at
   reg=0.1 swamps the normalized REINFORCE under one grad-clipped optimizer. reg ≤0.03 OK.
+- **Terminal flags derived from a continuation PROBABILITY (fixed 07-28) — the big
+  one.** Block-pooled replay built its terminal flags as
+  `term_down = (1.0 - repl_mgr_cont).astype(term.dtype)`. `is_terminal` is an
+  `elements.Space(bool)`, and `repl_mgr_cont` is a *probability* (~0.997), so this is
+  `(1.0 - 0.997).astype(bool)` → **`True` at essentially every manager decision**.
+  `lambda_return` uses `live = 1 - term`, so **every bootstrap term was zeroed** and the
+  manager's replay-side value target collapsed to the immediate pooled block reward:
+  measured **7.22 → 0.30 (24×)** on a normal non-terminating window. Fixed-K uses the
+  real flags (`term[:, idx_down]`) and non-block var-K uses `term` directly — this was
+  exclusive to block pooling, i.e. to every `variable_goal_block_rew` run ever
+  (e44, e62, e326–e359).
+  **Signature in the logs** (e351 pinned vs e352 same-code Director, 1.4–2.0M):
+  `mgr_extr_ret` 1.59 vs 16.72, `mgr_extr_val` 1.44 vs 16.88, `mgr_extr_adv`
+  **+1.40 vs −0.26** (chronically positive — a critic trained on de-bootstrapped
+  targets can never catch imagination's properly-bootstrapped returns),
+  `opt/ac_grad_norm` 2.44 vs 0.46.
+  **This is the mechanism behind the project-wide "hopper is 0 in every var-K run"
+  pattern (F12 / hopper-goal-locality).** Sparse-reward tasks carry nearly all of their
+  signal in the bootstrap, so deleting it is fatal; dense cheetah still had the immediate
+  block reward and reached 126 vs Director's 337. Fix mirrors `last_down`: downsample the
+  real flags at switch positions, then `patch_trailing_replay_state`.
+  Tests: `test_bool_cast_of_a_continuation_complement_reads_as_terminal`,
+  `test_replay_terminal_flags_are_not_derived_from_continuation`,
+  `test_downsampled_terminal_flags_round_trip_through_the_bool_cast`.
+  **Method note:** no shape or value check could catch this — the numbers stayed finite
+  and plausible and JAX raised nothing. It was a *dtype* crossing. It surfaced from
+  fuzzing the pooling helpers against a longhand numpy reference
+  (`embodied/tests/test_block_pooled_stepwise.py`) plus ranking every shared metric
+  between the pinned run and a same-code Director baseline by divergence.
+- **Padded decision axis silently down-weighted the whole manager (fixed 07-27).** THE
+  block-pooled var-K bug — affects every `variable_goal_block_rew` run to date (e326–e349
+  and earlier), and in weaker form every var-K run. `downsample_at_switch_mask` packs a
+  data-dependent number of decisions into a **static, full-width** buffer and forward-fills
+  the tail, so at BIG scale (H=16, K=8) the manager tensors are **17 columns wide with 2
+  real decisions**. `Agent.loss` then reduces every manager loss with `v.mean(1)` — over
+  the buffer width, not the decision count — so `mgr_policy`, `mgr_extr_value` and
+  `mgr_expl_value` came out **exactly 8× smaller** than fixed-K Director's for a
+  bit-identical rollout (measured, `test_block_pooled_manager_losses_match_fixed_k`). With
+  fixed loss scales that is an 8× cut to the manager's effective learning rate against the
+  world model and the worker; under true variable K the factor drifts with the realized
+  hold length. Same bug on the replay side (9 real decisions in a 63-wide buffer at
+  `batch_length=64`). Fix: `decision_mean_rescale` multiplies the masked weights by
+  `n_cols / n_valid` per row, so the caller's `.mean(1)` is a per-decision mean; no-op
+  under fixed K.
+- **Padded slots contaminated the manager's running statistics (fixed 07-27).** Companion
+  to the above: `mgr_retnorm` (`meanstd`), `valnorm`, `advnorm` and the adaptive
+  entropy `AutoAdapt`s were handed the *whole* padded tensor with no mask, so ~13 of 16
+  columns were repeats of one decision — shrinking the return spread the advantage is
+  divided by (advantages inflated) and making the entropy controller track a single
+  decision. `Normalize`/`AutoAdapt` now take an optional `weights` argument (weighted
+  meanstd; `nanpercentile` for `perc`), and `imag_loss_mgr` passes the decision mask.
+  Logged manager metrics (`mgr_adv`, `mgr_*_ret`, `mgr_ent/*`, `mgr_*_rew`) are now
+  decision-weighted too, so **var-K manager metrics before/after 07-27 are not comparable**.
+- **Empty trailing decision was trained (fixed 07-27).** `mgr_switch` counted *all*
+  switches, including one landing on the rollout's final step. Rewards are indexed
+  `rew[:, 1:]`, so that decision pools an empty segment: fixed-K keeps that column purely
+  as a bootstrap anchor and drops it with `[:, :-1]`. `variable_block_director_tensors`
+  now counts `switch_mask[:, :-1]`.
+- **Worker credit used a different algorithm under a pinned hold (fixed 07-27).** The
+  Director `split_traj` windowed worker loss was gated on `not variable_goal_length`, so
+  the `goal_duration_fixed=8` *control* — whose rollout switches on exactly the fixed-K
+  grid — silently trained its worker with the dense fallback instead (boundary state
+  conditioned on the NEW goal, one lambda-return with resets, different per-window
+  weighting). New `worker_split_window` selects the windowed path whenever the hold is
+  statically regular (fixed K, or `goal_duration_fixed>0`); genuinely variable holds still
+  use the dense path.
+- **Pinned duration head still trained (fixed 07-27, completing the 07-27 REINFORCE fix).**
+  `manager_reinforce_policy` removed 'duration' from the REINFORCE sum under
+  `goal_duration_fixed`, but the adaptive duration-entropy regularizer and the
+  `goal_duration_reg` prior on E[dur] kept pushing the head — and the shared trunk —
+  with signals that cannot affect the trajectory and that Director (no duration head at
+  all) never carries. Both are now skipped when the hold is pinned; the manager loss is
+  then bit-identical to a skill-only manager's.
+  Tests for all five: `embodied/tests/test_block_pooled_equivalence.py` (Director-
+  equivalence differential suite; run on a compute node, not the login node).
 - **Packed-tensor recency bias (fixed 07-10).** Under var-K, `forward_fill_packed` made
   every unweighted mean over decision slots ~75% weighted to the LAST imagined decision —
   affected all mask-sparsity losses/metrics up to e159. Now valid-slot-weighted; pre/post
@@ -2318,6 +2440,13 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
   outputs a `countdown` key — pop it before tree-ops on skills), real acting (from
   `mgr_step` carry), bootstrap action. Report/viz paths default to full budget. Flag off =
   byte-identical inputs (regression-smoked).
+- **Where to run tests (07-27).** The account's GPU quota is shared, so while a full
+  8-job A100 batch is in flight a `-p gpu-v100`/`gpu-a100` test job pends forever on
+  `AssocGrpGRES`/`AssocGrpCpuLimit`. The **`intel` CPU partition has no GrpTRES limit for
+  us and its nodes are el8**, so `dreamerv3_env` imports there and the JAX suites run on
+  CPU in <1 min: `sbatch/run_pytest_cpu.sbatch`, or
+  `srun -p intel -c 8 --mem=24G -t 0:20:00 bash -lc '...'`. The login node still cannot
+  (glibc too old).
 - **64×64 report segfault (e5).** Report-compile crashes at 64×64 regardless of conv impl.
   Use `--agent.report False` or lighten report.
 - **`mask_sparsity_mode=none` bring-up.** Loss/scale key-set assert requires popping the

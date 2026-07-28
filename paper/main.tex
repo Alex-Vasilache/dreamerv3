@@ -1751,4 +1751,79 @@ null result. Across all 16 cells, hopper remains at the dead floor
 regardless of any of these knobs, extending Finding~12's pattern to the
 block-pooled path specifically.
 
+
+\subsection{Found: the discrepancy is the padded decision axis, not the
+pooling arithmetic}
+\label{sec:paddedaxis}
+
+The equivalence failure above is now attributed. The pooling arithmetic was
+never wrong --- the tensor-level proof of Sec.~\ref{sec:blockpooled} holds ---
+but it is a proof about the wrong object. Under \texttt{variable\_goal\_block\_rew}
+the manager's decisions are packed by \texttt{downsample\_at\_switch\_mask}
+into a \emph{static, full-width} buffer (width $T = H{+}1$, one slot per
+possible switch) whose unused tail is forward-filled with the last real
+decision. At the scale these runs use ($H{=}16$, $K{=}8$) that buffer holds
+$2$ trainable decisions in $16$ columns. Everything downstream of the pooling
+then reduces over the buffer, not over the decisions:
+
+\begin{enumerate}
+\item \textbf{Loss magnitude.} \texttt{Agent.loss} reduces each manager loss
+with \texttt{v.mean(1)}. Fixed-$K$'s axis \emph{is} the decision count; the
+block-pooled axis is the buffer width, so for a bit-identical rollout the
+manager's policy loss and both critic losses come out \emph{exactly $8\times$
+smaller} than Director's (measured; the factor is the valid fraction of the
+axis). Against fixed loss scales this is an $8\times$ cut to the manager's
+effective learning rate relative to the world model and the worker, and under
+genuinely variable holds it drifts with the realized hold length --- a
+nonstationary reweighting of the objective. The same defect applies on the
+replay side ($9$ decisions in a $63$-wide buffer at \texttt{batch\_length}$=64$).
+\item \textbf{Running statistics.} The manager's return normalizer
+(\texttt{meanstd}), value/advantage normalizers and the adaptive entropy
+controllers were handed the whole padded tensor unmasked, so $\sim\!13$ of
+$16$ samples were copies of one decision: the tracked return spread shrinks,
+inflating every advantage, and the entropy controller tracks a single
+decision instead of the rollout.
+\item \textbf{An extra, empty decision.} \texttt{mgr\_switch} counted a switch
+landing on the rollout's final step as trainable. Rewards are indexed
+$r_{1:}$, so that decision owns no transitions: it is the bootstrap anchor,
+precisely the column fixed-$K$ drops.
+\item \textbf{A different worker algorithm.} Director's windowed worker credit
+(\texttt{split\_traj}) was gated on \texttt{not variable\_goal\_length}, so the
+$\texttt{goal\_duration\_fixed}{=}8$ \emph{control} --- whose rollout switches
+on exactly the fixed-$K$ grid --- trained its worker with the dense fallback
+instead: a different objective (boundary state conditioned on the new rather
+than the old goal, one reset $\lambda$-return, different per-window weighting)
+than the baseline it is compared against.
+\item \textbf{A pinned-but-trained duration head.} The 2026-07-27 REINFORCE fix
+removed \texttt{duration} from the policy-gradient sum under a pinned hold, but
+the adaptive duration-entropy regularizer and the $E[\mathrm{dur}]$ prior kept
+pushing the head and its shared trunk with signals that provably cannot affect
+the trajectory and that Director, having no duration head, never carries.
+\end{enumerate}
+
+Items 1--3 affect \emph{every} block-pooled run in the project (e326--e349 and
+the earlier e44/e62), item 1 in weakened form every variable-$K$ run; items
+4--5 affect the duration-pinned control specifically, i.e.\ exactly the
+configuration used to argue that the pooling was equivalent. All five are
+fixed, and are now guarded by a differential test suite
+(\texttt{embodied/tests/test\_block\_pooled\_equivalence.py}) that asserts what
+the earlier helper-level tests did not: that with the hold pinned to $K$, the
+\emph{reduced losses that reach the optimizer}, the arguments handed to each
+running normalizer, and the \emph{gradients} with respect to the manager's
+parameters all match fixed-$K$ Director exactly. The methodological lesson is
+the mirror image of the earlier proof: a tensor-level equivalence check on the
+physically meaningful entries of a padded tensor says nothing about the
+reductions taken over it, and it is the reductions that set the effective
+objective.
+
+Whether this closes the gap is an empirical question the tests cannot settle:
+e350/e351 (jobs 4671354/4671355; duration-pinned control, hopper/cheetah) rerun
+the e334/e335 configuration under the fixes, alongside same-code pure-Director
+baselines (e352/e353, jobs 4671356/4671357) so that code drift cannot confound the comparison, and e354--e357
+rerun four free-duration matrix cells. The pre-registered prediction is that
+the pinned control now tracks Director (cheetah $\approx\!290$, e191) rather
+than the $25.2$ it reached before; a persisting gap would rule out the entire
+padded-axis family of explanations and point back at the $\lambda$-return
+construction itself.
+
 \end{document}

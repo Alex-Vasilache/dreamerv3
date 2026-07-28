@@ -94,5 +94,31 @@ python -u "$MAIN" --logdir "$BASE/var_plain_blockrew_sum_trunc_norelabel" \
   --agent.goal_duration_lagrange True
 echo "LEG 5 OK"
 
+echo "=================== LEG 6: duration-pinned Director control (e342/e343) ========"
+# The configuration the Director-equivalence work targets: block-pooled
+# variable-K with the hold pinned to K=8, i.e. a reparameterization of fixed-K
+# Director. Exercises the decision-count rescaling in imag_loss_mgr, the
+# valid-decision statistics for the normalizers/entropy adapters, and the
+# windowed (split_traj) worker credit that worker_split_window now selects for
+# a pinned hold. See embodied/tests/test_block_pooled_equivalence.py.
+python -u "$MAIN" --logdir "$BASE/var_blockrew_durfixed8" \
+  --configs size6m debug "${COMMON[@]}" \
+  --agent.variable_goal_length True \
+  --agent.variable_goal_block_rew True \
+  --agent.goal_duration_fixed 8 \
+  --agent.manager_sample_freq 8 \
+  --agent.goal_duration_min 1 --agent.goal_duration_max 16 \
+  --agent.goal_duration_target 8.0 \
+  --agent.goal_duration_reg 0.01 --agent.goal_duration_adapt False \
+  --agent.goal_duration_lagrange False
+echo "LEG 6 OK"
+
+echo "=================== LEG 7: pure fixed-K Director (baseline path) =============="
+python -u "$MAIN" --logdir "$BASE/director_fixedk" \
+  --configs size6m debug "${COMMON[@]}" \
+  --agent.variable_goal_length False \
+  --agent.manager_sample_freq 8
+echo "LEG 7 OK"
+
 echo "ALL SMOKE LEGS PASSED"
 exit 0

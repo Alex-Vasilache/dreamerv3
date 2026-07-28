@@ -344,8 +344,17 @@ def test_variable_block_director_expl_and_switch_outputs_match_fixed_k():
   np.testing.assert_allclose(
       cont[:, :fix_cont.shape[1]], fix_cont, rtol=1e-5, atol=1e-5)
 
-  expected_switch = switch_valid_mask(sw, T)
+  # ``mgr_switch`` marks the decisions that own realized transitions, which is
+  # ``switch_valid_mask`` MINUS any switch landing on the sequence's final
+  # timestep: rewards are indexed ``rew[:, 1:]``, so such a switch pools an
+  # empty segment and is only a bootstrap anchor -- the column fixed-K drops
+  # with ``[:, :-1]``. Here switches sit at t=0/8/16 of a length-17 rollout, so
+  # 2 of the 3 are trainable decisions (fixed 2026-07-27; see
+  # ``test_block_pooled_valid_decision_count_excludes_empty_trailing_segment``
+  # and the "trains the manager 8x too weakly" entry in EXPERIMENTS.md §7).
+  expected_switch = switch_valid_mask(sw[:, :-1], T)
   np.testing.assert_array_equal(switch, expected_switch)
+  assert float(switch[0].sum()) == 2.0
 
 
 def test_variable_block_director_batched_heterogeneous_phase_matches_per_row():

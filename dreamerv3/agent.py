@@ -300,6 +300,53 @@ def aggregate_mgr_cont_variable(con, switch_mask, without_zeros=False):
   return out
 
 
+def worker_split_window(
+    split_traj, variable_goal_length, duration_fixed, manager_sample_freq, H):
+  """Window length for Director ``split_traj`` worker credit, or 0 if N/A.
+
+  Director trains the worker on non-overlapping windows of ``K+1`` states, each
+  conditioned throughout on the goal decoded at the window's START state -- the
+  boundary state keeps the OLD goal so the lambda-return bootstraps inside one
+  goal. That requires a statically regular switch pattern.
+
+  ``goal_duration_fixed > 0`` bypasses the duration head and holds every goal
+  for exactly that many steps (see ``_duration_steps``), so the variable-K
+  rollout switches on precisely the same static every-``K`` grid as fixed K and
+  the same windowing applies. Without this, the duration-pinned "control"
+  configuration silently trained its WORKER with a different algorithm (the
+  dense fallback, which conditions the boundary state on the NEW goal and only
+  resets the return there) than the Director baseline it is compared against --
+  a second Director divergence beyond the block-pooled manager credit path.
+  Genuinely variable holds (``duration_fixed == 0``) still take the dense path.
+  """
+  if not split_traj:
+    return 0
+  k = int(duration_fixed) if (variable_goal_length and duration_fixed > 0) else (
+      int(manager_sample_freq))
+  if variable_goal_length and duration_fixed <= 0:
+    return 0
+  k = max(1, k)
+  if H >= k and H % k == 0:
+    return k
+  return 0
+
+
+def decision_mean_rescale(valid):
+  """Per-row factor turning a padded-axis ``mean`` into a per-decision mean.
+
+  ``downsample_at_switch_mask`` packs a data-dependent number of manager
+  decisions into a static, full-width buffer and forward-fills the tail, so a
+  plain ``x.mean(1)`` over that axis divides by the buffer width instead of by
+  the number of real decisions. Multiplying the masked weights by this factor
+  restores fixed-K Director's normalization, where the axis is exactly the
+  decision count. Returns ``(B, 1)``; identically 1.0 when every column is
+  valid.
+  """
+  valid = f32(valid)
+  n_cols = valid.shape[1]
+  return n_cols / jnp.maximum(jnp.sum(valid, axis=1, keepdims=True), 1.0)
+
+
 def switch_valid_mask(switch_mask, n_cols):
   """Mask for packed switch timelines: 1 on real switch rows, 0 on padding."""
   counts = jnp.sum(f32(switch_mask), axis=-1, keepdims=True)
@@ -317,6 +364,15 @@ def variable_block_director_tensors(rew, con, expl, switch_mask, horizon,
   """
   sw = f32(switch_mask)
   n_sw = jnp.sum(sw, axis=-1, keepdims=True)
+  # Decisions that actually OWN realized transitions. Rewards/continuations are
+  # indexed by ``rew[:, 1:]`` / ``con[:, :-1]``, so a switch landing on the
+  # sequence's final timestep starts a segment with zero steps in it: it is the
+  # bootstrap state, exactly the trailing column fixed-K drops with ``[:, :-1]``
+  # (``downsample_manager_states`` appends it for that purpose alone). Counting
+  # it as trainable would credit the manager for a decision whose pooled reward
+  # is identically zero and whose advantage is pure critic noise, an extra
+  # decision fixed-K Director never trains on.
+  n_credit = jnp.sum(sw[:, :-1], axis=-1, keepdims=True)
   n_blocks = jnp.maximum(n_sw, 1)
   block_mask = f32(jnp.arange(horizon - 1)[None, :] < n_blocks)
 
@@ -339,7 +395,7 @@ def variable_block_director_tensors(rew, con, expl, switch_mask, horizon,
   mgr_cont = jnp.concatenate([con[:, :1], pooled_cont], axis=1)[:, :horizon]
   mgr_extr_rew = imag_reward_pad(pooled_extr)[:, :horizon]
   mgr_expl_rew = imag_reward_pad(pooled_expl)[:, :horizon]
-  mgr_switch = f32(jnp.arange(horizon)[None, :] < n_sw)
+  mgr_switch = f32(jnp.arange(horizon)[None, :] < n_credit)
   return mgr_extr_rew, mgr_expl_rew, mgr_cont, mgr_switch
 
 
@@ -742,8 +798,11 @@ class Agent(embodied.jax.Agent):
     # original; under per-step discounting this under-credits long blocks -> short-K
     # bias) or 'sum' (continuation-weighted SMDP option return, K-neutral).
     self.mgr_reward_agg = str(getattr(config, 'mgr_reward_agg', 'mean'))
+    # Block-pooled manager credit is a variable-goal-length mechanism: the
+    # replay branch below reads ``valid_mgr``, which only the variable-K path
+    # produces, so the flag must never be live on its own.
     self.variable_goal_block_rew = bool(getattr(
-        config, 'variable_goal_block_rew', False))
+        config, 'variable_goal_block_rew', False)) and self.variable_goal_length
     # Hindsight-relabel a block-pooled decision's duration class when its hold
     # was cut short by the imagination horizon (rather than a real switch), so
     # REINFORCE credits the duration actually realized, not the one sampled --
@@ -753,10 +812,24 @@ class Agent(embodied.jax.Agent):
     self.goal_duration_relabel_truncated = bool(getattr(
         config, 'goal_duration_relabel_truncated', True))
     self.goal_duration_fixed = int(getattr(config, 'goal_duration_fixed', 0))
+    # Normalize packed manager losses by the DECISION count instead of the padded
+    # buffer width (the 2026-07-27 fix; see ``decision_mean_rescale``). Exposed as
+    # a flag purely so the fix can be A/B'd on its own -- False restores the old,
+    # accidental down-weighting while leaving the other block-pooled fixes on.
+    self.mgr_decision_mean_rescale = bool(
+        getattr(config, 'mgr_decision_mean_rescale', True))
     # Set unconditionally so the manager loss call site can read it even in fixed-K
     # mode; the adapter itself is only built under ``variable_goal_length`` below.
+    # ``goal_duration_fixed`` is read a few lines below; resolve it first so the
+    # duration controllers can be switched off when the head is bypassed (a
+    # pinned hold makes every duration regularizer causally inert -- see
+    # ``imag_loss_mgr``. Keeping the Lagrangian one live would also leave
+    # ``scales['goal_duration_prior']`` without a matching loss key and trip the
+    # loss/scale key-set assert in ``loss()``).
+    _dur_pinned = int(getattr(config, 'goal_duration_fixed', 0)) > 0
     self.goal_duration_adapt = bool(
-        getattr(config, 'goal_duration_adapt', False)) and self.variable_goal_length
+        getattr(config, 'goal_duration_adapt', False)) and (
+            self.variable_goal_length and not _dur_pinned)
     # Mask-style Lagrangian duration prior: an AutoAdapt tracks the mean duration
     # itself (not a squared-error-magnitude proxy) directly against
     # ``goal_duration_target``, mirroring ``mask_sparsity_adapter``'s dual ascent on
@@ -766,7 +839,8 @@ class Agent(embodied.jax.Agent):
     # which are added directly into ``mgr_policy``. Mutually exclusive with
     # ``goal_duration_adapt`` (this takes priority if both are set).
     self.goal_duration_lagrange = bool(
-        getattr(config, 'goal_duration_lagrange', False)) and self.variable_goal_length
+        getattr(config, 'goal_duration_lagrange', False)) and (
+            self.variable_goal_length and not _dur_pinned)
     self.n_duration_classes = max(
         1, self.goal_duration_max - self.goal_duration_min + 1)
     if len(skill_shape_t) > 1:
@@ -3162,6 +3236,7 @@ class Agent(embodied.jax.Agent):
         mgr_dur_lagrange_adapter=(
             self.mgr_dur_lagrange_adapter if self.goal_duration_lagrange else None),
         duration_fixed=self.goal_duration_fixed > 0,
+        rescale_to_decisions=self.mgr_decision_mean_rescale,
         switch_mask=mgr_switch,
         dur_reg_weight=float(getattr(self.config, 'goal_duration_reg', 0.0)),
         dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
@@ -3179,12 +3254,15 @@ class Agent(embodied.jax.Agent):
         update=training,
         contdisc=self.config.contdisc,
         horizon=self.config.horizon)
-    if (self.config.worker_split_traj and not self.variable_goal_length
-        and H >= K and H % K == 0):
+    K_split = worker_split_window(
+        self.config.worker_split_traj, self.variable_goal_length,
+        self.goal_duration_fixed, self.manager_sample_freq, H)
+    if K_split:
       # Reshape the rollout into overlapping windows of length K+1. Each window uses
       # the goal decoded at its *start* state for all K+1 steps (incl. the shared
       # boundary), so the worker reward, value, and lambda-return bootstrap stay
       # within a single goal — no leak across goal switches (Director ``split_traj``).
+      K = K_split
       n_win = H // K
       win_starts = jnp.arange(n_win) * K
       win_idx = win_starts[:, None] + jnp.arange(K + 1)        # (n_win, K+1)
@@ -3284,7 +3362,21 @@ class Agent(embodied.jax.Agent):
               {'last': last.astype(f32)}, repl_switch)['last']
           last_down = patch_trailing_replay_state(
               last_down, last.astype(f32), repl_switch).astype(last.dtype)
-          term_down = (1.0 - repl_mgr_cont).astype(term.dtype)
+          # Terminal flags are downsampled the same way as ``last`` above, NOT
+          # derived from the pooled continuation. ``term`` is a BOOL array, so
+          # the previous ``(1.0 - repl_mgr_cont).astype(term.dtype)`` cast a
+          # continuation-complement of ~0.003 to ``True`` at essentially every
+          # manager decision. ``lambda_return`` computes ``live = (1 - term)``,
+          # so every decision read as terminal and the manager's replay-side
+          # value target collapsed to the immediate pooled block reward with no
+          # bootstrap at all (~24x too small in a typical window). That starved
+          # the manager critic on every block-pooled run, and is fatal on
+          # sparse-reward tasks where the bootstrap carries all of the signal.
+          # See test_replay_terminal_flags_are_not_derived_from_continuation.
+          term_down = downsample_at_switch_mask(
+              {'term': term.astype(f32)}, repl_switch)['term']
+          term_down = patch_trailing_replay_state(
+              term_down, term.astype(f32), repl_switch).astype(term.dtype)
         else:
           feat_down = feat
           inp_down = self.feat2tensor(feat_down)
@@ -3342,7 +3434,16 @@ class Agent(embodied.jax.Agent):
       # Manager Trajectory is short
       weight_down = f32(~last_down)
       if self.variable_goal_block_rew:
+        # Same packing as the imagination path: ``valid_mgr`` marks the real
+        # decisions inside a static ``T``-wide buffer, so the loss must be
+        # rescaled to a per-decision mean or the replay-side manager critic is
+        # down-weighted by the padding ratio (9 real decisions in a 63-wide
+        # buffer at batch_length=64/K=8) relative to fixed-K's exactly-sized
+        # ``downsample_manager_states`` timeline. See
+        # ``test_block_pooled_replay_manager_value_loss_matches_fixed_k``.
         weight_down = weight_down * valid_mgr
+        if self.mgr_decision_mean_rescale:
+          weight_down = weight_down * decision_mean_rescale(valid_mgr[:, :-1])
       disc = 1 - 1 / self.config.horizon
       lam = 0.95 # matches repl_loss default
       boot_extr_down = jnp.broadcast_to(boot_extr[:, -1:], repl_mgr_extr_rew.shape)
@@ -3361,8 +3462,13 @@ class Agent(embodied.jax.Agent):
       # Train the critics on RAW returns (``valnorm: none`` -> offset 0, scale 1),
       # matching the imagination critic target and flat-v3 ``repl_loss``. The
       # symexp_twohot head handles the raw return scale internally.
-      voff_extr, vscale_extr = self.mgr_extr_valnorm(ret_extr, update=training)
-      voff_expl, vscale_expl = self.mgr_expl_valnorm(ret_expl, update=training)
+      # ``lambda_return`` drops the bootstrap column, so the decision mask for
+      # the return tensors is ``valid_mgr`` without its last slot.
+      rep_dec_mask = valid_mgr[:, :-1] if self.variable_goal_block_rew else None
+      voff_extr, vscale_extr = self.mgr_extr_valnorm(
+          ret_extr, update=training, weights=rep_dec_mask)
+      voff_expl, vscale_expl = self.mgr_expl_valnorm(
+          ret_expl, update=training, weights=rep_dec_mask)
 
       ret_extr_normed = (ret_extr - voff_extr) / vscale_extr
       ret_extr_padded = jnp.concatenate([ret_extr_normed, jnp.zeros_like(ret_extr_normed[:, -1:])], 1)
@@ -3957,6 +4063,7 @@ def imag_loss_mgr(
     mgr_dur_reg_adapter=None,
     mgr_dur_lagrange_adapter=None,
     duration_fixed=False,
+    rescale_to_decisions=True,
     switch_mask=None,
     dur_reg_weight=0.0,
     dur_reg_target=0.0,
@@ -4013,6 +4120,26 @@ def imag_loss_mgr(
   last = jnp.zeros_like(con)
   term = 1 - con
 
+  # Validity mask over the decision axis. Fixed K (``switch_mask=None``): every
+  # column is a real decision. Variable goal length: only ``switch_mask==1``
+  # columns are, and under ``variable_goal_block_rew`` the rest of the static
+  # buffer is ``downsample_at_switch_mask``'s forward-filled padding -- repeated
+  # copies of the last real decision. Every reduction below (running normalizer
+  # statistics, entropy adapters, logged means, and the final ``.mean(1)`` the
+  # caller applies) must therefore be taken over the real decisions only, or the
+  # padded tail both dilutes the manager loss by the padding ratio and drags the
+  # running statistics toward one repeated decision.
+  dec_mask = None if switch_mask is None else sg(f32(switch_mask[:, :-1]))
+
+  def dec_mean(x, mask=None):
+    """Mean over real decisions (plain mean under fixed K)."""
+    mask = dec_mask if mask is None else mask
+    if mask is None:
+      return x.mean()
+    mask = jnp.broadcast_to(mask.reshape(mask.shape + (1,) * (x.ndim - 2)),
+                            x.shape)
+    return (x * mask).sum() / jnp.maximum(mask.sum(), 1e-8)
+
   # Raw λ-returns from raw rewards + raw tarval bootstraps (the critic bootstraps
   # off its own value, like flat v3 ``imag_loss``).
   mgr_extr_ret = lambda_return(
@@ -4025,12 +4152,14 @@ def imag_loss_mgr(
   # Advantage: per critic ``(ret - tarval) / rscale`` with ``rscale`` the
   # percentile return range (retnorm = perc), exactly as flat v3. Combine the two
   # already-scaled advantages with ``mgr_expl_weight`` and leave at that scale.
-  roff_extr, rscale_extr = mgr_extr_retnorm(mgr_extr_ret, update)
-  roff_expl, rscale_expl = mgr_expl_retnorm(mgr_expl_ret, update)
+  roff_extr, rscale_extr = mgr_extr_retnorm(
+      mgr_extr_ret, update, weights=dec_mask)
+  roff_expl, rscale_expl = mgr_expl_retnorm(
+      mgr_expl_ret, update, weights=dec_mask)
   mgr_extr_adv = (mgr_extr_ret - mgr_extr_tarval[:, :-1]) / rscale_extr
   mgr_expl_adv = (mgr_expl_ret - mgr_expl_tarval[:, :-1]) / rscale_expl
   mgr_adv = mgr_extr_adv + mgr_expl_weight * mgr_expl_adv
-  mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update)
+  mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update, weights=dec_mask)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 
   skill_events = align_skill_events(skills, manager_policy)
@@ -4069,7 +4198,13 @@ def imag_loss_mgr(
       # scalar adapter (the per-dim ``mgr_actent`` is shaped for the L skill
       # blocks). Skip it if no duration adapter was provided.
       if k == 'duration':
-        if mgr_dur_actent_adapter is None:
+        if mgr_dur_actent_adapter is None or duration_fixed:
+          # ``goal_duration_fixed`` bypasses the head (``_duration_steps``), so
+          # its entropy cannot affect the trajectory. Regularizing it anyway
+          # pushes the shared manager trunk with a signal true fixed-K Director
+          # never carries -- same argument as dropping it from the REINFORCE
+          # sum (``manager_reinforce_policy``), which left this second channel
+          # open.
           continue
         adapter, perdim = mgr_dur_actent_adapter, False
       else:
@@ -4080,16 +4215,22 @@ def imag_loss_mgr(
       hi = inner.maxent / L
       denom = jnp.maximum(hi - lo, 1e-8)
       ent_norm = (ent_perdim - lo) / denom
+      # Weight the adapter's tracked average by decision validity: on a packed
+      # variable-K axis the padded tail repeats the last real decision's
+      # entropy, so an unweighted mean makes the controller chase that one
+      # decision instead of the rollout's decisions.
       if perdim and ent_perdim.ndim > 2:
-        loss_perdim, mets = adapter(ent_norm, update=update)
+        ent_w = None if dec_mask is None else dec_mask[..., None]
+        loss_perdim, mets = adapter(ent_norm, update=update, weights=ent_w)
         ent_loss_terms.append(loss_perdim.sum(-1))
       else:
         ent_scalar = ent_norm.mean(-1) if ent_norm.ndim > 2 else ent_norm
-        loss_scalar, mets = adapter(ent_scalar, update=update)
+        loss_scalar, mets = adapter(
+            ent_scalar, update=update, weights=dec_mask)
         ent_loss_terms.append(loss_scalar)
       mgr_actent_mets.update(
           {f'mgr_actent_{k}_{mk}': mv for mk, mv in mets.items()})
-      mgr_actent_mets[f'mgr_ent_norm_{k}_mean'] = ent_norm.mean()
+      mgr_actent_mets[f'mgr_ent_norm_{k}_mean'] = dec_mean(ent_norm)
     if ent_loss_terms:
       mgr_ent_loss_bt = sum(ent_loss_terms)
 
@@ -4100,13 +4241,26 @@ def imag_loss_mgr(
     # manager decision was actually made (the duration/skill/mask log-probs and
     # advantage are meaningless on held-goal steps). Also masks critic updates on
     # padded switch timelines (``variable_goal_block_rew``).
-    m = sg(switch_mask[:, :-1])
+    m = dec_mask
     # Zero masked advantages before weighting: ``0 * inf`` is NaN on padded block-rew
     # slots where retnorm can divide by a near-zero scale.
     mgr_adv_normed = jnp.where(m > 0, mgr_adv_normed, 0.0)
-    w = w * m
-    vw = vw * m
+    # Rescale so the caller's ``loss.mean(1)`` over this axis equals the mean
+    # over the REAL decisions. Without it the manager's policy and critic losses
+    # come out smaller by exactly the valid fraction of the axis -- at H=16/K=8
+    # that is 2 real decisions in a 16-wide buffer, an 8x silent down-weighting
+    # of the whole manager against the world model and the worker, and under
+    # true variable K a factor that drifts with the realized hold length.
+    # ``rescale_to_decisions`` is the A/B switch for this normalization alone
+    # (agent.mgr_decision_mean_rescale). False reproduces the pre-2026-07-27
+    # behavior -- the caller's ``.mean(1)`` divides by the padded buffer width,
+    # so the whole manager is down-weighted by the valid fraction of the axis --
+    # while keeping every other block-pooled fix in place.
+    per_row = decision_mean_rescale(m) if rescale_to_decisions else 1.0
+    w = w * m * per_row
+    vw = vw * m * per_row
     metrics['mgr_switch_rate'] = switch_mask.mean()
+    metrics['mgr_valid_decisions'] = m.sum(1).mean()
 
   # REINFORCE manager actor. With the adaptive entropy adapter the per-dim
   # normalized-entropy loss is already in ``mgr_ent_loss_bt``; otherwise fall
@@ -4129,8 +4283,11 @@ def imag_loss_mgr(
   # either fixed (``goal_duration_reg``) or an auto-tuned, capped AutoAdapt
   # multiplier (``mgr_dur_reg_adapter``) -- the cap keeps the prior from swamping
   # the manager REINFORCE objective (the suspected fixed-reg=0.1 collapse mode).
-  if (dur_reg_weight > 0.0 or mgr_dur_reg_adapter is not None
-      or mgr_dur_lagrange_adapter is not None) and ('duration' in manager_policy):
+  if ((dur_reg_weight > 0.0 or mgr_dur_reg_adapter is not None
+       or mgr_dur_lagrange_adapter is not None)
+      and ('duration' in manager_policy) and not duration_fixed):
+    # ``not duration_fixed``: with the head bypassed, a prior pulling E[dur]
+    # toward a target trains the trunk to predict a hold length nothing reads.
     dur_inner = _head_inner(manager_policy['duration'])
     dur_probs = jax.nn.softmax(dur_inner.logits, -1)         # (B, T, n_classes)
     classes = jnp.arange(dur_probs.shape[-1], dtype=f32)
@@ -4169,18 +4326,22 @@ def imag_loss_mgr(
     metrics['mgr_duration_exp_std'] = exp_p.std()
 
   metrics['mgr_policy_loss'] = losses['mgr_policy'].mean()
-  metrics['mgr_ent_loss'] = mgr_ent_loss_bt.mean()
+  metrics['mgr_ent_loss'] = dec_mean(mgr_ent_loss_bt)
   metrics.update(mgr_actent_mets)
-  metrics['mgr_extr_rew'] = mgr_extr_rew.mean()
+  # ``mgr_*_rew[:, i + 1]`` is the pooled reward credited to decision ``i``, so
+  # the decision mask lines up with the reward tensor after dropping slot 0.
+  metrics['mgr_extr_rew'] = dec_mean(mgr_extr_rew[:, 1:])
   nz = jnp.maximum((jnp.abs(mgr_extr_rew[:, 1:]) > 0).sum(), 1)
   metrics['mgr_extr_rew_block'] = mgr_extr_rew[:, 1:].sum() / nz
-  metrics['mgr_expl_rew'] = mgr_expl_rew.mean()
+  metrics['mgr_expl_rew'] = dec_mean(mgr_expl_rew[:, 1:])
 
   # Critic NLL against RAW λ-returns (``valnorm: none`` -> target == raw return).
   # The symexp_twohot head handles the return scale; plus a slow-value regression
   # term (DreamerV3 ``imag_loss``).
-  voff_extr, vscale_extr = mgr_extr_valnorm(mgr_extr_ret, update)
-  voff_expl, vscale_expl = mgr_expl_valnorm(mgr_expl_ret, update)
+  voff_extr, vscale_extr = mgr_extr_valnorm(
+      mgr_extr_ret, update, weights=dec_mask)
+  voff_expl, vscale_expl = mgr_expl_valnorm(
+      mgr_expl_ret, update, weights=dec_mask)
   mgr_extr_ret_normed = (mgr_extr_ret - voff_extr) / vscale_extr
   mgr_expl_ret_normed = (mgr_expl_ret - voff_expl) / vscale_expl
 
@@ -4211,17 +4372,23 @@ def imag_loss_mgr(
         feat_inp, goal_code, mgr_goal_q_module, mgr_goal_q_valnorm.stats())
     metrics['mgr_goal_q_val'] = q_pred.mean()
 
-  metrics['mgr_adv'] = mgr_adv.mean()
-  metrics['mgr_adv_std'] = mgr_adv.std()
-  metrics['mgr_adv_mag'] = jnp.abs(mgr_adv_normed).mean()
-  metrics['mgr_extr_adv'] = mgr_extr_adv.mean()
-  metrics['mgr_expl_adv'] = mgr_expl_adv.mean()
+  # Decision-weighted (see ``dec_mean``): identical to ``.mean()`` under fixed K,
+  # but on a packed variable-K axis an unweighted mean reports mostly padding.
+  metrics['mgr_adv'] = dec_mean(mgr_adv)
+  metrics['mgr_adv_std'] = jnp.sqrt(jnp.maximum(
+      dec_mean(jnp.square(mgr_adv)) - jnp.square(dec_mean(mgr_adv)), 0.0))
+  metrics['mgr_adv_mag'] = dec_mean(jnp.abs(mgr_adv_normed))
+  metrics['mgr_extr_adv'] = dec_mean(mgr_extr_adv)
+  metrics['mgr_expl_adv'] = dec_mean(mgr_expl_adv)
 
-  metrics['mgr_total_ret'] = mgr_total_ret.mean()
-  metrics['mgr_extr_ret'] = mgr_extr_ret_normed.mean()
-  metrics['mgr_expl_ret'] = mgr_expl_ret_normed.mean()
-  metrics['mgr_extr_val'] = mgr_extr_val.mean()
-  metrics['mgr_expl_val'] = mgr_expl_val.mean()
+  metrics['mgr_total_ret'] = dec_mean(mgr_total_ret)
+  metrics['mgr_extr_ret'] = dec_mean(mgr_extr_ret_normed)
+  metrics['mgr_expl_ret'] = dec_mean(mgr_expl_ret_normed)
+  # Decision-weighted like the return/advantage metrics above: these tensors span
+  # the full padded buffer, so an unweighted mean is ~87% copies of the last real
+  # decision's value at H=16/K=8 and is NOT comparable to fixed-K's.
+  metrics['mgr_extr_val'] = dec_mean(mgr_extr_val[:, :-1])
+  metrics['mgr_expl_val'] = dec_mean(mgr_expl_val[:, :-1])
   # Removed: ``mgr_extr_tar``/``mgr_expl_tar`` (== ret_normed already logged),
   # ``mgr_extr_slowval``/``mgr_expl_slowval`` (≈ ``*_val`` up to EMA lag),
   # ``mgr_con``/``mgr_weight`` (≈ 1 in non-terminal imagined rollouts).
@@ -4229,10 +4396,11 @@ def imag_loss_mgr(
   # Iterate the policy heads (skill/mask), not the carried skills dict — the latter
   # also holds the running goal code ``goal_code``, which has no policy/entropy.
   for k in manager_policy:
-    metrics[f'mgr_ent/{k}'] = mgr_ents[k].mean()
+    ent_mean = dec_mean(mgr_ents[k])
+    metrics[f'mgr_ent/{k}'] = ent_mean
     if hasattr(manager_policy[k], 'minent'):
       lo, hi = manager_policy[k].minent, manager_policy[k].maxent
-      metrics[f'mgr_rand/{k}'] = (mgr_ents[k].mean() - lo) / (hi - lo)
+      metrics[f'mgr_rand/{k}'] = (ent_mean - lo) / (hi - lo)
 
   outs = {}
   outs['ret'] = mgr_total_ret

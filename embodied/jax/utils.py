@@ -36,21 +36,31 @@ class Normalize(nj.Module):
     else:
       raise NotImplementedError(self.impl)
 
-  def __call__(self, x, update):
+  def __call__(self, x, update, weights=None):
     if update:
-      self.update(x)
+      self.update(x, weights)
     return self.stats()
 
-  def update(self, x):
+  def update(self, x, weights=None):
+    """Accumulate running statistics of ``x``.
+
+    ``weights`` (broadcastable to ``x``, nonnegative) restricts the statistics
+    to the entries that are real data. Packed variable-length timelines (e.g.
+    the manager's block-pooled decision axis) forward-fill their unused tail,
+    so without a weight the running mean/spread is dominated by repeated copies
+    of the last real entry.
+    """
     x = sg(f32(x))
+    if weights is not None:
+      weights = sg(f32(jnp.broadcast_to(weights, x.shape)))
     if self.impl == 'none':
       pass
     elif self.impl == 'meanstd':
-      self._update(self.mean, self._mean(x))
-      self._update(self.sqrs, self._mean(jnp.square(x)))
+      self._update(self.mean, self._mean(x, weights))
+      self._update(self.sqrs, self._mean(jnp.square(x), weights))
     elif self.impl == 'perc':
-      self._update(self.lo, self._perc(x, self.perclo))
-      self._update(self.hi, self._perc(x, self.perchi))
+      self._update(self.lo, self._perc(x, self.perclo, weights))
+      self._update(self.hi, self._perc(x, self.perchi, weights))
     else:
       raise NotImplementedError(self.impl)
     if self.debias and self.impl != 'none':
@@ -73,18 +83,32 @@ class Normalize(nj.Module):
     else:
       raise NotImplementedError(self.impl)
 
-  def _mean(self, x):
-    x = x.mean()
+  def _mean(self, x, weights=None):
+    if weights is None:
+      x = x.mean()
+      axes = internal.get_data_axes()
+      if axes:
+        x = jax.lax.pmean(x, axes)
+      return x
+    # Weighted mean across devices: average the numerator and denominator
+    # separately so the ratio stays the global weighted mean.
+    num, den = (x * weights).sum(), weights.sum()
     axes = internal.get_data_axes()
     if axes:
-      x = jax.lax.pmean(x, axes)
-    return x
+      num = jax.lax.pmean(num, axes)
+      den = jax.lax.pmean(den, axes)
+    return num / jnp.maximum(den, 1e-8)
 
-  def _perc(self, x, q):
+  def _perc(self, x, q, weights=None):
+    if weights is not None:
+      # Drop zero-weight entries from the order statistic entirely (percentiles
+      # have no meaningful fractional-weight form here; the weights this takes
+      # are 0/1 validity masks).
+      x = jnp.where(weights > 0, x, jnp.nan)
     axes = internal.get_data_axes()
     if axes:
       x = jax.lax.all_gather(x, axes)
-    x = jnp.percentile(x, q)
+    x = jnp.nanpercentile(x, q) if weights is not None else jnp.percentile(x, q)
     return x
 
   def _update(self, var, x):
@@ -129,18 +153,27 @@ class AutoAdapt(nj.Module):
     else:
       raise NotImplementedError(impl)
 
-  def __call__(self, reg, update=True, target=None):
+  def __call__(self, reg, update=True, target=None, weights=None):
     reg = f32(reg)
+    if weights is not None:
+      weights = sg(f32(jnp.broadcast_to(weights, reg.shape)))
     if update:
-      self.update(reg, target)
+      self.update(reg, target, weights)
     scale = self.scale()
     # Broadcast scale over leading reduction dims of reg.
     while scale.ndim < reg.ndim:
       scale = scale[None]
     loss = scale * (-reg if self.inverse else reg)
+    if weights is None:
+      reg_mean, reg_std = reg.mean(), reg.std()
+    else:
+      den = jnp.maximum(weights.sum(), 1e-8)
+      reg_mean = (reg * weights).sum() / den
+      reg_std = jnp.sqrt(jnp.maximum(
+          (jnp.square(reg) * weights).sum() / den - jnp.square(reg_mean), 0.0))
     metrics = {
-        'mean': reg.mean(),
-        'std': reg.std(),
+        'mean': reg_mean,
+        'std': reg_std,
         'scale_mean': self.scale().mean(),
         'scale_std': self.scale().std(),
     }
@@ -153,14 +186,26 @@ class AutoAdapt(nj.Module):
       return jnp.full(self.shape, self.fixed_scale, f32)
     return sg(self.scale_var.read())
 
-  def update(self, reg, target=None):
+  def update(self, reg, target=None, weights=None):
+    """Step the multiplier toward ``target``.
+
+    ``weights`` (broadcastable to ``reg``) restricts the tracked average to the
+    entries that are real data, for packed/padded axes -- see
+    ``Normalize.update``.
+    """
     if self.impl == 'fixed':
       return
     tgt = self.target if target is None else f32(target)
     # Reduce all leading dims that are not part of self.shape.
     reduce_ndim = reg.ndim - len(self.shape)
     if reduce_ndim > 0:
-      avg = reg.mean(tuple(range(reduce_ndim)))
+      axes_red = tuple(range(reduce_ndim))
+      if weights is None:
+        avg = reg.mean(axes_red)
+      else:
+        w = jnp.broadcast_to(f32(weights), reg.shape)
+        avg = ((reg * w).sum(axes_red) /
+               jnp.maximum(w.sum(axes_red), 1e-8))
     else:
       avg = reg
     # Aggregate across data axes for multi-device runs.

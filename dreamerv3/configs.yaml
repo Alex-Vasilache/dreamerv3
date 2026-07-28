@@ -450,6 +450,11 @@ defaults:
     # bypassing the duration head sample. >0 enables; used as a control (variable
     # training graph at a fixed K, no duration prior). 0 = use the emitted duration.
     goal_duration_fixed: 0
+    # Normalize the packed (variable-K) manager losses by the number of real
+    # decisions rather than the padded buffer width. True = the 2026-07-27 fix;
+    # False restores the accidental ~K-fold down-weighting of the whole manager,
+    # for A/B'ing that fix on its own. See agent.decision_mean_rescale.
+    mgr_decision_mean_rescale: True
     # Optional per-decision cost subtracted from the manager extrinsic reward at each
     # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
     # shapes the duration.
