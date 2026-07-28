@@ -28,7 +28,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from dreamerv3.agent import (
+from dreamerv3.hrl import (
     aggregate_mgr_cont_variable,
     aggregate_mgr_extr_rew_variable,
     downsample_at_switch_mask,
@@ -401,7 +401,7 @@ def test_replay_terminal_flags_are_not_derived_from_continuation():
   slow drift: on a non-terminating window the correct return is many times the
   broken one.
   """
-  from dreamerv3.agent import lambda_return
+  from dreamerv3.hrl import lambda_return
   B, T = 1, 10
   cont = jnp.full((B, T), 0.997)
   rew = jnp.full((B, T), 0.3)
@@ -424,7 +424,7 @@ def test_downsampled_terminal_flags_round_trip_through_the_bool_cast():
   decision, and a live window must produce all-False -- the property the old
   code violated.
   """
-  from dreamerv3.agent import patch_trailing_replay_state
+  from dreamerv3.hrl import patch_trailing_replay_state
   T, K = 33, 8
   sw = jnp.array([1 if t % K == 0 else 0 for t in range(T)], f32)[None]
 
@@ -461,7 +461,7 @@ def test_decision_rescale_is_correct_per_row_when_batch_rows_disagree():
   the wrong number and read as a real bug in ``decision_mean_rescale`` when
   it was the test's own arithmetic that was wrong.
   """
-  from dreamerv3.agent import decision_mean_rescale
+  from dreamerv3.hrl import decision_mean_rescale
   T = 33
   rows = [
       [1] + [0] * (T - 1),                              # 1 switch
@@ -511,7 +511,7 @@ def test_decision_rescale_makes_variable_length_manager_loss_match_a_fixed_k_row
   skills_full = {'skill': jax.nn.one_hot(jnp.argmax(logits_full, -1), C)}
   skills_eff = downsample_at_switch_mask(skills_full, sw)
 
-  from dreamerv3.agent import imag_loss_mgr
+  from dreamerv3.hrl import imag_loss_mgr
   import embodied.jax.outs as outs
 
   class _StubNorm:
@@ -534,7 +534,7 @@ def test_decision_rescale_makes_variable_length_manager_loss_match_a_fixed_k_row
 
   # Reference: row A alone, run through the plain fixed-K path (K=8, T=33 ->
   # exactly 4 decisions), which is what row A's own dynamics ARE.
-  from dreamerv3.agent import aggregate_mgr_cont, aggregate_mgr_extr_rew
+  from dreamerv3.hrl import aggregate_mgr_cont, aggregate_mgr_extr_rew
   fx_feat = feat[0:1, ::8]
   fx_rew = imag_reward_pad(
       aggregate_mgr_extr_rew(rew[0:1], con[0:1], 8, without_zeros=True))

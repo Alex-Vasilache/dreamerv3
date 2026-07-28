@@ -27,7 +27,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from dreamerv3.agent import (
+from dreamerv3.hrl import (
     aggregate_mgr_cont,
     aggregate_mgr_extr_rew,
     decision_mean_rescale,

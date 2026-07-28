@@ -2342,6 +2342,34 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
 
 ## 7. Technical notes (implementation facts that bit us)
 
+- **Codebase consolidation (2026-07-28).** `agent.py` had grown to 4535 lines
+  carrying every mechanism ever A/B'd. Cut down to the paths that are production
+  defaults, then split into a `dreamerv3/hrl/` package.
+  **Removed** (all previously-superseded arms): the entire explicit goal-mask head
+  (`use_masked_goals`, `mask_topk`, `mask_sparsemax`, `mask_joint_edit`,
+  `mask_perblock_credit`, every `mask_sparsity_mode`, `mask_actent`/`mask_kl`),
+  the priced-edit costs (`goal_edit_cost*`, `perblock_edit_cost`),
+  `impl_sparsity_mode` (F18: catastrophic), `goal_delta_mode`, and
+  `goal_reuse_weight`/`goal_reuse_adapt` (F19/F20 losing families); the
+  full-resolution variable-K credit path and the `mgr_decision_mean_rescale=False`
+  control; `goal_duration_adapt`.
+  **Kept**: implicit sparsity via `goal_soft_reuse_adapt` (+ `goal_struct_adapt`),
+  block-pooled variable-K credit (now unconditional under `variable_goal_length`,
+  the flag is gone), fixed-K Director as the baseline, and
+  `goal_duration_{reg,lagrange,fixed}`.
+  **Structure**: `agent.py` 4535 -> ~1.5k lines (`Agent` = network wiring,
+  `policy`/`train`/`loss`); helpers now in `dreamerv3.hrl.{tensors,heads,losses,
+  video}` (pure functions) and `dreamerv3.hrl.{goals,manager,reporting}` (mixins).
+  `configs.yaml` lost 65 dead keys plus the `masked_goals`/`hrl_auto` blocks.
+  Behavior on the retained paths is unchanged: the 191 surviving agent-side tests
+  pass identically, and a fixed-seed CPU smoke of the four production
+  configurations reproduces the pre-refactor `metrics.jsonl` losses.
+  *Gotcha found doing this*: two helpers (`goal_reward_cosine_max`,
+  `pairwise_cosmax`) fell between extraction ranges and vanished silently --
+  `pyflakes` cannot see across modules, so only the test import caught it.
+  `embodied/tests/test_hrl_package.py` now guards submodule imports, `__all__`
+  resolution, and mixin-method reachability.
+
 - **Variable-K repval (fixed 06-18, `9716a78`).** Replay manager-value loss mirrors
   imagination (per-step rewards on full timeline via `_switch_mask_from_skills`), not
   fixed-K downsampling. Correct but lowered var-K peaks.
