@@ -2361,9 +2361,22 @@ periodic non-local goal proposals (mask-free decisions every Nth switch), in tha
   `policy`/`train`/`loss`); helpers now in `dreamerv3.hrl.{tensors,heads,losses,
   video}` (pure functions) and `dreamerv3.hrl.{goals,manager,reporting}` (mixins).
   `configs.yaml` lost 65 dead keys plus the `masked_goals`/`hrl_auto` blocks.
-  Behavior on the retained paths is unchanged: the 191 surviving agent-side tests
-  pass identically, and a fixed-seed CPU smoke of the four production
-  configurations reproduces the pre-refactor `metrics.jsonl` losses.
+  **Verification** (behavior on the retained paths is unchanged):
+  (1) 230 tests pass, incl. the deterministic block-pooled-vs-fixed-K loss and
+  gradient equivalence tests -- 191 pre-existing (the 3 removed cases existed only
+  to A/B the deleted `mgr_decision_mean_rescale`) plus 39 new packaging guards.
+  (2) GPU A/B, 30k steps on V100, `plain_vark` and `director` recipes, pre vs post:
+  *identical metric key sets* (144 / 118 keys, none added or lost) and the
+  mechanism-specific metrics agree to 1e-5..1e-7 --
+  `mgr_duration_mean` 3.0e-5, `mgr_switch_rate` 1.3e-4,
+  `implicit_sparsity_block` 9.8e-5, `soft_reuse_overlap_mean` 4.5e-7.
+  Losses agree to ~1e-3, episode score to ~3e-2 (short-run variance).
+  **Do not attempt step-exact `metrics.jsonl` parity**: the train loop is not
+  run-to-run reproducible even for byte-identical code. Running the *same*
+  pre-refactor build twice diverges on 146/183, 150/209, 175/235, 176/219 keys
+  per leg -- statistically the same as pre-vs-post (148, 153, 185, 177), and it
+  moves wall-clock/RAM counters (`fps/*`, `usage/psutil/*`) too. Compare
+  trajectories and key sets, not step-aligned scalars.
   *Gotcha found doing this*: two helpers (`goal_reward_cosine_max`,
   `pairwise_cosmax`) fell between extraction ranges and vanished silently --
   `pyflakes` cannot see across modules, so only the test import caught it.

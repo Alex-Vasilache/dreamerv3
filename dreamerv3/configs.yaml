@@ -287,7 +287,8 @@ defaults:
     # Hindsight-relabel a block-pooled decision's duration class when the
     # imagination horizon cuts its hold short (rather than a real switch), so
     # REINFORCE credits the duration actually realized, not the sampled one.
-    # Only meaningful when variable_goal_block_rew is also set. Default True
+    # Only meaningful under variable_goal_length (block pooling is always on
+    # there). Default True
     # (the fix); ablate by setting False.
     goal_duration_relabel_truncated: True
     worker_report_horizon: 32
