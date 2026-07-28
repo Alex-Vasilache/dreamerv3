@@ -1,0 +1,6 @@
+e372	4671612	pre	dmc_cartpole_swingup	/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
+e373	4671613	post	dmc_cartpole_swingup	/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_refactor
+e374	4671614	pre	dmc_cheetah_run	/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
+e375	4671615	post	dmc_cheetah_run	/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_refactor
+e376	4671616	pre	dmc_hopper_hop	/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
+e377	4671617	post	dmc_hopper_hop	/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_refactor
