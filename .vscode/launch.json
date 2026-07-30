@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "DreamerV3: debug (crafter, CPU)",
+      "name": "DreamerV3: debug (crafter, variable_goals, CPU)",
       "type": "debugpy",
       "request": "launch",
       "python": "${workspaceFolder}/.venv/bin/python",
@@ -11,8 +11,42 @@
       "justMyCode": false,
       "args": [
         "--logdir", "/tmp/dreamer_debug/{timestamp}",
-        "--configs", "crafter", "debug",
-        "--jax.platform", "cpu"
+        "--configs", "crafter", "variable_goals", "debug",
+        "--jax.platform", "cpu",
+        "--jax.jit", "False"
+      ]
+    },
+    {
+      "name": "DreamerV3: debug (dmc cheetah_run, CPU)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/dreamerv3/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "--logdir", "/tmp/dreamer_debug/{timestamp}",
+        "--configs", "dmc_proprio", "debug",
+        "--task", "dmc_cheetah_run",
+        "--jax.platform", "cpu",
+        "--jax.jit", "False"
+      ]
+    },
+    {
+      "name": "DreamerV3: debug (dmc cartpole_swingup, CPU, small/pdb)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "program": "${workspaceFolder}/dreamerv3/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "--logdir", "/tmp/dreamer_debug/{timestamp}",
+        "--configs", "dmc_proprio", "debug",
+        "--task", "dmc_cartpole_swingup",
+        "--jax.platform", "cpu",
+        "--jax.jit", "False",
+        "--jax.precompile", "False"
       ]
     }
   ]
