@@ -177,6 +177,8 @@ def imag_loss_mgr(
     dur_reg_weight=0.0,
     dur_reg_target=0.0,
     dur_min=1,
+    trunc_mask=None,
+    trunc_policy='keep',
 ):
   """Manager actor-critic losses on imagined trajectories.
 
@@ -262,8 +264,23 @@ def imag_loss_mgr(
 
   skill_events = align_skill_events(skills, manager_policy)
   reinforce_policy = manager_reinforce_policy(manager_policy, duration_fixed)
-  mgr_logpi = sum([
-      head_logp_time(v, skill_events[k]) for k, v in reinforce_policy.items()])
+  per_head_logp = {
+      k: head_logp_time(v, skill_events[k]) for k, v in reinforce_policy.items()}
+  # Truncated-hold policy handling. ``trunc_mask`` (B, n_mgr) marks the final
+  # decision when the imagination horizon cut its hold short, i.e. when the
+  # sampled duration provably did not execute. ``'drop_duration'`` withholds
+  # only the DURATION head's log-prob there (the surgical, principled choice:
+  # the critic target and the skill head's advantage are both valid n-step
+  # quantities regardless of truncation, so there is no reason to discard
+  # them); ``'drop_decision'`` withholds the whole decision's policy credit.
+  # ``'keep'`` is the historical behavior. See
+  # ``tensors.truncated_last_decision_mask``.
+  keep_bt = None
+  if trunc_mask is not None and trunc_policy in ('drop_duration', 'drop_decision'):
+    keep_bt = sg(1.0 - f32(trunc_mask)[:, :-1])            # (B, n_mgr-1)
+    if trunc_policy == 'drop_duration' and 'duration' in per_head_logp:
+      per_head_logp['duration'] = per_head_logp['duration'] * keep_bt
+  mgr_logpi = sum(per_head_logp.values())
   mgr_ents = {k: head_entropy_time(v) for k, v in manager_policy.items()}
 
   # Director-style adaptive normalized entropy regularizer (per-categorical
@@ -339,11 +356,22 @@ def imag_loss_mgr(
     # behavior -- the caller's ``.mean(1)`` divides by the padded buffer width,
     # so the whole manager is down-weighted by the valid fraction of the axis --
     # while keeping every other block-pooled fix in place.
-    per_row = decision_mean_rescale(m)
-    w = w * m * per_row
-    vw = vw * m * per_row
+    # The CRITIC keeps every real decision: a truncated hold's target (pooled
+    # reward over the realized steps + bootstrap off the final state) is a
+    # valid variable-n TD target, so there is nothing to withhold there.
+    vw = vw * m * decision_mean_rescale(m)
+    m_pol = m
+    if keep_bt is not None and trunc_policy == 'drop_decision':
+      m_pol = m * keep_bt
+    # Rescale the POLICY term by its OWN valid count -- otherwise dropping a
+    # decision silently shrinks the policy loss by the dropped fraction rather
+    # than just averaging over fewer samples.
+    w = w * m_pol * decision_mean_rescale(m_pol)
     metrics['mgr_switch_rate'] = switch_mask.mean()
     metrics['mgr_valid_decisions'] = m.sum(1).mean()
+    if keep_bt is not None:
+      metrics['mgr_truncated_decisions'] = (
+          f32(trunc_mask)[:, :-1] * m).sum(1).mean()
 
   # REINFORCE manager actor. With the adaptive entropy adapter the per-dim
   # normalized-entropy loss is already in ``mgr_ent_loss_bt``; otherwise fall
@@ -377,9 +405,20 @@ def imag_loss_mgr(
       # adapter construction comment). Folded out into its own loss key (not added
       # into ``mgr_policy``) so it carries an independent scale, same as
       # ``mask_sparsity``.
-      mean_abs_err = (
-          (w * jnp.abs(exp_p - f32(dur_reg_target))).sum() /
-          jnp.maximum(w.sum(), 1.0))
+      # Uses ``dec_mean`` (the RAW 0/1 decision mask), not ``w``: ``w`` bakes in
+      # ``decision_mean_rescale``'s per-ROW factor, which is correct for the
+      # per-row ``.mean(1)`` the caller applies to the returned loss tensors but
+      # WRONG for a single flat ratio computed here across the whole batch --
+      # that factor is LARGER for rows with fewer real decisions (sparser
+      # holds), so a plain ``(w*err).sum()/w.sum()`` systematically over-weights
+      # them. On a batch of one 1-decision row (err=10) and one 8-decision row
+      # (err=1 each), the true flat mean over all 9 decisions is 2.0; the
+      # w-weighted ratio gave 5.5 (measured). Only meaningfully wrong once rows
+      # have DIFFERENT real decision counts, i.e. under genuinely variable
+      # holds -- every pinned (duration_fixed>0) run has identical per-row
+      # counts, so this was invisible there. See
+      # test_lagrange_mean_abs_err_is_not_biased_by_per_row_decision_count.
+      mean_abs_err = dec_mean(jnp.abs(exp_p - f32(dur_reg_target)))
       _, dur_lagrange_mets = mgr_dur_lagrange_adapter(mean_abs_err, update=update)
       dur_reg_bt = mgr_dur_lagrange_adapter.scale() * sq_err
       metrics.update(

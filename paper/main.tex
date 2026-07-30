@@ -1816,14 +1816,61 @@ physically meaningful entries of a padded tensor says nothing about the
 reductions taken over it, and it is the reductions that set the effective
 objective.
 
-Whether this closes the gap is an empirical question the tests cannot settle:
-e350/e351 (jobs 4671354/4671355; duration-pinned control, hopper/cheetah) rerun
-the e334/e335 configuration under the fixes, alongside same-code pure-Director
-baselines (e352/e353, jobs 4671356/4671357) so that code drift cannot confound the comparison, and e354--e357
-rerun four free-duration matrix cells. The pre-registered prediction is that
-the pinned control now tracks Director (cheetah $\approx\!290$, e191) rather
-than the $25.2$ it reached before; a persisting gap would rule out the entire
-padded-axis family of explanations and point back at the $\lambda$-return
-construction itself.
+A sixth bug, found the following day, closed the gap the padded-axis family
+could not: the block-pooled replay path derived its terminal flags from a
+\emph{continuation probability} rather than the real per-step flags --
+\texttt{is\_terminal} is a boolean space, and casting
+$(1{-}\mathrm{cont})\approx 0.003$ to bool reads as \texttt{True} at
+essentially every manager decision, zeroing the replay-side value bootstrap
+entirely (measured $24\times$ too small on a non-terminating window). Fixed by
+downsampling the real flags at switch positions instead. Rerun under all six
+fixes, the duration-pinned equivalence check finally passed: hopper
+$0.0\to264.6$ trailing-50 (vs.\ Director's own same-code $386$), cheetah
+reached $511.4$, above Director's $337$.
+
+\subsection{Two further bugs, exclusive to genuinely variable holds}
+
+The pinned equivalence check exercises only one switch pattern -- every $K$
+steps, identical across every batch row. With it passing, free-running
+variable-length holds (\texttt{goal\_duration\_fixed=0}, the actual research
+configuration) remained dead on hopper. A code-path audit targeted
+specifically at logic that only exists once holds genuinely vary -- never
+touched by any pinned run -- found two more real bugs:
+
+\begin{enumerate}
+\item \textbf{Truncation relabeling was off by one.}
+\texttt{relabel\_truncated\_last\_duration} relabels a hold's duration class
+when the imagination horizon cuts it short, so REINFORCE credits the duration
+actually realized. Its \texttt{avail} computed the number of \emph{states}
+the truncated decision occupied ($T - s$) rather than the number of
+\emph{transitions} \texttt{variable\_block\_director\_tensors} actually pools
+into its reward ($(T{-}1) - s$) -- a switch at state 16 in a 20-state window
+was relabeled duration 4 when only 3 transitions were ever credited. This can
+only fire on a truncated hold, structurally impossible under any pinned
+configuration (holds divide the horizon evenly there). The existing test for
+this function asserted the buggy value -- it verified the implementation
+against itself, not against ground truth.
+\item \textbf{The Lagrangian duration-prior's tracked error was biased toward
+sparse-hold rows.} \texttt{mean\_abs\_err} was a flat
+$(w\!\cdot\!\mathrm{err}).\mathrm{sum}() / w.\mathrm{sum}()$ across the whole
+batch, where $w$ bakes in the per-row \texttt{decision\_mean\_rescale}
+factor -- correct for the per-row reduction the caller applies to the
+returned loss tensor, wrong for a ratio computed across rows \emph{inside}
+this function, since that factor is larger for rows with fewer decisions. A
+batch of one 1-decision row (error 10) and one 8-decision row (error 1 each)
+fed the Lagrange controller 5.5 instead of the true flat mean 2.0 -- invisible
+under any pinned config (uniform decision count across rows there), live for
+every genuinely-variable Lagrangian run. An inflated reading drives the
+multiplier harder than warranted, a plausible contributor to the
+duration-collapse pattern observed since the early sum-vs-mean matrix.
+\end{enumerate}
+
+Both are fixed. A further audit of the surrounding machinery -- the dense
+(non-windowed) worker credit path free var-K exclusively uses, replay-side
+switch reconstruction, the duration head's log-probability construction with
+the head genuinely live, and a fully heterogeneous end-to-end gradient
+check -- found no further defects. Whether these two fixes close the
+remaining hopper gap is, again, an empirical question the tests cannot
+settle on their own.
 
 \end{document}

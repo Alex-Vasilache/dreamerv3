@@ -291,6 +291,13 @@ defaults:
     # there). Default True
     # (the fix); ablate by setting False.
     goal_duration_relabel_truncated: True
+    # How the manager POLICY term treats a hold cut short by the imagination
+    # horizon: keep (historical; pairs with goal_duration_relabel_truncated) |
+    # drop_duration (withhold only the duration head's log-prob there -- the
+    # only action that provably did not execute; the critic target and the
+    # skill advantage are valid n-step quantities either way) | drop_decision
+    # (withhold the whole decision's policy credit). The critic is never gated.
+    goal_duration_truncated_policy: keep
     worker_report_horizon: 32
     worker_split_traj: True
     mgr_expl_weight: 0.1

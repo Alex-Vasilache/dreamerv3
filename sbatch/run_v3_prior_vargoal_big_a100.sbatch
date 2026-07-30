@@ -68,7 +68,15 @@ RECIPE="${RECIPE:-plain_vark}"   # plain_vark | director
 MGR_FREQ="${MGR_FREQ:-8}"
 MGR_REWARD_AGG="${MGR_REWARD_AGG:-mean}"   # mean (default) | sum (couples mgr return to hold length)
 MGR_EXPL_W="${MGR_EXPL_W:-0.1}"            # manager exploration-reward weight (default 0.1)
-GOAL_DURATION_RELABEL_TRUNCATED="${GOAL_DURATION_RELABEL_TRUNCATED:-True}"  # hindsight-relabel a horizon-truncated hold's duration class (see agent.py relabel_truncated_last_duration); ablate by setting False
+# Hindsight-relabel a horizon-truncated hold's duration class (see
+# hrl/tensors.py relabel_truncated_last_duration); ablate by setting False.
+# Only consulted when TRUNC_POLICY=keep.
+GOAL_DURATION_RELABEL_TRUNCATED="${GOAL_DURATION_RELABEL_TRUNCATED:-True}"
+# How the manager POLICY term treats a hold cut short by the imagination
+# horizon: keep | drop_duration | drop_decision (see configs.yaml). The
+# critic is never gated -- its truncated target is a valid variable-n TD
+# target either way.
+TRUNC_POLICY="${TRUNC_POLICY:-keep}"
 # NOTE: imag_length was previously hardcoded to 16 here ("won't fit BIG" at
 # larger values) -- now overridable. 32 roughly doubles imagination rollout
 # activation memory; watch for OOM on gpu-a100 if raising it.
@@ -127,7 +135,7 @@ EXP_TAG=$EXP_TAG
 CONFIGS=$CONFIGS
 TASK=$TASK
 SIZE=BIG IMAGE=64x64 IMAG=$IMAG_LENGTH BATCH=16x64 TRAIN_RATIO=64 CONV=native
-RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX STRUCT_W=$STRUCT_W STRUCT_ADAPT=$STRUCT_ADAPT STRUCT_ADAPT_TARGET=$STRUCT_ADAPT_TARGET WORKER_TIMED_GOALS=$WORKER_TIMED_GOALS DUR_ACTENT_TARGET=$DUR_ACTENT_TARGET DUR_FIXED=$DUR_FIXED MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG GOAL_DURATION_RELABEL_TRUNCATED=$GOAL_DURATION_RELABEL_TRUNCATED MGR_EXPL_W=$MGR_EXPL_W MGR_COND_GOALCODE=$MGR_COND_GOALCODE GOAL_SOFT_REUSE_ADAPT=$GOAL_SOFT_REUSE_ADAPT GOAL_SOFT_REUSE_TARGET=$GOAL_SOFT_REUSE_TARGET GOAL_SOFT_REUSE_TARGET_INIT=$GOAL_SOFT_REUSE_TARGET_INIT GOAL_SOFT_REUSE_TARGET_VEL=$GOAL_SOFT_REUSE_TARGET_VEL SEED=$SEED
+RECIPE=$RECIPE DUR_TARGET=$DUR_TARGET DUR_MODE=$DUR_MODE DUR_REG=$DUR_REG DUR_MAX=$DUR_MAX STRUCT_W=$STRUCT_W STRUCT_ADAPT=$STRUCT_ADAPT STRUCT_ADAPT_TARGET=$STRUCT_ADAPT_TARGET WORKER_TIMED_GOALS=$WORKER_TIMED_GOALS DUR_ACTENT_TARGET=$DUR_ACTENT_TARGET DUR_FIXED=$DUR_FIXED MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG GOAL_DURATION_RELABEL_TRUNCATED=$GOAL_DURATION_RELABEL_TRUNCATED TRUNC_POLICY=$TRUNC_POLICY MGR_EXPL_W=$MGR_EXPL_W MGR_COND_GOALCODE=$MGR_COND_GOALCODE GOAL_SOFT_REUSE_ADAPT=$GOAL_SOFT_REUSE_ADAPT GOAL_SOFT_REUSE_TARGET=$GOAL_SOFT_REUSE_TARGET GOAL_SOFT_REUSE_TARGET_INIT=$GOAL_SOFT_REUSE_TARGET_INIT GOAL_SOFT_REUSE_TARGET_VEL=$GOAL_SOFT_REUSE_TARGET_VEL SEED=$SEED
 NOTE=prior-vargoal template (RECIPE-switched) at BIG director_match scale
 EOF
 RUN_STEPS="${RUN_STEPS:-4000000}"
@@ -153,6 +161,7 @@ AGENT_FLAGS=(
   "${RECIPE_FLAGS[@]}"
   --agent.imag_length "$IMAG_LENGTH"
   --agent.goal_duration_relabel_truncated "$GOAL_DURATION_RELABEL_TRUNCATED"
+  --agent.goal_duration_truncated_policy "$TRUNC_POLICY"
   --agent.report False
 )
 

@@ -34,8 +34,25 @@ class ManagerMixin:
   """Manager decision/rollout logic mixed into ``dreamerv3.agent.Agent``."""
 
   def _countdown_budget(self):
-    """Duration budget normalizing the worker countdown (HiTS delta_t_max)."""
+    """Duration budget normalizing the worker countdown (HiTS delta_t_max).
+
+    ``goal_duration_fixed`` (pinned holds) caps the REALIZED countdown at that
+    constant, not at ``goal_duration_max`` -- ``_duration_steps`` bypasses the
+    duration head entirely and always returns ``goal_duration_fixed`` in that
+    regime, so a countdown can never exceed it. Launch configs default
+    ``goal_duration_max`` to 16 regardless of ``goal_duration_fixed`` (it is
+    only ever raised to match ``goal_duration_target``, never lowered), so a
+    pinned run at e.g. ``goal_duration_fixed=8`` would otherwise normalize by
+    16: the countdown at a fresh switch (the true maximum, 8) would read 0.0
+    instead of +1.0, and the worker would never see the top half of the
+    intended [-1, 1] range. Currently dormant everywhere (``worker_timed_goals``
+    is off in every launched config) but real the moment it's turned on
+    together with a pinned hold -- see
+    ``test_countdown_budget_uses_the_pinned_hold_not_goal_duration_max``.
+    """
     if self.variable_goal_length:
+      if self.goal_duration_fixed > 0:
+        return float(self.goal_duration_fixed)
       return float(self.goal_duration_max)
     return float(max(1, int(self.manager_sample_freq)))
 

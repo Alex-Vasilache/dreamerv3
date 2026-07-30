@@ -24,6 +24,7 @@ from dreamerv3.hrl import (
 import embodied.jax.outs as outs
 
 f32 = jnp.float32
+i32 = jnp.int32
 
 
 def _fixed_switch_mask(B, T, k):
@@ -821,13 +822,404 @@ def test_patch_trailing_replay_state_composes_with_relabel_truncated_duration():
   np.testing.assert_allclose(patched['deter'][0, 3], 19.0)
 
   # duration class sampled 8 (index 7 given dur_min=1) for all 3 decisions --
-  # the last one only ran 4 real steps (16..19) before the window ended.
+  # the last one starts at state 16, and the window (T=20, states 0..19) only
+  # has transitions up to index 18, so it is credited transitions 16,17,18 --
+  # 3 transitions, not the 4 STATES (16,17,18,19) it occupies. (Fixed
+  # 2026-07-29: this test previously asserted class 3 / duration 4, which was
+  # the states-held count, not the transitions-credited count -- it encoded
+  # the bug it was meant to catch. See
+  # test_relabel_avail_matches_transitions_credited_by_variable_block_director_tensors.)
   mgr_skills_eff = {'duration': jnp.full((1, 3), 7, jnp.int32)}
   relabeled = relabel_truncated_last_duration(mgr_skills_eff, sw, dur_min, dur_max)
   # First two decisions ran their full sampled 8-step hold -- untouched.
   np.testing.assert_array_equal(relabeled['duration'][0, :2], [7, 7])
-  # Last decision is relabeled to its REALIZED length (4 steps -> class 3).
-  np.testing.assert_array_equal(relabeled['duration'][0, 2], 3)
+  # Last decision is relabeled to its REALIZED credited length (3 transitions
+  # -> dur_min=1 + class 2 = duration 3).
+  np.testing.assert_array_equal(relabeled['duration'][0, 2], 2)
   print('CONFIRMED: state patch and duration relabeling compose cleanly on '
-        'the same fixture -- relabeled last-decision duration = 4 steps '
-        '(class 3), true final state = 19.0, neither affects the other.')
+        'the same fixture -- relabeled last-decision duration = 3 transitions '
+        '(class 2), true final state = 19.0, neither affects the other.')
+
+
+# --------------------------------------------------------------------------
+# Bug found 2026-07-29: ``relabel_truncated_last_duration``'s ``avail`` was
+# STATES held (T - last_switch_pos), off by one from the TRANSITIONS actually
+# credited ((T-1) - last_switch_pos). This only ever fires on a TRUNCATED
+# hold -- a sampled duration that runs past the imagination horizon -- which
+# structurally cannot happen under any pinned/fixed-K configuration (holds
+# always divide the horizon evenly there). It is common under genuinely
+# variable durations, which is exactly the configuration that stayed dead
+# (e364/e366/e368) while the pinned equivalence check came back alive.
+# --------------------------------------------------------------------------
+
+def test_relabel_avail_matches_transitions_credited_by_variable_block_director_tensors():
+  """Cross-check against the REAL pooling function, not hand arithmetic.
+
+  Builds a rollout where the last decision's sampled duration overruns the
+  horizon by a known amount, reads off how many transitions
+  ``variable_block_director_tensors`` actually pools into that decision's
+  reward (its own, independently-implemented notion of "credited"), and
+  asserts the relabeled duration equals exactly that -- for several different
+  truncation amounts and two different last-switch positions, so a
+  coincidental match at one offset can't hide a systematic bias.
+  """
+  dur_min, dur_max = 1, 16
+  for T, last_switch, sampled_idx in [
+      (20, 16, 7),   # sampled duration 8, only 3 transitions available
+      (17, 10, 7),   # sampled duration 8, only 6 transitions available
+      (17, 0, 15),   # sampled duration 16, only 16 transitions available (no truncation)
+      (9, 7, 3),     # sampled duration 4, only 1 transition available
+  ]:
+    sw = jnp.zeros((1, T), f32).at[0, 0].set(1.0)
+    if last_switch > 0:
+      sw = sw.at[0, last_switch].set(1.0)
+    n_sw = int(sw[0].sum())
+
+    dur_idx_full = jnp.zeros((1, T), i32).at[0, last_switch:].set(sampled_idx)
+    mgr_skills = {'skill': jnp.zeros((1, T, 1)), 'duration': dur_idx_full}
+    mgr_skills_eff = downsample_at_switch_mask(mgr_skills, sw)
+    relabeled = relabel_truncated_last_duration(
+        mgr_skills_eff, sw, dur_min, dur_max)
+    relabeled_dur = int(relabeled['duration'][0, n_sw - 1]) + dur_min
+
+    # Ground truth: however many transitions THIS pooling function actually
+    # weights into the last decision's reward. A constant nonzero reward makes
+    # the pooled value's own transition count recoverable: pooled MEAN reward
+    # * transition count == pooled SUM reward, so read it off the sum-agg call
+    # instead of re-deriving the count by hand.
+    rew = jnp.ones((1, T))
+    con = jnp.ones((1, T))
+    extr_sum, _, _, switch = variable_block_director_tensors(
+        rew, con, rew, sw, T, agg_mode='sum')
+    n_credit = int(switch[0].sum())
+    if n_credit < n_sw:
+      continue  # last switch landed exactly on T-1: 0 transitions, nothing to relabel meaningfully
+    true_transitions = int(round(float(extr_sum[0, n_sw])))  # con=1 -> sum == count
+
+    assert relabeled_dur == true_transitions, (
+        f'T={T} last_switch={last_switch} sampled_idx={sampled_idx}: '
+        f'relabeled duration {relabeled_dur} != {true_transitions} transitions '
+        f'actually credited by variable_block_director_tensors')
+
+
+def test_relabel_leaves_untruncated_decisions_alone():
+  """A decision that ran its full sampled duration (a REAL switch ended it,
+  not the horizon) must be left exactly as sampled -- only the truly-last,
+  truly-truncated decision may change."""
+  T, k, dur_min, dur_max = 25, 8, 1, 16
+  sw = _fixed_switch_mask(1, T, k)  # switches at 0, 8, 16, 24; last runs 24..24 (0 transitions)
+  mgr_skills_eff = {'duration': jnp.full((1, 4), 7, jnp.int32)}
+  relabeled = relabel_truncated_last_duration(mgr_skills_eff, sw, dur_min, dur_max)
+  np.testing.assert_array_equal(relabeled['duration'][0, :3], [7, 7, 7])
+
+
+def test_relabel_never_reports_more_transitions_than_exist_in_the_rollout():
+  """A relabeled duration can never exceed the physically possible transition
+  count for its position -- a sanity bound independent of the exact formula,
+  which a reintroduced off-by-one in the OTHER direction would also trip."""
+  dur_min, dur_max = 1, 16
+  for T in (9, 17, 33):
+    for last_switch in range(T):
+      sw = jnp.zeros((1, T), f32).at[0, 0].set(1.0)
+      if last_switch > 0:
+        sw = sw.at[0, last_switch].set(1.0)
+      n_sw = int(sw[0].sum())
+      dur_idx_full = jnp.full((1, T), dur_max - dur_min, i32)  # always sample the max
+      mgr_skills_eff = downsample_at_switch_mask(
+          {'duration': dur_idx_full}, sw)
+      relabeled = relabel_truncated_last_duration(
+          mgr_skills_eff, sw, dur_min, dur_max)
+      relabeled_dur = int(relabeled['duration'][0, n_sw - 1]) + dur_min
+      max_possible = max(0, (T - 1) - last_switch)
+      assert relabeled_dur <= max(max_possible, dur_min), (
+          f'T={T} last_switch={last_switch}: relabeled {relabeled_dur} '
+          f'exceeds the {max_possible} transitions physically available')
+
+
+# --------------------------------------------------------------------------
+# Does the REPLAY-side switch reconstruction (``_switch_mask_from_skills``,
+# applied post-hoc to a stored skills trace) agree with the switches that
+# ACTUALLY occurred while that trace was being generated
+# (``_manager_skills_on_sequence``'s own internal scan)? If these two
+# disagree, the replay-side manager critic would pool rewards against the
+# WRONG decision boundaries -- a silent mismatch between what imagination
+# trained the manager on and what replay evaluates it against.
+# --------------------------------------------------------------------------
+
+def _simulate_manager_skills_on_sequence_recurrence(sampled_dur_if_switch, dur_min):
+  """Standalone reimplementation of ``_manager_skills_on_sequence``'s body
+  recurrence (skill_switch's held-value semantics + the countdown formula),
+  without any neural net -- ``sampled_dur_if_switch[b, t]`` is what the
+  (stubbed) manager WOULD emit at t if a switch occurs there; held steps keep
+  the last switch's value, exactly like the real ``skill_switch``.
+  Returns (duration_trace, true_switch_flags) -- the ground truth against
+  which ``_switch_mask_from_skills`` is checked.
+  """
+  B, T = sampled_dur_if_switch.shape
+  dur_trace = np.zeros((B, T), np.int32)
+  true_switch = np.zeros((B, T), np.float32)
+  remaining = np.zeros(B, np.int32)
+  held_idx = np.zeros(B, np.int32)
+  for t in range(T):
+    update = remaining <= 0
+    held_idx = np.where(update, sampled_dur_if_switch[:, t], held_idx)
+    dur_trace[:, t] = held_idx
+    p = dur_min + held_idx
+    cd_steps = np.where(update, p, remaining)
+    remaining = cd_steps - 1
+    true_switch[:, t] = update.astype(np.float32)
+  return dur_trace, true_switch
+
+
+def test_switch_mask_from_skills_matches_the_scan_that_generated_the_trace():
+  """Cross-check the two independently-coded recurrences: the replay-side
+  post-hoc reconstruction (``_switch_mask_from_skills``) against a direct
+  simulation of ``_manager_skills_on_sequence``'s own switch decisions, for
+  several irregular, per-row-heterogeneous duration sequences -- including
+  the extreme case of one row holding K=1 (a switch every step) next to
+  another holding its maximum duration throughout.
+  """
+  from dreamerv3.agent import Agent
+  dur_min = 1
+  B, T = 3, 25
+  rng = np.random.RandomState(11)
+  # Row 0: always samples duration index 0 (K=1, switches every step).
+  # Row 1: always samples the max index available (long, infrequent holds).
+  # Row 2: genuinely random per switch.
+  sampled = np.stack([
+      np.zeros(T, np.int32),
+      np.full(T, 15, np.int32),
+      rng.randint(0, 16, T).astype(np.int32),
+  ])
+  dur_trace, true_switch = _simulate_manager_skills_on_sequence_recurrence(
+      sampled, dur_min)
+
+  agent = object.__new__(Agent)
+  agent.variable_goal_length = True
+  agent.goal_duration_min = dur_min
+  agent.goal_duration_fixed = 0
+  agent.manager_sample_freq = 8
+  # ``_switch_mask_from_skills`` reads ``skills['skill'].shape`` purely for
+  # (B, T); the dummy value itself is never touched (only 'duration' drives
+  # the switch computation).
+  skills = {
+      'skill': jnp.zeros((B, T)),
+      'duration': jnp.array(dur_trace, jnp.int32),
+  }
+  reconstructed = np.asarray(agent._switch_mask_from_skills(skills))
+
+  np.testing.assert_array_equal(
+      reconstructed, true_switch,
+      err_msg='_switch_mask_from_skills disagrees with the scan that '
+              'actually generated the duration trace it is reconstructing '
+              'switches from')
+  # Sanity: the K=1 row really does switch every step, the long-hold row
+  # really does switch rarely -- confirms the fixture is exercising what it
+  # claims to, not accidentally degenerating to the same pattern for both.
+  assert float(reconstructed[0].mean()) == 1.0
+  assert float(reconstructed[1].mean()) < 0.15
+
+
+# --------------------------------------------------------------------------
+# manager_reinforce_policy / align_skill_events with the duration head LIVE
+# (goal_duration_fixed=0) -- the branch the pinned equivalence runs never
+# take (they gate the head OFF entirely).
+# --------------------------------------------------------------------------
+
+def test_duration_head_logp_is_correct_when_live():
+  """Hand-computed categorical log-prob for the duration head, cross-checked
+  against ``head_logp_time`` through ``align_skill_events`` +
+  ``manager_reinforce_policy`` with the head genuinely participating."""
+  B, T, n_dur = 2, 6, 8
+  rng = np.random.RandomState(4)
+  logits = jnp.array(rng.randn(B, T, n_dur).astype(np.float32))
+  dur_idx = jnp.array(rng.randint(0, n_dur, (B, T)))
+  policy = {'duration': outs.Categorical(logits)}
+  skills = {'duration': dur_idx}
+
+  live_policy = manager_reinforce_policy(policy, duration_fixed=False)
+  assert 'duration' in live_policy, 'duration head dropped even though live'
+  events = align_skill_events(skills, live_policy)
+  got = head_logp_time(live_policy['duration'], events['duration'])
+
+  # Hand-computed reference: standard categorical log-softmax at the sampled
+  # index, sliced to the (B, T-1) AC convention.
+  logsm = jax.nn.log_softmax(np.asarray(logits), -1)
+  want = np.take_along_axis(
+      logsm, np.asarray(dur_idx)[..., None], axis=-1)[..., 0][:, :-1]
+  np.testing.assert_allclose(np.asarray(got), want, rtol=1e-5, atol=1e-6)
+
+
+def test_duration_steps_boundary_classes():
+  """Class 0 must map to ``dur_min`` and the top class to ``dur_max``, both
+  when the head is live and when it is bypassed by a fixed pin."""
+  from dreamerv3.agent import Agent
+  dur_min, dur_max = 1, 16
+  n_classes = dur_max - dur_min + 1
+  agent = object.__new__(Agent)
+  agent.goal_duration_fixed = 0
+  agent.goal_duration_min = dur_min
+  idx = jnp.array([0, n_classes - 1, 3])
+  p = agent._duration_steps({'duration': idx})
+  np.testing.assert_array_equal(np.asarray(p), [dur_min, dur_max, dur_min + 3])
+
+  agent.goal_duration_fixed = 8
+  p_fixed = agent._duration_steps({'duration': idx})
+  np.testing.assert_array_equal(np.asarray(p_fixed), [8, 8, 8])
+
+
+# --------------------------------------------------------------------------
+# End-to-end: a genuinely heterogeneous batch through the REAL manager loss
+# (not the tensor helpers in isolation), with the duration head live -- the
+# closest unit-level analogue of what e363/e364 (free-running var-K) actually
+# train on. Every existing equivalence test used the pinned 2-decision case;
+# this uses 3 different per-row switch patterns with 2, 4, and 9 real
+# decisions in the SAME batch call.
+# --------------------------------------------------------------------------
+
+def test_free_running_manager_loss_end_to_end_heterogeneous_batch():
+  from dreamerv3.hrl.losses import imag_loss_mgr
+  B, T, C, n_dur = 3, 33, 6, 16
+  rng = np.random.RandomState(21)
+  feat = jnp.array(rng.randn(B, T, 5).astype(np.float32))
+  rew = jnp.array(rng.randn(B, T).astype(np.float32) * 0.3)
+  expl = jnp.array(rng.randn(B, T).astype(np.float32) * 0.1)
+  con = jnp.full((B, T), 0.997)
+  sw = jnp.array([
+      [1 if t % 16 == 0 else 0 for t in range(T)],                # 2 decisions
+      [1 if t % 8 == 0 else 0 for t in range(T)],                 # 4 decisions
+      [1 if t in (0,3,4,9,10,11,14,17,20,23,26,29,31) else 0 for t in range(T)],  # irregular
+  ], f32)
+  n_real = [int(sw[b].sum()) for b in range(B)]
+  assert len(set(n_real)) == B, 'rows must have distinct decision counts'
+
+  logit_w = jnp.array(rng.randn(5, C).astype(np.float32) * 0.5)
+  dur_w = jnp.array(rng.randn(5, n_dur).astype(np.float32) * 0.3)
+  val_w = jnp.array(rng.randn(5).astype(np.float32) * 0.3)
+
+  feat_eff = downsample_at_switch_mask({'x': feat}, sw)['x']
+  n_mgr = feat_eff.shape[1]
+  b_rew, b_expl, b_con, b_switch = variable_block_director_tensors(
+      rew, con, expl, sw, n_mgr, agg_mode='mean')
+
+  def loss_fn(logit_w, dur_w, val_w):
+    logits_full = jnp.einsum('btd,dc->btc', feat, logit_w)
+    dur_logits_full = jnp.einsum('btd,dc->btc', feat, dur_w)
+    skills_full = {
+        'skill': jax.nn.one_hot(jnp.argmax(logits_full, -1), C),
+        'duration': jnp.argmax(dur_logits_full, -1),
+    }
+    skills_eff = downsample_at_switch_mask(skills_full, sw)
+    policy = {
+        'skill': outs.OneHot(jnp.einsum('btd,dc->btc', feat_eff, logit_w)),
+        'duration': outs.Categorical(jnp.einsum('btd,dc->btc', feat_eff, dur_w)),
+    }
+    policy['skill'].minent, policy['skill'].maxent = 0.0, float(np.log(C))
+    policy['duration'].minent = 0.0
+    policy['duration'].maxent = float(np.log(n_dur))
+    val = outs.MSE(feat_eff @ val_w)
+    norms = [_NullNorm() for _ in range(5)]
+    losses, out, mets = imag_loss_mgr(
+        skills_eff, b_rew, b_expl, b_con, policy, val, val, val, val, *norms,
+        update=True, contdisc=True, slowtar=False, horizon=333,
+        mgr_expl_weight=0.1, actent=3e-4, switch_mask=b_switch,
+        duration_fixed=False)
+    for key in ('mgr_policy', 'mgr_extr_value', 'mgr_expl_value'):
+      assert losses[key].shape == (B, n_mgr - 1), (key, losses[key].shape)
+      assert jnp.all(jnp.isfinite(losses[key])), f'{key} has non-finite entries'
+    return sum(v.mean() for v in losses.values())
+
+  loss, grads = jax.value_and_grad(loss_fn, argnums=(0, 1, 2))(logit_w, dur_w, val_w)
+  assert np.isfinite(float(loss))
+  for name, g in zip(('skill_w', 'dur_w', 'val_w'), grads):
+    assert np.all(np.isfinite(np.asarray(g))), f'{name} gradient has NaN/Inf'
+    assert float(jnp.abs(g).max()) > 1e-10, (
+        f'{name} received a zero gradient -- REINFORCE disconnected for a '
+        'genuinely heterogeneous free-running batch')
+
+
+class _NullNorm:
+  def stats(self):
+    return 0.0, 1.0
+
+  def __call__(self, x, update=True, weights=None):
+    return 0.0, 1.0
+
+
+# --------------------------------------------------------------------------
+# Bug found 2026-07-29: the Lagrangian duration-prior's ``mean_abs_err`` was
+# computed as a single flat ``(w * err).sum() / w.sum()`` across the WHOLE
+# batch, where ``w`` bakes in ``decision_mean_rescale``'s per-ROW factor. That
+# factor is LARGER for rows with fewer real decisions, so the flat ratio
+# systematically over-weighted sparse-hold rows relative to dense-hold rows --
+# invisible under any pinned config (every row has the identical decision
+# count there) and live for every genuinely-variable Lagrangian run
+# (DUR_MODE=lagrangian: e363/e364/e366/e367).
+# --------------------------------------------------------------------------
+
+class _RecordingAdapter:
+  """Stand-in for ``AutoAdapt``: records the scalar it's asked to regulate."""
+
+  def __init__(self):
+    self.seen = []
+
+  def __call__(self, reg, update=True, target=None, weights=None):
+    self.seen.append(float(reg))
+    return 0.0, {}
+
+  def scale(self):
+    return jnp.float32(1.0)
+
+
+def test_lagrange_mean_abs_err_is_not_biased_by_per_row_decision_count():
+  """Through the REAL ``imag_loss_mgr``, not the isolated helper: a batch of
+  one 1-decision row and one 8-decision row, duration logits chosen so the
+  expected-duration error is exactly 10 on the sparse row and exactly 1 on
+  every one of the dense row's 8 decisions. The Lagrangian adapter must be
+  fed the flat per-decision mean (2.0), not the row-imbalanced value (5.5)
+  the bug produced.
+  """
+  from dreamerv3.hrl.losses import imag_loss_mgr
+  T, n_dur, dur_min = 17, 20, 1
+  sw = jnp.array([
+      [1] + [0] * (T - 1),                              # 1 decision
+      [1 if t % 2 == 0 else 0 for t in range(T - 1)] + [0],  # 8 decisions
+  ], f32)
+  assert int(sw[0].sum()) == 1 and int(sw[1].sum()) == 8
+
+  # Duration logits: a delta at a class chosen so E[dur] misses the target by
+  # exactly the desired amount at every real decision. Row 0 target-miss=10,
+  # row 1 target-miss=1 (dur_reg_target=8 below).
+  target = 8.0
+  row0_class = int(target + 10 - dur_min)
+  row1_class = int(target + 1 - dur_min)
+  logits = jnp.full((2, T, n_dur), -1e4, f32)
+  logits = logits.at[0, :, row0_class].set(0.0)
+  logits = logits.at[1, :, row1_class].set(0.0)
+
+  skill_logits = jnp.zeros((2, T, 4))
+  skills = {
+      'skill': jax.nn.one_hot(jnp.zeros((2, T), jnp.int32), 4),
+      'duration': jnp.full((2, T), row1_class, jnp.int32),  # unused (dur head is analytic here)
+  }
+  policy = {
+      'skill': outs.OneHot(skill_logits),
+      'duration': outs.Categorical(logits),
+  }
+  val = outs.MSE(jnp.zeros((2, T)))
+  norms = [_NullNorm() for _ in range(5)]
+  adapter = _RecordingAdapter()
+
+  imag_loss_mgr(
+      skills, jnp.zeros((2, T)), jnp.zeros((2, T)), jnp.full((2, T), 0.997),
+      policy, val, val, val, val, *norms,
+      update=True, contdisc=True, slowtar=False, horizon=333,
+      mgr_expl_weight=0.1, actent=3e-4, switch_mask=sw,
+      duration_fixed=False, mgr_dur_lagrange_adapter=adapter,
+      dur_reg_target=target, dur_min=dur_min)
+
+  assert len(adapter.seen) == 1
+  np.testing.assert_allclose(adapter.seen[0], 2.0, atol=1e-3,
+      err_msg=f'Lagrangian adapter was fed {adapter.seen[0]}, expected the '
+              'flat per-decision mean 2.0 -- got the row-imbalanced value '
+              'instead (5.5 is the bug\'s signature)')

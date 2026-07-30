@@ -2381,8 +2381,156 @@ be re-audited before merging.
 **Do NOT read this as a mechanism experiment** — both arms are the same recipe;
 the only variable is which tree ran it.
 
+**CANCELLED 2026-07-30 near the 4M finish line, final scores logged** (all 6
+cells were within ~30-170k steps of their 4M budget when killed as part of a
+full-queue stop + `/work` cleanup — not a research decision, see below):
+
+| exp | arm | task | final score @ step | trail earlier (1.95M) |
+|---|---|---|---|---|
+| e372 | pre  | cartpole_swingup | **1.4** @ 3.99M | 217.3 |
+| e373 | post | cartpole_swingup | 225.4 @ 3.97M | 82.2 |
+| e374 | pre  | cheetah_run | 130.0 @ 3.92M | 124.0 |
+| e375 | post | cheetah_run | 101.7 @ 3.92M | 68.8 |
+| e376 | pre  | hopper_hop | 0.0 @ 3.94M | 0.0 |
+| e377 | post | hopper_hop | 0.0 @ 3.92M | 0.0 |
+
+**Falsifies the "statistically indistinguishable" hypothesis on cartpole, at
+least in this single-seed run**: e372 (pre, unmodified tree) collapsed from
+217→1.4 sometime after 1.95M, while e373 (post, refactored tree) rose from
+82→225 over the same span — the arms fully swapped rank late in training.
+Cheetah stayed within noise of itself both times (pre 124→130, post 69→102,
+consistent small post<pre gap). Hopper stayed at the dead floor on both arms
+throughout, as expected (hopper-locality, F12).
+**Read with caution**: single seed, and this is exactly the regime the doc
+already warns about (run-to-run divergence even for byte-identical code, see
+§7 "Codebase consolidation"). The late cartpole collapse looks like ordinary
+training-instability variance hitting one arm and not the other, not
+evidence the refactor changed behavior — but a bundled control makes that
+harder to argue than looking at the raw scores would suggest, since the
+gap direction reversed rather than just widening. **Needs a second seed
+before either arm is trusted on cartpole.**
+
+**e378/e379** (extra `prectl` control replicates on the same lagrangian
+`plain_vark` recipe, `code/dreamerv3` @ `b93e8b6`, V100, job 4671631/4671632):
+also cancelled at 3.88M/3.81M of 4M. Cartpole **also collapsed late**: 707.5
+(1.95M-ish reading) → 187.2 final. Cheetah steady at 125.1. The cartpole
+late-collapse showing up in a *second* independent pre-tree run (e378, not
+just e372) makes it look more like a real property of this recipe on
+cartpole at this scale than a one-off fluke — worth a dedicated look before
+reading anything into e372 vs e373 specifically.
+
+**e380–e389** (BIG A100 sweep of the 2026-07-29
+`GOAL_DURATION_RELABEL_TRUNCATED`/`TRUNC_POLICY` fix, `plain_vark`,
+`director_match`+`variable_goals`, hopper/cheetah pairs): cancelled at
+~3.1–3.2M/4M. e384/e385 (`nodurreg` cell) had already been cancelled the
+previous day at step 5.9k/6k (relaunched same-day as e388/e389 with the
+`TRUNC_POLICY=drop_duration` flag added — a config tweak, not a restart, per
+the numbering rule). Final read on the survivors:
+
+| exp | job | task | RELABEL_TRUNCATED | TRUNC_POLICY | final score @ step |
+|---|---|---|---|---|---|
+| e380 | 4671697 | hopper hop  | False | — | 0.0 @ 3.16M |
+| e381 | 4671698 | cheetah run | False | — | 280.5 @ 3.17M |
+| e382 | 4671699 | hopper hop  | False | — (dup cell) | 0.0 @ 3.15M |
+| e383 | 4671700 | cheetah run | False | — (dup cell) | 61.3 @ 3.15M |
+| e384 | 4671701 | hopper hop  | True | (none, `DUR_MODE=fixed`) | cancelled @ 5.9k, superseded by e388 |
+| e385 | 4671702 | cheetah run | True | (none, `DUR_MODE=fixed`) | cancelled @ ~6k, superseded by e389 |
+| e388 | 4671713 | hopper hop  | True | `drop_duration` | 0.0 @ 3.12M |
+| e389 | 4671714 | cheetah run | True | `drop_duration` | 153.8 @ 3.14M |
+
+Hopper flat 0 across every cell regardless of the relabel-truncated fix
+(consistent with F12/hopper-locality — this fix targets a different bug and
+was never expected to rescue hopper on its own). Cheetah spread 61–280 across
+nominally-similar cells (e381 vs e383 are the same config, different
+job/node — 280.5 vs 61.3 is a large same-config gap, likely seed/run-to-run
+variance since both used `SEED=0`... worth checking whether e381/e383 truly
+differ only in job id or whether a config diff was missed). None of these
+reached their 4M budget so this is a snapshot, not a verdict on the fix.
+
+**Full-queue stop + archive, 2026-07-30**: all of the above (e372–e389, 14
+jobs) plus the previously-idle `intel` report job were cancelled together and
+every run directory under `/work` (63 total, going back to e242) was synced
+to `/bucket/DoyaU/vasilache/bucket/results/dreamerv3/` (`SKIP_REPLAY=1`) and
+removed from `/work` in the same pass — a cleanup/archiving action, not a
+verdict on any of these cells. e358 (`dmc_cheetah_run_plain_vark_BIG_j4671475`)
+had no logdir contents and no slurm log at all — a launch that never produced
+data — archived as-is for the record.
+
 ## 7. Technical notes (implementation facts that bit us)
 
+- **`worker_timed_goals` countdown budget ignored a pinned hold (found + fixed
+  2026-07-29, dormant everywhere -- the flag is off in every launched config).**
+  `_countdown_budget()` normalized the HiTS-style countdown by `goal_duration_max`
+  unconditionally whenever `variable_goal_length`, but under a PINNED hold
+  (`goal_duration_fixed>0`) the realized countdown can never exceed
+  `goal_duration_fixed` (`_duration_steps` bypasses the duration head entirely).
+  Launch configs default `goal_duration_max` to 16 regardless of the pin (only
+  ever raised to match `DUR_TARGET`, never lowered) -- e.g. e360/e361's actual
+  config is `goal_duration_fixed=8, goal_duration_max=16`. Measured: a fresh
+  switch's countdown (the true max, 8) normalized to **0.0** instead of **+1.0**
+  -- the worker would never see the top half of its intended [-1,1] range, and
+  every countdown reading would sit systematically low ("feels later than it
+  is"). Fixed: `_countdown_budget` returns `goal_duration_fixed` when set,
+  `goal_duration_max` only for genuinely free holds. New file
+  `embodied/tests/test_worker_timed_goals.py` (11 tests) -- the feature had zero
+  prior tests despite three separate call sites (windowed/dense/replay worker
+  paths) sharing this one normalization function; also covers input-channel
+  concatenation, stop-gradient, and countdown values at each of the three paths.
+- **Two bugs exclusive to genuinely-variable holds, found 2026-07-29.** After
+  the terminal-flag fix rescued the duration-PINNED equivalence check (e360/e361:
+  hopper 0.0→264.6, cheetah →511.4 trail-50 mid-run) but free-running var-K stayed
+  dead (e364/e366/e368: hopper ~0), a code-path-by-code-path audit specifically of
+  everything that only exists when the duration head genuinely varies (never
+  exercised by any pinned/fixed-K config) found two more real bugs, both fixed:
+  1. **`relabel_truncated_last_duration`'s `avail` was STATES held, not
+     TRANSITIONS credited** (`dreamerv3/hrl/tensors.py`). A hold that overruns the
+     imagination horizon is relabeled to the number of states it occupied
+     (`T - last_switch_pos`) rather than the transitions `variable_block_director_
+     tensors` actually pools into its reward (`(T-1) - last_switch_pos`) — off by
+     exactly one, e.g. a switch at s=16 in a 20-state window was relabeled duration
+     4 (states 16‑19) when only 3 transitions (16‑18) were ever credited. Can only
+     fire on a truncated hold, which structurally cannot happen under any pinned
+     config (holds always divide the horizon evenly there). The pre-existing test
+     for this function (`test_patch_trailing_replay_state_composes_with_relabel_
+     truncated_duration`) asserted the buggy value (class 3) — it was written to
+     match the implementation, not verify it, so it never caught this. Fixed to
+     `(T-1) - last_switch_pos`; cross-checked against `variable_block_director_
+     tensors`'s own credited-transition count (not hand arithmetic) at 4 different
+     truncation amounts, plus a physical-upper-bound sanity test.
+  2. **The Lagrangian duration-prior's `mean_abs_err` was biased toward
+     sparse-hold rows** (`dreamerv3/hrl/losses.py`). Computed as a flat
+     `(w * err).sum() / w.sum()` across the whole batch, where `w` bakes in
+     `decision_mean_rescale`'s per-ROW factor (`buffer_width / that_row's_
+     decision_count`) — correct for the *per-row* `.mean(1)` the caller applies to
+     the returned loss tensor, wrong for a ratio computed *inside* this function
+     across rows at once, since that factor is larger for rows with fewer
+     decisions. Measured: a batch of one 1-decision row (error 10) and one
+     8-decision row (error 1 each) fed the Lagrange adapter 5.5 instead of the
+     true flat per-decision mean 2.0. Invisible under any pinned config (every row
+     has the identical decision count there); live for every genuinely-variable
+     Lagrangian run (`DUR_MODE=lagrangian`: e363/e364/e366/e367). An inflated
+     reading makes the controller ramp the multiplier harder than warranted — a
+     plausible contributor to the duration-collapse pattern seen since e332/e333.
+     Fixed to `dec_mean(...)` (the function's own existing raw-mask helper, used
+     everywhere else in it for exactly this purpose). Swept the rest of the
+     codebase for the same `w`-vs-raw-mask ratio pattern; the two `agent.py`
+     diagnostics that looked similar (`goal/mgr_duration_mean`,
+     `implicit_sparsity_block`) already use the raw mask, not `w` — confirmed safe.
+  Also verified clean (no bug found) by dedicated tests: the dense (non-`split_
+  traj`) worker credit path — the ONLY worker algorithm free var-K ever uses,
+  since `worker_split_window` always selects the windowed path for pinned/fixed-K
+  — matches an independently-implemented per-window reference exactly, including
+  no reward leakage across a switch boundary; `_switch_mask_from_skills`'s
+  replay-side reconstruction matches the scan that generated the trace, including
+  a K=1 row (switch every step) next to a max-duration row in the same batch;
+  duration-head log-prob is correct with the head genuinely live (not gated);
+  `_duration_steps`' class↔duration boundary mapping; and a fully heterogeneous
+  end-to-end manager-loss gradient test (3 rows, 2/4/9 real decisions in one
+  batch, duration head live) — finite loss, finite nonzero gradients into every
+  head. `worker_timed_goals`'s countdown normalization is var-K-specific but
+  provably inactive in every currently-run cell (flag is False everywhere) — read,
+  not deep-tested. New test file: `embodied/tests/test_dense_worker_credit.py`
+  (4 tests); ~10 new tests added to `test_variable_goals.py`. Full suite 76/76.
 - **Codebase consolidation (2026-07-28).** `agent.py` had grown to 4535 lines
   carrying every mechanism ever A/B'd. Cut down to the paths that are production
   defaults, then split into a `dreamerv3/hrl/` package.
@@ -2454,6 +2602,10 @@ the only variable is which tree ran it.
   signal in the bootstrap, so deleting it is fatal; dense cheetah still had the immediate
   block reward and reached 126 vs Director's 337. Fix mirrors `last_down`: downsample the
   real flags at switch positions, then `patch_trailing_replay_state`.
+  **e360/e361 completed their full 4M-step budget (2026-07-29):** hopper
+  trailing-50 **276.1** (reward rate 0.24, peak 330.3) against same-code Director's
+  386; cheetah trailing-50 **518.8** (reward rate 0.18, peak 593.1), ABOVE Director's
+  337. The pinned equivalence check holds at completion, not just mid-run.
   Tests: `test_bool_cast_of_a_continuation_complement_reads_as_terminal`,
   `test_replay_terminal_flags_are_not_derived_from_continuation`,
   `test_downsampled_terminal_flags_round_trip_through_the_bool_cast`.

@@ -453,23 +453,40 @@ def patch_trailing_replay_state(x_down, x_full, switch_mask):
   return jax.tree.map(patch, x_down, x_full)
 
 
-def relabel_truncated_last_duration(mgr_skills_eff, switch_mask, dur_min, dur_max):
-  """Hindsight-relabel the LAST decision's duration class when its hold was cut
-  short by the imagination horizon rather than by a real switch, so REINFORCE
-  credits the manager for the duration it actually got to run, not the one it
-  sampled. Only the final real decision in a rollout can be truncated this way
-  -- every earlier one is, by construction, followed by a genuine switch, so it
-  always ran its full sampled duration and is left untouched. Only the
-  ``duration`` field changes; the goal-code choice itself isn't invalidated by
-  running short, only how long it got to hold."""
-  if 'duration' not in mgr_skills_eff:
-    return mgr_skills_eff
+def _last_decision_truncation(mgr_skills_eff, switch_mask, dur_min, dur_max):
+  """Shared derivation for BOTH truncation policies (relabel and drop).
+
+  Returns ``(is_last_slot, truncated, relabel_idx, orig_idx_at_last)``:
+    * ``is_last_slot`` (B, n_mgr) bool -- the final real decision's slot.
+    * ``truncated``    (B,)      bool -- did the horizon cut its hold short?
+    * ``relabel_idx``  (B,)      i32  -- class index of the REALIZED duration.
+    * ``orig_idx_at_last`` (B,)  int  -- the class it actually sampled.
+
+  Factored out so ``relabel_truncated_last_duration`` and
+  ``truncated_last_decision_mask`` cannot drift apart on what "truncated"
+  means -- two independently-maintained copies of this arithmetic is exactly
+  how the off-by-one below survived as long as it did.
+  """
   sw = f32(switch_mask)                                    # (B, T)
   B, T = sw.shape
   n_sw = jnp.sum(sw, axis=-1)                               # (B,) real decisions
   idx = jnp.arange(T)[None, :]                              # (1, T)
   last_switch_pos = jnp.max(jnp.where(sw > 0.5, idx, -1), axis=-1)  # (B,)
-  avail = f32(T) - f32(last_switch_pos)   # real steps from the last switch through rollout end, inclusive
+  # Transitions actually credited to this decision, matching the "duration p ==
+  # p pooled transitions" convention the (untruncated) countdown recurrence and
+  # variable_block_director_tensors both use: a switch at state s that holds
+  # for its full sampled duration p reaches the next switch at state s+p,
+  # crediting exactly p transitions (rew[s+1..s+p], indices s..s+p-1). The
+  # transition axis has length T-1 (indices 0..T-2, since rew[:, 1:]/con[:, :-1]
+  # both drop one end), so when the rollout ends before the next switch the
+  # transitions actually available are indices s..T-2: (T-1)-s of them, NOT the
+  # (T-s) STATES from s through the final index inclusive. Using T-s here
+  # over-counted the truncated decision's credited length by exactly one --
+  # e.g. a switch at s=16 in a T=20 window (states 16..19, but only transitions
+  # 16..18 exist) was relabeled to duration 4 when only 3 transitions were ever
+  # pooled into its reward -- see
+  # test_relabel_avail_matches_transitions_credited_by_variable_block_director_tensors.
+  avail = f32(T - 1) - f32(last_switch_pos)
   dur_idx = mgr_skills_eff['duration']                       # (B, n_mgr) int class index
   n_mgr = dur_idx.shape[1]
   is_last_slot = (jnp.arange(n_mgr)[None, :] == (n_sw - 1)[:, None])  # (B, n_mgr)
@@ -478,9 +495,58 @@ def relabel_truncated_last_duration(mgr_skills_eff, switch_mask, dur_min, dur_ma
   truncated = avail < orig_dur
   relabel_dur = jnp.clip(avail, dur_min, dur_max)
   relabel_idx = i32(relabel_dur - dur_min)
+  return is_last_slot, truncated, relabel_idx, orig_idx_at_last
+
+
+def relabel_truncated_last_duration(mgr_skills_eff, switch_mask, dur_min, dur_max):
+  """Hindsight-relabel the LAST decision's duration class when its hold was cut
+  short by the imagination horizon rather than by a real switch, so REINFORCE
+  credits the manager for the duration it actually got to run, not the one it
+  sampled. Only the final real decision in a rollout can be truncated this way
+  -- every earlier one is, by construction, followed by a genuine switch, so it
+  always ran its full sampled duration and is left untouched. Only the
+  ``duration`` field changes; the goal-code choice itself isn't invalidated by
+  running short, only how long it got to hold.
+
+  NOTE this substitutes an action the policy did NOT sample into the REINFORCE
+  log-prob, which biases an on-policy estimator (hindsight relabeling is sound
+  for GOAL relabeling in off-policy algorithms, not for this). See
+  ``truncated_last_decision_mask`` for the unbiased alternative.
+  """
+  if 'duration' not in mgr_skills_eff:
+    return mgr_skills_eff
+  is_last_slot, truncated, relabel_idx, orig_idx_at_last = (
+      _last_decision_truncation(mgr_skills_eff, switch_mask, dur_min, dur_max))
+  dur_idx = mgr_skills_eff['duration']
   new_last_idx = jnp.where(truncated, relabel_idx, orig_idx_at_last.astype(i32))
   new_dur = jnp.where(is_last_slot, new_last_idx[:, None], dur_idx)
   return {**mgr_skills_eff, 'duration': new_dur}
+
+
+def truncated_last_decision_mask(mgr_skills_eff, switch_mask, dur_min, dur_max):
+  """``(B, n_mgr)`` float mask, 1 on the last decision iff its hold was cut
+  short by the imagination horizon.
+
+  The unbiased alternative to relabeling: instead of substituting a different
+  action into the policy gradient, simply withhold credit for the decision
+  whose consequence was never observed. Intended to gate the POLICY term only:
+    * the CRITIC target for that decision is legitimate either way -- pooled
+      reward over the realized steps plus a bootstrap off the final state is a
+      valid n-step TD target with variable n;
+    * by the same argument the SKILL head's advantage is valid, since it is
+      that same n-step return minus its baseline;
+    * only the DURATION head's action provably failed to execute as sampled,
+      and under ``mgr_reward_agg='sum'`` truncation systematically shortchanges
+      longer sampled holds -- a direct route to duration collapse.
+  Hence ``goal_duration_truncated_policy='drop_duration'`` (surgical) vs.
+  ``'drop_decision'`` (withhold the whole decision's policy credit).
+  """
+  if 'duration' not in mgr_skills_eff:
+    return jnp.zeros_like(f32(switch_mask[:, :mgr_skills_eff[
+        next(iter(mgr_skills_eff))].shape[1]]))
+  is_last_slot, truncated, _, _ = _last_decision_truncation(
+      mgr_skills_eff, switch_mask, dur_min, dur_max)
+  return f32(is_last_slot) * f32(truncated)[:, None]
 
 
 def downsample_manager_states(feat, k):

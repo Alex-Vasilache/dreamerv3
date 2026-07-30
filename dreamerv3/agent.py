@@ -35,6 +35,7 @@ from .hrl import (
     patch_trailing_replay_state,
     decision_mean_rescale,
     relabel_truncated_last_duration,
+    truncated_last_decision_mask,
     repl_loss,
     resize_frames,
     variable_block_director_tensors,
@@ -126,6 +127,18 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # explicit ablation switch.
     self.goal_duration_relabel_truncated = bool(getattr(
         config, 'goal_duration_relabel_truncated', True))
+    # How the manager's POLICY term treats a hold the imagination horizon cut
+    # short: 'keep' (historical; pair with goal_duration_relabel_truncated),
+    # 'drop_duration' (withhold only the duration head's log-prob there -- the
+    # only action that provably did not execute), or 'drop_decision' (withhold
+    # the whole decision's policy credit). The critic is never gated: its
+    # truncated target is a valid variable-n TD target. See
+    # ``hrl.tensors.truncated_last_decision_mask``.
+    self.goal_duration_truncated_policy = str(getattr(
+        config, 'goal_duration_truncated_policy', 'keep'))
+    assert self.goal_duration_truncated_policy in (
+        'keep', 'drop_duration', 'drop_decision'), (
+            self.goal_duration_truncated_policy)
     self.goal_duration_fixed = int(getattr(config, 'goal_duration_fixed', 0))
     # Resolve the pinned-hold flag first so the duration controllers can be
     # switched off when the head is bypassed: a pinned hold makes every duration
@@ -1001,7 +1014,18 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # fixed-K credit assignment. ``mgr_switch`` marks the real decisions inside
       # the resulting static, forward-filled buffer.
       mgr_skills_eff = downsample_at_switch_mask(mgr_skills, switch_mask)
-      if self.goal_duration_relabel_truncated:
+      # Which decision (if any) had its hold cut short by the horizon. Computed
+      # BEFORE any relabeling, since relabeling rewrites the very field the
+      # truncation test reads.
+      trunc_mask = None
+      if self.goal_duration_truncated_policy != 'keep':
+        trunc_mask = truncated_last_decision_mask(
+            mgr_skills_eff, switch_mask, self.goal_duration_min,
+            self.goal_duration_max)
+      if (self.goal_duration_relabel_truncated
+          and self.goal_duration_truncated_policy == 'keep'):
+        # Relabeling only affects the duration log-prob, which the drop modes
+        # withhold anyway -- so the two are mutually exclusive by construction.
         mgr_skills_eff = relabel_truncated_last_duration(
             mgr_skills_eff, switch_mask, self.goal_duration_min,
             self.goal_duration_max)
@@ -1140,6 +1164,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         dur_reg_weight=float(getattr(self.config, 'goal_duration_reg', 0.0)),
         dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
         dur_min=self.goal_duration_min,
+        trunc_mask=trunc_mask if self.variable_goal_length else None,
+        trunc_policy=self.goal_duration_truncated_policy,
         **kwargs_mgr)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
