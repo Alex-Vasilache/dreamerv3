@@ -473,6 +473,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
   def policy_keys(self):
     # Regex for checkpoint / param groups synced to the actor process.
     if self.use_hrl:
+      # goal_enc is normally train/report-only (the policy step only *decodes*
+      # the manager's sampled code via goal_dec); policy_struct_diag additionally
+      # *encodes* the current state for offline diagnostics, so it needs
+      # goal_enc's params included in the policy-side param group too.
+      if bool(getattr(self.config, 'policy_struct_diag', False)):
+        return '^(enc|dyn|dec|pol|manager_pol|goal_dec|goal_enc)/'
       return '^(enc|dyn|dec|pol|manager_pol|goal_dec)/'
     return '^(enc|dyn|dec|pol)/'
 
@@ -604,6 +610,18 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     out['finite'] = elements.tree.flatdict(jax.tree.map(
         lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
         dict(obs=obs, carry=carry, tokens=tokens, feat=feat, act=act)))
+    # Offline diagnostic: encode the *current real state* (not a manager proposal)
+    # through the goal VAE and emit both the deter vector and the soft code, so an
+    # external driver can correlate goal-space vs. goal-code geometry over a live
+    # on-policy rollout without needing archived replay. off by default; see
+    # experiments/goal_code_struct_corr/diag_goal_struct_corr.py.
+    if self.use_hrl and bool(getattr(self.config, 'policy_struct_diag', False)):
+      diag_deter = self.feat2deter(feat)
+      diag_code = self.goal_enc(diag_deter, bdims=1)
+      diag_dist = diag_code['skill'] if isinstance(diag_code, dict) else diag_code
+      diag_probs = jax.nn.softmax(_head_inner(diag_dist).dist.logits, -1)  # (B, L, C)
+      out['log/struct_diag_deter'] = diag_deter
+      out['log/struct_diag_probs'] = diag_probs.reshape(diag_probs.shape[:-2] + (-1,))
     # Episode policy_image_with_goal: stack obs image with decoded goal image vertically.
     # Stored under log/ prefix so replay filters it out (avoids doubling replay memory).
     # Enabled by default only when image decoder keys exist; adds one decoder forward pass.

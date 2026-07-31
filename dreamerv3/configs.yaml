@@ -379,6 +379,12 @@ defaults:
     # Decode goal image at every policy step and stack with obs for episode rollout.
     # Logged as epstats/policy_image_with_goal. Adds one decoder forward pass per step.
     policy_goal_image: True
+    # Emit the current-state deter vector and its soft goal-code (goal_enc output)
+    # at every policy step, under log/struct_diag_*. Off by default; used only by
+    # experiments/goal_code_struct_corr/diag_goal_struct_corr.py to correlate
+    # goal-space vs. goal-code geometry on a live rollout (no gradient/training
+    # effect -- pure forward pass).
+    policy_struct_diag: False
 
 variable_goals: &variable_goals
   agent.use_hrl: True
