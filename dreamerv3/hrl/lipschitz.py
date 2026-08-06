@@ -1,0 +1,225 @@
+"""Lipschitz-constrained linear layers (LipVQ-VAE, Vuong et al. 2025).
+
+Implements the row-wise weight normalization of LipVQ-VAE Eq. (4), which is
+itself the ``Lipschitz MLP`` of Liu et al. (SIGGRAPH 2022) that the paper cites:
+for a layer with weight matrix ``W`` and a trainable bound ``c``,
+
+    W_i <- W_i * min(1, softplus(c_i) / sum_j |W_ij|)
+
+so the layer's inf-norm operator norm ``max_i sum_j |W_ij|`` is bounded by
+``softplus(c_i)``. With 1-Lipschitz activations, the network's inf-norm
+Lipschitz constant is bounded by the product of the per-layer bounds, which is
+the quantity the ``L_Lipschitz`` penalty shrinks.
+
+Two details where the LipVQ-VAE paper and its released code disagree with the
+project's ``motivation.tex`` write-up; both are exposed as options here:
+
+  * ``motivation.tex`` writes the normalization as an unconditional rescale
+    ``W_i / sum_j |W_ij| * softplus(c_i)``. The paper's text ("If the absolute
+    row sum is already smaller than softplus(c_l), no rescaling is applied")
+    and the released code (``torch.minimum(1.0, softplus(c)/absrowsum)`` in
+    ``robomimic/models/vq_vae/backbone_lfqvae_v5.py``) both clamp at 1. We
+    follow the paper/code; ``clamp=False`` restores the unconditional form.
+  * The penalty is a PRODUCT over layers in the paper (and in Liu et al.,
+    where it equals the network's Lipschitz bound) but a SUM in
+    ``motivation.tex``. ``lip_penalty`` supports both.
+
+Indexing note: ``embodied.jax.nets.Linear`` stores its kernel as ``(in, out)``
+and computes ``x @ kernel``, i.e. the LipVQ "row" ``W_i`` (torch layout
+``(out, in)``) is a *column* of our kernel. The absolute row sum is therefore a
+reduction over axis 0, not axis 1.
+"""
+from typing import Callable
+
+import jax
+import jax.numpy as jnp
+import ninjax as nj
+
+import embodied.jax.nets as nets
+
+f32 = jnp.float32
+
+
+def softplus_inv(y):
+  """Inverse of ``softplus``: ``log(exp(y) - 1)``, numerically stable.
+
+  For ``y > 20`` softplus is the identity to well within f32 precision, and
+  ``expm1(y)`` would overflow, so the identity branch is used there.
+  """
+  y = jnp.asarray(y, f32)
+  safe = jnp.minimum(y, 20.0)
+  return jnp.where(y > 20.0, y, jnp.log(jnp.expm1(safe) + 1e-30))
+
+
+def abs_row_sum(kernel):
+  """``sum_j |W_ij|`` per output unit, for an ``(in, out)`` kernel -> ``(out,)``."""
+  return jnp.abs(kernel.astype(f32)).sum(0)
+
+
+def lip_scale(kernel, bound, clamp=True, eps=1e-12):
+  """Per-output-unit rescale factor enforcing ``sum_j |W_ij| <= bound``.
+
+  Args:
+    kernel: ``(in, out)`` weight matrix.
+    bound: ``softplus(c)``; scalar or ``(out,)``.
+    clamp: keep the layer unchanged where it already satisfies the bound
+      (paper/reference behavior). ``False`` rescales unconditionally, matching
+      the ``motivation.tex`` form of the equation.
+  """
+  ratio = jnp.asarray(bound, f32) / (abs_row_sum(kernel) + eps)
+  ratio = jnp.broadcast_to(ratio, (kernel.shape[-1],))
+  return jnp.minimum(1.0, ratio) if clamp else ratio
+
+
+def lip_normalize(kernel, c, clamp=True, eps=1e-12):
+  """Row-wise normalized kernel (LipVQ-VAE Eq. 4). ``c`` is the raw bound."""
+  bound = jax.nn.softplus(jnp.asarray(c, f32))
+  return kernel.astype(f32) * lip_scale(kernel, bound, clamp, eps)[None, :]
+
+
+def lip_penalty(bounds, impl='prod'):
+  """``L_Lipschitz`` from the per-layer bounds.
+
+  ``prod`` (default) is the paper's / Liu et al.'s form and equals the
+  network's inf-norm Lipschitz bound; ``sum`` is the ``motivation.tex`` form.
+  An empty layer list yields ``0`` for both (an off switch, not a product
+  identity of 1, so that ``gamma * penalty`` vanishes when Lipschitz is off).
+  """
+  bounds = [jnp.asarray(b, f32) for b in bounds]
+  if not bounds:
+    return jnp.zeros((), f32)
+  if impl == 'prod':
+    out = bounds[0]
+    for b in bounds[1:]:
+      out = out * b
+    return out
+  if impl == 'sum':
+    out = bounds[0]
+    for b in bounds[1:]:
+      out = out + b
+    return out
+  raise NotImplementedError(impl)
+
+
+class LipLinear(nj.Module):
+  """``nets.Linear`` with the LipVQ-VAE row-wise weight normalization.
+
+  Fields:
+    per_row: one trainable bound per output unit (the paper's "introduced for
+      every row i", and the released code). ``False`` uses a single scalar
+      bound per layer (Liu et al., and the ``c_l`` subscript of Eq. 4).
+    cinit: initial value of the *bound* ``softplus(c)``. Negative (default)
+      initializes it to the layer's own initial absolute row sums, so the
+      normalization is exactly inert at initialization and the penalty has to
+      pull the bound down -- Liu et al.'s recipe. A fixed small value would
+      instead scale a 1024-unit layer down by ~20x at init and destroy the
+      forward signal.
+    clamp: see ``lip_scale``.
+  """
+
+  bias: bool = True
+  winit: str | Callable = nets.Initializer('trunc_normal')
+  binit: str | Callable = nets.Initializer('zeros')
+  outscale: float = 1.0
+  per_row: bool = True
+  cinit: float = -1.0
+  clamp: bool = True
+
+  def __init__(self, units):
+    assert isinstance(units, int), (units, type(units))
+    self.units = units
+    self._insize = None
+
+  def __call__(self, x):
+    nets.ensure_dtypes(x)
+    self._insize = x.shape[-1]
+    kernel = self._kernel()
+    y = x @ lip_normalize(kernel, self._c(), self.clamp).astype(x.dtype)
+    if self.bias:
+      y += self.value('bias', nets.init(self.binit), self.units).astype(x.dtype)
+    return y
+
+  def bound(self):
+    """The layer's inf-norm Lipschitz bound, ``max_i softplus(c_i)``."""
+    return jax.nn.softplus(self._c().astype(f32)).max()
+
+  def scale(self):
+    """Realized rescale factor per output unit (1.0 == constraint inactive)."""
+    bound = jax.nn.softplus(self._c().astype(f32))
+    return lip_scale(self._kernel(), bound, self.clamp)
+
+  def _kernel(self):
+    assert self._insize is not None, 'LipLinear must be called before use.'
+    return self.value('kernel', self._scaled_winit, (self._insize, self.units))
+
+  def _c(self):
+    return self.value('c', self._make_c)
+
+  def _make_c(self):
+    shape = (self.units,) if self.per_row else ()
+    if self.cinit >= 0.0:
+      return jnp.full(shape, softplus_inv(self.cinit), f32)
+    rows = abs_row_sum(self._kernel())
+    target = rows if self.per_row else rows.max()
+    return jnp.broadcast_to(softplus_inv(target), shape).astype(f32)
+
+  def _scaled_winit(self, *args, **kwargs):
+    return nets.init(self.winit)(*args, **kwargs) * self.outscale
+
+
+class LipMLP(nj.Module):
+  """Plain MLP trunk whose linear layers are optionally Lipschitz-constrained.
+
+  Mirrors ``nets.MLP`` (``layers`` x [Linear -> Norm -> act]) but lets the
+  Lipschitz constraint be switched on per instance. When ``lip=True`` the
+  normalization layers must be ``none``: RMS/LayerNorm rescale by a
+  data-dependent factor and would void the bound the weight normalization
+  buys. LipVQ-VAE Fig. 3 likewise shows only ``Linear -> Lipschitz Reg ->
+  activation`` in the encoder.
+  """
+
+  act: str = 'silu'
+  norm: str = 'none'
+  bias: bool = True
+  winit: str | Callable = nets.Initializer('trunc_normal')
+  binit: str | Callable = nets.Initializer('zeros')
+  lip: bool = False
+  per_row: bool = True
+  cinit: float = -1.0
+  clamp: bool = True
+
+  def __init__(self, layers, units):
+    self.layers = int(layers)
+    self.units = int(units)
+    if self.lip:
+      assert self.norm == 'none', (
+          f'Lipschitz MLP requires norm=none, got {self.norm!r}: a rescaling '
+          'normalization layer voids the weight-normalization bound.')
+    self._bounds = []
+
+  def __call__(self, x):
+    shape = x.shape[:-1]
+    x = x.astype(nets.COMPUTE_DTYPE)
+    x = x.reshape([-1, x.shape[-1]])
+    bounds = []
+    for i in range(self.layers):
+      if self.lip:
+        layer = self.sub(
+            f'linear{i}', LipLinear, self.units, bias=self.bias,
+            winit=self.winit, binit=self.binit, per_row=self.per_row,
+            cinit=self.cinit, clamp=self.clamp)
+        x = layer(x)
+        bounds.append(layer.bound())
+      else:
+        x = self.sub(
+            f'linear{i}', nets.Linear, self.units, bias=self.bias,
+            winit=self.winit, binit=self.binit)(x)
+      x = self.sub(f'norm{i}', nets.Norm, self.norm)(x)
+      x = nets.act(self.act)(x)
+    self._bounds = bounds
+    x = x.reshape((*shape, x.shape[-1]))
+    return x
+
+  def bounds(self):
+    """Per-layer Lipschitz bounds from the most recent ``__call__``."""
+    return list(self._bounds)
