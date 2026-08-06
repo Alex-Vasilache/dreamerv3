@@ -17,8 +17,9 @@ ARGS=(-p "$PART" -c "${TEST_CPUS:-8}" --mem="${TEST_MEM:-24G}" -t "${TEST_TIME:-
 # JAX_PLATFORMS=cpu keeps the tests deterministic and off the GPU even when one
 # is allocated; unset it (TEST_GPU=1) to exercise the real accelerator path.
 PLATFORMS="cpu"; [ "${TEST_GPU:-0}" = "1" ] && PLATFORMS="cuda"
+PYTEST_ARGS="$(printf '%q ' "$@")"
 srun "${ARGS[@]}" bash -lc "source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh >/dev/null 2>&1
             cd '$REPO'
             export JAX_PLATFORMS='$PLATFORMS'
             export PYTHONPATH='$REPO':\${PYTHONPATH:-}
-            python -m pytest $*"
+            python -m pytest $PYTEST_ARGS"
