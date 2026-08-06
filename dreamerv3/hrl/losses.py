@@ -15,6 +15,7 @@ from .heads import (
     head_entropy_perdim_time,
     head_entropy_time,
     head_logp_time,
+    ring_smooth_event,
     manager_reinforce_policy,
     policy_time_slice,
     _head_inner,
@@ -179,6 +180,7 @@ def imag_loss_mgr(
     dur_min=1,
     trunc_mask=None,
     trunc_policy='keep',
+    mgr_smooth=0.0,
 ):
   """Manager actor-critic losses on imagined trajectories.
 
@@ -264,8 +266,16 @@ def imag_loss_mgr(
 
   skill_events = align_skill_events(skills, manager_policy)
   reinforce_policy = manager_reinforce_policy(manager_policy, duration_fixed)
+  # Ring-smoothed credit assignment: the skill event is spread over its
+  # circular neighbours before the log-prob, so an advantage credited to one
+  # codebook entry is also credited to the adjacent ones. Only the skill head
+  # is smoothed -- the duration head's classes have no ring. mgr_smooth=0
+  # reproduces the standard estimator exactly.
   per_head_logp = {
-      k: head_logp_time(v, skill_events[k]) for k, v in reinforce_policy.items()}
+      k: head_logp_time(
+          v, ring_smooth_event(skill_events[k], mgr_smooth)
+          if k == 'skill' else skill_events[k])
+      for k, v in reinforce_policy.items()}
   # Truncated-hold policy handling. ``trunc_mask`` (B, n_mgr) marks the final
   # decision when the imagination horizon cut its hold short, i.e. when the
   # sampled duration provably did not execute. ``'drop_duration'`` withholds

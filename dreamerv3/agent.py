@@ -257,6 +257,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           self.manager_pol = embodied.jax.MLPHead(
               self.goal_code_space, **config.manager_policy, name='manager_pol')
       self.manager_sample_freq = config.manager_sample_freq
+      self._mgr_smooth = float(
+          config.goal_vq.mgr_smooth) if self.goal_ae_impl == 'vq' else 0.0
 
     if self.use_hrl:
       # Separate extrinsic and exploratory value heads (+ EMA targets).
@@ -1321,6 +1323,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         dur_reg_target=float(getattr(self.config, 'goal_duration_target', 8.0)),
         dur_min=self.goal_duration_min,
         trunc_mask=trunc_mask if self.variable_goal_length else None,
+        mgr_smooth=self._mgr_smooth,
         trunc_policy=self.goal_duration_truncated_policy,
         **kwargs_mgr)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})

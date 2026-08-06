@@ -56,6 +56,32 @@ def align_skill_events(skills, policy):
   return events
 
 
+def ring_smooth_event(event, alpha):
+  """Spread a one-hot skill event over its circular neighbours.
+
+  ``OneHot.logp`` is ``sum_c log pi_c * event_c``, so replacing the sampled
+  one-hot with a kernel over the ring turns the REINFORCE target into
+  ``sum_c w(c, a) log pi_c``: an advantage credited to entry ``a`` is also
+  credited, at weight ``alpha``, to ``a-1`` and ``a+1``. With a SOM-ordered
+  codebook those entries decode to nearby goals with likely similar returns,
+  which a policy over unordered labels cannot exploit -- raising ``a`` tells it
+  nothing about ``a+1``.
+
+  The weights ``(1 - 2*alpha, alpha, alpha)`` sum to one, so the target stays a
+  distribution over the block's classes. This biases the policy gradient, in
+  the manner of label smoothing; ``alpha = 0`` returns the event unchanged and
+  reproduces the standard estimator exactly.
+
+  Acts on the last axis, which is the class axis of an ``(..., L, C)`` code, so
+  the ``L`` blocks are smoothed independently.
+  """
+  if not alpha:
+    return event
+  return ((1.0 - 2.0 * alpha) * event
+          + alpha * jnp.roll(event, 1, -1)
+          + alpha * jnp.roll(event, -1, -1))
+
+
 def _head_inner(head):
   """Unwrap ``outs.Agg`` so skill axes are not confused with time."""
   return head.output if isinstance(head, outs.Agg) else head

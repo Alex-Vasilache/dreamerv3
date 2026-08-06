@@ -27,6 +27,10 @@
 #   som_lipvq_mgr  both, plus a manager whose logits are distances to the
 #              codebook, so the ring is usable by the policy and not only by
 #              the decoder (hrl/goal_ae.py ManagerRingHead)
+#   som_lipvq_smooth  both, plus ring-smoothed REINFORCE credit
+#              (hrl/heads.py ring_smooth_event). Differs from som_lipvq by the
+#              single number goal_vq.mgr_smooth, so it isolates credit
+#              assignment without changing the policy class.
 #
 # The `vq` arm is not one of motivation.tex's four but is worth running: it
 # isolates "quantization instead of categorical sampling" so a som/lipvq result
@@ -72,7 +76,8 @@ case "$ARM" in
   lipvq)     ARM_CONFIG="goal_lipvq" ;;
   som_lipvq) ARM_CONFIG="goal_som_lipvq" ;;
   som_lipvq_mgr) ARM_CONFIG="goal_som_lipvq_mgr" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr)" >&2; exit 1 ;;
+  som_lipvq_smooth) ARM_CONFIG="goal_som_lipvq_smooth" ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 

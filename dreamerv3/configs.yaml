@@ -183,6 +183,13 @@ defaults:
       # mgr_actent targets, so the entropy regularizer tightens rather than
       # fights from below. 1 would be a uniform policy.
       mgr_ring_scale_init: 5.0
+      # Alternative to mgr_ring, and a cleaner single-factor change: instead of
+      # reparameterizing the manager's logits, spread the sampled skill event
+      # over its ring neighbours before the REINFORCE log-prob, so an advantage
+      # credited to one entry is also credited at this weight to the adjacent
+      # ones. 0.0 reproduces the standard estimator exactly, so the arm differs
+      # from goal_som_lipvq in this one number. Only meaningful with som=True.
+      mgr_smooth: 0.0
     # Trunks for the vq encoder/decoder. norm is `none` so the per-layer
     # Lipschitz bounds compose into a bound on the whole trunk (a rescaling
     # norm layer is not 1-Lipschitz and breaks the composition). An earlier
@@ -568,6 +575,17 @@ goal_som_lipvq_mgr:
     goal_struct_adapt: False
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: True, mgr_ring: True}
+
+# som+lipvq with ring-smoothed REINFORCE credit. Differs from goal_som_lipvq by
+# the single number mgr_smooth, so the comparison isolates credit assignment.
+goal_som_lipvq_smooth:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, mgr_smooth: 0.25}
 
 size12m: &size12m
   .*\.rssm: {deter: 2048, hidden: 256, classes: 16}

@@ -26,6 +26,7 @@ import pytest
 import embodied.jax.nets as nets
 import embodied.jax.outs as outs
 from dreamerv3.hrl import goal_ae, vq
+from dreamerv3.hrl import heads as hrl_heads
 from dreamerv3.hrl.heads import _head_inner
 
 f32 = jnp.float32
@@ -887,3 +888,57 @@ class TestManagerRingHead:
     adj = p[np.arange(len(p)), (best + 1) % C]
     far = p[np.arange(len(p)), (best + C // 2) % C]
     assert (adj > far).mean() > 0.95, (adj.mean(), far.mean())
+
+
+class TestRingSmoothedCredit:
+  """Spreading the REINFORCE event over ring neighbours."""
+
+  RC = 8            # the project's C; the module-level C here is 5
+
+  def _event(self, ids):
+    return jnp.asarray(np.eye(self.RC)[ids], f32)
+
+  def test_alpha_zero_is_the_identity(self):
+    # The arm must differ from goal_som_lipvq by this one number, so alpha=0
+    # has to reproduce the standard estimator bit for bit.
+    e = self._event(np.random.default_rng(0).integers(0, self.RC, (4, 3, L)))
+    np.testing.assert_array_equal(hrl_heads.ring_smooth_event(e, 0.0), e)
+
+  def test_weights_sum_to_one_and_land_on_the_ring_neighbours(self):
+    got = np.asarray(hrl_heads.ring_smooth_event(
+        self._event(np.array([[3]])), 0.25))[0, 0]
+    np.testing.assert_allclose(got.sum(), 1.0, rtol=1e-6)
+    np.testing.assert_allclose(got[[2, 3, 4]], [0.25, 0.5, 0.25], rtol=1e-6)
+    assert got[[0, 1, 5, 6, 7]].max() == 0.0
+
+  def test_wraps_around_the_ring(self):
+    C_ = self.RC
+    for k, lo, hi in ((0, C_ - 1, 1), (C_ - 1, C_ - 2, 0)):
+      got = np.asarray(hrl_heads.ring_smooth_event(
+          self._event(np.array([[k]])), 0.25))[0, 0]
+      np.testing.assert_allclose(got[[lo, k, hi]], [0.25, 0.5, 0.25], rtol=1e-6)
+
+  def test_blocks_are_smoothed_independently(self):
+    got = np.asarray(hrl_heads.ring_smooth_event(
+        self._event(np.array([[0, 4]])), 0.25))[0]
+    np.testing.assert_allclose(
+        got[0][[self.RC - 1, 0, 1]], [0.25, 0.5, 0.25], rtol=1e-6)
+    np.testing.assert_allclose(got[1][[3, 4, 5]], [0.25, 0.5, 0.25], rtol=1e-6)
+
+  def test_smoothing_shifts_credit_from_the_sample_to_its_neighbours(self):
+    # The gradient of sum_c w_c log softmax(logits)_c wrt logit_j is w_j - p_j,
+    # so the sign depends on the current probabilities; what smoothing changes
+    # is the WEIGHT, hence the credit relative to no smoothing.
+    rng = np.random.default_rng(1)
+    logits = jnp.asarray(rng.normal(0, 1, (1, 1, L, self.RC)), f32)
+    ids = np.zeros((1, 1, L), int); ids[..., 0] = 3
+    ev = self._event(ids)
+    def obj(logits, alpha):
+      return (jax.nn.log_softmax(logits, -1)
+              * hrl_heads.ring_smooth_event(ev, alpha)).sum()
+    g0 = np.asarray(jax.grad(obj)(logits, 0.0))[0, 0, 0]
+    ga = np.asarray(jax.grad(obj)(logits, 0.25))[0, 0, 0]
+    np.testing.assert_allclose(ga[[2, 4]] - g0[[2, 4]], [0.25, 0.25], rtol=1e-5)
+    np.testing.assert_allclose(ga[3] - g0[3], -0.5, rtol=1e-5)
+    far = [0, 1, 5, 6, 7]
+    np.testing.assert_allclose(ga[far], g0[far], rtol=1e-5)
