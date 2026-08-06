@@ -671,3 +671,108 @@ class TestLipPenaltyReach:
         assert a.max() > 0.0, k
       else:
         np.testing.assert_array_equal(a, 0.0, err_msg=k)
+
+
+class TestPenaltyFormPreservesTheGoal:
+  """prod vs logprod: same guarantee, same quantity shrunk, different operating point."""
+
+  def _train_and_measure(self, impl, lip_scale, steps=200, lr=3e-3):
+    enc, dec = build(lip=True, layers=2, units=32, act='relu', norm='none',
+                     strict_bound=True, cinit=3.0)
+    rng = np.random.default_rng(0)
+    x = jnp.asarray(rng.normal(0, 1, (1, 64, DETER)), f32)
+    params = init_all(enc, dec, x)
+
+    def prod_bound(params):
+      def fn(x):
+        enc(x, 2)
+        return goal_ae.lip_penalty(enc.bounds(), 'prod')
+      return float(nj.pure(fn)(params, x)[1])
+
+    def realized_ratio(params):
+      r = np.random.default_rng(1)
+      x1 = jnp.asarray(r.normal(0, 5, (128, DETER)), f32)
+      x2 = jnp.asarray(r.normal(0, 5, (128, DETER)), f32)
+      z1 = nj.pure(lambda a: enc.latent(a, 1))(params, x1)[1].reshape((128, -1))
+      z2 = nj.pure(lambda a: enc.latent(a, 1))(params, x2)[1].reshape((128, -1))
+      num = np.abs(np.asarray(z1 - z2)).max(-1)
+      den = np.abs(np.asarray(x1 - x2)).max(-1)
+      return float((num / den).max())
+
+    def loss(params):
+      def fn(x):
+        return goal_ae.vq_goal_loss(
+            enc, dec, x, 2, lip_scale=lip_scale, lip_impl=impl)[0].mean()
+      return nj.pure(fn)(params, x)[1]
+
+    opt = optax.adam(lr); state = opt.init(params)
+    grad = jax.jit(jax.grad(loss)); step = jax.jit(opt.update)
+    before = (prod_bound(params), realized_ratio(params))
+    worst = 0.0
+    for _ in range(steps):
+      upd, state = step(grad(params), state, params)
+      params = optax.apply_updates(params, upd)
+      worst = max(worst, realized_ratio(params) / prod_bound(params))
+    return before, (prod_bound(params), realized_ratio(params)), worst
+
+  @pytest.mark.parametrize('impl,scale', [('prod', 0.05), ('logprod', 0.5)])
+  def test_both_forms_shrink_the_same_lipschitz_constant(self, impl, scale):
+    # The quantity that bounds the map is prod(b). Whether the penalty is the
+    # product or its logarithm, training must drive THAT down -- this is what
+    # "same goal" means, and log being strictly increasing is why it holds.
+    before, after, _ = self._train_and_measure(impl, scale)
+    assert after[0] < before[0], (impl, before[0], after[0])
+
+  @pytest.mark.parametrize('impl,scale', [('prod', 0.05), ('logprod', 0.5),
+                                          ('logprod', 0.0)])
+  def test_the_bound_holds_throughout_training_for_any_penalty(self, impl, scale):
+    # The guarantee comes from the weight normalization, not the penalty: the
+    # realized inf-norm ratio never exceeds prod(b) at any point, including
+    # with the penalty switched off entirely (scale 0.0).
+    _, _, worst_ratio = self._train_and_measure(impl, scale)
+    assert worst_ratio <= 1.0 + 1e-4, (impl, scale, worst_ratio)
+
+  def test_a_tighter_bound_yields_a_smoother_map(self):
+    # What makes the constraint meaningful is that the bound controls the
+    # realized sensitivity. Note it does NOT follow that training reduces that
+    # sensitivity: at initialization the encoder sits far below its own bound
+    # (measured ratio ~0.04), and fitting the reconstruction moves it UP toward
+    # the bound. The constraint only starts to act once the two meet, which is
+    # what goal/lip_active_frac reports at run time.
+    ratios = []
+    for cinit in (0.3, 30.0):
+      enc, dec = build(lip=True, layers=2, units=32, act='relu', norm='none',
+                       strict_bound=True, cinit=cinit)
+      rng = np.random.default_rng(0)
+      x = jnp.asarray(rng.normal(0, 1, (1, 64, DETER)), f32)
+      params = init_all(enc, dec, x)
+      def loss(params):
+        def fn(x):
+          return goal_ae.vq_goal_loss(enc, dec, x, 2, lip_scale=0.0)[0].mean()
+        return nj.pure(fn)(params, x)[1]
+      opt = optax.adam(3e-3); state = opt.init(params)
+      grad = jax.jit(jax.grad(loss)); step = jax.jit(opt.update)
+      for _ in range(200):
+        upd, state = step(grad(params), state, params)
+        params = optax.apply_updates(params, upd)
+      r = np.random.default_rng(1)
+      x1 = jnp.asarray(r.normal(0, 5, (128, DETER)), f32)
+      x2 = jnp.asarray(r.normal(0, 5, (128, DETER)), f32)
+      z1 = nj.pure(lambda a: enc.latent(a, 1))(params, x1)[1].reshape((128, -1))
+      z2 = nj.pure(lambda a: enc.latent(a, 1))(params, x2)[1].reshape((128, -1))
+      num = np.abs(np.asarray(z1 - z2)).max(-1)
+      den = np.abs(np.asarray(x1 - x2)).max(-1)
+      def bnd(x):
+        enc(x, 2)
+        return goal_ae.lip_penalty(enc.bounds(), 'prod')
+      final_bound = float(nj.pure(bnd)(params, x)[1])
+      ratios.append((float((num / den).max()), final_bound, cinit))
+    (tight, tb, _), (loose, lb, _) = ratios
+    assert tight < loose, ratios
+    # Each stays under its own FINAL bound. Not its initial one: with the
+    # penalty off, an ACTIVE constraint feeds gradient back into c, and
+    # reconstruction pushes the bounds up (here 0.3^3 = 0.027 at init grew to
+    # ~tb). That self-relaxation is why the penalty is not optional.
+    assert tight <= tb * (1 + 1e-4), (tight, tb)
+    assert loose <= lb * (1 + 1e-4), (loose, lb)
+    assert tb > 0.3 ** 3, (tb, 0.3 ** 3)
