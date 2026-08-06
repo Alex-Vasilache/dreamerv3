@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2220" height="1479" viewBox="0 0 2220 1479" font-family="Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="2220" height="1479" fill="white"/>
+<line x1="330.0" y1="1287.2" x2="2130.0" y2="1287.2" stroke="#ddd" stroke-width="2.9"/>
+<line x1="303.5" y1="1287.2" x2="330.0" y2="1287.2" stroke="black" stroke-width="10.6"/>
+<text x="281.4" y="1302.6" font-size="44.1" font-weight="bold" text-anchor="end" fill="black">0</text>
+<line x1="330.0" y1="1002.2" x2="2130.0" y2="1002.2" stroke="#ddd" stroke-width="2.9"/>
+<line x1="303.5" y1="1002.2" x2="330.0" y2="1002.2" stroke="black" stroke-width="10.6"/>
+<text x="281.4" y="1017.6" font-size="44.1" font-weight="bold" text-anchor="end" fill="black">0.25</text>
+<line x1="330.0" y1="717.2" x2="2130.0" y2="717.2" stroke="#ddd" stroke-width="2.9"/>
+<line x1="303.5" y1="717.2" x2="330.0" y2="717.2" stroke="black" stroke-width="10.6"/>
+<text x="281.4" y="732.6" font-size="44.1" font-weight="bold" text-anchor="end" fill="black">0.5</text>
+<line x1="330.0" y1="432.2" x2="2130.0" y2="432.2" stroke="#ddd" stroke-width="2.9"/>
+<line x1="303.5" y1="432.2" x2="330.0" y2="432.2" stroke="black" stroke-width="10.6"/>
+<text x="281.4" y="447.6" font-size="44.1" font-weight="bold" text-anchor="end" fill="black">0.75</text>
+<line x1="330.0" y1="147.2" x2="2130.0" y2="147.2" stroke="#ddd" stroke-width="2.9"/>
+<line x1="303.5" y1="147.2" x2="330.0" y2="147.2" stroke="black" stroke-width="10.6"/>
+<text x="281.4" y="162.6" font-size="44.1" font-weight="bold" text-anchor="end" fill="black">1</text>
+<line x1="330.0" y1="1287.2" x2="330.0" y2="1313.6" stroke="black" stroke-width="10.6"/>
+<text x="330.0" y="1371.0" font-size="44.1" font-weight="bold" text-anchor="middle" fill="black">0</text>
+<line x1="780.0" y1="1287.2" x2="780.0" y2="1313.6" stroke="black" stroke-width="10.6"/>
+<text x="780.0" y="1371.0" font-size="44.1" font-weight="bold" text-anchor="middle" fill="black">1M</text>
+<line x1="1230.0" y1="1287.2" x2="1230.0" y2="1313.6" stroke="black" stroke-width="10.6"/>
+<text x="1230.0" y="1371.0" font-size="44.1" font-weight="bold" text-anchor="middle" fill="black">2M</text>
+<line x1="1680.0" y1="1287.2" x2="1680.0" y2="1313.6" stroke="black" stroke-width="10.6"/>
+<text x="1680.0" y="1371.0" font-size="44.1" font-weight="bold" text-anchor="middle" fill="black">3M</text>
+<polyline points="2129.85,376.91" fill="none" stroke="#CC79A7" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.85" cy="376.91" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="116.5" x2="445.4" y2="116.5" stroke="#CC79A7" stroke-width="10.6" />
+<text x="461.9" y="131.0" font-size="41.2" text-anchor="start" fill="#333">Cartpole Swingup seed0</text>
+<polyline points="2129.65,651.57" fill="none" stroke="#CC79A7" stroke-width="9.42" stroke-dasharray="17.7,11.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.65" cy="651.57" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="116.5" x2="1345.4" y2="116.5" stroke="#CC79A7" stroke-width="10.6" stroke-dasharray="17.7,11.8"/>
+<text x="1361.9" y="131.0" font-size="41.2" text-anchor="start" fill="#333">Cartpole Swingup seed1</text>
+<polyline points="782.84,253.60 1230.84,425.44 1680.35,650.38 2128.32,615.84" fill="none" stroke="#CC79A7" stroke-width="9.42" stroke-dasharray="5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="782.84" cy="253.60" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<circle cx="1230.84" cy="425.44" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<circle cx="1680.35" cy="650.38" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<circle cx="2128.32" cy="615.84" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="182.5" x2="445.4" y2="182.5" stroke="#CC79A7" stroke-width="10.6" stroke-dasharray="5.9,8.8"/>
+<text x="461.9" y="196.9" font-size="41.2" text-anchor="start" fill="#333">Cartpole Swingup seed2</text>
+<polyline points="782.42,342.19 1237.86,417.07 1685.09,464.28 2129.04,820.63" fill="none" stroke="#CC79A7" stroke-width="9.42" stroke-dasharray="29.4,8.8,5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="782.42" cy="342.19" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<circle cx="1237.86" cy="417.07" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<circle cx="1685.09" cy="464.28" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<circle cx="2129.04" cy="820.63" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="182.5" x2="1345.4" y2="182.5" stroke="#CC79A7" stroke-width="10.6" stroke-dasharray="29.4,8.8,5.9,8.8"/>
+<text x="1361.9" y="196.9" font-size="41.2" text-anchor="start" fill="#333">Cartpole Swingup seed3</text>
+<polyline points="2128.22,429.21" fill="none" stroke="#CC79A7" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2128.22" cy="429.21" r="12.95" fill="#CC79A7" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="248.4" x2="445.4" y2="248.4" stroke="#CC79A7" stroke-width="10.6" />
+<text x="461.9" y="262.8" font-size="41.2" text-anchor="start" fill="#333">Cartpole Swingup seed4</text>
+<polyline points="2128.34,785.67" fill="none" stroke="#0072B2" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2128.34" cy="785.67" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="248.4" x2="1345.4" y2="248.4" stroke="#0072B2" stroke-width="10.6" />
+<text x="1361.9" y="262.8" font-size="41.2" text-anchor="start" fill="#333">Hopper Hop seed0</text>
+<polyline points="2128.63,734.01" fill="none" stroke="#0072B2" stroke-width="9.42" stroke-dasharray="17.7,11.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2128.63" cy="734.01" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="314.3" x2="445.4" y2="314.3" stroke="#0072B2" stroke-width="10.6" stroke-dasharray="17.7,11.8"/>
+<text x="461.9" y="328.7" font-size="41.2" text-anchor="start" fill="#333">Hopper Hop seed1</text>
+<polyline points="781.60,594.55 1236.05,599.28 1681.17,700.79 2129.97,803.29" fill="none" stroke="#0072B2" stroke-width="9.42" stroke-dasharray="5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="781.60" cy="594.55" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<circle cx="1236.05" cy="599.28" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<circle cx="1681.17" cy="700.79" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<circle cx="2129.97" cy="803.29" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="314.3" x2="1345.4" y2="314.3" stroke="#0072B2" stroke-width="10.6" stroke-dasharray="5.9,8.8"/>
+<text x="1361.9" y="328.7" font-size="41.2" text-anchor="start" fill="#333">Hopper Hop seed2</text>
+<polyline points="783.03,506.27 1238.59,512.10 1683.96,519.50 2130.00,609.28" fill="none" stroke="#0072B2" stroke-width="9.42" stroke-dasharray="29.4,8.8,5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="783.03" cy="506.27" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<circle cx="1238.59" cy="512.10" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<circle cx="1683.96" cy="519.50" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<circle cx="2130.00" cy="609.28" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="380.3" x2="445.4" y2="380.3" stroke="#0072B2" stroke-width="10.6" stroke-dasharray="29.4,8.8,5.9,8.8"/>
+<text x="461.9" y="394.7" font-size="41.2" text-anchor="start" fill="#333">Hopper Hop seed3</text>
+<polyline points="2129.04,743.29" fill="none" stroke="#0072B2" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.04" cy="743.29" r="12.95" fill="#0072B2" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="380.3" x2="1345.4" y2="380.3" stroke="#0072B2" stroke-width="10.6" />
+<text x="1361.9" y="394.7" font-size="41.2" text-anchor="start" fill="#333">Hopper Hop seed4</text>
+<polyline points="2128.57,803.72" fill="none" stroke="#009E73" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2128.57" cy="803.72" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="446.2" x2="445.4" y2="446.2" stroke="#009E73" stroke-width="10.6" />
+<text x="461.9" y="460.6" font-size="41.2" text-anchor="start" fill="#333">Acrobot Swingup seed0</text>
+<polyline points="2129.14,793.49" fill="none" stroke="#009E73" stroke-width="9.42" stroke-dasharray="17.7,11.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.14" cy="793.49" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="446.2" x2="1345.4" y2="446.2" stroke="#009E73" stroke-width="10.6" stroke-dasharray="17.7,11.8"/>
+<text x="1361.9" y="460.6" font-size="41.2" text-anchor="start" fill="#333">Acrobot Swingup seed1</text>
+<polyline points="783.48,764.52 1232.48,783.64 1680.89,788.16 2129.64,972.03" fill="none" stroke="#009E73" stroke-width="9.42" stroke-dasharray="5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="783.48" cy="764.52" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<circle cx="1232.48" cy="783.64" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<circle cx="1680.89" cy="788.16" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<circle cx="2129.64" cy="972.03" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="512.1" x2="445.4" y2="512.1" stroke="#009E73" stroke-width="10.6" stroke-dasharray="5.9,8.8"/>
+<text x="461.9" y="526.5" font-size="41.2" text-anchor="start" fill="#333">Acrobot Swingup seed2</text>
+<polyline points="781.14,793.71 1235.17,828.62 1682.46,852.93 2129.02,887.85" fill="none" stroke="#009E73" stroke-width="9.42" stroke-dasharray="29.4,8.8,5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="781.14" cy="793.71" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<circle cx="1235.17" cy="828.62" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<circle cx="1682.46" cy="852.93" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<circle cx="2129.02" cy="887.85" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="512.1" x2="1345.4" y2="512.1" stroke="#009E73" stroke-width="10.6" stroke-dasharray="29.4,8.8,5.9,8.8"/>
+<text x="1361.9" y="526.5" font-size="41.2" text-anchor="start" fill="#333">Acrobot Swingup seed3</text>
+<polyline points="2129.44,899.33" fill="none" stroke="#009E73" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.44" cy="899.33" r="12.95" fill="#009E73" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="578.0" x2="445.4" y2="578.0" stroke="#009E73" stroke-width="10.6" />
+<text x="461.9" y="592.5" font-size="41.2" text-anchor="start" fill="#333">Acrobot Swingup seed4</text>
+<polyline points="2129.91,947.38" fill="none" stroke="#D55E00" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.91" cy="947.38" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="578.0" x2="1345.4" y2="578.0" stroke="#D55E00" stroke-width="10.6" />
+<text x="1361.9" y="592.5" font-size="41.2" text-anchor="start" fill="#333">Cheetah Run seed0</text>
+<polyline points="2129.41,831.19" fill="none" stroke="#D55E00" stroke-width="9.42" stroke-dasharray="17.7,11.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.41" cy="831.19" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="644.0" x2="445.4" y2="644.0" stroke="#D55E00" stroke-width="10.6" stroke-dasharray="17.7,11.8"/>
+<text x="461.9" y="658.4" font-size="41.2" text-anchor="start" fill="#333">Cheetah Run seed1</text>
+<polyline points="780.86,741.70 1234.53,803.78 1682.97,891.26 2128.22,852.23" fill="none" stroke="#D55E00" stroke-width="9.42" stroke-dasharray="5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="780.86" cy="741.70" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<circle cx="1234.53" cy="803.78" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<circle cx="1682.97" cy="891.26" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<circle cx="2128.22" cy="852.23" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="644.0" x2="1345.4" y2="644.0" stroke="#D55E00" stroke-width="10.6" stroke-dasharray="5.9,8.8"/>
+<text x="1361.9" y="658.4" font-size="41.2" text-anchor="start" fill="#333">Cheetah Run seed2</text>
+<polyline points="782.89,669.34 1237.36,778.30 1683.08,852.27 2129.45,773.04" fill="none" stroke="#D55E00" stroke-width="9.42" stroke-dasharray="29.4,8.8,5.9,8.8" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="782.89" cy="669.34" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<circle cx="1237.36" cy="778.30" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<circle cx="1683.08" cy="852.27" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<circle cx="2129.45" cy="773.04" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<line x1="371.2" y1="709.9" x2="445.4" y2="709.9" stroke="#D55E00" stroke-width="10.6" stroke-dasharray="29.4,8.8,5.9,8.8"/>
+<text x="461.9" y="724.3" font-size="41.2" text-anchor="start" fill="#333">Cheetah Run seed3</text>
+<polyline points="2129.19,950.27" fill="none" stroke="#D55E00" stroke-width="9.42"  stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="2129.19" cy="950.27" r="12.95" fill="#D55E00" stroke="white" stroke-width="2.94"/>
+<line x1="1271.2" y1="709.9" x2="1345.4" y2="709.9" stroke="#D55E00" stroke-width="10.6" />
+<text x="1361.9" y="724.3" font-size="41.2" text-anchor="start" fill="#333">Cheetah Run seed4</text>
+<text x="1230.0" y="60.9" font-size="53.0" font-weight="bold" text-anchor="middle" fill="black">Goal-code/goal-space hard-code correlation (r) across training</text>
+<text x="1230.0" y="1444.1" font-size="43.0" text-anchor="middle" fill="#333">env steps</text>
+<text x="55.9" y="717.2" font-size="43.0" text-anchor="middle" fill="#333" transform="rotate(-90 55.9 717.2)">hard-code Pearson r</text>
+</svg>

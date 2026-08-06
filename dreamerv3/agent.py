@@ -838,9 +838,20 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     #     codes apart past a margin -- stronger separation of far-apart pairs).
     #   goal_struct_adapt:  AutoAdapt the weight toward a struct-loss setpoint,
     #     dual-ascent (grows above, shrinks below) unless _one_sided=True. ---
-    struct_on = (self.goal_struct_weight > 0.0) or bool(
+    struct_apply = (self.goal_struct_weight > 0.0) or bool(
         getattr(self.config, 'goal_struct_adapt', False))
-    if struct_on:
+    # goal_struct_diag: compute the soft/hard correlation diagnostics below
+    # (logged as train/goal/struct_corr[_hard]) even when the struct loss
+    # term itself is off (goal_struct_weight=0, no adapt) -- e.g. pure-
+    # Director baselines, where we still want to TRACK this geometry-
+    # preservation property across training without optimizing against it.
+    # Reuses the batch already sampled for the goal-VAE loss this step (no
+    # extra rollout) -- same quantity as
+    # experiments/goal_code_struct_corr/diag_goal_struct_corr.py's offline
+    # measurement. Off by default: extra O((B*T)^2) pairwise-similarity work
+    # every train step, opt-in only where the trajectory is wanted.
+    struct_diag = struct_apply or bool(getattr(self.config, 'goal_struct_diag', False))
+    if struct_diag:
       if getattr(self.config, 'goal_struct_target', 'deter') == 'feat':
         d = sg(self.feat2tensor(repfeat)).reshape((B * T, -1))  # full deter+stoch
       else:
@@ -851,36 +862,50 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       sz = pairwise_cosmax(z)                                 # differentiable code geometry
       offdiag = 1.0 - jnp.eye(B * T, dtype=f32)               # ignore self-similarity
       denom = offdiag.sum() + 1e-12
-      if getattr(self.config, 'goal_struct_loss', 'mse') == 'margin':
-        # Contrastive: pull positive pairs (high sd) toward sd, push negative
-        # pairs (low sd) apart -- penalize code similarity above the margin,
-        # weighted by how dissimilar the states are (1 - sd emphasizes negatives).
-        margin = float(getattr(self.config, 'goal_struct_margin', 0.1))
-        pos_w = jnp.clip(sd, 0.0, 1.0)
-        neg_w = jnp.clip(1.0 - sd, 0.0, 1.0)
-        pull = pos_w * jnp.square(sd - sz)
-        push = neg_w * jnp.square(jnp.maximum(sz - margin, 0.0))
-        struct_err = pull + push
-      else:
-        struct_err = jnp.square(sz - sd)
-      struct_loss = (struct_err * offdiag).sum() / denom       # scalar
-      if getattr(self.config, 'goal_struct_adapt', False):
-        struct_scaled, struct_mets = self.goal_struct_adapter(
-            struct_loss, update=training)
-        losses['goal_autoencoder'] = losses['goal_autoencoder'] + struct_scaled
-        metrics['goal/struct_scale_mean'] = struct_mets['scale_mean']
-      else:
-        losses['goal_autoencoder'] = (
-            losses['goal_autoencoder'] + self.goal_struct_weight * struct_loss)
+      if struct_apply:
+        if getattr(self.config, 'goal_struct_loss', 'mse') == 'margin':
+          # Contrastive: pull positive pairs (high sd) toward sd, push negative
+          # pairs (low sd) apart -- penalize code similarity above the margin,
+          # weighted by how dissimilar the states are (1 - sd emphasizes negatives).
+          margin = float(getattr(self.config, 'goal_struct_margin', 0.1))
+          pos_w = jnp.clip(sd, 0.0, 1.0)
+          neg_w = jnp.clip(1.0 - sd, 0.0, 1.0)
+          pull = pos_w * jnp.square(sd - sz)
+          push = neg_w * jnp.square(jnp.maximum(sz - margin, 0.0))
+          struct_err = pull + push
+        else:
+          struct_err = jnp.square(sz - sd)
+        struct_loss = (struct_err * offdiag).sum() / denom       # scalar
+        if getattr(self.config, 'goal_struct_adapt', False):
+          struct_scaled, struct_mets = self.goal_struct_adapter(
+              struct_loss, update=training)
+          losses['goal_autoencoder'] = losses['goal_autoencoder'] + struct_scaled
+          metrics['goal/struct_scale_mean'] = struct_mets['scale_mean']
+        else:
+          losses['goal_autoencoder'] = (
+              losses['goal_autoencoder'] + self.goal_struct_weight * struct_loss)
+        metrics['goal/struct_loss'] = struct_loss
       # Diagnostic: Pearson correlation of the two geometries (should rise to ~1).
+      # Soft (differentiable code probs) -- unchanged from before.
       sdf = (sd * offdiag).reshape((-1,))
       szf = (sz * offdiag).reshape((-1,))
       sdc = sdf - sdf.mean()
       szc = szf - szf.mean()
       corr = (sdc * szc).sum() / (
           jnp.sqrt((sdc * sdc).sum()) * jnp.sqrt((szc * szc).sum()) + 1e-12)
-      metrics['goal/struct_loss'] = struct_loss
       metrics['goal/struct_corr'] = corr
+      # Hard (argmax code the manager actually samples via REINFORCE) --
+      # matches diag_goal_struct_corr.py's batch_corr exactly: fraction of
+      # matching blocks (Hamming similarity) between each pair's hard codes.
+      L, C = int(self.skill_shape[0]), int(self.skill_shape[-1])
+      ids = jnp.argmax(probs.reshape((B * T, L, C)), axis=-1)      # (N, L)
+      hamming = jnp.mean(ids[:, None, :] != ids[None, :, :], axis=-1)  # (N, N)
+      sh = 1.0 - hamming
+      shf = (sh * offdiag).reshape((-1,))
+      shc = shf - shf.mean()
+      corr_hard = (sdc * shc).sum() / (
+          jnp.sqrt((sdc * sdc).sum()) * jnp.sqrt((shc * shc).sum()) + 1e-12)
+      metrics['goal/struct_corr_hard'] = corr_hard
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
     ent = encoded_goal.entropy()
     goal_ent_bt = ent

@@ -179,6 +179,13 @@ defaults:
     # so running-goal edits move the goal predictably. 0 = off. Folds into the
     # goal_autoencoder loss (no separate scale). See pairwise_cosmax / goal/struct_*.
     goal_struct_weight: 0.0
+    # Log goal/struct_corr[_hard] (Pearson r between goal-space and goal-code
+    # pairwise geometry, see agent.py's struct_diag block) every train step
+    # even when the struct loss itself is off (goal_struct_weight=0, no
+    # adapt) -- e.g. to track this property across training for pure-
+    # Director baselines. See experiments/goal_code_struct_corr/. Off by
+    # default (extra O((batch_size*batch_length)^2) work per train step).
+    goal_struct_diag: False
     # Structural-correlation variants (all gated; defaults reproduce the original
     # fixed-weight deter/MSE behavior exactly). target: geometry source the code is
     # matched to -- ``deter`` (default) or ``feat`` (full deter+stoch tensor, the

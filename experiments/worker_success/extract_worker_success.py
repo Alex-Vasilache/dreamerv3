@@ -2,39 +2,51 @@
 goal-reward the worker actor-critic is trained on) across training from the
 metrics.jsonl of pure-Director baseline runs.
 
-Answers the paper's open \\todo (`code/26_04_HRL-paper/sections/introduction.tex`,
-Sec. "Efficiency: Worker success"): "Across training, worker success is
-relatively low [Check this with actual numbers]." No live rollout needed --
-``train/wkr_goal_rew`` (dreamerv3/hrl/losses.py:109, ``imag_loss_wkr``) is
-already logged at every training step in the archived runs' metrics.jsonl.
+Answers the paper's \\todo (`code/26_04_HRL-paper/sections/motivation.tex`,
+Sec. "Worker success"): "Across training, worker success is relatively low."
+No live rollout needed -- ``train/wkr_goal_rew`` (dreamerv3/hrl/losses.py:109,
+``imag_loss_wkr``) is already logged at every training step in the archived
+runs' metrics.jsonl.
+
+Uses ../baselines_common.py to discover all 4 tasks x however many seeds
+have finished training (see EXPERIMENTS.md e390-e409) -- currently 2 seeds,
+growing to 5 as e398-e409 land, no code changes needed to pick them up.
 
 Usage:
-  python3 extract_worker_success.py     # reads bucket metrics.jsonl for the 3
-                                         # baselines below, writes results/*.json
+  python3 extract_worker_success.py     # reads bucket/work metrics.jsonl for
+                                         # all discovered baselines, writes
+                                         # results/*.json
 """
 import argparse
 import json
 import pathlib
+import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-BUCKET = pathlib.Path('/bucket/DoyaU/vasilache/bucket/results/dreamerv3')
+sys.path.insert(0, str(HERE.parent))
+from baselines_common import TASKS, discover_baselines  # noqa: E402
 
-# Same three pure-Director baselines used by ../goal_code_struct_corr/ (fixed
-# K=8, no masking/variable-goal-length, goal_struct_weight=0.0).
-RUNS = {
-    'e124_hopper': 'e124_dmc_hopper_hop_director_baseline_multiv100_20260706_094230_C3AT29',
-    'e123_cheetah': 'e123_dmc_cheetah_run_director_baseline_20260706_155117_Vk7oa4',
-    'e180_acrobot': 'e180_dmc_acrobot_swingup_director_baseline_j4660140',
+SHORT_TASK = {
+    'dmc_cartpole_swingup': 'cartpole',
+    'dmc_hopper_hop': 'hopper',
+    'dmc_acrobot_swingup': 'acrobot',
+    'dmc_cheetah_run': 'cheetah',
 }
 
 KEY = 'train/wkr_goal_rew'
 
 
 def load(run_dir):
-  path = BUCKET / run_dir / 'logdir' / 'metrics.jsonl'
+  run_dir = pathlib.Path(run_dir)
+  logdir = run_dir / 'logdir'
+  logdir = logdir if logdir.exists() else run_dir
+  path = logdir / 'metrics.jsonl'
   steps, vals = [], []
   with open(path) as f:
     for line in f:
+      line = line.strip()
+      if not line:
+        continue
       d = json.loads(line)
       if KEY in d:
         steps.append(d['step'])
@@ -59,46 +71,63 @@ def main():
   out_dir = pathlib.Path(args.out_dir)
   out_dir.mkdir(parents=True, exist_ok=True)
 
+  found = discover_baselines()
   summary = {}
-  for tag, run_dir in RUNS.items():
-    steps, vals = load(run_dir)
-    overall_mean = sum(vals) / len(vals)
-    overall_min, overall_max = min(vals), max(vals)
-    early_mean, early_n = frac_mean(steps, vals, 0.0, 0.1)
-    late_mean, late_n = frac_mean(steps, vals, 0.9, 1.0)
-    final_val = vals[-1]
-    final_step = steps[-1]
-    result = {
-        'run_dir': run_dir,
-        'n_points': len(vals),
-        'step_min': steps[0],
-        'step_max': steps[-1],
-        'overall_mean': overall_mean,
-        'overall_min': overall_min,
-        'overall_max': overall_max,
-        'early10pct_mean': early_mean,
-        'early10pct_n': early_n,
-        'late10pct_mean': late_mean,
-        'late10pct_n': late_n,
-        'final_value': final_val,
-        'final_step': final_step,
-        'steps': steps,
-        'values': vals,
+  for task in TASKS:
+    short = SHORT_TASK[task]
+    seeds = found[task]
+    if not seeds:
+      print(f'WARNING: no complete baseline for {task} -- skipping')
+      continue
+    per_seed = []
+    for seed, run_dir, tag in seeds:
+      steps, vals = load(run_dir)
+      overall_mean = sum(vals) / len(vals)
+      early_mean, early_n = frac_mean(steps, vals, 0.0, 0.1)
+      late_mean, late_n = frac_mean(steps, vals, 0.9, 1.0)
+      result = {
+          'task': task, 'seed': seed, 'tag': tag, 'run_dir': str(run_dir),
+          'n_points': len(vals), 'step_min': steps[0], 'step_max': steps[-1],
+          'overall_mean': overall_mean,
+          'overall_min': min(vals), 'overall_max': max(vals),
+          'early10pct_mean': early_mean, 'early10pct_n': early_n,
+          'late10pct_mean': late_mean, 'late10pct_n': late_n,
+          'final_value': vals[-1], 'final_step': steps[-1],
+          'steps': steps, 'values': vals,
+      }
+      per_seed.append(result)
+      out_name = f'{tag}_{short}_seed{seed}.json'
+      with open(out_dir / out_name, 'w') as f:
+        json.dump(result, f)
+      print(f'{task:22s} seed{seed}  n={len(vals):4d}  overall={overall_mean:.3f}  '
+            f'early10%={early_mean:.3f} (n={early_n})  late10%={late_mean:.3f} (n={late_n})  '
+            f'final={vals[-1]:.3f} @ step {steps[-1]}')
+
+    # Cross-seed summary stats (mean/std over each seed's own overall/late mean).
+    overall_means = [r['overall_mean'] for r in per_seed]
+    late_means = [r['late10pct_mean'] for r in per_seed]
+    finals = [r['final_value'] for r in per_seed]
+    import numpy as np
+    summary[task] = {
+        'short': short,
+        'n_seeds': len(per_seed),
+        'seeds': [r['seed'] for r in per_seed],
+        'overall_mean_of_seeds': float(np.mean(overall_means)),
+        'overall_std_of_seeds': float(np.std(overall_means)),
+        'late10pct_mean_of_seeds': float(np.mean(late_means)),
+        'late10pct_std_of_seeds': float(np.std(late_means)),
+        'final_mean_of_seeds': float(np.mean(finals)),
+        'final_std_of_seeds': float(np.std(finals)),
     }
-    summary[tag] = result
-    with open(out_dir / f'{tag}.json', 'w') as f:
-      json.dump(result, f)
-    print(f'{tag:14s} n={len(vals):4d}  overall={overall_mean:.3f}  '
-          f'early10%={early_mean:.3f} (n={early_n})  '
-          f'late10%={late_mean:.3f} (n={late_n})  '
-          f'final={final_val:.3f} @ step {final_step}')
 
   with open(out_dir / 'summary.json', 'w') as f:
-    json.dump(
-        {k: {kk: vv for kk, vv in v.items() if kk not in ('steps', 'values')}
-         for k, v in summary.items()},
-        f, indent=2)
+    json.dump(summary, f, indent=2)
   print('wrote', out_dir / 'summary.json')
+  for task, s in summary.items():
+    print(f'{task:22s} n_seeds={s["n_seeds"]}  '
+          f'overall={s["overall_mean_of_seeds"]:.3f}+-{s["overall_std_of_seeds"]:.3f}  '
+          f'late10%={s["late10pct_mean_of_seeds"]:.3f}+-{s["late10pct_std_of_seeds"]:.3f}  '
+          f'final={s["final_mean_of_seeds"]:.3f}+-{s["final_std_of_seeds"]:.3f}')
 
 
 if __name__ == '__main__':

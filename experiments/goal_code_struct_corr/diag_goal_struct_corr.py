@@ -51,6 +51,17 @@ import ruamel.yaml as yaml
 
 from dreamerv3 import main as m
 
+# Fixed bin edges for the goal-space-similarity -> goal-code-similarity trend
+# curve (shared with make_figure.py's axis range). Fixed, not per-checkpoint
+# min/max, so that per-seed trend curves land on identical x positions and
+# can be averaged (mean +/- std across seeds) point-for-point.
+TREND_XMIN, TREND_XMAX, TREND_NBINS = -0.2, 1.05, 22
+# Cap on states used for the trend-curve pairwise Gram matrix: this is an
+# O(n^2) computation, so we subsample the pooled collection rather than using
+# all n_batches * n_states states -- 4096 is already ~8M pairs, far more than
+# needed to fill 22 bins smoothly, and keeps this step fast (<1s).
+TREND_MAX_N = 4096
+
 
 def load_config(run_dir):
   cfgpath = elements.Path(run_dir) / 'logdir' / 'config.yaml'
@@ -101,6 +112,23 @@ def pearson_offdiag(a, b):
       np.sqrt((ac * ac).sum()) * np.sqrt((bc * bc).sum()) + 1e-12))
 
 
+def fixed_bin_trend(sd, sh, xmin=TREND_XMIN, xmax=TREND_XMAX, nbins=TREND_NBINS):
+  """Binned mean of goal-code similarity (sh) vs goal-space similarity (sd)
+  on FIXED bin edges (not sd.min()/sd.max()), so curves from different
+  seeds/checkpoints share x-positions and can be averaged directly."""
+  edges = np.linspace(xmin, xmax, nbins + 1)
+  centers = 0.5 * (edges[:-1] + edges[1:])
+  bin_idx = np.clip(np.digitize(sd, edges) - 1, 0, nbins - 1)
+  means = np.full(nbins, np.nan)
+  counts = np.zeros(nbins, dtype=np.int64)
+  for b in range(nbins):
+    m = bin_idx == b
+    counts[b] = m.sum()
+    if counts[b] >= 10:
+      means[b] = sh[m].mean()
+  return centers, means, counts
+
+
 def batch_corr(deters, probs, L, C):
   """Both correlations for one batch of (deter, soft-code) pairs."""
   n = deters.shape[0]
@@ -115,7 +143,7 @@ def batch_corr(deters, probs, L, C):
 
 
 def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
-        n_envs=8, steps=None):
+        n_envs=8, steps=None, ckpt_path=None, train_step=None):
   config = load_config(run_dir)
   print('logdir:', config.logdir, '| task:', config.task,
         '| skill_shape:', config.agent.skill_shape)
@@ -145,8 +173,18 @@ def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
   ckptdir = elements.Path(config.logdir) / 'ckpt'
   cp = elements.Checkpoint(directory=ckptdir)
   cp.agent = agent
-  cp.load(keys=['agent'])
-  print('Loaded checkpoint from', ckptdir)
+  if ckpt_path:
+    # Explicit snapshot override -- used to read a mid-training checkpoint
+    # copied aside by watch_and_diag_running.py before elements.Checkpoint's
+    # keep=1 rotation deleted it (the live run's ckptdir/latest has since
+    # moved on). Architecture/config is still read from run_dir's own
+    # logdir/config.yaml above (unchanged across training), only the weights
+    # come from this specific snapshot.
+    cp.load(path=elements.Path(ckpt_path), keys=['agent'])
+    print('Loaded checkpoint from snapshot', ckpt_path)
+  else:
+    cp.load(keys=['agent'])
+    print('Loaded checkpoint from', ckptdir)
 
   # n_envs parallel workers: one batched policy call now yields n_envs
   # diagnostic samples per step instead of one, so wall-clock for the same
@@ -203,11 +241,25 @@ def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
   print(f'Pearson r(deter, HARD code): mean={corr_hard_arr.mean():.4f} '
         f'std={corr_hard_arr.std():.4f}  [{", ".join(f"{v:.3f}" for v in corr_hard_arr)}]')
 
+  # Fixed-bin trend curve (goal-code sim vs goal-space sim), on a pooled
+  # subsample bigger than one batch for a smoother per-seed curve, using
+  # GLOBAL fixed bin edges so this checkpoint's curve is directly averageable
+  # with other seeds' curves at the figure stage (same sampling methodology
+  # -- same seed, same subsample cap -- applied identically to every seed).
+  trend_n = min(N, TREND_MAX_N)
+  trend_idx = rng.permutation(N)[:trend_n]
+  _, _, sd_trend, _, sh_trend = batch_corr(deters[trend_idx], probs[trend_idx], L, C)
+  trend_x, trend_y, trend_counts = fixed_bin_trend(sd_trend, sh_trend)
+
   if out_path:
     iu = np.triu_indices(n_states, k=1)
     np.savez(
         out_path, task=str(config.task), N=n_states, n_batches=n_batches_actual,
         L=L, C=C,
+        # step in training the *checkpoint* was taken at (approximate: the
+        # metrics.jsonl step read by the caller at snapshot time), not when
+        # this diagnostic was run -- -1 if unknown (final/only checkpoint).
+        train_step=int(train_step) if train_step is not None else -1,
         corr_soft_mean=float(corr_soft_arr.mean()), corr_soft_std=float(corr_soft_arr.std()),
         corr_hard_mean=float(corr_hard_arr.mean()), corr_hard_std=float(corr_hard_arr.std()),
         corr_soft_per_batch=corr_soft_arr, corr_hard_per_batch=corr_hard_arr,
@@ -215,7 +267,9 @@ def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
         corr_soft=float(corr_soft_arr.mean()), corr_hard=float(corr_hard_arr.mean()),
         sd_pairs=sd_plot[iu].astype(np.float32),
         sz_pairs=sz_plot[iu].astype(np.float32),
-        sh_pairs=sh_plot[iu].astype(np.float32))
+        sh_pairs=sh_plot[iu].astype(np.float32),
+        trend_x=trend_x.astype(np.float32), trend_y=trend_y.astype(np.float32),
+        trend_counts=trend_counts)
     print('Saved to', out_path)
   return dict(task=str(config.task), n_batches=n_batches_actual,
               corr_soft_mean=float(corr_soft_arr.mean()), corr_soft_std=float(corr_soft_arr.std()),
@@ -234,9 +288,16 @@ def main():
                    help='states per batch; defaults to batch_size x batch_length from the run config')
   ap.add_argument('--n_batches', type=int, default=10)
   ap.add_argument('--n_envs', type=int, default=8)
+  ap.add_argument('--ckpt_path', default=None,
+                   help='explicit checkpoint folder to load instead of ckpt/latest -- '
+                        'for reading a mid-training snapshot copied aside from a still-'
+                        'running run (see watch_and_diag_running.py)')
+  ap.add_argument('--train_step', type=int, default=None,
+                   help='training step the --ckpt_path snapshot was taken at (recorded '
+                        'in the output npz; informational only)')
   args = ap.parse_args()
   run(args.run_dir, args.stride, args.out, args.seed, args.n_states,
-      args.n_batches, args.n_envs, args.steps)
+      args.n_batches, args.n_envs, args.steps, args.ckpt_path, args.train_step)
 
 
 if __name__ == '__main__':

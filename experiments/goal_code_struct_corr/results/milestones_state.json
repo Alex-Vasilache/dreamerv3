@@ -1,0 +1,122 @@
+{
+  "e404_acrobot_seed3_1M": {
+    "step": 1002512,
+    "job": "4672879",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e404_acrobot_seed3_step1M"
+  },
+  "e398_cartpole_seed2_1M": {
+    "step": 1006304,
+    "job": "4672881",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e398_cartpole_seed2_step1M"
+  },
+  "e402_cartpole_seed3_1M": {
+    "step": 1005376,
+    "job": "4672882",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e402_cartpole_seed3_step1M"
+  },
+  "e399_hopper_seed2_1M": {
+    "step": 1003536,
+    "job": "4672883",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e399_hopper_seed2_step1M"
+  },
+  "e403_hopper_seed3_1M": {
+    "step": 1006720,
+    "job": "4672884",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e403_hopper_seed3_step1M"
+  },
+  "e401_cheetah_seed2_1M": {
+    "step": 1001888,
+    "job": "4672885",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e401_cheetah_seed2_step1M"
+  },
+  "e405_cheetah_seed3_1M": {
+    "step": 1006400,
+    "job": "4672886",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e405_cheetah_seed3_step1M"
+  },
+  "e400_acrobot_seed2_1M": {
+    "step": 1007728,
+    "job": "4672888",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e400_acrobot_seed2_step1M"
+  },
+  "e404_acrobot_seed3_2M": {
+    "step": 2011472,
+    "job": "4673203",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e404_acrobot_seed3_step2M"
+  },
+  "e398_cartpole_seed2_2M": {
+    "step": 2001840,
+    "job": "4673205",
+    "snapshot": "/apps/unit/DoyaU/vasilache/apps/code/dreamerv3/experiments/goal_code_struct_corr/snapshots/e398_cartpole_seed2_step2M"
+  },
+  "e402_cartpole_seed3_2M": {
+    "step": 2017440,
+    "job": "4673206",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e402_cartpole_seed3_step2M"
+  },
+  "e399_hopper_seed2_2M": {
+    "step": 2013424,
+    "job": "4673207",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e399_hopper_seed2_step2M"
+  },
+  "e403_hopper_seed3_2M": {
+    "step": 2019056,
+    "job": "4673208",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e403_hopper_seed3_step2M"
+  },
+  "e400_acrobot_seed2_2M": {
+    "step": 2005488,
+    "job": "4673209",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e400_acrobot_seed2_step2M"
+  },
+  "e401_cheetah_seed2_2M": {
+    "step": 2010048,
+    "job": "4673210",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e401_cheetah_seed2_step2M"
+  },
+  "e405_cheetah_seed3_2M": {
+    "step": 2016336,
+    "job": "4673211",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e405_cheetah_seed3_step2M"
+  },
+  "e404_acrobot_seed3_3M": {
+    "step": 3005440,
+    "job": "4673226",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e404_acrobot_seed3_step3M"
+  },
+  "e398_cartpole_seed2_3M": {
+    "step": 3000736,
+    "job": "4673227",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e398_cartpole_seed2_step3M"
+  },
+  "e402_cartpole_seed3_3M": {
+    "step": 3011264,
+    "job": "4673228",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e402_cartpole_seed3_step3M"
+  },
+  "e399_hopper_seed2_3M": {
+    "step": 3002560,
+    "job": "4673229",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e399_hopper_seed2_step3M"
+  },
+  "e403_hopper_seed3_3M": {
+    "step": 3008768,
+    "job": "4673230",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e403_hopper_seed3_step3M"
+  },
+  "e405_cheetah_seed3_3M": {
+    "step": 3006800,
+    "job": "4673231",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e405_cheetah_seed3_step3M"
+  },
+  "e400_acrobot_seed2_3M": {
+    "step": 3001936,
+    "job": "4673232",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e400_acrobot_seed2_step3M"
+  },
+  "e401_cheetah_seed2_3M": {
+    "step": 3006560,
+    "job": "4673233",
+    "snapshot": "/work/DoyaU/vasilache/work/goal_struct_corr_snapshots/e401_cheetah_seed2_step3M"
+  }
+}

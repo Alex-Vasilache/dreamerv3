@@ -2171,6 +2171,121 @@ alone with no masking/struct/reuse) launched 07-22 on `gpu-a100`. All 10 cells R
 of 2026-07-23, 28–57% through their 4M-step budgets — see §2 for current trailing scores
 and per-cell status; not final.
 
+### e390–e393 · Full pure-Director baselines, all 4 tasks (BIG, 4M steps)
+Goal: a complete, full-length (4M step) pure-`director` baseline for each of the four
+tasks used across the project (cartpole/hopper/acrobot/cheetah), run to completion under
+the same BIG/A100 recipe as the var-K/masked experiments, for clean side-by-side
+comparison. `RECIPE=director` (fixed-K, `manager_sample_freq=8`, no variable-K/masking).
+Requeue-safe (job-id `RUN_DIR`, USR1 self-requeue at T-600s, 48h walltime per segment) —
+resumes automatically from checkpoint across multiple sbatch segments until `run.steps`
+(4M) is reached, no manual intervention needed.
+
+| Exp | Task | Job ID | Hypothesis | Expected |
+|---|---|---|---|---|
+| e390 | dmc_cartpole_swingup | 4672753 | matches/extends existing cartpole baselines to full 4M | ≈baseline plateau, full curve |
+| e391 | dmc_hopper_hop | 4672754 | matches e286-class hopper baseline (≈300-330) to full 4M | ≈300+ plateau |
+| e392 | dmc_acrobot_swingup | 4672755 | first full-length acrobot director baseline | stable positive score |
+| e393 | dmc_cheetah_run | 4672756 | matches e280/e290-class cheetah baseline (≈300-450) to full 4M | ≈300-450 plateau |
+
+Launched 2026-08-01 on `gpu-a100` (all 4 dispatched immediately, node saion-gpu24).
+
+**Second seed (e394–e397)**: identical recipe/task set, `SEED=1`, to get 2-seed error bars
+on each of the four full-length baselines.
+
+| Exp | Task | Job ID |
+|---|---|---|
+| e394 | dmc_cartpole_swingup | 4672759 |
+| e395 | dmc_hopper_hop | 4672760 |
+| e396 | dmc_acrobot_swingup | 4672761 |
+| e397 | dmc_cheetah_run | 4672762 |
+
+Launched 2026-08-01 on `gpu-a100` (node saion-gpu25); combined with e390–e393 this uses
+the full 8-GPU a100 quota.
+
+**Results (both seeds, full 4M steps, all COMPLETED 2026-08-02, no requeue needed —
+each finished within one ~26-28h segment):**
+
+| Task | Seed 0 last15/peak | Seed 1 last15/peak |
+|---|---|---|
+| cartpole_swingup | 720.9 / 764.7 | 731.4 / 752.5 |
+| hopper_hop | 298.1 / 400.0 | 215.8 / 262.4 |
+| acrobot_swingup | 128.2 / 557.0 | 188.7 / 519.1 |
+| cheetah_run | 273.4 / 452.0 | 341.1 / 369.6 |
+
+cartpole/cheetah consistent across seeds; hopper/acrobot noisier (acrobot in particular
+peaks high mid-training then trails off in both seeds — worth a curve check before
+trusting the trailing average as steady-state).
+
+**Seeds 2–4 (e398–e409)**: same recipe/task set, `SEED=2/3/4`, to bring the baseline to
+5 seeds total per task for proper error bars.
+
+| Exp | Task | Seed | Job ID |
+|---|---|---|---|
+| e398 | dmc_cartpole_swingup | 2 | 4672818 |
+| e399 | dmc_hopper_hop | 2 | 4672819 |
+| e400 | dmc_acrobot_swingup | 2 | 4672820 |
+| e401 | dmc_cheetah_run | 2 | 4672821 |
+| e402 | dmc_cartpole_swingup | 3 | 4672822 |
+| e403 | dmc_hopper_hop | 3 | 4672823 |
+| e404 | dmc_acrobot_swingup | 3 | 4672824 |
+| e405 | dmc_cheetah_run | 3 | 4672825 |
+| e406 | dmc_cartpole_swingup | 4 | 4672826 |
+| e407 | dmc_hopper_hop | 4 | 4672827 |
+| e408 | dmc_acrobot_swingup | 4 | 4672828 |
+| e409 | dmc_cheetah_run | 4 | 4672829 |
+
+Launched 2026-08-03: seeds 2–3 (e398–e405) dispatched immediately on `gpu-a100`
+(saion-gpu24/25); seed 4 (e406–e409) queued behind `AssocGrpCpuLimit` (8-GPU quota full)
+and will start automatically as slots free.
+
+### e410–e411 · Pure Director baseline ported to antmaze-M (2 seeds, BIG, 10M steps)
+Goal: sanity-check the HRL/Director implementation on a navigation task with sparse
+reward, using the same pure-`director` recipe (fixed-K, `manager_sample_freq=8`,
+`director_match` BIG/A100 scale, batch16x64, native conv) as e390–e409, ported from DMC
+to `loconav_ant_maze_m`. The only prior antmaze attempt (e65, masked+variable-K recipe,
+old code) never encountered reward and was abandoned (§5 e1–e15 ledger, e65 row: "no
+reward encountered @2.7M; abandoned") — this run removes that confound by testing the
+plain fixed-K Director path first, before reintroducing masked-goals/variable-K on
+navigation.
+
+New script: `sbatch/run_v3_antmaze_m_director_baseline_big_a100.sbatch`
+(`director_match loconav` configs; `loconav`'s own `run.train_ratio=256` kept
+un-overridden, `run.envs=16`; requeue-safe job-id `RUN_DIR` + USR1 self-requeue, since
+10M steps spans multiple 48h segments).
+
+| Exp | Task | Seed | Job ID |
+|---|---|---|---|
+| e410 | loconav_ant_maze_m | 0 | 4675519 |
+| e411 | loconav_ant_maze_m | 1 | 4675520 |
+
+Launched 2026-08-05 on `gpu-a100` (saion-gpu24/26). Before submitting, a smoke test
+(job 4675517, `debug` config, `run.steps=200`) and the `test_block_pooled_equivalence.py`
+/ `test_hrl_package.py` suites (job 4675518) were kicked off on `intel` to validate the
+`director_match + loconav` config combo and the Director-equivalence unit tests.
+
+**Validation results:** smoke test completed clean (200 steps, checkpoints saving
+normally, no crashes). Pytest: 52/53 passed; the 1 failure
+(`test_block_pooled_decision_states_and_rewards_match_fixed_k`) was a CUDA
+backend-init artifact of running on the GPU-less `intel` node (`RuntimeError: Unable to
+initialize backend 'cuda': ... No visible GPU devices`), not a real bug — a rerun
+(job 4675535) with `JAX_PLATFORMS=cpu` forced passed all 53/53. The block-pooled
+variable-K path exactly reduces to fixed-K Director under duration pinning (decision
+states, rewards, losses, gradients, return-normalizer/entropy statistics, replay value
+loss all match to `rtol=1e-5`-`1e-6`), confirming the HRL/Director implementation is
+correct going into the antmaze-M runs.
+
+**Seeds 2–4 (e412–e414)**: same recipe/task, `SEED=2/3/4`, to bring the antmaze-M
+Director baseline to 5 seeds total, matching the DMC baselines' seed count.
+
+| Exp | Task | Seed | Job ID |
+|---|---|---|---|
+| e412 | loconav_ant_maze_m | 2 | 4675610 |
+| e413 | loconav_ant_maze_m | 3 | 4675611 |
+| e414 | loconav_ant_maze_m | 4 | 4675612 |
+
+Launched 2026-08-05 on `gpu-a100` (saion-gpu24), dispatched immediately (5/8-GPU
+quota in use across e410–e414, 3 free).
+
 ---
 
 ## 6. Pre-registered hypotheses & readout logic (live board, written 2026-07-13 pre-results)

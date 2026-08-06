@@ -1,47 +1,70 @@
 {
-  "e124_hopper": {
-    "run_dir": "e124_dmc_hopper_hop_director_baseline_multiv100_20260706_094230_C3AT29",
-    "n_points": 783,
-    "step_min": 4304,
-    "step_max": 2140544,
-    "overall_mean": 0.2441383587887237,
-    "overall_min": 0.04055827588803987,
-    "overall_max": 0.7492294504921487,
-    "early10pct_mean": 0.13374588474808002,
-    "early10pct_n": 79,
-    "late10pct_mean": 0.47868515321697025,
-    "late10pct_n": 79,
-    "final_value": 0.47918978491996195,
-    "final_step": 2140544
+  "dmc_cartpole_swingup": {
+    "short": "cartpole",
+    "n_seeds": 5,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "overall_mean_of_seeds": 0.3786147968285749,
+    "overall_std_of_seeds": 0.03209360440598671,
+    "late10pct_mean_of_seeds": 0.4939882706111405,
+    "late10pct_std_of_seeds": 0.018348512974386375,
+    "final_mean_of_seeds": 0.5448101504134633,
+    "final_std_of_seeds": 0.039242524616124215
   },
-  "e123_cheetah": {
-    "run_dir": "e123_dmc_cheetah_run_director_baseline_20260706_155117_Vk7oa4",
-    "n_points": 597,
-    "step_min": 6240,
-    "step_max": 2609968,
-    "overall_mean": 0.5700175169088355,
-    "overall_min": 0.16535475923885384,
-    "overall_max": 0.8021293622059901,
-    "early10pct_mean": 0.40366679590850735,
-    "early10pct_n": 60,
-    "late10pct_mean": 0.7440079220567318,
-    "late10pct_n": 61,
-    "final_value": 0.8021293622059901,
-    "final_step": 2609968
+  "dmc_hopper_hop": {
+    "short": "hopper",
+    "n_seeds": 5,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "overall_mean_of_seeds": 0.32881354600290424,
+    "overall_std_of_seeds": 0.06013266263216735,
+    "late10pct_mean_of_seeds": 0.49331865422041804,
+    "late10pct_std_of_seeds": 0.07451778377716317,
+    "final_mean_of_seeds": 0.49035690528644127,
+    "final_std_of_seeds": 0.07497365932042394
   },
-  "e180_acrobot": {
-    "run_dir": "e180_dmc_acrobot_swingup_director_baseline_j4660140",
-    "n_points": 733,
-    "step_min": 6432,
-    "step_max": 3719584,
-    "overall_mean": 0.2859725383745835,
-    "overall_min": 0.06274123192009218,
-    "overall_max": 0.7016444772199878,
-    "early10pct_mean": 0.19052617067506777,
-    "early10pct_n": 74,
-    "late10pct_mean": 0.34977878599353895,
-    "late10pct_n": 74,
-    "final_value": 0.3708261190340722,
-    "final_step": 3719584
+  "dmc_acrobot_swingup": {
+    "short": "acrobot",
+    "n_seeds": 5,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "overall_mean_of_seeds": 0.2751192917502534,
+    "overall_std_of_seeds": 0.019730807131121342,
+    "late10pct_mean_of_seeds": 0.33162522587488585,
+    "late10pct_std_of_seeds": 0.053162575828252935,
+    "final_mean_of_seeds": 0.3396311161643365,
+    "final_std_of_seeds": 0.043154871397735016
+  },
+  "dmc_cheetah_run": {
+    "short": "cheetah",
+    "n_seeds": 5,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "overall_mean_of_seeds": 0.5893340867768275,
+    "overall_std_of_seeds": 0.028014021667914644,
+    "late10pct_mean_of_seeds": 0.7599614428985595,
+    "late10pct_std_of_seeds": 0.031207083732005137,
+    "final_mean_of_seeds": 0.7778064627127221,
+    "final_std_of_seeds": 0.021405714783941335
   }
 }
