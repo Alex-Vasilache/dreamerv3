@@ -29,6 +29,7 @@ and computes ``x @ kernel``, i.e. the LipVQ "row" ``W_i`` (torch layout
 ``(out, in)``) is a *column* of our kernel. The absolute row sum is therefore a
 reduction over axis 0, not axis 1.
 """
+import math
 from typing import Callable
 
 import jax
@@ -126,8 +127,12 @@ class LipLinear(nj.Module):
   clamp: bool = True
 
   def __init__(self, units):
-    assert isinstance(units, int), (units, type(units))
-    self.units = units
+    # Mirrors ``nets.Linear``: an int or a tuple output shape, the latter
+    # flattened into the kernel and reshaped back afterwards. The Lipschitz
+    # bound is per flattened output unit either way, which is the right
+    # granularity -- the reshape does not mix units.
+    self.units = (units,) if isinstance(units, int) else tuple(units)
+    self.size = math.prod(self.units)
     self._insize = None
 
   def __call__(self, x):
@@ -136,8 +141,8 @@ class LipLinear(nj.Module):
     kernel = self._kernel()
     y = x @ lip_normalize(kernel, self._c(), self.clamp).astype(x.dtype)
     if self.bias:
-      y += self.value('bias', nets.init(self.binit), self.units).astype(x.dtype)
-    return y
+      y += self.value('bias', nets.init(self.binit), self.size).astype(x.dtype)
+    return y.reshape((*y.shape[:-1], *self.units))
 
   def bound(self):
     """The layer's inf-norm Lipschitz bound, ``max_i softplus(c_i)``."""
@@ -150,13 +155,13 @@ class LipLinear(nj.Module):
 
   def _kernel(self):
     assert self._insize is not None, 'LipLinear must be called before use.'
-    return self.value('kernel', self._scaled_winit, (self._insize, self.units))
+    return self.value('kernel', self._scaled_winit, (self._insize, self.size))
 
   def _c(self):
     return self.value('c', self._make_c)
 
   def _make_c(self):
-    shape = (self.units,) if self.per_row else ()
+    shape = (self.size,) if self.per_row else ()
     if self.cinit >= 0.0:
       return jnp.full(shape, softplus_inv(self.cinit), f32)
     rows = abs_row_sum(self._kernel())
@@ -205,7 +210,7 @@ class LipMLP(nj.Module):
     for i in range(self.layers):
       if self.lip:
         layer = self.sub(
-            f'linear{i}', LipLinear, self.units, bias=self.bias,
+            f'linear{i}', LipLinear, int(self.units), bias=self.bias,
             winit=self.winit, binit=self.binit, per_row=self.per_row,
             cinit=self.cinit, clamp=self.clamp)
         x = layer(x)
