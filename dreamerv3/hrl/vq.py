@@ -92,6 +92,9 @@ class BlockCodebook(nj.Module):
 
   stddev: float = 0.05
   include_self: bool = False
+  # Neighborhood radius on the ring. 1 reproduces SOM-VAE's immediate
+  # neighborhood; larger values pull more entries toward each encoding.
+  radius: int = 1
 
   def __init__(self, blocks, classes, dim):
     assert blocks >= 1 and classes >= 1 and dim >= 1, (blocks, classes, dim)
@@ -150,14 +153,17 @@ class BlockCodebook(nj.Module):
   def neighbors(self, ids):
     """Circular neighbors of the winners: ``(..., L) -> (..., L, N, D)``.
 
-    ``N`` is 2 (``k-1``, ``k+1`` mod ``C``), or 3 with ``include_self``, where
+    ``N`` is ``2 * radius`` (``k +- 1 .. k +- radius`` mod ``C``), plus one with
+    ``include_self``, where
     the winner comes first to match the official SOM-VAE's stacking order.
     Note ``C <= 2`` degenerates (both neighbors coincide, and for ``C == 1``
     they coincide with the winner); the project uses ``C == 8``.
     """
     C = self.classes
+    assert 1 <= self.radius <= C // 2, (self.radius, C)
     picks = [ids] if self.include_self else []
-    picks += [(ids - 1) % C, (ids + 1) % C]
+    for r in range(1, self.radius + 1):
+      picks += [(ids - r) % C, (ids + r) % C]
     return jnp.stack([self.lookup(self.onehot(p)) for p in picks], -2)
 
   def soft_probs(self, z_e, temp=1.0):

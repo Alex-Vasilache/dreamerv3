@@ -202,6 +202,7 @@ class GoalVQDecoder(nj.Module):
   dtype: str = 'default'
   stddev: float = 0.05
   include_self: bool = False
+  radius: int = 1
 
   def __init__(self, shape, blocks, classes, dim):
     self.shape = (shape,) if isinstance(shape, int) else tuple(shape)
@@ -210,7 +211,7 @@ class GoalVQDecoder(nj.Module):
     self.dim = int(dim)
     self.codebook = BlockCodebook(
         blocks, classes, dim, stddev=self.stddev,
-        include_self=self.include_self, name='codebook')
+        include_self=self.include_self, radius=self.radius, name='codebook')
     self.mlp = LipMLP(
         self.layers, self.units, act=self.act, norm=self.norm, bias=self.bias,
         winit=self.winit, binit=self.binit, lip=self.lip, per_row=self.per_row,
@@ -356,3 +357,86 @@ def vq_goal_loss(
       quant['ids']).items()})
   metrics = {k: sg(v) for k, v in metrics.items()}
   return loss, metrics
+
+
+class ManagerRingHead(nj.Module):
+  """Manager policy whose logits come from distances to the goal codebook.
+
+  The Director manager emits ``L`` categoricals over ``C`` arbitrary labels, so
+  a REINFORCE update that favours entry ``k`` raises only ``k``. Once the SOM
+  term has ordered the codebook, entry ``k+1`` decodes to a nearby goal with a
+  likely similar return, and that generalization is unavailable to a policy
+  whose classes carry no metric. Here the trunk emits a continuous
+  ``v^(l) in R^d`` per block and the logits are
+
+      logit_c = -s * || v^(l) - e^(l)_c ||^2 ,
+
+  so entries adjacent on the ring receive similar probability by construction,
+  and moving ``v`` toward one entry raises its neighbours as a side effect.
+  The output is the same ``outs.OneHot`` the Director head produced, so
+  sampling, log-probabilities, entropy and the straight-through code are
+  unchanged downstream.
+
+  Two details matter. The codebook is read under a stop-gradient: it is shaped
+  by the autoencoder objective alone, and letting the manager's REINFORCE
+  gradient move it would confound the two. And ``s`` is a trainable per-block
+  scale (softplus-parameterized, init 1): squared distances between the ``C``
+  entries of a block are comparable in magnitude, so a fixed unit scale gives a
+  near-uniform policy -- measured at 80% of maximum entropy for the encoder's
+  own softmax over the same distances -- which a policy cannot commit from.
+  ``s`` lets the head sharpen.
+  """
+
+  layers: int = 3
+  units: int = 1024
+  act: str = 'silu'
+  norm: str = 'rms'
+  bias: bool = True
+  winit: str = 'trunc_normal_in'
+  binit: str = 'zeros'
+  outscale: float = 0.1
+  unimix: float = 0.0
+  scale_init: float = 5.0
+  per_block_scale: bool = True
+
+  def __init__(self, codebook, blocks, dim):
+    self.codebook = codebook
+    self.blocks = int(blocks)
+    self.dim = int(dim)
+    self.mlp = nets.MLP(
+        self.layers, self.units, act=self.act, norm=self.norm, bias=self.bias,
+        winit=self.winit, binit=self.binit, name='mlp')
+    self.out = nets.Linear(
+        (self.blocks, self.dim), bias=self.bias, winit=self.winit,
+        binit=self.binit, outscale=self.outscale, name='out')
+
+  def __call__(self, x, bdims):
+    bshape = jax.tree.leaves(x)[0].shape[:bdims]
+    v = self.out(self.mlp(x.reshape((*bshape, -1)))).astype(f32)
+    table = sg(self.codebook.table())                      # (L, C, D)
+    dist = jnp.square(v[..., :, None, :] - table).sum(-1)  # (..., L, C)
+    # Normalize by the per-block mean distance before scaling. Absolute squared
+    # distances depend on the codebook's and latent's scale, which drift during
+    # training: measured at initialization they are ~0.05, so an unscaled logit
+    # spread of ~0.05 gives a policy at 1.000 normalized entropy -- uniform, and
+    # unable to commit to a goal. Dividing by the mean makes the logits
+    # dimensionless, so `scale` has the same meaning at any codebook scale and
+    # at any point in training. The mean is stop-gradiented: it sets the
+    # temperature, it is not something the policy should optimize.
+    dist = dist / (sg(dist.mean(-1, keepdims=True)) + 1e-8)
+    return _wrap_code_onehot(outs.OneHot(-self._scale() * dist, self.unimix))
+
+  def _scale(self):
+    shape = (self.blocks, 1) if self.per_block_scale else ()
+    raw = self.value('logit_scale', self._make_scale, shape)
+    return jax.nn.softplus(raw.astype(f32))
+
+  def _make_scale(self, shape):
+    from .lipschitz import softplus_inv
+    return jnp.broadcast_to(
+        softplus_inv(jnp.asarray(self.scale_init, f32)), shape).astype(f32)
+
+
+def _wrap_code_onehot(code):
+  """Same ``Agg`` wrapping the Director ``onehot`` head applied."""
+  return outs.Agg(code, 1, jnp.sum)

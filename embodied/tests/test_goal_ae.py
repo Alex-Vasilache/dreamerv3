@@ -822,3 +822,68 @@ class TestTrunkNormalizationBreaksTheComposedBound:
     ratio_small, _ = self._ratio('rms', 1e-3)
     assert ratio_big <= bound, (ratio_big, bound)      # holds at usual scale
     assert ratio_small > bound * 5, (ratio_small, bound)  # fails well below it
+
+
+class TestManagerRingHead:
+  """Ring-aware manager head, exercised directly rather than through the agent."""
+
+  def _head(self, **kw):
+    dec = goal_ae.GoalVQDecoder(DETER, L, C, DIM, layers=2, units=32,
+                                name='goal_dec')
+    head = goal_ae.ManagerRingHead(dec.codebook, L, DIM, layers=2, units=32,
+                                   name='manager_pol', **kw)
+    x = jnp.asarray(np.random.default_rng(0).normal(0, 1, (2, 3, 16)), f32)
+    params = nj.init(lambda t: head(t, 2))({}, x, seed=0)
+    return head, dec, params, x
+
+  def test_output_protocol_matches_the_director_manager(self):
+    head, dec, params, x = self._head()
+    out = nj.pure(lambda t: head(t, 2))(params, x)[1]
+    assert isinstance(out, outs.Agg)
+    assert out.pred().shape == (2, 3, L, C)
+    assert out.sample(jax.random.PRNGKey(0)).shape == (2, 3, L, C)
+    assert out.entropy().shape == (2, 3)
+    ev = out.sample(jax.random.PRNGKey(0))
+    assert out.logp(ev).shape == (2, 3)
+
+  def test_projects_to_the_latent_not_to_free_logits(self):
+    head, dec, params, x = self._head()
+    assert int(np.asarray(params['manager_pol/out/kernel']).shape[-1]) == L * DIM
+    assert 'manager_pol/logit_scale' in params
+
+  def test_codebook_is_read_under_stop_gradient(self):
+    # The codebook is shaped by the autoencoder objective alone; a REINFORCE
+    # gradient reaching it would conflate the two.
+    head, dec, params, x = self._head()
+    def fn(params):
+      return nj.pure(lambda t: head(t, 2).entropy().mean())(params, x)[1]
+    g = jax.grad(fn)(params)
+    np.testing.assert_array_equal(
+        np.asarray(g['goal_dec/codebook/table']), 0.0)
+    assert np.abs(np.asarray(g['manager_pol/out/kernel'])).max() > 0.0
+    assert np.abs(np.asarray(g['manager_pol/logit_scale'])).max() > 0.0
+
+  def test_scale_can_sharpen_a_near_uniform_policy(self):
+    # Squared distances between a block's entries are comparable, so a unit
+    # scale gives a near-uniform policy; the trainable scale must peak it.
+    ents = []
+    for init in (1.0, 50.0):
+      head, dec, params, x = self._head(scale_init=init)
+      ents.append(float(nj.pure(
+          lambda t: head(t, 2).entropy().mean())(params, x)[1]))
+    assert ents[1] < ents[0] * 0.6, ents
+
+  def test_neighbouring_entries_receive_similar_probability(self):
+    # The point of the head: with an ordered codebook, ring-adjacent entries
+    # get similar logits, which is what lets REINFORCE credit generalize.
+    head, dec, params, x = self._head()
+    ring = np.zeros((L, C, DIM), np.float32)
+    ang = 2 * np.pi * np.arange(C) / C
+    ring[:, :, 0] = np.cos(ang); ring[:, :, 1] = np.sin(ang)
+    params = {**params, 'goal_dec/codebook/table': jnp.asarray(ring, f32)}
+    logits = nj.pure(lambda t: _head_inner(head(t, 2)).dist.logits)(params, x)[1]
+    p = np.asarray(jax.nn.softmax(logits, -1)).reshape(-1, C)
+    best = p.argmax(-1)
+    adj = p[np.arange(len(p)), (best + 1) % C]
+    far = p[np.arange(len(p)), (best + C // 2) % C]
+    assert (adj > far).mean() > 0.95, (adj.mean(), far.mean())

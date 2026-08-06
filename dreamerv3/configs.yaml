@@ -172,6 +172,17 @@ defaults:
       # 'default' = nets.COMPUTE_DTYPE (bfloat16). 'float32' runs only the goal
       # autoencoder trunks in f32, which is what makes norm=none trainable.
       dtype: default            # default | float32
+      # Give the manager policy the codebook's geometry: its per-block logits
+      # become -s*||v - e_c||^2 against the (stop-gradiented) codebook instead
+      # of C free logits, so a REINFORCE update favouring an entry also favours
+      # its ring neighbours. Only meaningful with som=True. See
+      # hrl/goal_ae.py ManagerRingHead.
+      mgr_ring: False
+      # Logits are -scale * (d^2 / mean d^2), so scale is dimensionless. 5 puts
+      # the policy near 0.6 normalized entropy at init, just above the 0.5 that
+      # mgr_actent targets, so the entropy regularizer tightens rather than
+      # fights from below. 1 would be a uniform policy.
+      mgr_ring_scale_init: 5.0
     # Trunks for the vq encoder/decoder. norm is `none` so the per-layer
     # Lipschitz bounds compose into a bound on the whole trunk (a rescaling
     # norm layer is not 1-Lipschitz and breaks the composition). An earlier
@@ -546,6 +557,17 @@ goal_som_lipvq:
     goal_struct_adapt: False
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: True}
+
+# som+lipvq plus a manager whose logits are distances to the codebook, so the
+# ring is usable by the policy and not only by the decoder.
+goal_som_lipvq_mgr:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, mgr_ring: True}
 
 size12m: &size12m
   .*\.rssm: {deter: 2048, hidden: 256, classes: 16}

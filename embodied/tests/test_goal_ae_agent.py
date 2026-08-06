@@ -13,6 +13,7 @@ import re
 
 import elements
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 import ruamel.yaml as yaml
@@ -292,3 +293,28 @@ class TestCodeSimilarityMetric:
     m = train_steps(a, steps=3)
     assert 'goal/struct_corr_code' in m
     assert np.isfinite(float(m['goal/struct_corr_code']))
+
+
+class TestManagerRingHead:
+
+  ARM = 'goal_som_lipvq_mgr'
+
+  def test_builds_and_trains(self):
+    a = make_agent(self.ARM)
+    mets = train_steps(a, steps=3)
+    assert 'loss/mgr_policy' in mets
+    for k, v in mets.items():
+      assert np.isfinite(np.asarray(v)).all(), (k, v)
+
+  def test_has_no_free_logit_layer_but_has_a_scale(self):
+    # The head projects to L*dim and derives logits from codebook distances,
+    # so its output layer is sized for the latent, not for L*C free logits.
+    a = make_agent(self.ARM)
+    keys = [k for k in a.params if 'manager_pol' in k and not k.startswith('opt/')]
+    assert any(k.endswith('manager_pol/logit_scale') for k in keys), keys
+    out = [k for k in keys if k.endswith('manager_pol/out/kernel')][0]
+    L = int(a.model.skill_shape[0]); dim = int(a.model.config.goal_vq.dim)
+    C = int(a.model.config.skill_classes)
+    assert int(np.asarray(a.params[out]).shape[-1]) == L * dim, \
+        (a.params[out].shape, L * dim)
+    assert L * dim != L * C or dim == C   # guard: only meaningful if they differ

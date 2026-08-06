@@ -243,8 +243,19 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         self.manager_pol = embodied.jax.MLPHead(
             mgr_space, mgr_out, **mgr_cfg, name='manager_pol')
       else:
-        self.manager_pol = embodied.jax.MLPHead(
-            self.goal_code_space, **config.manager_policy, name='manager_pol')
+        if self.goal_ae_impl == 'vq' and bool(config.goal_vq.mgr_ring):
+          # Ring-aware manager: logits are distances to the (stop-gradiented)
+          # goal codebook, so REINFORCE credit generalizes to ring neighbours.
+          mgr_cfg = {k: v for k, v in dict(config.manager_policy).items()
+                     if k not in ('output',)}
+          self.manager_pol = goal_ae.ManagerRingHead(
+              self.goal_dec.codebook, int(skill_shape_t[0]),
+              int(config.goal_vq.dim),
+              scale_init=float(config.goal_vq.mgr_ring_scale_init),
+              **mgr_cfg, name='manager_pol')
+        else:
+          self.manager_pol = embodied.jax.MLPHead(
+              self.goal_code_space, **config.manager_policy, name='manager_pol')
       self.manager_sample_freq = config.manager_sample_freq
 
     if self.use_hrl:

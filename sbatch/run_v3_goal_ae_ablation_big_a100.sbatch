@@ -24,6 +24,9 @@
 #   som         + circular neighborhood loss + second reconstruction
 #   lipvq       + row-wise weight normalization + Lipschitz penalty
 #   som_lipvq   both
+#   som_lipvq_mgr  both, plus a manager whose logits are distances to the
+#              codebook, so the ring is usable by the policy and not only by
+#              the decoder (hrl/goal_ae.py ManagerRingHead)
 #
 # The `vq` arm is not one of motivation.tex's four but is worth running: it
 # isolates "quantization instead of categorical sampling" so a som/lipvq result
@@ -68,7 +71,8 @@ case "$ARM" in
   som)       ARM_CONFIG="goal_som" ;;
   lipvq)     ARM_CONFIG="goal_lipvq" ;;
   som_lipvq) ARM_CONFIG="goal_som_lipvq" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq)" >&2; exit 1 ;;
+  som_lipvq_mgr) ARM_CONFIG="goal_som_lipvq_mgr" ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 
