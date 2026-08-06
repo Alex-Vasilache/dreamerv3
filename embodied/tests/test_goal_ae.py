@@ -776,3 +776,49 @@ class TestPenaltyFormPreservesTheGoal:
     assert tight <= tb * (1 + 1e-4), (tight, tb)
     assert loose <= lb * (1 + 1e-4), (loose, lb)
     assert tb > 0.3 ** 3, (tb, 0.3 ** 3)
+
+
+class TestTrunkNormalizationBreaksTheComposedBound:
+
+  def _ratio(self, norm, scale, cinit=0.5):
+    dec = goal_ae.GoalVQDecoder(DETER, L, C, DIM, layers=2, units=32, lip=True,
+                                act='relu', norm=norm, cinit=cinit,
+                                name='goal_dec')
+    enc = goal_ae.GoalVQEncoder(dec.codebook, L, DIM, layers=2, units=32,
+                                lip=True, act='relu', norm=norm, cinit=cinit,
+                                name='goal_enc')
+    x0 = jnp.zeros((1, 2, DETER), f32)
+    params = nj.init(lambda x: enc(x, 2))({}, x0, seed=0)
+    def bnd(x):
+      enc(x, 2)
+      return goal_ae.lip_penalty(enc.bounds(), 'prod')
+    bound = float(nj.pure(bnd)(params, x0)[1])
+    r = np.random.default_rng(0)
+    x1 = jnp.asarray(r.normal(0, scale, (1024, DETER)), f32)
+    x2 = jnp.asarray(r.normal(0, scale, (1024, DETER)), f32)
+    z1 = nj.pure(lambda a: enc.latent(a, 1))(params, x1)[1].reshape((1024, -1))
+    z2 = nj.pure(lambda a: enc.latent(a, 1))(params, x2)[1].reshape((1024, -1))
+    num = np.abs(np.asarray(z1 - z2)).max(-1)
+    den = np.abs(np.asarray(x1 - x2)).max(-1)
+    return float((num / den).max()), bound
+
+  def test_without_trunk_norm_the_bound_holds_at_every_input_scale(self):
+    # A genuine Lipschitz map: the realized ratio does not depend on how large
+    # the inputs are, and never exceeds the product of the layer bounds.
+    ratios = []
+    for scale in (1e0, 1e-1, 1e-2, 1e-4):
+      ratio, bound = self._ratio('none', scale)
+      assert ratio <= bound * (1 + 1e-4), (scale, ratio, bound)
+      ratios.append(ratio)
+    assert max(ratios) / min(ratios) < 1.01, ratios
+
+  def test_rms_trunk_norm_violates_the_composed_bound_at_small_inputs(self):
+    # RMS normalization divides by the input's own magnitude, so its gain grows
+    # without limit as inputs shrink; it is not 1-Lipschitz and the per-layer
+    # bounds therefore do not compose. This is why prod(b) bounds the encoder's
+    # LINEAR LAYERS and not the encoder, and why strict_bound requires
+    # norm='none'. Documented as a test so the limitation cannot be lost.
+    ratio_big, bound = self._ratio('rms', 1e0)
+    ratio_small, _ = self._ratio('rms', 1e-3)
+    assert ratio_big <= bound, (ratio_big, bound)      # holds at usual scale
+    assert ratio_small > bound * 5, (ratio_small, bound)  # fails well below it
