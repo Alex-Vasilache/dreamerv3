@@ -2352,9 +2352,47 @@ training as the penalty pulls the trainable bounds down.
 
 | Exp | Task | Arm | Seed | Job ID |
 |---|---|---|---|---|
-| e415 | dmc_hopper_hop | som | 0 | _pending_ |
-| e416 | dmc_hopper_hop | lipvq | 0 | _pending_ |
-| e417 | dmc_hopper_hop | som_lipvq | 0 | _pending_ |
+| e415 | dmc_hopper_hop | som | 0 | 4675914 |
+| e416 | dmc_hopper_hop | lipvq | 0 | 4675915 |
+| e417 | dmc_hopper_hop | som_lipvq | 0 | 4675916 |
+
+Wave 1 launched 2026-08-06 on `gpu-a100` (saion-gpu24/26).
+
+**Pre-launch validation.** 138 unit tests (`test_goal_lipschitz.py`, `test_goal_vq.py`,
+`test_goal_ae.py`) and 45 agent-level integration tests (`test_goal_ae_agent.py`), plus
+an end-to-end smoke run of all five arms for 3000 steps through the real env/replay loop
+(`sbatch/run_smoke_goal_ae_ablation.sbatch`, job 4675912). The unit suites were
+mutation-tested: transposing the codebook gather einsum, replacing the circular
+neighbors with clamped ones, and swapping the weight-normalization row-sum axis each
+produce failures (40 across the two files).
+
+**Two failures the unit tests could not catch, both found by the smoke run:**
+
+1. `goal_struct_adapt` (`True` by default since 2026-07-22) is numerically incompatible
+   with the quantizer. Its Lagrange multiplier (init 200, max 2000) multiplies a term
+   whose gradient reaches `z_e` through `softmax(-distances)`; at the quantizer's
+   distance scale `loss/goal_autoencoder` climbed 110 → 181 and diverged within 4 train
+   steps. The arm config blocks now pin `goal_struct_adapt` and `goal_soft_reuse_adapt`
+   to `False` so each block is self-contained.
+
+2. `norm: none` in the goal-AE trunk — chosen so the per-layer Lipschitz bounds compose
+   into a bound on the whole trunk — leaves the trunk untrainable at this scale. Every
+   arm produced a NaN within 2–16 train steps on `dmc_hopper_hop` at debug scale, at the
+   same step and the same parameter for all 4 seeds tested, while the Director arm ran
+   120 steps clean on every seed. Bisection: removing the `goal_autoencoder` loss term
+   fixed it, and restoring `norm: rms` fixed it; the optimizer `eps`, the individual VQ
+   loss terms, the straight-through setting, the reduction, and the exploration reward
+   were each ruled out separately. The trunks now match Director's (`norm: rms`), which
+   also keeps each arm a single-factor change from the baseline. `LipMLP.strict_bound`
+   (off by default) re-enables the `norm: none` requirement. Consequence to state in the
+   paper: under `norm: rms`, `prod(bounds)` bounds the encoder/decoder **linear layers**,
+   not the whole trunk.
+
+**Watch on the first results:** `goal/used_frac` and `goal/perplexity` (codebook
+collapse; measured at 0.22 / 1.5 early at debug scale, i.e. the quantizer starts
+degenerate because `z_e` norm ≈ 0.017 against a codebook of norm ≈ 0.094),
+`goal/struct_corr_hard` (should rise rather than decline, unlike the baselines), and
+`goal/lip_bound_max` (should decrease as the penalty pulls the bounds down).
 
 ---
 
