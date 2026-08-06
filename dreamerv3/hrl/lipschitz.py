@@ -241,6 +241,14 @@ class LipMLP(nj.Module):
   def __init__(self, layers, units):
     self.layers = int(layers)
     self.units = int(units)
+    if self.dtype != 'default':
+      # Only the LipLinear path tolerates a non-global dtype; nets.Linear
+      # asserts nets.COMPUTE_DTYPE. That is the only case that needs it: the
+      # f32 trunk exists to make norm='none' trainable, and norm='none' only
+      # buys anything when the Lipschitz constraint is on.
+      assert self.lip, (
+          f'dtype={self.dtype!r} requires lip=True; the unconstrained path '
+          'uses nets.Linear, which pins the global compute dtype.')
     if self.lip and self.strict_bound:
       assert self.norm == 'none', (
           f'strict_bound requires norm=none, got {self.norm!r}: a rescaling '

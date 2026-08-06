@@ -823,7 +823,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         self.goal_dec.codebook, blocks, dim,
         lip=lip and apply_to in ('enc', 'enc_dec'),
         temp=float(cfg.temp), **lipkw, **config.goal_vq_enc, name='goal_enc')
-    ste = {'auto': None, 'on': True, 'off': False}[str(cfg.ste)]
+    # YAML 1.1 turns unquoted on/off into booleans, so accept both spellings.
+    _ste = cfg.ste
+    if isinstance(_ste, bool):
+      ste = _ste
+    else:
+      ste = {'auto': None, 'on': True, 'off': False, 'true': True,
+             'false': False}[str(_ste).strip().lower()]
     self._goal_vq_kw = dict(
         som=bool(cfg.som), ste=ste, agg=str(cfg.agg),
         codebook_scale=float(cfg.codebook_scale),

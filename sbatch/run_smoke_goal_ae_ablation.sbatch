@@ -1,10 +1,10 @@
 #!/bin/bash -l
 #SBATCH -J smoke_goal_ae
-#SBATCH -p gpu-v100
+#SBATCH -p gpu-a100
 #SBATCH -t 0:50:00
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --gres=gpu:v100:1
+#SBATCH --gres=gpu:a100:1
 #SBATCH --mem=48G
 #SBATCH -o /work/DoyaU/vasilache/work/slurm_logs/%x-%j.out
 #SBATCH -e /work/DoyaU/vasilache/work/slurm_logs/%x-%j.err

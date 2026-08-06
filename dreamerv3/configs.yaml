@@ -131,12 +131,17 @@ defaults:
       dim: 8                    # embedding dim per block; L*dim is the decoder input
       som: False                # circular neighborhood loss + second reconstruction
       lip: False                # row-wise weight normalization + Lipschitz penalty
-      # How reconstruction error reaches the encoder. ``auto`` = straight-through
-      # off the SOM arm (VQ-VAE, which the LipVQ-VAE paper says it follows) and
-      # off on the SOM arm (which uses the second reconstruction instead).
-      # ``off`` with som=False reproduces the LipVQ-VAE released code, where the
-      # encoder is trained by the commitment term alone and barely learns.
-      ste: auto                 # auto | on | off
+      # How reconstruction error reaches the encoder. `on` everywhere: the
+      # straight-through estimator of VQ-VAE. SOM-VAE replaces it with a second
+      # reconstruction from z_e, and `auto` used to follow that on the SOM arms,
+      # but measured here that leaves the encoder's output variance collapsing
+      # during training (z_std 0.11 vs 1.20) and the codebook with it
+      # (perplexity 2.7 vs 7.9 of 8, reconstruction 375 vs 12). The SOM arms
+      # keep the second reconstruction in addition. `off` with som=False
+      # reproduces the LipVQ-VAE released code, which collapses outright
+      # (perplexity 1.00). See test_goal_ae.py TestLearning.
+      # Quoted: unquoted on/off are YAML 1.1 booleans.
+      ste: 'on'                 # 'on' | 'off' | 'auto' (= not som)
       agg: sum                  # reduction of the quadratic terms over (L, dim)
       temp: 1.0                 # softmax temperature for the soft code / entropy
       stddev: 0.05              # codebook init scale (official SOM-VAE value)
@@ -162,22 +167,21 @@ defaults:
       lip_cinit: -1.0           # <0: init the bound to the layer's own row sums
       lip_clamp: True           # never scale a compliant row UP (paper + code)
       # Require norm=none so the per-layer bounds compose into a bound on the
-      # whole trunk. Off by default; see goal_vq_enc/goal_vq_dec below.
-      strict_bound: False
+      # whole trunk rather than on its linear layers alone.
+      strict_bound: True
       # 'default' = nets.COMPUTE_DTYPE (bfloat16). 'float32' runs only the goal
       # autoencoder trunks in f32, which is what makes norm=none trainable.
       dtype: default            # default | float32
-    # Trunks for the vq encoder/decoder. Identical to goal_enc/goal_dec above,
-    # including norm=rms, so every arm is a single-factor change from the
-    # Director baseline (the bottleneck) and from each other (the SOM /
-    # Lipschitz terms). norm=none would make prod(lip bounds) a certified
-    # Lipschitz constant for the whole trunk rather than for its linear layers
-    # only, but an unnormalized 3x1024 trunk is not trainable here: it NaNs
-    # within 2-16 train steps on dmc_hopper_hop at debug scale, for every seed
-    # and every arm. Set norm=none together with goal_vq.strict_bound to opt
-    # back into the certified variant. See hrl/lipschitz.py LipMLP.
-    goal_vq_enc: {layers: 3, units: 1024, act: silu, norm: rms, outscale: 0.1, winit: trunc_normal_in}
-    goal_vq_dec: {layers: 3, units: 1024, act: silu, norm: rms, outscale: 0.1, winit: trunc_normal_in}
+    # Trunks for the vq encoder/decoder. norm is `none` so the per-layer
+    # Lipschitz bounds compose into a bound on the whole trunk (a rescaling
+    # norm layer is not 1-Lipschitz and breaks the composition). An earlier
+    # revision used `rms` after the unnormalized trunk produced non-finite
+    # values within 2-16 train steps; that turned out to be specific to V100 --
+    # the same configuration runs 1500 steps clean on A100, where the
+    # experiments execute, and the goal autoencoder in isolation is clean on
+    # both. See hrl/lipschitz.py LipMLP and goal_vq.dtype for the f32 fallback.
+    goal_vq_enc: {layers: 3, units: 1024, act: silu, norm: none, outscale: 0.1, winit: trunc_normal_in}
+    goal_vq_dec: {layers: 3, units: 1024, act: silu, norm: none, outscale: 0.1, winit: trunc_normal_in}
     # Director-style factorized codes: L categoricals × C classes (L×C logits, L×C one-hot).
     # Master HRL switch. When False, the agent collapses to the v4-online flat AC:
     # single ``pol``/``val`` over WM features, no manager/goal-VAE, no skill aggregation.
