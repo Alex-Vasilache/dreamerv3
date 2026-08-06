@@ -123,6 +123,7 @@ class GoalVQEncoder(nj.Module):
   cinit: float = -1.0
   clamp: bool = True
   strict_bound: bool = False
+  dtype: str = 'default'
   temp: float = 1.0
 
   def __init__(self, codebook, blocks, dim):
@@ -133,7 +134,7 @@ class GoalVQEncoder(nj.Module):
         self.layers, self.units, act=self.act, norm=self.norm, bias=self.bias,
         winit=self.winit, binit=self.binit, lip=self.lip, per_row=self.per_row,
         cinit=self.cinit, clamp=self.clamp, strict_bound=self.strict_bound,
-        name='mlp')
+        dtype=self.dtype, name='mlp')
     # The output layer is constrained too when ``lip`` is on: LipVQ-VAE's Fig. 3
     # and its released code disagree about whether the last projection is
     # regularized, and leaving it free would make the composed bound vacuous --
@@ -198,6 +199,7 @@ class GoalVQDecoder(nj.Module):
   cinit: float = -1.0
   clamp: bool = True
   strict_bound: bool = False
+  dtype: str = 'default'
   stddev: float = 0.05
   include_self: bool = False
 
@@ -213,7 +215,7 @@ class GoalVQDecoder(nj.Module):
         self.layers, self.units, act=self.act, norm=self.norm, bias=self.bias,
         winit=self.winit, binit=self.binit, lip=self.lip, per_row=self.per_row,
         cinit=self.cinit, clamp=self.clamp, strict_bound=self.strict_bound,
-        name='mlp')
+        dtype=self.dtype, name='mlp')
     if self.lip and self.lip_out:
       self.out = LipLinear(
           self.shape, bias=self.bias, winit=self.winit, binit=self.binit,

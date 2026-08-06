@@ -155,7 +155,11 @@ class LipLinear(nj.Module):
     self._insize = None
 
   def __call__(self, x):
-    nets.ensure_dtypes(x)
+    # Accept whatever dtype the caller supplies rather than pinning to the
+    # global COMPUTE_DTYPE: the goal-AE trunks run in f32 under
+    # ``LipMLP.dtype='float32'``, which is what makes ``norm='none'`` -- and so
+    # the composed Lipschitz bound -- trainable.
+    nets.ensure_dtypes(x, fwd=x.dtype, bwd=x.dtype)
     self._insize = x.shape[-1]
     kernel = self._kernel()
     y = x @ lip_normalize(kernel, self._c(), self.clamp).astype(x.dtype)
@@ -228,6 +232,11 @@ class LipMLP(nj.Module):
   cinit: float = -1.0
   clamp: bool = True
   strict_bound: bool = False
+  # 'default' follows nets.COMPUTE_DTYPE (bfloat16 in training); 'float32'
+  # runs this trunk in f32 regardless. Needed for norm='none': the
+  # unnormalized trunk produces non-finite values within a few steps in
+  # bfloat16 and trains without incident in float32 (measured).
+  dtype: str = 'default'
 
   def __init__(self, layers, units):
     self.layers = int(layers)
@@ -240,7 +249,7 @@ class LipMLP(nj.Module):
 
   def __call__(self, x):
     shape = x.shape[:-1]
-    x = x.astype(nets.COMPUTE_DTYPE)
+    x = x.astype(f32 if self.dtype == 'float32' else nets.COMPUTE_DTYPE)
     x = x.reshape([-1, x.shape[-1]])
     bounds = []
     for i in range(self.layers):
@@ -255,7 +264,11 @@ class LipMLP(nj.Module):
         x = self.sub(
             f'linear{i}', nets.Linear, self.units, bias=self.bias,
             winit=self.winit, binit=self.binit)(x)
-      x = self.sub(f'norm{i}', nets.Norm, self.norm)(x)
+      # ``Norm('none')`` is a no-op that still asserts the global compute
+      # dtype, so skip the submodule entirely rather than route an f32 trunk
+      # through it. Parameter names are unaffected: 'none' creates none.
+      if self.norm != 'none':
+        x = self.sub(f'norm{i}', nets.Norm, self.norm)(x)
       x = nets.act(self.act)(x)
     self._bounds = bounds
     x = x.reshape((*shape, x.shape[-1]))

@@ -813,7 +813,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     lipkw = dict(
         lip_out=bool(cfg.lip_out), per_row=bool(cfg.lip_per_row),
         cinit=float(cfg.lip_cinit), clamp=bool(cfg.lip_clamp),
-        strict_bound=bool(cfg.strict_bound))
+        strict_bound=bool(cfg.strict_bound), dtype=str(cfg.dtype))
     self.goal_dec = goal_ae.GoalVQDecoder(
         self.goal_shape, blocks, int(skill_classes), dim,
         lip=lip and apply_to in ('dec', 'enc_dec'),

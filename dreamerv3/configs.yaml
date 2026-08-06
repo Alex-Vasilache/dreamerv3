@@ -164,6 +164,9 @@ defaults:
       # Require norm=none so the per-layer bounds compose into a bound on the
       # whole trunk. Off by default; see goal_vq_enc/goal_vq_dec below.
       strict_bound: False
+      # 'default' = nets.COMPUTE_DTYPE (bfloat16). 'float32' runs only the goal
+      # autoencoder trunks in f32, which is what makes norm=none trainable.
+      dtype: default            # default | float32
     # Trunks for the vq encoder/decoder. Identical to goal_enc/goal_dec above,
     # including norm=rms, so every arm is a single-factor change from the
     # Director baseline (the bottleneck) and from each other (the SOM /
