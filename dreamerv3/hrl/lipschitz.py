@@ -78,12 +78,24 @@ def lip_normalize(kernel, c, clamp=True, eps=1e-12):
   return kernel.astype(f32) * lip_scale(kernel, bound, clamp, eps)[None, :]
 
 
-def lip_penalty(bounds, impl='prod'):
+def lip_penalty(bounds, impl='logprod'):
   """``L_Lipschitz`` from the per-layer bounds.
 
-  ``prod`` (default) is the paper's / Liu et al.'s form and equals the
-  network's inf-norm Lipschitz bound; ``sum`` is the ``motivation.tex`` form.
-  An empty layer list yields ``0`` for both (an off switch, not a product
+  ``prod`` is the form written in the LipVQ-VAE paper and in Liu et al., and
+  equals the network's inf-norm Lipschitz bound; ``sum`` is the
+  ``motivation.tex`` form. ``logprod`` (default) is ``log`` of the product, and
+  is what this project uses.
+
+  The reason is that ``prod`` does not survive a change of depth or width. With
+  the 8 constrained layers here, each bound initialized to a 1024-unit layer's
+  absolute row sums (~27.8), the product is ~6e10, so LipVQ-VAE's gamma=1e-6 --
+  chosen for a single constrained layer, where the product is ~10 -- makes the
+  penalty 99.96% of the goal-autoencoder loss. ``logprod`` is monotone in the
+  same quantity, so it shrinks exactly what ``prod`` shrinks, but its gradient
+  with respect to a layer's bound is ``1/bound`` rather than the product of the
+  other layers' bounds, which keeps a single gamma usable across architectures.
+
+  An empty layer list yields ``0`` for every impl (an off switch, not a product
   identity of 1, so that ``gamma * penalty`` vanishes when Lipschitz is off).
   """
   bounds = [jnp.asarray(b, f32) for b in bounds]
@@ -98,6 +110,13 @@ def lip_penalty(bounds, impl='prod'):
     out = bounds[0]
     for b in bounds[1:]:
       out = out + b
+    return out
+  if impl == 'logprod':
+    # log(prod(bounds)) computed as sum(log(bounds)); the direct product
+    # overflows f32 well before it becomes large enough to matter.
+    out = jnp.log(jnp.maximum(bounds[0], 1e-12))
+    for b in bounds[1:]:
+      out = out + jnp.log(jnp.maximum(b, 1e-12))
     return out
   raise NotImplementedError(impl)
 
@@ -241,6 +260,11 @@ class LipMLP(nj.Module):
     self._bounds = bounds
     x = x.reshape((*shape, x.shape[-1]))
     return x
+
+  def scales(self):
+    """Per-layer realized rescale factors from the most recent ``__call__``."""
+    return [self.sub(f'linear{i}', LipLinear, int(self.units)).scale()
+            for i in range(self.layers)] if self.lip else []
 
   def bounds(self):
     """Per-layer inf-norm bounds of the linear maps, most recent ``__call__``.

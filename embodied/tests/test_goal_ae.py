@@ -334,8 +334,13 @@ class TestVQGoalLoss:
     enc, dec = build(lip=True, layers=2, cinit=0.5)
     params = init_all(enc, dec, x)
     _, mets = self._run(enc, dec, params, x)
-    np.testing.assert_allclose(mets['vq/lip_penalty'], 0.5 ** 6, rtol=1e-4)
+    # Default impl is logprod: log(0.5**6) over the 6 constrained layers
+    # (2 hidden + 1 output projection, encoder and decoder).
+    np.testing.assert_allclose(
+        mets['vq/lip_penalty'], np.log(0.5 ** 6), rtol=1e-4)
     np.testing.assert_allclose(mets['vq/lip_bound_max'], 0.5, rtol=1e-4)
+    _, mets = self._run(enc, dec, params, x, lip_impl='prod')
+    np.testing.assert_allclose(mets['vq/lip_penalty'], 0.5 ** 6, rtol=1e-4)
 
   def test_lip_scale_enters_the_loss(self):
     x = deters((2, 3))
@@ -641,3 +646,28 @@ class TestEncoderLipschitzProperty:
     free = self._empirical_ratio(lip=False)
     assert tight < free / 10.0, (tight, free)
     assert tight <= 0.01 ** 3 * (1 + 1e-4)
+
+
+class TestLipPenaltyReach:
+
+  def test_penalty_gradient_reaches_only_the_bounds(self):
+    # The penalty is a function of the trainable bounds c alone, not of the
+    # weights, so however large it grows it cannot drown the reconstruction
+    # gradient on the kernels. This is what limits the damage when gamma is
+    # mis-scaled for the layer count.
+    enc, dec = build(lip=True, layers=2, units=32, cinit=5.0)
+    x = deters((2, 3))
+    params = init_all(enc, dec, x)
+    def penalty(params):
+      def fn(x):
+        enc(x, 2)
+        dec.from_latent(enc.latent(x, 2), 2)
+        return goal_ae.lip_penalty(enc.bounds() + dec.bounds(), 'prod')
+      return nj.pure(fn)(params, x)[1]
+    g = jax.grad(penalty)(params)
+    for k, v in g.items():
+      a = np.abs(np.asarray(v))
+      if k.endswith('/c'):
+        assert a.max() > 0.0, k
+      else:
+        np.testing.assert_array_equal(a, 0.0, err_msg=k)

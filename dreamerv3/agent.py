@@ -850,10 +850,18 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # ``vq/x`` -> ``goal/x`` so everything lands under the same log prefix as
       # the Director-arm goal metrics.
       metrics.update({f'goal/{k.split("/", 1)[1]}': v for k, v in vq_mets.items()})
-      # Reported as goal/rec_* for continuity with the Director arm; the VQ
-      # objective's own reduction is fixed by ``goal_vq.agg``, so
-      # ``goal_rec_loss_agg`` (a rec:kl balance knob) does not apply here.
-      goal_rec_loss = goal_base_loss
+      metrics['goal/total'] = goal_base_loss.mean()
+      # Reconstruction only: from z_q, plus from z_e on the SOM arms.
+      goal_rec_loss = vq_mets['vq/rec_q'] + vq_mets.get(
+          'vq/rec_e', jnp.zeros((), f32))
+      # goal/rec_* must stay the RECONSTRUCTION for continuity with the
+      # Director arm, not the total: the VQ objective carries codebook,
+      # commitment, neighborhood and Lipschitz terms too, and reporting their
+      # sum here made goal/rec_mean read ~6e4 in the Lipschitz arms while the
+      # reconstruction itself was ~7. The total is logged as
+      # goal/total (and as loss/goal_autoencoder). ``goal_rec_loss_agg``, a
+      # rec:kl balance knob, does not apply: the VQ reduction is
+      # ``goal_vq.agg``.
     else:
       encoded_goal = self.goal_enc(deter_feat, 2)
       skill = sample(encoded_goal)

@@ -171,6 +171,15 @@ class GoalVQEncoder(nj.Module):
       out = out + [self.out.bound()]
     return out
 
+  def scales(self):
+    """Realized per-unit rescale factors; 1.0 means the constraint is inert."""
+    if not self.lip:
+      return []
+    out = self.mlp.scales()
+    if self.lip_out:
+      out = out + [self.out.scale()]
+    return out
+
 
 class GoalVQDecoder(nj.Module):
   """``code -> embeddings -> deter``. Owns the codebook (see module docstring)."""
@@ -234,11 +243,20 @@ class GoalVQDecoder(nj.Module):
       out = out + [self.out.bound()]
     return out
 
+  def scales(self):
+    """Realized per-unit rescale factors; 1.0 means the constraint is inert."""
+    if not self.lip:
+      return []
+    out = self.mlp.scales()
+    if self.lip_out:
+      out = out + [self.out.scale()]
+    return out
+
 
 def vq_goal_loss(
     enc, dec, deter, bdims, som=False, ste=None, agg='sum',
-    codebook_scale=1.0, commit_scale=1.0, som_scale=0.9, lip_scale=1e-6,
-    lip_impl='prod', rec_scale=1.0, z_e=None):
+    codebook_scale=1.0, commit_scale=1.0, som_scale=0.9, lip_scale=0.03,
+    lip_impl='logprod', rec_scale=1.0, z_e=None):
   """Assemble the full goal-autoencoder objective for the VQ arms.
 
   Returns ``(loss, metrics)`` where ``loss`` has the leading batch dims of
@@ -297,6 +315,7 @@ def vq_goal_loss(
       + som_scale * terms['som'])
 
   bounds = enc.bounds() + dec.bounds()
+  scales = enc.scales() + dec.scales()
   penalty = lip_penalty(bounds, lip_impl)
   if bounds:
     loss = loss + lip_scale * penalty
@@ -321,6 +340,13 @@ def vq_goal_loss(
       'vq/lip_penalty': penalty,
       'vq/lip_bound_max': (
           jnp.stack(bounds).max() if bounds else jnp.zeros((), f32)),
+      # Fraction of output units whose weights are actually being rescaled.
+      # 0.0 means the constraint is inert and the arm is equivalent to plain
+      # VQ; this is what says whether the Lipschitz arm is doing anything.
+      'vq/lip_active_frac': (
+          jnp.concatenate([(s < 1.0).astype(f32).reshape((-1,))
+                           for s in scales]).mean()
+          if scales else jnp.zeros((), f32)),
   }
   if som:
     metrics['vq/rec_e'] = rec_e.mean()

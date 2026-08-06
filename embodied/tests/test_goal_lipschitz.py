@@ -105,15 +105,58 @@ class TestRowSumAndScale:
 
 class TestPenalty:
 
-  def test_prod_and_sum(self):
+  def test_prod_sum_and_logprod(self):
     bounds = [jnp.asarray(2.0), jnp.asarray(3.0), jnp.asarray(4.0)]
     np.testing.assert_allclose(lip.lip_penalty(bounds, 'prod'), 24.0)
     np.testing.assert_allclose(lip.lip_penalty(bounds, 'sum'), 9.0)
+    np.testing.assert_allclose(
+        lip.lip_penalty(bounds, 'logprod'), np.log(24.0), rtol=1e-6)
 
-  def test_empty_is_zero_for_both(self):
-    # Off switch: gamma * penalty must vanish, so an empty product is 0, not 1.
-    np.testing.assert_allclose(lip.lip_penalty([], 'prod'), 0.0)
-    np.testing.assert_allclose(lip.lip_penalty([], 'sum'), 0.0)
+  def test_logprod_is_log_of_prod(self):
+    rng = np.random.default_rng(0)
+    bounds = [jnp.asarray(v, f32) for v in rng.uniform(0.5, 5.0, 6)]
+    np.testing.assert_allclose(
+        lip.lip_penalty(bounds, 'logprod'),
+        jnp.log(lip.lip_penalty(bounds, 'prod')), rtol=1e-5)
+
+  def test_logprod_is_monotone_in_the_product(self):
+    # It has to shrink the same quantity `prod` shrinks, or the substitution
+    # changes what the arm tests.
+    small = [jnp.asarray(2.0)] * 4
+    large = [jnp.asarray(2.0)] * 3 + [jnp.asarray(9.0)]
+    assert (lip.lip_penalty(small, 'prod') < lip.lip_penalty(large, 'prod'))
+    assert (lip.lip_penalty(small, 'logprod') < lip.lip_penalty(large, 'logprod'))
+
+  def test_logprod_survives_a_product_that_overflows_f32(self):
+    # 40 layers at bound 30 gives prod ~1e59, which is finite in f32 only up to
+    # ~3.4e38; the direct product is what forced the change of form.
+    bounds = [jnp.asarray(30.0, f32)] * 40
+    assert not jnp.isfinite(lip.lip_penalty(bounds, 'prod'))
+    got = lip.lip_penalty(bounds, 'logprod')
+    assert jnp.isfinite(got)
+    np.testing.assert_allclose(got, 40 * np.log(30.0), rtol=1e-5)
+
+  def test_logprod_gradient_per_layer_is_depth_independent(self):
+    # The property the choice buys: a layer's gradient does not depend on how
+    # many other layers there are, so one gamma works at any depth. Taken with
+    # respect to the bound itself, d/db log(b) = 1/b.
+    def grad_of(n, impl):
+      b = jnp.asarray([4.0] * n, f32)
+      fn = lambda b: lip.lip_penalty(list(b), impl)
+      return float(np.asarray(jax.grad(fn)(b))[0])
+    np.testing.assert_allclose(grad_of(4, 'logprod'), 0.25, rtol=1e-5)
+    np.testing.assert_allclose(
+        grad_of(4, 'logprod'), grad_of(16, 'logprod'), rtol=1e-5)
+    # The product form's per-layer gradient is prod(others) = 4^(n-1), so it
+    # grows by 4^3 = 64x going from 3 layers to 6.
+    np.testing.assert_allclose(
+        grad_of(6, 'prod') / grad_of(3, 'prod'), 64.0, rtol=1e-4)
+
+  def test_empty_is_zero_for_every_impl(self):
+    # Off switch: gamma * penalty must vanish, so an empty product is 0, not 1
+    # (and not log(1) = 0 by accident -- checked explicitly).
+    for impl in ('prod', 'sum', 'logprod'):
+      np.testing.assert_allclose(lip.lip_penalty([], impl), 0.0)
 
   def test_unknown_impl_raises(self):
     with pytest.raises(NotImplementedError):
