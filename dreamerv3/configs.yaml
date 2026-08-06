@@ -120,6 +120,56 @@ defaults:
     conhead: {layers: 1, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
     goal_enc: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in}
     goal_dec: {layers: 3, units: 1024, act: silu, norm: rms, output: mse, outscale: 0.1, winit: trunc_normal_in}
+    # --- Lipschitz-constrained SOM-VAE goal autoencoder (see hrl/goal_ae.py) ---
+    # ``director`` keeps the categorical + straight-through head above. ``vq``
+    # swaps in the blockwise vector quantizer; the manager's (L, C) one-hot
+    # action space is unchanged either way, only the decoder's input differs.
+    # Use the named blocks goal_vq / goal_som / goal_lipvq / goal_som_lipvq
+    # rather than setting these by hand.
+    goal_ae_impl: director      # director | vq
+    goal_vq:
+      dim: 8                    # embedding dim per block; L*dim is the decoder input
+      som: False                # circular neighborhood loss + second reconstruction
+      lip: False                # row-wise weight normalization + Lipschitz penalty
+      # How reconstruction error reaches the encoder. ``auto`` = straight-through
+      # off the SOM arm (VQ-VAE, which the LipVQ-VAE paper says it follows) and
+      # off on the SOM arm (which uses the second reconstruction instead).
+      # ``off`` with som=False reproduces the LipVQ-VAE released code, where the
+      # encoder is trained by the commitment term alone and barely learns.
+      ste: auto                 # auto | on | off
+      agg: sum                  # reduction of the quadratic terms over (L, dim)
+      temp: 1.0                 # softmax temperature for the soft code / entropy
+      stddev: 0.05              # codebook init scale (official SOM-VAE value)
+      include_self: False       # official SOM-VAE also pulls the winner
+      codebook_scale: 1.0       # ||sg[z_e] - z_q||^2
+      commit_scale: 1.0         # ||z_e - sg[z_q]||^2  (equal weights == the
+                                # single alpha term in motivation.tex)
+      som_scale: 0.9            # neighborhood term (official SOM-VAE beta)
+      lip_scale: 0.000001       # L_Lipschitz weight (LipVQ-VAE gamma = 1e-6)
+      lip_impl: prod            # prod (paper / Liu et al.) | sum (motivation.tex)
+      # Which networks the constraint applies to. motivation.tex says encoder AND
+      # decoder; LipVQ-VAE constrains only the encoder. Default follows
+      # motivation.tex: the decoder's bound is what makes a small code edit a
+      # small GOAL edit, which is the property being tested.
+      lip_apply: enc_dec        # enc | dec | enc_dec
+      lip_out: True             # also constrain the final projection
+      lip_per_row: True         # one bound per output unit (paper text + code)
+      lip_cinit: -1.0           # <0: init the bound to the layer's own row sums
+      lip_clamp: True           # never scale a compliant row UP (paper + code)
+      # Require norm=none so the per-layer bounds compose into a bound on the
+      # whole trunk. Off by default; see goal_vq_enc/goal_vq_dec below.
+      strict_bound: False
+    # Trunks for the vq encoder/decoder. Identical to goal_enc/goal_dec above,
+    # including norm=rms, so every arm is a single-factor change from the
+    # Director baseline (the bottleneck) and from each other (the SOM /
+    # Lipschitz terms). norm=none would make prod(lip bounds) a certified
+    # Lipschitz constant for the whole trunk rather than for its linear layers
+    # only, but an unnormalized 3x1024 trunk is not trainable here: it NaNs
+    # within 2-16 train steps on dmc_hopper_hop at debug scale, for every seed
+    # and every arm. Set norm=none together with goal_vq.strict_bound to opt
+    # back into the certified variant. See hrl/lipschitz.py LipMLP.
+    goal_vq_enc: {layers: 3, units: 1024, act: silu, norm: rms, outscale: 0.1, winit: trunc_normal_in}
+    goal_vq_dec: {layers: 3, units: 1024, act: silu, norm: rms, outscale: 0.1, winit: trunc_normal_in}
     # Director-style factorized codes: L categoricals × C classes (L×C logits, L×C one-hot).
     # Master HRL switch. When False, the agent collapses to the v4-online flat AC:
     # single ``pol``/``val`` over WM features, no manager/goal-VAE, no skill aggregation.
@@ -428,6 +478,62 @@ director_match: &director_match
   .*\.layers: 4
   batch_size: 4
   batch_length: 32
+
+# --- Goal-autoencoder ablation arms (motivation.tex, Lipschitz-SOM-VAE) ---
+# Each block is self-contained: "pure Director, with the goal autoencoder
+# swapped". They pin goal_struct_adapt and goal_soft_reuse_adapt to False
+# because both default to True (since 2026-07-22) and both would otherwise
+# ride along:
+#
+#   * goal_struct_adapt optimizes the very goal-code/goal-space geometry this
+#     architecture is meant to provide, so leaving it on confounds the result
+#     (it is what makes the e410-e414 antmaze runs unusable as a control); and
+#     it is numerically INCOMPATIBLE with the quantizer -- its Lagrange
+#     multiplier (init 200, max 2000) multiplies a term whose gradient reaches
+#     z_e through softmax(-distances), and at the quantizer's small distance
+#     scale that diverges to NaN within ~4 train steps (measured at debug
+#     scale on dmc_hopper_hop; the Director head is unaffected).
+#   * goal_soft_reuse_adapt is a separate sparsity mechanism and is off in the
+#     e390-e409 baselines these arms are compared against.
+#
+# goal_kl is off because the adaptive KL-to-uniform is a property of the
+# categorical posterior the quantizer replaces -- codebook usage is instead
+# reported as goal/used_frac and goal/perplexity.
+goal_vq:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: False, lip: False}
+
+goal_som:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: False}
+
+goal_lipvq:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: False, lip: True}
+
+goal_som_lipvq:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True}
 
 size12m: &size12m
   .*\.rssm: {deter: 2048, hidden: 256, classes: 16}

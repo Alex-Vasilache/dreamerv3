@@ -122,6 +122,7 @@ class GoalVQEncoder(nj.Module):
   per_row: bool = True
   cinit: float = -1.0
   clamp: bool = True
+  strict_bound: bool = False
   temp: float = 1.0
 
   def __init__(self, codebook, blocks, dim):
@@ -131,7 +132,8 @@ class GoalVQEncoder(nj.Module):
     self.mlp = LipMLP(
         self.layers, self.units, act=self.act, norm=self.norm, bias=self.bias,
         winit=self.winit, binit=self.binit, lip=self.lip, per_row=self.per_row,
-        cinit=self.cinit, clamp=self.clamp, name='mlp')
+        cinit=self.cinit, clamp=self.clamp, strict_bound=self.strict_bound,
+        name='mlp')
     # The output layer is constrained too when ``lip`` is on: LipVQ-VAE's Fig. 3
     # and its released code disagree about whether the last projection is
     # regularized, and leaving it free would make the composed bound vacuous --
@@ -152,9 +154,13 @@ class GoalVQEncoder(nj.Module):
     x = x.reshape((*bshape, -1))
     return self.out(self.mlp(x)).astype(f32)
 
+  def code_from_latent(self, z_e):
+    """Wrap a precomputed ``z_e`` as the discrete code, so a caller that needs
+    both (the training loss does) pays for only one encoder pass."""
+    return _wrap_code(VQCode(self.codebook.distances(z_e), self.temp))
+
   def __call__(self, x, bdims):
-    return _wrap_code(VQCode(self.codebook.distances(
-        self.latent(x, bdims)), self.temp))
+    return self.code_from_latent(self.latent(x, bdims))
 
   def bounds(self):
     """Per-layer Lipschitz bounds from the most recent forward pass."""
@@ -182,6 +188,7 @@ class GoalVQDecoder(nj.Module):
   per_row: bool = True
   cinit: float = -1.0
   clamp: bool = True
+  strict_bound: bool = False
   stddev: float = 0.05
   include_self: bool = False
 
@@ -196,7 +203,8 @@ class GoalVQDecoder(nj.Module):
     self.mlp = LipMLP(
         self.layers, self.units, act=self.act, norm=self.norm, bias=self.bias,
         winit=self.winit, binit=self.binit, lip=self.lip, per_row=self.per_row,
-        cinit=self.cinit, clamp=self.clamp, name='mlp')
+        cinit=self.cinit, clamp=self.clamp, strict_bound=self.strict_bound,
+        name='mlp')
     if self.lip and self.lip_out:
       self.out = LipLinear(
           self.shape, bias=self.bias, winit=self.winit, binit=self.binit,
@@ -230,7 +238,7 @@ class GoalVQDecoder(nj.Module):
 def vq_goal_loss(
     enc, dec, deter, bdims, som=False, ste=None, agg='sum',
     codebook_scale=1.0, commit_scale=1.0, som_scale=0.9, lip_scale=1e-6,
-    lip_impl='prod', rec_scale=1.0):
+    lip_impl='prod', rec_scale=1.0, z_e=None):
   """Assemble the full goal-autoencoder objective for the VQ arms.
 
   Returns ``(loss, metrics)`` where ``loss`` has the leading batch dims of
@@ -267,7 +275,10 @@ def vq_goal_loss(
   """
   ste = (not som) if ste is None else bool(ste)
   target = sg(deter.astype(f32))
-  z_e = enc.latent(deter, bdims)
+  # ``z_e`` may be supplied by a caller that already ran the encoder (the agent
+  # needs the code for its entropy / geometry diagnostics); recomputing it here
+  # would double the encoder cost every train step.
+  z_e = enc.latent(deter, bdims) if z_e is None else z_e
   quant = dec.codebook.quantize(z_e)
 
   z_rec = z_e + sg(quant['z_q'] - z_e) if ste else quant['z_q']
@@ -290,14 +301,23 @@ def vq_goal_loss(
   if bounds:
     loss = loss + lip_scale * penalty
 
+  # Diagnostics only. Every one of these is stop-gradiented, and the sqrt /
+  # norm reductions are floored away from zero: d(sqrt(x))/dx is infinite at
+  # x = 0, and a collapsed codebook makes an exact-zero quantization distance
+  # entirely reachable (perplexity was measured at ~1.5 early in training). A
+  # single inf/NaN anywhere in the traced graph is enough to poison the shared
+  # backward pass for every optimizer group, so metrics must not be able to
+  # introduce one.
+  tiny = 1e-12
   metrics = {
       'vq/rec_q': rec_q.mean(),
       'vq/codebook': terms['codebook'].mean(),
       'vq/commit': terms['commit'].mean(),
       'vq/som': terms['som'].mean(),
-      'vq/z_e_norm': jnp.linalg.norm(z_e, axis=-1).mean(),
-      'vq/z_q_norm': jnp.linalg.norm(quant['z_q'], axis=-1).mean(),
-      'vq/quant_err': jnp.sqrt(quant['dist'].min(-1)).mean(),
+      'vq/z_e_norm': jnp.sqrt(jnp.square(z_e).sum(-1) + tiny).mean(),
+      'vq/z_q_norm': jnp.sqrt(jnp.square(quant['z_q']).sum(-1) + tiny).mean(),
+      'vq/quant_err': jnp.sqrt(
+          jnp.maximum(quant['dist'].min(-1), 0.0) + tiny).mean(),
       'vq/lip_penalty': penalty,
       'vq/lip_bound_max': (
           jnp.stack(bounds).max() if bounds else jnp.zeros((), f32)),
@@ -306,4 +326,5 @@ def vq_goal_loss(
     metrics['vq/rec_e'] = rec_e.mean()
   metrics.update({f'vq/{k}': v for k, v in dec.codebook.metrics(
       quant['ids']).items()})
+  metrics = {k: sg(v) for k, v in metrics.items()}
   return loss, metrics

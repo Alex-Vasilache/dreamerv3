@@ -2288,6 +2288,76 @@ quota in use across e410–e414, 3 free).
 
 ---
 
+### e415–e474 · Goal-autoencoder ablation: Lipschitz-constrained SOM-VAE (3 arms × 4 envs × 5 seeds)
+
+Implements `code/26_04_HRL-paper/sections/motivation.tex` §"Proposed Architecture:
+Lipschitz-Constrained SOM-VAE": replace Director's categorical + straight-through goal
+autoencoder with a blockwise vector quantizer, ablating the two proposed components
+independently.
+
+**Code**: branch `feat/goal-ae-somvae-lipvq`, checked out in a **separate worktree**
+`code/dreamerv3_somvae/` (the primary `code/dreamerv3/` stays pinned on `main` because
+e410–e414 read it live on every requeue). New modules `dreamerv3/hrl/{lipschitz,vq,goal_ae}.py`;
+config blocks `goal_vq` / `goal_som` / `goal_lipvq` / `goal_som_lipvq`; script
+`sbatch/run_v3_goal_ae_ablation_big_a100.sbatch`, launcher `sbatch/submit_goal_ae_ablation.sh`.
+
+| Arm | Bottleneck | SOM neighbor loss + 2nd recon | Lipschitz weight norm + penalty |
+|---|---|---|---|
+| `director` (baseline = e390–e409) | categorical + straight-through | – | – |
+| `vq` (extra control) | blockwise VQ | no | no |
+| `som` | blockwise VQ | yes | no |
+| `lipvq` | blockwise VQ | no | yes |
+| `som_lipvq` | blockwise VQ | yes | yes |
+
+Manager action space is unchanged ((L, C) one-hot, L=8, C=8); only the decoder's input
+changes, from the flattened one-hot to L×`goal_vq.dim`=8×8 gathered embeddings — so the
+decoder input width is identical to the baseline's.
+
+**Baseline is e390–e409, NOT e410–e414.** The DMC baselines set `STRUCT_ADAPT=False` and
+`GOAL_SOFT_REUSE_ADAPT=False` explicitly and are genuinely pure Director. The antmaze
+e410–e414 runs did *not* set them, and since 2026-07-22 both default to `True`: their
+live metrics show `goal/struct_scale_mean ≈ 837` with `goal/struct_corr ≈ 0.94` (vs the
+0.36–0.62 that motivation.tex reports for pure Director). The struct-adapt term optimizes
+the *same* goal-code/goal-space geometry this architecture is meant to provide
+architecturally, so e410–e414 cannot serve as the control for it. This ablation sets both
+flags `False` explicitly.
+
+`goal_struct_diag=True` on every arm (baselines logged it only on seed 4), so the
+geometry-preservation trajectory is comparable across all arms at every step. It enters
+no loss.
+
+**Staged launch** (`WAVE=n sbatch/submit_goal_ae_ablation.sh`), so hopper results arrive
+before the full 60-job matrix is queued:
+
+| Wave | Exps | Envs | Seeds | Jobs |
+|---|---|---|---|---|
+| 1 | e415–e417 | hopper_hop | 0 | 3 |
+| 2 | e418–e426 | cartpole_swingup, acrobot_swingup, cheetah_run | 0 | 9 |
+| 3 | e427–e474 | all 4 | 1–4 | 48 |
+
+**Hypothesis.** The Director code's geometry only partly tracks goal space
+(motivation.tex Fig. `goal_struct_corr`: r = 0.36–0.62, *declining* over training), so a
+minimal goal adjustment maps to an arbitrarily different code and the manager's REINFORCE
+advantage is confounded. `som` should raise `goal/struct_corr[_hard]` by making
+ring-adjacent codes decode to nearby goals; `lipvq` should do so by bounding how fast the
+decoder can move the goal per unit code change. Expected result: higher and
+non-declining `goal/struct_corr_hard`, and — if the confound is real — higher
+`wkr_goal_rew` and task return than the e390–e409 baselines.
+
+**Key metrics** (new, all under `train/goal/`): `rec_q`, `rec_e` (som arms), `codebook`,
+`commit`, `som`, `quant_err`, `z_e_norm`, `z_q_norm`, `used_frac`, `perplexity`,
+`max_prob`, `lip_penalty`, `lip_bound_max`. `used_frac`/`perplexity` are the codebook-
+collapse watch (VQ's characteristic failure); `lip_bound_max` should *decrease* over
+training as the penalty pulls the trainable bounds down.
+
+| Exp | Task | Arm | Seed | Job ID |
+|---|---|---|---|---|
+| e415 | dmc_hopper_hop | som | 0 | _pending_ |
+| e416 | dmc_hopper_hop | lipvq | 0 | _pending_ |
+| e417 | dmc_hopper_hop | som_lipvq | 0 | _pending_ |
+
+---
+
 ## 6. Pre-registered hypotheses & readout logic (live board, written 2026-07-13 pre-results)
 
 Reference values in §1. Read mediators before scores: `wkr_goal_rew` (countdown cells),

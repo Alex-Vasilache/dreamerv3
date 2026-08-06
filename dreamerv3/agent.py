@@ -41,6 +41,7 @@ from .hrl import (
     variable_block_director_tensors,
     worker_split_window,
 )
+from .hrl import goal_ae
 from .hrl.heads import _head_inner
 
 f32 = jnp.float32
@@ -183,10 +184,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # Only built when HRL is enabled — flat mode has no goals.
     if self.use_hrl:
       self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
-      self.goal_enc = embodied.jax.MLPHead(
-          self.goal_code_space, **config.goal_enc, name='goal_enc')
-      # Director goal decoder (skill code -> deter).
-      self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
+      self.goal_ae_impl = str(getattr(config, 'goal_ae_impl', 'director'))
+      if self.goal_ae_impl == 'vq':
+        self._build_goal_vq(config, skill_shape_t, skill_classes)
+      elif self.goal_ae_impl == 'director':
+        self.goal_enc = embodied.jax.MLPHead(
+            self.goal_code_space, **config.goal_enc, name='goal_enc')
+        # Director goal decoder (skill code -> deter).
+        self.goal_dec = embodied.jax.MLPHead(self.goal_shape, **config.goal_dec, name='goal_dec')
+        self._goal_vq_kw = None
+      else:
+        raise NotImplementedError(self.goal_ae_impl)
       self.goal_autoencoder_beta = config.goal_autoencoder_beta
       # Weight on the code/deter geometry-preservation term (0 = off).
       self.goal_struct_weight = float(getattr(config, 'goal_struct_weight', 0.0))
@@ -194,6 +202,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # logits so arrays stay on-device (``jnp.zeros`` here breaks sharded init).
       self._skill_prior_unimix = float(config.goal_enc.unimix)
       self._skill_factorized = len(skill_shape_t) > 1
+      # goal_kl adapts a KL toward the uniform prior over the *categorical
+      # posterior* the quantizer removes. Left reachable (the soft code
+      # softmax(-d^2) is a well-defined distribution) but off in every vq
+      # config block; codebook usage is reported as goal/used_frac instead.
+      if self.goal_ae_impl == 'vq' and self.config.goal_kl:
+        print('[goal-ae] WARNING: goal_kl=True with goal_ae_impl=vq applies the '
+              'adaptive KL to softmax(-distances), which is not the Director '
+              'posterior it was tuned for. The goal_* config blocks set it False.')
 
     # Flat RSSM state for MLP heads: deterministic dim + flattened stochastic samples.
     self.feat2tensor = lambda x: jnp.concatenate([
@@ -781,6 +797,40 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     aux_outs = {'tokens': tokens, 'repfeat': repfeat, 'losses': losses}
     return loss, (carry, entries, aux_outs, metrics)
 
+  def _build_goal_vq(self, config, skill_shape_t, skill_classes):
+    """Build the VQ / SOM / LipVQ goal autoencoder (``hrl/goal_ae.py``).
+
+    Replaces the Director ``goal_enc``/``goal_dec`` MLPHeads with the blockwise
+    quantizer. The decoder owns the codebook so ``policy_keys`` ships it to the
+    actor unchanged; see the module docstring there.
+    """
+    cfg = config.goal_vq
+    blocks = int(skill_shape_t[0])
+    dim = int(cfg.dim)
+    lip = bool(cfg.lip)
+    apply_to = str(cfg.lip_apply)
+    assert apply_to in ('enc', 'dec', 'enc_dec'), apply_to
+    lipkw = dict(
+        lip_out=bool(cfg.lip_out), per_row=bool(cfg.lip_per_row),
+        cinit=float(cfg.lip_cinit), clamp=bool(cfg.lip_clamp),
+        strict_bound=bool(cfg.strict_bound))
+    self.goal_dec = goal_ae.GoalVQDecoder(
+        self.goal_shape, blocks, int(skill_classes), dim,
+        lip=lip and apply_to in ('dec', 'enc_dec'),
+        stddev=float(cfg.stddev), include_self=bool(cfg.include_self),
+        **lipkw, **config.goal_vq_dec, name='goal_dec')
+    self.goal_enc = goal_ae.GoalVQEncoder(
+        self.goal_dec.codebook, blocks, dim,
+        lip=lip and apply_to in ('enc', 'enc_dec'),
+        temp=float(cfg.temp), **lipkw, **config.goal_vq_enc, name='goal_enc')
+    ste = {'auto': None, 'on': True, 'off': False}[str(cfg.ste)]
+    self._goal_vq_kw = dict(
+        som=bool(cfg.som), ste=ste, agg=str(cfg.agg),
+        codebook_scale=float(cfg.codebook_scale),
+        commit_scale=float(cfg.commit_scale),
+        som_scale=float(cfg.som_scale),
+        lip_scale=float(cfg.lip_scale), lip_impl=str(cfg.lip_impl))
+
   def _goal_autoencoder_loss(self, repfeat, losses, metrics, B, T, training):
     """Goal VAE: reconstruct ``deter`` from a discrete skill code.
 
@@ -790,24 +840,40 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     """
     # --- Goal Autoencoder ---
     deter_feat = sg(self.feat2deter(repfeat))
-    encoded_goal = self.goal_enc(deter_feat, 2)
-    skill = sample(encoded_goal)
-    skill_code = skill['skill'] if isinstance(skill, dict) else skill
-    # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
-    # ``MSEDist('sum')`` over ``deter``; masked goals reuse this standard autoencoder
-    # (the mask edits the code, not the decoder).
-    decoded_goal = self.goal_dec(skill_code, 2)
-    goal_rec_sum = decoded_goal.loss(sg(deter_feat))
-    goal_rec_agg = self.config.goal_rec_loss_agg
-    if goal_rec_agg == 'sum':
-      goal_rec_loss = goal_rec_sum
-    elif goal_rec_agg == 'mean':
-      # Per-dim mean rescaled by a fixed reference dim so the rec:kl balance is
-      # invariant to ``deter``; ref = current ``deter`` reproduces the sum exactly.
-      deter_dim = self.goal_shape[0]
-      goal_rec_loss = goal_rec_sum / deter_dim * float(self.config.goal_rec_dim_ref)
+    if self.goal_ae_impl == 'vq':
+      # One encoder pass shared by the loss and the diagnostics below.
+      z_e = self.goal_enc.latent(deter_feat, 2)
+      encoded_goal = self.goal_enc.code_from_latent(z_e)
+      goal_base_loss, vq_mets = goal_ae.vq_goal_loss(
+          self.goal_enc, self.goal_dec, deter_feat, 2, z_e=z_e,
+          **self._goal_vq_kw)
+      # ``vq/x`` -> ``goal/x`` so everything lands under the same log prefix as
+      # the Director-arm goal metrics.
+      metrics.update({f'goal/{k.split("/", 1)[1]}': v for k, v in vq_mets.items()})
+      # Reported as goal/rec_* for continuity with the Director arm; the VQ
+      # objective's own reduction is fixed by ``goal_vq.agg``, so
+      # ``goal_rec_loss_agg`` (a rec:kl balance knob) does not apply here.
+      goal_rec_loss = goal_base_loss
     else:
-      raise NotImplementedError(goal_rec_agg)
+      encoded_goal = self.goal_enc(deter_feat, 2)
+      skill = sample(encoded_goal)
+      skill_code = skill['skill'] if isinstance(skill, dict) else skill
+      # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
+      # ``MSEDist('sum')`` over ``deter``; masked goals reuse this standard autoencoder
+      # (the mask edits the code, not the decoder).
+      decoded_goal = self.goal_dec(skill_code, 2)
+      goal_rec_sum = decoded_goal.loss(sg(deter_feat))
+      goal_rec_agg = self.config.goal_rec_loss_agg
+      if goal_rec_agg == 'sum':
+        goal_rec_loss = goal_rec_sum
+      elif goal_rec_agg == 'mean':
+        # Per-dim mean rescaled by a fixed reference dim so the rec:kl balance is
+        # invariant to ``deter``; ref = current ``deter`` reproduces the sum exactly.
+        deter_dim = self.goal_shape[0]
+        goal_rec_loss = goal_rec_sum / deter_dim * float(self.config.goal_rec_dim_ref)
+      else:
+        raise NotImplementedError(goal_rec_agg)
+      goal_base_loss = goal_rec_loss
     goal_dist = _head_inner(encoded_goal)
     skill_prior = outs.OneHot(
         jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)
@@ -823,7 +889,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       goal_kl_loss = jnp.zeros((B, T), f32)
       goal_kl_mets = {}
 
-    losses['goal_autoencoder'] = goal_rec_loss + self.config.goal_autoencoder_beta * goal_kl_loss
+    losses['goal_autoencoder'] = (
+        goal_base_loss + self.config.goal_autoencoder_beta * goal_kl_loss)
 
     # --- Geometry preservation (goal_struct_weight): make code-space distances
     # mirror deter-space distances. Pairs of states far apart in deter (low

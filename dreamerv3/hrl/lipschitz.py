@@ -176,11 +176,27 @@ class LipMLP(nj.Module):
   """Plain MLP trunk whose linear layers are optionally Lipschitz-constrained.
 
   Mirrors ``nets.MLP`` (``layers`` x [Linear -> Norm -> act]) but lets the
-  Lipschitz constraint be switched on per instance. When ``lip=True`` the
-  normalization layers must be ``none``: RMS/LayerNorm rescale by a
-  data-dependent factor and would void the bound the weight normalization
-  buys. LipVQ-VAE Fig. 3 likewise shows only ``Linear -> Lipschitz Reg ->
-  activation`` in the encoder.
+  Lipschitz constraint be switched on per instance.
+
+  Normalization and the strength of the guarantee. A rescaling norm layer
+  (``rms``/``layer``) multiplies activations by a data-dependent factor, so
+  with one present the per-layer bounds no longer compose into a certified
+  global Lipschitz constant: the weight normalization still bounds each linear
+  map's inf-norm operator norm, and the penalty still shrinks those bounds, but
+  ``prod(bounds)`` is then a property of the linear layers only, not of the
+  network. ``strict_bound=True`` requires ``norm='none'`` and makes
+  ``prod(bounds)`` a true bound on the whole trunk (LipVQ-VAE Fig. 3 shows only
+  ``Linear -> Lipschitz Reg -> activation``).
+
+  It is off by default because a 3x1024 unnormalized trunk is not trainable at
+  this project's scale: with ``norm='none'`` the goal autoencoder produces a
+  NaN within 2-16 train steps on dmc_hopper_hop at debug scale, for every seed
+  and every ablation arm, while the same configuration with ``norm='rms'`` runs
+  clean (the Director trunk it replaces also uses ``rms``). Keeping ``rms``
+  additionally leaves each arm a single-factor change from the Director
+  baseline. Note the LipVQ-VAE released code does not remove normalization
+  either; it applies its ``LipschitzMLP`` as one layer among unconstrained
+  ones.
   """
 
   act: str = 'silu'
@@ -192,14 +208,15 @@ class LipMLP(nj.Module):
   per_row: bool = True
   cinit: float = -1.0
   clamp: bool = True
+  strict_bound: bool = False
 
   def __init__(self, layers, units):
     self.layers = int(layers)
     self.units = int(units)
-    if self.lip:
+    if self.lip and self.strict_bound:
       assert self.norm == 'none', (
-          f'Lipschitz MLP requires norm=none, got {self.norm!r}: a rescaling '
-          'normalization layer voids the weight-normalization bound.')
+          f'strict_bound requires norm=none, got {self.norm!r}: a rescaling '
+          'normalization layer voids the composed weight-normalization bound.')
     self._bounds = []
 
   def __call__(self, x):
@@ -226,5 +243,9 @@ class LipMLP(nj.Module):
     return x
 
   def bounds(self):
-    """Per-layer Lipschitz bounds from the most recent ``__call__``."""
+    """Per-layer inf-norm bounds of the linear maps, most recent ``__call__``.
+
+    Composes into a bound on the whole trunk only under ``strict_bound``; see
+    the class docstring.
+    """
     return list(self._bounds)

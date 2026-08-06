@@ -168,10 +168,16 @@ class BlockCodebook(nj.Module):
     return jax.nn.softmax(-self.distances(z_e) / temp, -1)
 
   def metrics(self, ids):
-    """Codebook-usage diagnostics; VQ's main failure mode is dead entries."""
+    """Codebook-usage diagnostics; VQ's main failure mode is dead entries.
+
+    Gradient-free by construction (``ids`` come from ``argmin``), but the
+    reductions are still floored so no infinite derivative can enter the graph.
+    """
     counts = self.onehot(ids).reshape((-1, self.blocks, self.classes)).sum(0)
     probs = counts / jnp.maximum(counts.sum(-1, keepdims=True), 1.0)
-    entropy = -(probs * jnp.log(probs + 1e-12)).sum(-1)
+    # log is floored: a class with zero count gives probs == 0 exactly, and
+    # both log(0) and its derivative are infinite.
+    entropy = -(probs * jnp.log(jnp.maximum(probs, 1e-12))).sum(-1)
     return {
         'used_frac': (counts > 0).astype(f32).mean(),
         'perplexity': jnp.exp(entropy).mean(),

@@ -266,9 +266,20 @@ class TestLipMLP:
     cs = sorted(k for k in params if k.endswith('/c'))
     assert cs == ['mlp/linear0/c', 'mlp/linear1/c', 'mlp/linear2/c']
 
-  def test_lip_requires_no_norm(self):
+  def test_strict_bound_requires_no_norm(self):
+    # Without strict_bound a rescaling norm is allowed (and is the shipped
+    # default: an unnormalized trunk is not trainable at this project's scale),
+    # but then prod(bounds) bounds only the linear layers, not the trunk.
+    lip.LipMLP(2, 8, name='permissive', lip=True, norm='rms')
     with pytest.raises(AssertionError, match='norm=none'):
-      lip.LipMLP(2, 8, name='bad', lip=True, norm='rms')
+      lip.LipMLP(2, 8, name='bad', lip=True, norm='rms', strict_bound=True)
+
+  def test_strict_bound_accepts_no_norm(self):
+    net = lip.LipMLP(2, 8, name='strict', lip=True, norm='none',
+                     strict_bound=True)
+    x = jnp.asarray(np.random.default_rng(0).normal(0, 1, (5, 6)), f32)
+    params = nj.init(net)({}, x, seed=0)
+    assert [k for k in params if k.endswith('/c')]
 
   def test_composed_bound_holds_end_to_end(self):
     # The whole point: with 1-Lipschitz activations the network's inf-norm
