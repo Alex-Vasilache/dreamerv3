@@ -271,3 +271,24 @@ class TestSaveLoad:
     fresh.load(saved)
     np.testing.assert_allclose(
         np.asarray(fresh.params[table]), wanted, rtol=1e-6)
+
+
+class TestCodeSimilarityMetric:
+
+  def test_code_metric_matches_hamming_for_the_director_head(self):
+    # The unified definition (cosine_max between decoder inputs) must reduce to
+    # the existing fraction-of-matching-blocks metric when the decoder input is
+    # a one-hot, or the quantized arms would not be comparable to the baselines.
+    a = make_agent(**{'agent': {'goal_struct_diag': True}})
+    m = train_steps(a, steps=3)
+    assert 'goal/struct_corr_code' in m and 'goal/struct_corr_hard' in m
+    np.testing.assert_allclose(
+        float(m['goal/struct_corr_code']), float(m['goal/struct_corr_hard']),
+        rtol=1e-4, atol=1e-5)
+
+  @pytest.mark.parametrize('arm', ['goal_vq', 'goal_som'])
+  def test_code_metric_is_logged_for_the_quantized_arms(self, arm):
+    a = make_agent(arm, **{'agent': {'goal_struct_diag': True}})
+    m = train_steps(a, steps=3)
+    assert 'goal/struct_corr_code' in m
+    assert np.isfinite(float(m['goal/struct_corr_code']))

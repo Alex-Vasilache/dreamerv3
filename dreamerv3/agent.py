@@ -987,6 +987,27 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       corr_hard = (sdc * shc).sum() / (
           jnp.sqrt((sdc * sdc).sum()) * jnp.sqrt((shc * shc).sum()) + 1e-12)
       metrics['goal/struct_corr_hard'] = corr_hard
+      # Code similarity as the DECODER sees it: cosine_max between decoder
+      # inputs. For the Director head that input is the flattened one-hot,
+      # whose norm is sqrt(L) for every code, so this reduces exactly to the
+      # fraction of matching blocks computed above -- the two agree to
+      # numerical precision and the metric stays comparable to the baselines.
+      # For the quantized arms the input is the gathered embeddings, which
+      # carry the codebook geometry, so two codes differing by one ring step
+      # score as nearly identical instead of as maximally different. The
+      # Hamming form cannot express that: it takes L+1 = 9 values and treats
+      # every mismatch alike, which understates a ring-ordered codebook and can
+      # rank it below an unordered one.
+      onehot_hard = jax.nn.one_hot(ids, C, dtype=f32)              # (N, L, C)
+      if self.goal_ae_impl == 'vq':
+        dec_in = self.goal_dec.codebook.lookup(onehot_hard)        # (N, L, D)
+      else:
+        dec_in = onehot_hard
+      sc = pairwise_cosmax(sg(dec_in.reshape((B * T, -1))))
+      scf = (sc * offdiag).reshape((-1,))
+      scc = scf - scf.mean()
+      metrics['goal/struct_corr_code'] = (sdc * scc).sum() / (
+          jnp.sqrt((sdc * sdc).sum()) * jnp.sqrt((scc * scc).sum()) + 1e-12)
     # Logged as ``train/goal/*`` when the train loop aggregates with prefix ``train``.
     ent = encoded_goal.entropy()
     goal_ent_bt = ent
