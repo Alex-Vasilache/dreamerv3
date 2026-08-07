@@ -383,12 +383,18 @@ class ManagerRingHead(nj.Module):
 
   Two details matter. The codebook is read under a stop-gradient: it is shaped
   by the autoencoder objective alone, and letting the manager's REINFORCE
-  gradient move it would confound the two. And ``s`` is a trainable per-block
-  scale (softplus-parameterized, init 1): squared distances between the ``C``
-  entries of a block are comparable in magnitude, so a fixed unit scale gives a
-  near-uniform policy -- measured at 80% of maximum entropy for the encoder's
-  own softmax over the same distances -- which a policy cannot commit from.
-  ``s`` lets the head sharpen.
+  gradient move it would confound the two. And the distances are divided by
+  their per-block standard deviation before ``s`` is applied, which makes ``s``
+  the standard deviation of the logits and therefore a temperature in units the
+  codebook's own scale cannot shift. ``scale_init`` is set so the head starts at
+  or BELOW the manager's entropy target. It has to: ``s`` receives gradient only
+  from REINFORCE and barely moves in practice (5.000 to 5.008 over 100k steps in
+  e483), and the entropy adapter is one-directional -- it raises entropy toward
+  the target and shrinks to its floor when entropy is above it. Starting below
+  the target is therefore the only mis-specification the adapter can correct. At
+  ``scale_init = 8`` the normalized entropy is 0.16 on a random codebook, 0.47 on
+  an evenly spaced line (the arrangement the SOM term drives toward) and 0.27 to
+  0.44 across e483's trained blocks, all at or under the 0.5 target.
   """
 
   layers: int = 3
@@ -400,7 +406,7 @@ class ManagerRingHead(nj.Module):
   binit: str = 'zeros'
   outscale: float = 0.1
   unimix: float = 0.0
-  scale_init: float = 5.0
+  scale_init: float = 8.0   # std-normalized; starts at/below the entropy target
   per_block_scale: bool = True
 
   def __init__(self, codebook, blocks, dim):
@@ -427,7 +433,27 @@ class ManagerRingHead(nj.Module):
     # dimensionless, so `scale` has the same meaning at any codebook scale and
     # at any point in training. The mean is stop-gradiented: it sets the
     # temperature, it is not something the policy should optimize.
-    dist = dist / (sg(dist.mean(-1, keepdims=True)) + 1e-8)
+    # Normalize by the per-block STANDARD DEVIATION of the distances, not their
+    # mean. Softmax is shift-invariant, so what sets the entropy is the SPREAD
+    # of the logits, and dividing by the std makes that spread equal to `scale`
+    # by construction. Dividing by the mean does not: the spread then also
+    # depends on where the trunk's point v sits relative to the codebook, since
+    # a v near the centroid is about equally far from every entry. Measured on
+    # e483's trained codebook, mean-normalization gives 0.72 to 0.92 normalized
+    # entropy at a fixed scale as v moves from 0.5 to 2 codebook radii out,
+    # against 0.68 to 0.70 for std-normalization, and it puts the 0.5 entropy
+    # target at scale 21.4 rather than 4.5. e483 ran with scale 5 under
+    # mean-normalization and sat at 0.763 with the scale parameter frozen
+    # (5.000 to 5.008 over 100k steps), because the entropy adapter is
+    # one-directional -- it raises entropy toward the target and cannot lower
+    # it -- so nothing corrected the mis-specification.
+    #
+    # The floor at 1e-3 of the mean keeps a collapsed codebook finite: with all
+    # entries equal the distances are equal, and equal logits are a uniform
+    # policy rather than a division by zero.
+    d_mean = dist.mean(-1, keepdims=True)
+    d_std = dist.std(-1, keepdims=True)
+    dist = dist / (sg(jnp.maximum(d_std, 1e-3 * d_mean)) + 1e-8)
     code = outs.OneHot(-self._scale() * dist, self.unimix)
     # The manager's entropy adapter skips, SILENTLY, any head that does not
     # advertise its entropy range:

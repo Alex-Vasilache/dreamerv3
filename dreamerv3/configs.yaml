@@ -187,7 +187,7 @@ defaults:
       # the policy near 0.6 normalized entropy at init, just above the 0.5 that
       # mgr_actent targets, so the entropy regularizer tightens rather than
       # fights from below. 1 would be a uniform policy.
-      mgr_ring_scale_init: 5.0
+      mgr_ring_scale_init: 8.0
       # Alternative to mgr_ring, and a cleaner single-factor change: instead of
       # reparameterizing the manager's logits, spread the sampled skill event
       # over its ring neighbours before the REINFORCE log-prob, so an advantage

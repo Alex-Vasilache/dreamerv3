@@ -852,6 +852,82 @@ class TestManagerRingHead:
     assert int(np.asarray(params['manager_pol/out/kernel']).shape[-1]) == L * DIM
     assert 'manager_pol/logit_scale' in params
 
+  @staticmethod
+  def _even_line(classes=8, dim=8):
+    """The arrangement the SOM neighbourhood term drives toward."""
+    return np.concatenate(
+        [np.linspace(-1, 1, classes)[:, None], np.zeros((classes, dim - 1))], -1)
+
+  def _entropy_at(self, scale, spread, seed=0, classes=8, dim=8,
+                  book=None, mode='std'):
+    """Normalized entropy of the head's logit rule, built from raw arrays.
+
+    Mirrors ManagerRingHead.__call__'s logit rule rather than running the
+    module, so the codebook geometry and the position of the trunk's point can
+    be set exactly. `spread` is how far the point sits from the codebook
+    centroid, in codebook radii.
+    """
+    rng = np.random.default_rng(seed)
+    e = rng.normal(0, 1, (classes, dim)) if book is None else np.asarray(book)
+    e = e - e.mean(0)
+    radius = np.linalg.norm(e, axis=-1).mean()
+    v = spread * radius * rng.normal(0, 1, (4096, e.shape[-1]))
+    d = ((v[:, None, :] - e[None]) ** 2).sum(-1)
+    if mode == 'std':
+      den = np.maximum(d.std(-1, keepdims=True), 1e-3 * d.mean(-1, keepdims=True))
+    else:
+      den = d.mean(-1, keepdims=True)
+    logits = -scale * d / (den + 1e-8)
+    p = np.exp(logits - logits.max(-1, keepdims=True))
+    p /= p.sum(-1, keepdims=True)
+    return float(np.mean(-(p * np.log(p + 1e-12)).sum(-1)) / np.log(e.shape[0]))
+
+  @pytest.mark.parametrize('book', ['random', 'line'])
+  def test_std_normalization_is_less_position_dependent_than_mean(self, book):
+    # Why the head divides distances by their standard deviation and not their
+    # mean. Softmax is shift-invariant, so entropy is set by the SPREAD of the
+    # logits, and dividing by the std pins that spread to `scale`. Dividing by
+    # the mean leaves it depending on where the trunk's point sits, since a
+    # point near the codebook centroid is about equally far from every entry.
+    # Neither is fully invariant -- this asserts the ordering, not perfection.
+    b = None if book == 'random' else self._even_line()
+    spreads = (0.5, 1.0, 2.0, 4.0)
+    rng_ = lambda m: (lambda v: max(v) - min(v))(
+        [self._entropy_at(4.5, s, book=b, mode=m) for s in spreads])
+    std_range, mean_range = rng_('std'), rng_('mean')
+    assert std_range < 0.7 * mean_range, (std_range, mean_range)
+
+  def test_the_default_scale_starts_at_or_below_the_entropy_target(self):
+    # scale_init has to place the head at or BELOW the 0.5 target on its own.
+    # `scale` gets gradient only from REINFORCE and barely moves (5.000 ->
+    # 5.008 over 100k steps in e483), and the entropy adapter only ever raises
+    # entropy -- when entropy is above target it shrinks to its floor. Starting
+    # below is the only mis-specification anything can correct.
+    head, dec, params, x = self._head()
+    init = float(head.scale_init)
+    for book, name in ((self._even_line(), 'even line'), (None, 'random')):
+      ent = self._entropy_at(init, 1.0, book=book)
+      assert ent <= 0.52, (name, init, ent)
+      assert ent > 0.05, (name, init, ent)   # not collapsed to one-hot either
+
+  def test_scale_is_monotone_in_entropy(self):
+    ents = [self._entropy_at(s, 1.0) for s in (1.0, 2.0, 4.5, 10.0, 25.0)]
+    assert all(a > b for a, b in zip(ents, ents[1:])), ents
+
+  def test_a_collapsed_codebook_gives_a_uniform_policy_not_a_nan(self):
+    # All entries equal -> all distances equal -> std 0. The floor at 1e-3 of
+    # the mean keeps the division finite, and equal logits are uniform.
+    dim, classes = 8, 8
+    e = np.zeros((classes, dim))
+    v = np.random.default_rng(0).normal(0, 1, (256, dim))
+    d = ((v[:, None, :] - e[None]) ** 2).sum(-1)
+    den = np.maximum(d.std(-1, keepdims=True), 1e-3 * d.mean(-1, keepdims=True))
+    logits = -4.5 * d / (den + 1e-8)
+    assert np.isfinite(logits).all()
+    p = np.exp(logits - logits.max(-1, keepdims=True))
+    p /= p.sum(-1, keepdims=True)
+    np.testing.assert_allclose(p, 1.0 / classes, rtol=1e-5)
+
   def test_advertises_its_entropy_range_like_the_director_head(self):
     # e478's failure: losses.imag_loss_mgr skips any head missing these two
     # attributes, silently, so the entropy adapter never ran and the policy
