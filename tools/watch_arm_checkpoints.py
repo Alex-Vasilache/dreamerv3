@@ -43,6 +43,10 @@ REF = {
 
 # A manager that has found nothing at all sits here. Both failed smoothing arms
 # were at ~1e-5 for their entire runs; working arms pass 1e-4 well before 100k.
+# Averaging window, in logged rows. Metrics land about every 5k steps, so 100
+# rows is roughly 500k steps. Override with --window.
+WINDOW = 100
+
 DEAD_MGR_REWARD = 5e-5
 
 # The level alone does not separate them: e479 was at 5.02e-5 at 200k, just over
@@ -79,24 +83,43 @@ def load(path):
   return rows
 
 
-def at_step(rows, key, step, window=30_000):
-  """Last value of `key` at or before `step`, within `window`."""
+def at_step(rows, key, step, n=WINDOW, stale=30_000):
+  """Mean of the last `n` logged values of `key` at or before `step`.
+
+  A single logged value is not a usable read of these runs: hopper score swings
+  5x between adjacent checkpoints (the reference run read 157, then 53, then
+  255 at 500k/750k/1M), and every ranking taken off single points during this
+  session had to be retracted. Metrics are logged about every 5k steps, so the
+  default window covers roughly 500k steps.
+
+  Returns None if the newest row is more than `stale` steps before `step`, so a
+  stalled or not-yet-started run reads as missing rather than as its last value.
+  """
+  vals = [(r['step'], r[key]) for r in rows if key in r and r['step'] <= step]
+  if not vals or step - vals[-1][0] > stale:
+    return None
+  window = [v for _, v in vals[-n:]]
+  return sum(window) / len(window)
+
+
+def window_span(rows, key, step, n=WINDOW):
+  """(first_step, last_step, count) actually covered by `at_step`."""
   vals = [(r['step'], r[key]) for r in rows if key in r and r['step'] <= step]
   if not vals:
     return None
-  s, v = vals[-1]
-  return v if step - s <= window else None
+  used = vals[-n:]
+  return used[0][0], used[-1][0], len(used)
 
 
-def mean_recent(rows, key, step, n=20):
+def mean_recent(rows, key, step, n=WINDOW):
   vals = [r[key] for r in rows if key in r and r['step'] <= step]
   return sum(vals[-n:]) / len(vals[-n:]) if vals else None
 
 
-def report(tag, step, rows, blocks, classes, target):
+def report(tag, step, rows, blocks, classes, target, n=WINDOW):
   import math
   maxent = blocks * math.log(classes)
-  g = lambda k: at_step(rows, k, step)
+  g = lambda k: at_step(rows, k, step, n)
   ent = g('train/mgr_ent/skill')
   entn = g('train/mgr_ent_norm_skill_mean')
   if entn is None and ent is not None:
@@ -105,10 +128,10 @@ def report(tag, step, rows, blocks, classes, target):
   mult = g('train/mgr_actent_skill_scale_mean')
   # Smoothed: mgr_extr_rew is noisy enough per-row that a single sample can
   # straddle the threshold either way.
-  rew = mean_recent(rows, 'train/mgr_extr_rew', step, n=5)
+  rew = mean_recent(rows, 'train/mgr_extr_rew', step, n)
   rew_early = mean_recent(
-      rows, 'train/mgr_extr_rew', max(step // 4, 20_000), n=5)
-  score = mean_recent(rows, 'episode/score', step)
+      rows, 'train/mgr_extr_rew', max(step // 4, 20_000), n)
+  score = mean_recent(rows, 'episode/score', step, n)
   wkr = g('train/wkr_goal_rew')
   perp = g('train/goal/perplexity')
   used = g('train/goal/used_frac')
@@ -123,7 +146,7 @@ def report(tag, step, rows, blocks, classes, target):
                  else 'missing'))
   checks.append(('ent_ctrl', mult is not None and mult < 10.0,
                  f'multiplier={mult:.3g}' if mult is not None else 'missing'))
-  rew_half = mean_recent(rows, 'train/mgr_extr_rew', step // 2, n=5)
+  rew_half = mean_recent(rows, 'train/mgr_extr_rew', step // 2, n)
   if rew is None or rew_early is None:
     checks.append(('mgr_reward', False, 'missing'))
   else:
@@ -161,7 +184,7 @@ def report(tag, step, rows, blocks, classes, target):
   # arms. Pass on EITHER a healthy level or a codebook still filling up; fail
   # only when it is both low and no longer moving, which is what the ring
   # collapse looked like (1.66, 1.49, 1.60, 1.81 over 25k-100k, then flat).
-  perp_half = at_step(rows, 'train/goal/perplexity', step // 2)
+  perp_half = at_step(rows, 'train/goal/perplexity', step // 2, n)
   if perp is None or used is None:
     checks.append(('codebook', False, 'missing'))
   else:
@@ -172,7 +195,12 @@ def report(tag, step, rows, blocks, classes, target):
     checks.append(('codebook', (used > 0.9 and perp > 5.5) or rising,
                    detail + '  [want >5.5, or still rising]'))
 
-  out = [f'=== {tag} @ {step // 1000}k steps ===']
+  span = window_span(rows, 'train/goal/perplexity', step, n)
+  hdr = f'=== {tag} @ {step // 1000}k steps ==='
+  if span:
+    hdr += (f'  [means over {span[2]} logs, '
+            f'{span[0] // 1000}k-{span[1] // 1000}k]')
+  out = [hdr]
   for name, ok, detail in checks:
     out.append(f'  [{"PASS" if ok else "FAIL"}] {name:<11} {detail}')
   ref = REF.get(step, {})
@@ -193,6 +221,8 @@ def main():
   ap.add_argument('--classes', type=int, default=8)
   ap.add_argument('--target', type=float, default=0.5)
   ap.add_argument('--poll', type=int, default=180)
+  ap.add_argument('--window', type=int, default=WINDOW,
+                  help='averaging window in logged rows (~5k steps each)')
   ap.add_argument('--once', action='store_true')
   args = ap.parse_args()
 
@@ -209,7 +239,8 @@ def main():
     cur = max((r['step'] for r in rows), default=0)
     while pending and cur >= pending[0]:
       step = pending.pop(0)
-      text, _ = report(args.tag, step, rows, args.blocks, args.classes, args.target)
+      text, _ = report(args.tag, step, rows, args.blocks, args.classes,
+                       args.target, args.window)
       print(text, flush=True)
     if args.once:
       if pending:
