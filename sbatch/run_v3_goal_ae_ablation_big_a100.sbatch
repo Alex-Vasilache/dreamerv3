@@ -100,6 +100,7 @@ CONFIGS=$CONFIGS
 TASK=$TASK
 ARM=$ARM SEED=$SEED
 SIZE=BIG IMAGE=64x64 IMAG=$IMAG_LENGTH BATCH=16x64 TRAIN_RATIO=64 CONV=native
+COMMIT_SCALE=${COMMIT_SCALE:-default} SOM_SCALE=${SOM_SCALE:-default}
 RECIPE=director MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W
 STRUCT_W=0.0 STRUCT_ADAPT=False GOAL_SOFT_REUSE_ADAPT=False GOAL_STRUCT_DIAG=$GOAL_STRUCT_DIAG
 CODE=$REPO GIT_COMMIT=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -129,6 +130,19 @@ AGENT_FLAGS=(
   --agent.imag_length "$IMAG_LENGTH"
   --agent.report False
 )
+
+# Optional goal-AE weight overrides, appended only when set, so an arm can be
+# swept without a new config block. COMMIT_SCALE is the alpha of
+# motivation.tex's commitment term: at the SOM-VAE default of 1.0 that term
+# pulls the encoder toward the codebook harder than the reconstruction pushes
+# it to stay informative (measured gradient ratio 0.87 at initialization), and
+# the codebook collapses. 0.25 is the VQ-VAE commitment weight and gives 3.47.
+if [ -n "${COMMIT_SCALE:-}" ]; then
+  AGENT_FLAGS+=(--agent.goal_vq.commit_scale "$COMMIT_SCALE")
+fi
+if [ -n "${SOM_SCALE:-}" ]; then
+  AGENT_FLAGS+=(--agent.goal_vq.som_scale "$SOM_SCALE")
+fi
 
 # Self-requeue near walltime (USR1 arrives 600s before the limit): requeue keeps
 # the job id -> same RUN_DIR -> checkpoint resume. Wall-time TIMEOUT is terminal
