@@ -1,0 +1,6 @@
+exp	alpha	jobid	arm	task	seed
+e488	1.0	4676235	som_orig_line	dmc_hopper_hop	0
+e489	0.5	4676236	som_orig_line	dmc_hopper_hop	0
+e490	0.1	4676237	som_orig_line	dmc_hopper_hop	0
+e491	0.05	4676238	som_orig_line	dmc_hopper_hop	0
+e492	0.025	4676239	som_orig_line	dmc_hopper_hop	0
