@@ -2350,13 +2350,75 @@ non-declining `goal/struct_corr_hard`, and — if the confound is real — highe
 collapse watch (VQ's characteristic failure); `lip_bound_max` should *decrease* over
 training as the penalty pulls the trainable bounds down.
 
-| Exp | Task | Arm | Seed | Job ID |
-|---|---|---|---|---|
-| e415 | dmc_hopper_hop | som | 0 | 4675914 |
-| e416 | dmc_hopper_hop | lipvq | 0 | 4675915 |
-| e417 | dmc_hopper_hop | som_lipvq | 0 | 4675916 |
+| Exp | Task | Arm | Seed | Job ID | Status |
+|---|---|---|---|---|---|
+| e415 | dmc_hopper_hop | som | 0 | 4675914 → 4676001 | **cancelled 08-07** at 2.2M steps; return 1.7 @800k. Archived, `/work` cleared. Slot reused for e482 |
+| e416 | dmc_hopper_hop | lipvq | 0 | 4675915 → 4676002 | running |
+| e417 | dmc_hopper_hop | som_lipvq | 0 | 4675916 → 4676003 | running; **best arm**, return 181 @800k |
+| e420 | dmc_cartpole_swingup | som_lipvq | 0 | 4676047 | running |
+| e423 | dmc_acrobot_swingup | som_lipvq | 0 | 4676046 | running |
+| e426 | dmc_cheetah_run | som_lipvq | 0 | 4676045 | running |
+| e478 | dmc_hopper_hop | som_lipvq_mgr | 0 | 4676077 | **failed**, return 0 — see below |
+| e479 | dmc_hopper_hop | som_lipvq_smooth | 0 | 4676082 | **failed**, return 0 — see below |
+| e480 | dmc_hopper_hop | som_line | 0 | 4676120 | running (launched 08-06) |
+| e481 | dmc_hopper_hop | som_lipvq_line | 0 | 4676121 | running (launched 08-06) |
+| e482 | dmc_hopper_hop | som_lipvq_line_smooth | 0 | 4676133 | running (launched 08-07) |
 
-Wave 1 launched 2026-08-06 on `gpu-a100` (saion-gpu24/26).
+Wave 1 launched 2026-08-06 on `gpu-a100` (saion-gpu24/26). Job ids after `→` are
+relaunches following the STE and V100-NaN fixes; the earlier id's data is archived.
+
+#### Manager-side arms e478/e479 — both failed, for different reasons
+
+Neither result bears on the goal autoencoder: in both runs `wkr_goal_rew` (0.12–0.20)
+and the codebook (`used_frac` 1.0, perplexity 7.6/8) were normal. The manager never
+earned reward — `mgr_extr_rew` ≈ 3e-5 against e417's 0.07.
+
+- **e478 (`mgr_ring`, ManagerRingHead) — a wiring defect, not a test of the idea.**
+  `train/mgr_ent_loss` is **identically 0.0 at every step**: `losses.py` skips any head
+  lacking `minent`/`maxent` (`if not hasattr(inner, 'minent') ... continue`), which the
+  Director head sets on its output (`embodied/jax/heads.py:127-128`) and
+  `ManagerRingHead` does not. The entropy adapter therefore never ran, nothing held
+  entropy down, and it drifted 10.9 → **16.3 nats against a maximum of L·ln C = 16.64**
+  — a uniform policy for 1.6M steps. Fix is one line; the arm needs a rerun before the
+  distance-based-logits idea can be judged.
+- **e479 (`mgr_smooth: 0.25`) — the mechanism itself, at too large an α.** The adapter
+  did run and held entropy at 8.7 ≈ the 8.32 target, but `mgr_ent_loss` ran
+  −0.6 → −98 → **−420** against e417's −0.03: a multiplier ~1e4× the healthy value.
+  Cause: REINFORCE on a smoothed target pulls the policy toward the smoothing weights
+  `(1−2α, α, α)`. At α=0.25 that is `(0.5, 0.25, 0.25)`, whose normalized entropy is
+  `1.5·ln2 / 3·ln2` = **exactly 0.500** — precisely `manager_actent_target`. The floor
+  coincides with the setpoint, so the controller has no slack and integrates upward
+  without bound. Behaviourally worse: the manager's most confident reachable state puts
+  only half its mass on the chosen code, so **half of all executed goals were not the
+  goal the manager selected**, scrambling credit assignment at the source.
+  e482 reruns the mechanism at α=0.1 (floor 0.307 interior / 0.168 endpoint).
+
+#### Codebook topology: `ring` vs `line` (e480–e482)
+
+`goal_vq.topology` selects the SOM neighbourhood. A ring's wrap keeps its farthest pairs
+close, compressing the top of the code-distance scale: for C=8 an evenly spaced path has
+an adjacent-to-arbitrary distance ratio of **0.333** against a ring's **0.533**, so a
+one-block edit on a path can express finer gradations of goal distance. Endpoint entries
+have one neighbour instead of two; `vq.BlockCodebook.neighbor_mask` masks the missing
+term rather than substituting a zero vector as the official SOM-VAE does at its 2D grid
+edges (that adds `‖0 − sg[z_e]‖²`, pulling border entries toward the origin).
+
+`heads.smooth_skill_event` carries the same topology, because a ring kernel on a line
+would share REINFORCE credit between entries 0 and C−1 — the two the path places
+farthest apart. Endpoints there are **renormalized** (option (a)): the masked row sums to
+`1−α`, so dividing by the row sum gives `((1−2α)/(1−α), α/(1−α))`. This deliberately
+differs from the SOM-loss treatment, where masking without renormalizing simply leaves
+endpoint entries with less total pull; a log-prob target has no such freedom, it must sum
+to one. Consequence to watch: endpoint picks then sit under a looser entropy floor
+(0.168 vs 0.307 at α=0.1), so a quarter of the manager's classes are cheaper to commit
+to, which could bias it toward the ends of the line.
+
+| Exp | Arm | topology | mgr_smooth | Isolates |
+|---|---|---|---|---|
+| e417 | `som_lipvq` | ring | 0 | reference |
+| e480 | `som_line` | line | 0 | topology alone, vs the cancelled e415 |
+| e481 | `som_lipvq_line` | line | 0 | topology alone, vs e417 |
+| e482 | `som_lipvq_line_smooth` | line | 0.1 | credit smoothing on top of e481 |
 
 **Pre-launch validation.** 138 unit tests (`test_goal_lipschitz.py`, `test_goal_vq.py`,
 `test_goal_ae.py`) and 45 agent-level integration tests (`test_goal_ae_agent.py`), plus
