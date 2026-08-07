@@ -36,6 +36,11 @@ def main():
   ap.add_argument('--ref', default=None, help='reference arm, listed last')
   ap.add_argument('--window', type=int, default=100)
   ap.add_argument('--labels', default='', help='comma-separated, matching tags')
+  ap.add_argument('--steps', type=int, nargs='+', default=None,
+                  help='trajectory mode: report the sliding-window mean at each '
+                       'of these steps, so arms can be compared over time')
+  ap.add_argument('--metrics', nargs='+', default=['score', 'codes'],
+                  help='which columns to show trajectories for')
   args = ap.parse_args()
 
   tags = list(args.tags) + ([args.ref] if args.ref else [])
@@ -71,7 +76,29 @@ def main():
       print(f'  {t + " " + lab:<26}{s // 1000:>6}k' + ''.join(cells))
 
   print(f'All values are means over the last {args.window} logged rows '
-        f'(~{args.window * 5}k steps).')
+        f'(~{args.window * 5}k steps), a window sliding with each column.')
+
+  if args.steps:
+    for name, key in COLS:
+      if name not in args.metrics:
+        continue
+      print(f'\n{name.upper()}  (sliding mean, window ~{args.window * 5}k steps)')
+      print(f'  {"arm":<26}' + ''.join(f'{s // 1000}k'.rjust(9)
+                                       for s in args.steps))
+      for t in tags:
+        if t not in data:
+          continue
+        rows, mx = data[t]
+        cells = []
+        for st in args.steps:
+          v = (None if st > mx else
+               W.at_step(rows, key, st, args.window, stale=60_000))
+          cells.append('        -' if v is None
+                       else FMT[name].format(v).rjust(9))
+        lab = labels.get(t, '')
+        print(f'  {t + " " + lab:<26}' + ''.join(cells))
+    print('\ncodes = perplexity of the code distribution, out of 8.')
+    return
   table(f'AT A COMMON STEP ({common // 1000}k) -- columns comparable',
         lambda mx: common)
   table('AT EACH ARM\'S OWN LATEST STEP -- columns NOT comparable',
