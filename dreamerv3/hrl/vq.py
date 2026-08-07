@@ -51,7 +51,8 @@ def _agg(x, dims, impl):
   raise NotImplementedError(impl)
 
 
-def vq_losses(z_e, z_q, neighbors=None, agg='sum', nb_mask=None):
+def vq_losses(z_e, z_q, neighbors=None, agg='sum', nb_mask=None,
+              commit_joint=False):
   """The VQ / SOM quadratic terms, reduced to the leading batch dims.
 
   Args:
@@ -63,14 +64,29 @@ def vq_losses(z_e, z_q, neighbors=None, agg='sum', nb_mask=None):
       ``line`` topology, whose end entries have a neighbor on one side only.
     agg: ``sum`` over ``(L, D)`` per ``motivation.tex``'s ``sum_l ||.||^2``, or
       ``mean`` as in both reference implementations.
+    commit_joint: emit the original SOM-VAE's SINGLE commitment term
+      ``alpha ||z_e - z_q||^2``, with no stop-gradient on either side, instead
+      of the equal-weighted ``codebook + commit`` split. The two are gradient-
+      identical -- the split sends ``2(z_e - z_q)`` to ``z_e`` from ``commit``
+      and ``2(z_q - z_e)`` to the codebook from ``codebook``, which is exactly
+      what the joint term's two partial derivatives are -- so this changes the
+      logged value (the split double-counts it) but not the optimization. It
+      exists so an arm can be literally the equation in the source paper.
+      Reported under ``commit``, with ``codebook`` held at zero.
 
   Returns a dict of arrays shaped like the leading batch dims of ``z_e``.
   """
   assert z_e.shape == z_q.shape, (z_e.shape, z_q.shape)
-  out = {
-      'codebook': _agg(jnp.square(sg(z_e) - z_q), 2, agg),
-      'commit': _agg(jnp.square(z_e - sg(z_q)), 2, agg),
-  }
+  if commit_joint:
+    out = {
+        'codebook': jnp.zeros(z_e.shape[:-2], f32),
+        'commit': _agg(jnp.square(z_e - z_q), 2, agg),
+    }
+  else:
+    out = {
+        'codebook': _agg(jnp.square(sg(z_e) - z_q), 2, agg),
+        'commit': _agg(jnp.square(z_e - sg(z_q)), 2, agg),
+    }
   if neighbors is None:
     out['som'] = jnp.zeros(z_e.shape[:-2], f32)
   else:

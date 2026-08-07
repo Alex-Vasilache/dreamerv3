@@ -151,6 +151,11 @@ defaults:
       # vector. A line spans a wider range of code distances (ideal
       # adjacent/arbitrary ratio 0.333 at C=8, against a ring's 0.533).
       topology: ring            # ring | line
+      # Emit the original SOM-VAE's single commitment term alpha*||z_e - z_q||^2
+      # with no stop-gradients, instead of the equal-weighted codebook+commit
+      # split. Gradient-identical to the split (only the logged value differs);
+      # exists so an arm can be literally the equation in the source paper.
+      commit_joint: False
       codebook_scale: 1.0       # ||sg[z_e] - z_q||^2
       commit_scale: 1.0         # ||z_e - sg[z_q]||^2  (equal weights == the
                                 # single alpha term in motivation.tex)
@@ -595,6 +600,30 @@ goal_som_lipvq_mgr:
 # are genuinely nearby. Pairs with topology: line, whose adjacent-to-arbitrary
 # distance ratio (0.333 vs a ring's 0.533) gives the distances a wider range to
 # express.
+# The original SOM-VAE loss, exactly as written in motivation.tex Eq. 12, on an
+# open-path codebook:
+#
+#   ||x - dec(e_k)||^2 + ||x - dec(z_e)||^2
+#     + alpha ||z_e - e_k||^2
+#     + beta  sum_{e' in N(e_k)} ||e' - sg[z_e]||^2
+#
+# No straight-through estimator (ste off), the commitment term as a single
+# undivided term (commit_joint), no Lipschitz. alpha=1.0, beta=0.9 are the
+# official SOM-VAE weights.
+#
+# The ring version of this ran once as e415's first launch (job 4675914) and
+# collapsed over 577k steps: perplexity 1.57 -> 1.28 of a possible 8, used_frac
+# 0.32 -> 0.41, and reconstruction error rising 5.1 -> 35.7. This arm asks
+# whether the line topology changes that.
+goal_som_orig_line:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: False, topology: line, ste: 'off', commit_joint: True}
+
 goal_som_lipvq_line_mgr:
   agent:
     goal_ae_impl: vq

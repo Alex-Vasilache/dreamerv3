@@ -866,6 +866,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         som=bool(cfg.som), ste=ste, agg=str(cfg.agg),
         codebook_scale=float(cfg.codebook_scale),
         commit_scale=float(cfg.commit_scale),
+        commit_joint=bool(_g(cfg, 'commit_joint', False)),
         som_scale=float(cfg.som_scale),
         lip_scale=float(cfg.lip_scale), lip_impl=str(cfg.lip_impl))
 

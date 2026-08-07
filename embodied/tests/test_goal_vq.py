@@ -576,3 +576,59 @@ class TestLineTopology:
     assert ratio(line) < ring_ratio
     np.testing.assert_allclose(ratio(line), 1 / 3, rtol=1e-6)
     np.testing.assert_allclose(ring_ratio, 0.533, atol=5e-3)
+
+
+class TestJointCommitment:
+  """The original SOM-VAE's single ``alpha ||z_e - e_k||^2`` term."""
+
+  def _pair(self, seed=0):
+    rng = np.random.default_rng(seed)
+    z_e = jnp.asarray(rng.normal(0, 1, (2, 3, L, D)), f32)
+    z_q = jnp.asarray(rng.normal(0, 1, (2, 3, L, D)), f32)
+    return z_e, z_q
+
+  def test_value_is_the_undivided_squared_distance(self):
+    z_e, z_q = self._pair()
+    out = vq.vq_losses(z_e, z_q, commit_joint=True)
+    np.testing.assert_allclose(
+        np.asarray(out['commit']),
+        np.asarray(jnp.square(z_e - z_q).sum((-2, -1))), rtol=1e-5)
+    np.testing.assert_array_equal(np.asarray(out['codebook']), 0.0)
+
+  def test_gradients_are_identical_to_the_equal_weighted_split(self):
+    # The claim that lets us call the split faithful to the source paper. The
+    # split sends 2(z_e - z_q) to z_e and 2(z_q - z_e) to the codebook, which
+    # is exactly the joint term's two partial derivatives.
+    z_e, z_q = self._pair(1)
+    joint = lambda a, b: vq.vq_losses(a, b, commit_joint=True)['commit'].sum()
+    split = lambda a, b: (lambda o: (o['codebook'] + o['commit']).sum())(
+        vq.vq_losses(a, b, commit_joint=False))
+    for argnum in (0, 1):
+      gj = np.asarray(jax.grad(joint, argnum)(z_e, z_q))
+      gs = np.asarray(jax.grad(split, argnum)(z_e, z_q))
+      np.testing.assert_allclose(gj, gs, rtol=1e-5, atol=1e-6)
+
+  def test_the_split_double_counts_the_logged_value(self):
+    # Same gradients, but the split's reported number is twice the joint's.
+    z_e, z_q = self._pair(2)
+    j = vq.vq_losses(z_e, z_q, commit_joint=True)
+    s = vq.vq_losses(z_e, z_q, commit_joint=False)
+    np.testing.assert_allclose(
+        np.asarray(s['codebook'] + s['commit']),
+        2 * np.asarray(j['commit']), rtol=1e-5)
+
+  def test_the_joint_term_moves_both_sides(self):
+    # No stop-gradient anywhere: unlike either half alone, it is nonzero in
+    # both arguments.
+    z_e, z_q = self._pair(3)
+    joint = lambda a, b: vq.vq_losses(a, b, commit_joint=True)['commit'].sum()
+    for argnum in (0, 1):
+      g = np.asarray(jax.grad(joint, argnum)(z_e, z_q))
+      assert np.abs(g).max() > 1e-6, argnum
+
+  def test_the_som_term_is_untouched_by_the_flag(self):
+    z_e, z_q = self._pair(4)
+    nb = jnp.asarray(np.random.default_rng(5).normal(0, 1, (2, 3, L, 2, D)), f32)
+    a = vq.vq_losses(z_e, z_q, nb, commit_joint=True)['som']
+    b = vq.vq_losses(z_e, z_q, nb, commit_joint=False)['som']
+    np.testing.assert_allclose(np.asarray(a), np.asarray(b), rtol=1e-6)

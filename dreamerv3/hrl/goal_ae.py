@@ -262,7 +262,7 @@ class GoalVQDecoder(nj.Module):
 def vq_goal_loss(
     enc, dec, deter, bdims, som=False, ste=None, agg='sum',
     codebook_scale=1.0, commit_scale=1.0, som_scale=0.9, lip_scale=0.03,
-    lip_impl='logprod', rec_scale=1.0, z_e=None):
+    lip_impl='logprod', rec_scale=1.0, z_e=None, commit_joint=False):
   """Assemble the full goal-autoencoder objective for the VQ arms.
 
   Returns ``(loss, metrics)`` where ``loss`` has the leading batch dims of
@@ -274,7 +274,8 @@ def vq_goal_loss(
       + gamma L_Lipschitz
 
   with the single ``alpha`` term expressed as the equal-weighted
-  ``codebook + commit`` split (identical gradients; see ``hrl.vq``). The second
+  ``codebook + commit`` split (identical gradients; see ``hrl.vq``), or as the
+  literal single term when ``commit_joint=True``. The second
   reconstruction and the neighborhood term are the SOM arm only; the Lipschitz
   penalty is nonzero only when the networks were built with ``lip=True``.
 
@@ -314,7 +315,8 @@ def vq_goal_loss(
 
   neighbors = dec.codebook.neighbors(quant['ids']) if som else None
   nb_mask = dec.codebook.neighbor_mask(quant['ids']) if som else None
-  terms = vq_losses(z_e, quant['z_q'], neighbors, agg, nb_mask=nb_mask)
+  terms = vq_losses(z_e, quant['z_q'], neighbors, agg, nb_mask=nb_mask,
+                    commit_joint=commit_joint)
   loss = (
       rec_scale * rec
       + codebook_scale * terms['codebook']
