@@ -2420,6 +2420,58 @@ to, which could bias it toward the ends of the line.
 | e481 | `som_lipvq_line` | line | 0 | topology alone, vs e417 |
 | e482 | `som_lipvq_line_smooth` | line | 0.1 | credit smoothing on top of e481 |
 
+#### e485–e494 · The original SOM-VAE loss, and a commitment-weight sweep
+
+New arms run `motivation.tex` Eq. 12 **as written**: both reconstructions, **no
+straight-through estimator**, the commitment term as a single undivided
+`α‖z_e − e_k‖²` (`goal_vq.commit_joint`), open-path codebook, and `lip` on or off.
+`commit_joint` is gradient-identical to the equal-weighted `codebook + commit` split in
+both arguments (test-confirmed); the split merely double-counts the logged value. The
+substantive difference from e415–e487's arms is the missing estimator.
+
+`COMMIT_SCALE` / `SOM_SCALE` on `run_v3_goal_ae_ablation_big_a100.sbatch` sweep the
+weights without new config blocks, and are recorded in `job.env`.
+
+| Exp | Job | α | Lipschitz | Note |
+|---|---|---|---|---|
+| e485 | 4676210 | 1.0 | no | cancelled after ~1h in favour of the α sweep |
+| e486 | 4676231 | 0.25 | no | running |
+| e487 | 4676234 | 0.25 | **yes** | running |
+| e488 | 4676235 | 1.0 | no | running |
+| e489 | 4676236 | 0.5 | no | running |
+| e490 | 4676237 | 0.1 | no | running |
+| e491 | — | 0.05 | no | cancelled before starting; see below |
+| e493 | — | adaptive | no | cancelled before starting; see below |
+| e494 | 4676310 | 2.0 | no | queued |
+
+**Established: the collapse is a property of the ring, not of α.** e415's first launch
+(job 4675914, ring, α=1.0, no estimator) sat at perplexity 1.81 of a possible 8 at 100k
+and never recovered, ending at 1.28 over 577k steps with reconstruction error rising
+5.1 → 35.7. The same configuration on a **line** reaches 5.14 at 100k and keeps climbing
+(e488). Ring 1.81 against line 4.0–5.1 is the one large, stable effect in this group.
+
+**Not established: that α matters at all.** Perplexity at 100k on the line, for the four
+α values run, is 4.96 (α=0.1), 4.03 (0.25), 4.75 (0.5), 5.14 (1.0) — a spread of ~1.1
+with an ordering that shuffles between the 50k, 75k and 100k readings. These are single
+seeds and the differences look like run-to-run variation. Two intermediate reports in
+this session called a monotone trend from three of these points before the fourth broke
+it; that reading was premature.
+
+**The gradient-ratio argument that motivated the sweep did not predict any of this.**
+Measured max-gradient on the encoder at initialization gave commitment/reconstruction
+ratios of 0.87 (α=1.0), 1.73 (0.5), 3.47 (0.25), 8.65 (0.1), predicting collapse at
+α=1.0 alone. α=1.0 is in fact the healthiest of the four on a line. An
+initialization-time balance is not the mechanism.
+
+**`goal_vq.commit_adapt` (added, disabled).** An `AutoAdapt` on α targeting codebook
+perplexity — perplexity and not `used_frac`, since `used_frac` sits at 0.99–1.00 in
+healthy runs and only moves once the codebook is dead. It shipped with the sign that
+lowers α when perplexity is below target, which assumes higher α collapses the codebook;
+that assumption is reversed on a line, where the controller would drive α to its floor.
+Disabled by default, with the reasoning recorded at the config key and in
+`TestCommitAdapt`, until the fixed sweep settles the shape. e493 was cancelled rather
+than run with a sign known to be wrong for its topology.
+
 **Pre-launch validation.** 138 unit tests (`test_goal_lipschitz.py`, `test_goal_vq.py`,
 `test_goal_ae.py`) and 45 agent-level integration tests (`test_goal_ae_agent.py`), plus
 an end-to-end smoke run of all five arms for 3000 steps through the real env/replay loop
