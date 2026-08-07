@@ -123,6 +123,7 @@ def report(tag, step, rows, blocks, classes, target):
                  else 'missing'))
   checks.append(('ent_ctrl', mult is not None and mult < 10.0,
                  f'multiplier={mult:.3g}' if mult is not None else 'missing'))
+  rew_half = mean_recent(rows, 'train/mgr_extr_rew', step // 2, n=5)
   if rew is None or rew_early is None:
     checks.append(('mgr_reward', False, 'missing'))
   else:
@@ -132,6 +133,24 @@ def report(tag, step, rows, blocks, classes, target):
         rew > DEAD_MGR_REWARD and growth >= MIN_MGR_REWARD_GROWTH,
         f'mgr_extr_rew={rew:.3g} (was {rew_early:.3g}, {growth:.1f}x; '
         f'need >{DEAD_MGR_REWARD:.0e} and >{MIN_MGR_REWARD_GROWTH:.0f}x)'))
+    # Growth measured from step/4 is flattered by a low starting point: e484
+    # scored 382x at 200k while its last 50k were flat (1.003x). Check the most
+    # recent half separately -- e480, the slow starter that later took off, grew
+    # 1.3x over that window at 200k and 6x by 300k.
+    if rew_half is not None and rew_half > 0:
+      recent = rew / rew_half
+      checks.append((
+          'mgr_not_stalled', recent >= 1.25,
+          f'{recent:.2f}x over the last half ({rew_half:.3g} -> {rew:.3g})'))
+
+  # The entropy multiplier relative to the working controls. A large value means
+  # the entropy term is competing with REINFORCE for the manager's gradient:
+  # e479 sat at 1.46 here at 200k and railed at 100 by 500k, against 0.0005 to
+  # 0.003 for the arms that learned.
+  if mult is not None:
+    checks.append((
+        'ent_ctrl_quiet', mult < 0.5,
+        f'multiplier={mult:.3g} (controls run 5e-4 to 3e-3)'))
   checks.append(('codebook', used is not None and used > 0.5 and perp and perp > 2.0,
                  f'used_frac={used}, perplexity={perp:.3g}'
                  if used is not None and perp is not None else 'missing'))
