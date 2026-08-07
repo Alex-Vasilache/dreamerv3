@@ -852,6 +852,37 @@ class TestManagerRingHead:
     assert int(np.asarray(params['manager_pol/out/kernel']).shape[-1]) == L * DIM
     assert 'manager_pol/logit_scale' in params
 
+  def test_advertises_its_entropy_range_like_the_director_head(self):
+    # e478's failure: losses.imag_loss_mgr skips any head missing these two
+    # attributes, silently, so the entropy adapter never ran and the policy
+    # drifted to 16.3 of 16.64 nats over 1.6M steps. The guard is a hasattr on
+    # the UNWRAPPED output, so it has to survive the Agg wrapping.
+    head, dec, params, x = self._head()
+    out = nj.pure(lambda t: head(t, 2))(params, x)[1]
+    inner = _head_inner(out)
+    assert hasattr(inner, 'minent') and hasattr(inner, 'maxent')
+    assert inner.minent == 0.0
+    # Totals across the L blocks, matching MLPHead.onehot; imag_loss_mgr
+    # divides by L to get the per-block normalizer.
+    np.testing.assert_allclose(inner.maxent, L * np.log(C), rtol=1e-6)
+
+  def test_the_advertised_maximum_is_the_entropy_of_a_uniform_policy(self):
+    # maxent is only meaningful if a uniform policy actually attains it -- an
+    # off-by-L here would make the adapter chase the wrong setpoint without
+    # ever erroring.
+    head, dec, params, x = self._head()
+    out = nj.pure(lambda t: head(t, 2))(params, x)[1]
+    inner = _head_inner(out)
+    # Uniform logits pushed through the same Agg wrapping the head applies, so
+    # the comparison is against the summed-over-L quantity maxent claims to be.
+    uniform = outs.Agg(outs.OneHot(jnp.zeros((2, 3, L, C), f32)), 1, jnp.sum)
+    np.testing.assert_allclose(
+        np.asarray(uniform.entropy()).mean(), inner.maxent, rtol=1e-5)
+    # And the per-block entropy the adapter actually normalizes is maxent / L.
+    np.testing.assert_allclose(
+        np.asarray(_head_inner(uniform).entropy()).mean(), inner.maxent / L,
+        rtol=1e-5)
+
   def test_codebook_is_read_under_stop_gradient(self):
     # The codebook is shaped by the autoencoder objective alone; a REINFORCE
     # gradient reaching it would conflate the two.

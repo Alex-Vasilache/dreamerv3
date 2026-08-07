@@ -27,7 +27,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 export MUJOCO_GL=egl
 
 STEPS="${STEPS:-400}"
-ARMS="${ARMS:-director vq som lipvq som_lipvq som_lipvq_mgr som_lipvq_smooth som_line som_lipvq_line som_lipvq_line_smooth}"
+ARMS="${ARMS:-director vq som lipvq som_lipvq som_lipvq_mgr som_lipvq_smooth som_line som_lipvq_line som_lipvq_line_smooth som_lipvq_line_mgr}"
 BASE="${BASE:-/work/DoyaU/vasilache/work/smoke_goal_ae_j${SLURM_JOB_ID}}"
 mkdir -p "$BASE"
 
@@ -44,6 +44,7 @@ for arm in $ARMS; do
     som_line) cfg="goal_som_line" ;;
     som_lipvq_line) cfg="goal_som_lipvq_line" ;;
     som_lipvq_line_smooth) cfg="goal_som_lipvq_line_smooth" ;;
+    som_lipvq_line_mgr) cfg="goal_som_lipvq_line_mgr" ;;
   esac
   echo "=============== ARM=$arm (configs: debug $cfg) ==============="
   logdir="$BASE/$arm"

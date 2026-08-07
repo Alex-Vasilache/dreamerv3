@@ -318,3 +318,33 @@ class TestManagerRingHead:
     assert int(np.asarray(a.params[out]).shape[-1]) == L * dim, \
         (a.params[out].shape, L * dim)
     assert L * dim != L * C or dim == C   # guard: only meaningful if they differ
+
+  @pytest.mark.parametrize('arm', ['goal_som_lipvq_mgr', 'goal_som_lipvq_line_mgr'])
+  def test_the_entropy_regularizer_actually_reaches_this_head(self, arm):
+    # THE e478 test. That run went 1.6M steps with mgr_ent_loss identically 0.0
+    # because losses.imag_loss_mgr skips heads lacking minent/maxent without
+    # raising, so every other assertion here still passed while the manager
+    # was unregularized and drifted to a uniform policy. Checking the head
+    # builds and trains is not enough; the regularizer's OUTPUT has to move.
+    a = make_agent(arm)
+    mets = train_steps(a, steps=3)
+    assert 'mgr_ent_loss' in mets, sorted(mets)
+    assert float(mets['mgr_ent_loss']) != 0.0
+    assert np.isfinite(float(mets['mgr_ent_loss']))
+    # The adapter reports its own state only when it saw the head at all.
+    assert 'mgr_ent_norm_skill_mean' in mets, sorted(mets)
+    ent_norm = float(mets['mgr_ent_norm_skill_mean'])
+    assert 0.0 <= ent_norm <= 1.0, ent_norm
+
+  def test_the_director_head_and_the_ring_head_agree_on_the_entropy_scale(self):
+    # Both report mgr_ent_norm_skill_mean on the same 0-1 scale, so a target of
+    # 0.5 means the same thing in both arms and the comparison is meaningful.
+    ring = float(train_steps(make_agent('goal_som_lipvq_mgr'), steps=3)
+                 ['mgr_ent_norm_skill_mean'])
+    base = float(train_steps(make_agent('goal_som_lipvq'), steps=3)
+                 ['mgr_ent_norm_skill_mean'])
+    for v in (ring, base):
+      assert 0.0 <= v <= 1.0, (ring, base)
+    # Fresh heads start near uniform, so both should sit high; an L-sized
+    # discrepancy in maxent would show up as one of them near 1/L of the other.
+    assert abs(ring - base) < 0.35, (ring, base)

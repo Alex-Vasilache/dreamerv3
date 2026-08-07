@@ -581,6 +581,29 @@ goal_som_lipvq_mgr:
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: True, mgr_ring: True}
 
+# som+lipvq on an open path, with the distance-parameterized manager head.
+#
+# The alternative to mgr_smooth, and the one that survives the arithmetic.
+# Smoothing edits the CREDIT after the fact, independently per block, so the
+# weight landing on the code actually executed is (1-2a)^L: 17% at a=0.1, 0.4%
+# at a=0.25 (e479/e482 both returned 0). Reaching 90% needs a=0.0065, at which
+# each neighbour receives 0.65% -- no sharing left. There is no useful a.
+#
+# ManagerRingHead instead changes the POLICY CLASS: the trunk emits a point per
+# block and logits are negative squared distances to the codebook entries, so
+# the executed code keeps 100% of its credit and neighbours rise because they
+# are genuinely nearby. Pairs with topology: line, whose adjacent-to-arbitrary
+# distance ratio (0.333 vs a ring's 0.533) gives the distances a wider range to
+# express.
+goal_som_lipvq_line_mgr:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, topology: line, mgr_ring: True}
+
 # Line (open path) instead of a ring, no manager changes.
 goal_som_line:
   agent:

@@ -38,6 +38,7 @@ change. The encoder holds a reference to the same module instance.
 import jax
 import jax.numpy as jnp
 import ninjax as nj
+import numpy as np
 
 import embodied.jax.nets as nets
 import embodied.jax.outs as outs
@@ -427,7 +428,22 @@ class ManagerRingHead(nj.Module):
     # at any point in training. The mean is stop-gradiented: it sets the
     # temperature, it is not something the policy should optimize.
     dist = dist / (sg(dist.mean(-1, keepdims=True)) + 1e-8)
-    return _wrap_code_onehot(outs.OneHot(-self._scale() * dist, self.unimix))
+    code = outs.OneHot(-self._scale() * dist, self.unimix)
+    # The manager's entropy adapter skips, SILENTLY, any head that does not
+    # advertise its entropy range:
+    #
+    #     if not hasattr(inner, 'minent') or not hasattr(inner, 'maxent'):
+    #       continue                              # losses.imag_loss_mgr
+    #
+    # ``MLPHead.onehot`` sets them (embodied/jax/heads.py); this head did not,
+    # so it was dropped from the regularizer entirely. e478 ran 1.6M steps with
+    # ``mgr_ent_loss`` identically 0.0 and the skill entropy drifting to 16.3 of
+    # a maximum 16.64 nats -- a uniform manager, and no error anywhere. Both are
+    # TOTALS over the L blocks, matching ``MLPHead.onehot``'s ``outer *
+    # log(classes)``; ``imag_loss_mgr`` divides by L to normalize per block.
+    code.minent = 0.0
+    code.maxent = float(self.blocks * np.log(self.codebook.classes))
+    return _wrap_code_onehot(code)
 
   def _scale(self):
     shape = (self.blocks, 1) if self.per_block_scale else ()
