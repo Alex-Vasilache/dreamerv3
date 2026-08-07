@@ -156,11 +156,21 @@ def report(tag, step, rows, blocks, classes, target):
   # SOM-VAE plus Lipschitz, 3.9 for pure SOM-VAE at alpha=0.25, 1.8 at alpha=1.
   # An earlier threshold of 2.0 only caught the last of these and called a
   # half-dead codebook healthy.
-  checks.append((
-      'codebook',
-      used is not None and used > 0.9 and perp is not None and perp > 5.5,
-      f'used_frac={used:.3f}, perplexity={perp:.3g} (want >0.9 and >5.5)'
-      if used is not None and perp is not None else 'missing'))
+  # A fixed bar alone is the wrong test for the no-estimator arms, which sit at
+  # 4-5.5 and climb slowly rather than reaching the 6.4-7.6 of the estimator
+  # arms. Pass on EITHER a healthy level or a codebook still filling up; fail
+  # only when it is both low and no longer moving, which is what the ring
+  # collapse looked like (1.66, 1.49, 1.60, 1.81 over 25k-100k, then flat).
+  perp_half = at_step(rows, 'train/goal/perplexity', step // 2)
+  if perp is None or used is None:
+    checks.append(('codebook', False, 'missing'))
+  else:
+    rising = perp_half is not None and perp > 1.05 * perp_half
+    detail = f'used_frac={used:.3f}, perplexity={perp:.3g}'
+    if perp_half is not None:
+      detail += f' ({perp_half:.3g} at {step // 2000}k, {perp / perp_half:.2f}x)'
+    checks.append(('codebook', (used > 0.9 and perp > 5.5) or rising,
+                   detail + '  [want >5.5, or still rising]'))
 
   out = [f'=== {tag} @ {step // 1000}k steps ===']
   for name, ok, detail in checks:
