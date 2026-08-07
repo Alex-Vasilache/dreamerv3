@@ -14,6 +14,11 @@
 # cover) at `debug` scale for a few hundred steps, and checks that the new
 # train/goal/* metrics actually reach metrics.jsonl.
 #
+# --run.log_every 1 overrides the debug default of 5s. The 400-step loop can
+# finish inside one flush interval, so the metrics assertion below was passing
+# or failing on timing rather than on the arm: a healthy run would write zero
+# rows and be reported as FAIL.
+#
 #   sbatch sbatch/run_smoke_goal_ae_ablation.sbatch
 set -uo pipefail
 
@@ -22,7 +27,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 export MUJOCO_GL=egl
 
 STEPS="${STEPS:-400}"
-ARMS="${ARMS:-director vq som lipvq som_lipvq som_lipvq_mgr som_lipvq_smooth som_line som_lipvq_line}"
+ARMS="${ARMS:-director vq som lipvq som_lipvq som_lipvq_mgr som_lipvq_smooth som_line som_lipvq_line som_lipvq_line_smooth}"
 BASE="${BASE:-/work/DoyaU/vasilache/work/smoke_goal_ae_j${SLURM_JOB_ID}}"
 mkdir -p "$BASE"
 
@@ -38,6 +43,7 @@ for arm in $ARMS; do
     som_lipvq_smooth) cfg="goal_som_lipvq_smooth" ;;
     som_line) cfg="goal_som_line" ;;
     som_lipvq_line) cfg="goal_som_lipvq_line" ;;
+    som_lipvq_line_smooth) cfg="goal_som_lipvq_line_smooth" ;;
   esac
   echo "=============== ARM=$arm (configs: debug $cfg) ==============="
   logdir="$BASE/$arm"
@@ -47,6 +53,7 @@ for arm in $ARMS; do
     --task dmc_hopper_hop \
     --run.steps "$STEPS" \
     --run.envs 2 \
+    --run.log_every 1 \
     --jax.platform cuda \
     --jax.prealloc False \
     --logger.outputs jsonl \

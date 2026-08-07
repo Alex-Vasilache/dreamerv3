@@ -26,7 +26,7 @@ from .heads import (
     head_entropy_perdim_time,
     head_entropy_time,
     head_logp_time,
-    ring_smooth_event,
+    smooth_skill_event,
     manager_reinforce_policy,
     policy_time_slice,
 )
@@ -76,7 +76,7 @@ __all__ = [
     'head_entropy_perdim_time',
     'head_entropy_time',
     'head_logp_time',
-    'ring_smooth_event',
+    'smooth_skill_event',
     'imag_loss',
     'imag_loss_mgr',
     'imag_loss_wkr',

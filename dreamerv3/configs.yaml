@@ -611,6 +611,24 @@ goal_som_lipvq_smooth:
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: True, mgr_smooth: 0.25}
 
+# som+lipvq on an open path, with the REINFORCE credit smoothed over the path's
+# neighbours (endpoints renormalized -- see heads.smooth_skill_event).
+#
+# mgr_smooth is 0.1, not the 0.25 of goal_som_lipvq_smooth. The smoothed target
+# (1-2a, a, a) has a normalized entropy the policy cannot go below; at a=0.25
+# that floor is exactly 0.500, which is also manager_actent_target, so the
+# entropy controller had no headroom and its multiplier ran to ~1e4 times the
+# healthy value (e479). a=0.1 puts the floor at 0.307 interior / 0.168 endpoint
+# while still sharing a tenth of the credit with each neighbour.
+goal_som_lipvq_line_smooth:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, topology: line, mgr_smooth: 0.1}
+
 size12m: &size12m
   .*\.rssm: {deter: 2048, hidden: 256, classes: 16}
   .*\.depth: 16

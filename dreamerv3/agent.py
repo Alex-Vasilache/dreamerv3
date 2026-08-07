@@ -272,6 +272,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.manager_sample_freq = config.manager_sample_freq
       self._mgr_smooth = float(
           _vqcfg(config, 'mgr_smooth', 0.0)) if self.goal_ae_impl == 'vq' else 0.0
+      # The smoothing kernel follows the codebook's own topology: a ring kernel
+      # on a line would credit entries 0 and C-1 to each other.
+      self._mgr_smooth_topology = str(
+          _vqcfg(config, 'topology', 'ring')) if self.goal_ae_impl == 'vq' else 'ring'
 
     if self.use_hrl:
       # Separate extrinsic and exploratory value heads (+ EMA targets).
@@ -1339,6 +1343,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         dur_min=self.goal_duration_min,
         trunc_mask=trunc_mask if self.variable_goal_length else None,
         mgr_smooth=self._mgr_smooth,
+        mgr_smooth_topology=self._mgr_smooth_topology,
         trunc_policy=self.goal_duration_truncated_policy,
         **kwargs_mgr)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})

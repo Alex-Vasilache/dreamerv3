@@ -902,10 +902,10 @@ class TestRingSmoothedCredit:
     # The arm must differ from goal_som_lipvq by this one number, so alpha=0
     # has to reproduce the standard estimator bit for bit.
     e = self._event(np.random.default_rng(0).integers(0, self.RC, (4, 3, L)))
-    np.testing.assert_array_equal(hrl_heads.ring_smooth_event(e, 0.0), e)
+    np.testing.assert_array_equal(hrl_heads.smooth_skill_event(e, 0.0), e)
 
   def test_weights_sum_to_one_and_land_on_the_ring_neighbours(self):
-    got = np.asarray(hrl_heads.ring_smooth_event(
+    got = np.asarray(hrl_heads.smooth_skill_event(
         self._event(np.array([[3]])), 0.25))[0, 0]
     np.testing.assert_allclose(got.sum(), 1.0, rtol=1e-6)
     np.testing.assert_allclose(got[[2, 3, 4]], [0.25, 0.5, 0.25], rtol=1e-6)
@@ -914,12 +914,12 @@ class TestRingSmoothedCredit:
   def test_wraps_around_the_ring(self):
     C_ = self.RC
     for k, lo, hi in ((0, C_ - 1, 1), (C_ - 1, C_ - 2, 0)):
-      got = np.asarray(hrl_heads.ring_smooth_event(
+      got = np.asarray(hrl_heads.smooth_skill_event(
           self._event(np.array([[k]])), 0.25))[0, 0]
       np.testing.assert_allclose(got[[lo, k, hi]], [0.25, 0.5, 0.25], rtol=1e-6)
 
   def test_blocks_are_smoothed_independently(self):
-    got = np.asarray(hrl_heads.ring_smooth_event(
+    got = np.asarray(hrl_heads.smooth_skill_event(
         self._event(np.array([[0, 4]])), 0.25))[0]
     np.testing.assert_allclose(
         got[0][[self.RC - 1, 0, 1]], [0.25, 0.5, 0.25], rtol=1e-6)
@@ -935,10 +935,122 @@ class TestRingSmoothedCredit:
     ev = self._event(ids)
     def obj(logits, alpha):
       return (jax.nn.log_softmax(logits, -1)
-              * hrl_heads.ring_smooth_event(ev, alpha)).sum()
+              * hrl_heads.smooth_skill_event(ev, alpha)).sum()
     g0 = np.asarray(jax.grad(obj)(logits, 0.0))[0, 0, 0]
     ga = np.asarray(jax.grad(obj)(logits, 0.25))[0, 0, 0]
     np.testing.assert_allclose(ga[[2, 4]] - g0[[2, 4]], [0.25, 0.25], rtol=1e-5)
     np.testing.assert_allclose(ga[3] - g0[3], -0.5, rtol=1e-5)
     far = [0, 1, 5, 6, 7]
     np.testing.assert_allclose(ga[far], g0[far], rtol=1e-5)
+
+
+class TestLineSmoothedCredit:
+  """The same kernel on an open path: no wraparound, renormalized endpoints."""
+
+  RC = 8
+  A = 0.1           # the alpha goal_som_lipvq_line_smooth actually runs
+
+  def _event(self, ids):
+    return jnp.asarray(np.eye(self.RC)[ids], f32)
+
+  def _smooth(self, ids, alpha=None, topology='line'):
+    alpha = self.A if alpha is None else alpha
+    return np.asarray(hrl_heads.smooth_skill_event(
+        self._event(np.atleast_2d(ids)), alpha, topology))[0]
+
+  def test_alpha_zero_is_the_identity_on_a_line_too(self):
+    e = self._event(np.random.default_rng(0).integers(0, self.RC, (4, 3, L)))
+    np.testing.assert_array_equal(
+        hrl_heads.smooth_skill_event(e, 0.0, 'line'), e)
+
+  def test_interior_picks_match_the_ring_kernel(self):
+    # Away from the ends a path and a ring are the same neighbourhood, so the
+    # renormalization must be a no-op there (row sum is already 1).
+    for k in range(1, self.RC - 1):
+      line = self._smooth([k])[0]
+      ring = self._smooth([k], topology='ring')[0]
+      np.testing.assert_allclose(line, ring, rtol=1e-6, atol=1e-7)
+      np.testing.assert_allclose(
+          line[[k - 1, k, k + 1]], [self.A, 1 - 2 * self.A, self.A], rtol=1e-6)
+
+  def test_no_wraparound_between_the_two_endpoints(self):
+    # The whole point of the line: entries 0 and C-1 are the FARTHEST apart, and
+    # jnp.roll would hand them each other's credit.
+    assert self._smooth([0])[0][self.RC - 1] == 0.0
+    assert self._smooth([self.RC - 1])[0][0] == 0.0
+
+  def test_endpoints_are_renormalized_option_a(self):
+    # Masked row is (1-2a) on self + a on the one surviving neighbour, summing
+    # to 1-a; dividing by that gives ((1-2a)/(1-a), a/(1-a)).
+    a = self.A
+    want_self, want_nb = (1 - 2 * a) / (1 - a), a / (1 - a)
+    lo = self._smooth([0])[0]
+    hi = self._smooth([self.RC - 1])[0]
+    np.testing.assert_allclose([lo[0], lo[1]], [want_self, want_nb], rtol=1e-6)
+    np.testing.assert_allclose(
+        [hi[self.RC - 1], hi[self.RC - 2]], [want_self, want_nb], rtol=1e-6)
+    # The surviving neighbour gets MORE than alpha -- that is what (a) buys.
+    assert want_nb > a
+
+  def test_every_row_is_a_distribution(self):
+    for k in range(self.RC):
+      row = self._smooth([k])[0]
+      np.testing.assert_allclose(row.sum(), 1.0, rtol=1e-6)
+      assert (row >= 0).all()
+
+  def test_blocks_are_smoothed_independently_on_a_line(self):
+    got = self._smooth([0, 4, self.RC - 1])
+    a = self.A
+    np.testing.assert_allclose(
+        got[0][[0, 1]], [(1 - 2 * a) / (1 - a), a / (1 - a)], rtol=1e-6)
+    np.testing.assert_allclose(
+        got[1][[3, 4, 5]], [a, 1 - 2 * a, a], rtol=1e-6)
+    np.testing.assert_allclose(
+        got[2][[self.RC - 1, self.RC - 2]],
+        [(1 - 2 * a) / (1 - a), a / (1 - a)], rtol=1e-6)
+
+  def test_entropy_floor_matches_the_configured_headroom(self):
+    # goal_som_lipvq_line_smooth exists because alpha=0.25 put this floor at
+    # exactly manager_actent_target=0.5, leaving the entropy controller nothing
+    # to trade. These are the numbers the config comment claims.
+    def norm_ent(row):
+      row = row[row > 0]
+      return float(-(row * np.log(row)).sum() / np.log(self.RC))
+    np.testing.assert_allclose(norm_ent(self._smooth([4])[0]), 0.307, atol=5e-4)
+    # 0.168, not the 0.156 an unnormalized (1-a, a) endpoint would give: option
+    # (a) hands the dropped weight to the surviving neighbour, not back to the
+    # pick, so an endpoint row is slightly less peaked than (1-a, a).
+    np.testing.assert_allclose(norm_ent(self._smooth([0])[0]), 0.168, atol=5e-4)
+    assert norm_ent(self._smooth([4], alpha=0.25)[0]) == pytest.approx(0.5, 1e-6)
+
+  def test_gradient_reaches_only_the_surviving_neighbour(self):
+    rng = np.random.default_rng(2)
+    logits = jnp.asarray(rng.normal(0, 1, (1, L, self.RC)), f32)
+    ids = np.zeros((1, L), int)            # every block picks endpoint 0
+    ev = self._event(ids)
+    def obj(logits, alpha):
+      return (jax.nn.log_softmax(logits, -1)
+              * hrl_heads.smooth_skill_event(ev, alpha, 'line')).sum()
+    g0 = np.asarray(jax.grad(obj)(logits, 0.0))[0, 0]
+    ga = np.asarray(jax.grad(obj)(logits, self.A))[0, 0]
+    a = self.A
+    # Class 1 gains exactly the renormalized neighbour weight; class C-1 (the
+    # wraparound partner a ring would have credited) gains nothing.
+    np.testing.assert_allclose(ga[1] - g0[1], a / (1 - a), rtol=1e-5)
+    np.testing.assert_allclose(ga[self.RC - 1] - g0[self.RC - 1], 0.0, atol=1e-6)
+    np.testing.assert_allclose(ga[0] - g0[0], (1 - 2 * a) / (1 - a) - 1, rtol=1e-5)
+    np.testing.assert_allclose(ga[[2, 3, 4, 5, 6]], g0[[2, 3, 4, 5, 6]], rtol=1e-5)
+
+  def test_ring_kernel_is_unchanged_by_the_refactor(self):
+    # Regression guard for the runs in flight (e417/e420/e423/e426 read this
+    # source on requeue): topology='ring' must still be the old jnp.roll kernel.
+    e = self._event(np.random.default_rng(3).integers(0, self.RC, (2, L)))
+    a = 0.25
+    want = ((1 - 2 * a) * e + a * jnp.roll(e, 1, -1) + a * jnp.roll(e, -1, -1))
+    np.testing.assert_allclose(
+        np.asarray(hrl_heads.smooth_skill_event(e, a, 'ring')),
+        np.asarray(want), rtol=1e-6)
+
+  def test_rejects_an_unknown_topology(self):
+    with pytest.raises(AssertionError):
+      hrl_heads.smooth_skill_event(self._event(np.array([[0]])), 0.1, 'grid')

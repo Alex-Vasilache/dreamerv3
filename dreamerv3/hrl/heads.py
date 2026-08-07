@@ -56,30 +56,69 @@ def align_skill_events(skills, policy):
   return events
 
 
-def ring_smooth_event(event, alpha):
-  """Spread a one-hot skill event over its circular neighbours.
+def _shift_up(event):
+  """Move mass from class ``c`` to ``c+1``; mass at ``C-1`` falls off the end."""
+  return jnp.concatenate(
+      [jnp.zeros_like(event[..., :1]), event[..., :-1]], -1)
+
+
+def _shift_down(event):
+  """Move mass from class ``c`` to ``c-1``; mass at ``0`` falls off the end."""
+  return jnp.concatenate(
+      [event[..., 1:], jnp.zeros_like(event[..., :1])], -1)
+
+
+def smooth_skill_event(event, alpha, topology='ring'):
+  """Spread a one-hot skill event over its codebook neighbours.
 
   ``OneHot.logp`` is ``sum_c log pi_c * event_c``, so replacing the sampled
-  one-hot with a kernel over the ring turns the REINFORCE target into
+  one-hot with a kernel over the codebook turns the REINFORCE target into
   ``sum_c w(c, a) log pi_c``: an advantage credited to entry ``a`` is also
   credited, at weight ``alpha``, to ``a-1`` and ``a+1``. With a SOM-ordered
   codebook those entries decode to nearby goals with likely similar returns,
   which a policy over unordered labels cannot exploit -- raising ``a`` tells it
   nothing about ``a+1``.
 
-  The weights ``(1 - 2*alpha, alpha, alpha)`` sum to one, so the target stays a
-  distribution over the block's classes. This biases the policy gradient, in
-  the manner of label smoothing; ``alpha = 0`` returns the event unchanged and
-  reproduces the standard estimator exactly.
+  ``alpha = 0`` returns the event unchanged and reproduces the standard
+  estimator exactly. Otherwise the target stays a distribution over the block's
+  classes, so the update is biased in the manner of label smoothing.
+
+  The kernel must match the codebook's ``topology``, because it encodes which
+  entries the SOM term actually made adjacent:
+
+  ``'ring'``
+    Weights ``(1 - 2*alpha, alpha, alpha)`` on ``(a, a-1, a+1)`` taken mod
+    ``C``. Every class has two neighbours, so no normalization is needed.
+
+  ``'line'``
+    Same weights, but the path has no wraparound: entry ``0`` and entry ``C-1``
+    are the two most distant codes, and ``jnp.roll`` would share credit between
+    exactly them. Shifting with zero fill drops the off-the-end weight instead,
+    leaving the endpoints' rows summing to ``1 - alpha``; dividing by the row
+    sum restores a distribution. The endpoint kernel is therefore
+    ``((1 - 2*alpha) / (1 - alpha), alpha / (1 - alpha))``, which raises the
+    surviving neighbour's share slightly above ``alpha`` -- an endpoint pick
+    splits its credit two ways rather than three.
+
+    Note this differs from the treatment of the same missing neighbour in the
+    SOM loss (``vq.BlockCodebook.neighbor_mask``), which masks the term without
+    renormalizing, so endpoint entries simply receive less total pull. A
+    log-prob target has no such freedom: it must sum to one.
 
   Acts on the last axis, which is the class axis of an ``(..., L, C)`` code, so
   the ``L`` blocks are smoothed independently.
   """
   if not alpha:
     return event
-  return ((1.0 - 2.0 * alpha) * event
-          + alpha * jnp.roll(event, 1, -1)
-          + alpha * jnp.roll(event, -1, -1))
+  assert topology in ('ring', 'line'), topology
+  if topology == 'ring':
+    return ((1.0 - 2.0 * alpha) * event
+            + alpha * jnp.roll(event, 1, -1)
+            + alpha * jnp.roll(event, -1, -1))
+  raw = ((1.0 - 2.0 * alpha) * event
+         + alpha * _shift_up(event)
+         + alpha * _shift_down(event))
+  return raw / jnp.maximum(raw.sum(-1, keepdims=True), 1e-8)
 
 
 def _head_inner(head):
