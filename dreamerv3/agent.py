@@ -862,6 +862,25 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     else:
       ste = {'auto': None, 'on': True, 'off': False, 'true': True,
              'false': False}[str(_ste).strip().lower()]
+    # Optional controller on the commitment weight, targeting codebook
+    # perplexity. See vq_goal_loss for why perplexity and not used_frac, and
+    # why the controller pushes the weight UP while perplexity is above target.
+    self._commit_adapt = None
+    if bool(_g(cfg, 'commit_adapt', False)):
+      self._commit_adapt = embodied.jax.AutoAdapt(
+          shape=(),
+          impl='mult',
+          target=float(_g(cfg, 'commit_adapt_target', 7.0)),
+          min=float(_g(cfg, 'commit_adapt_min', 1e-3)),
+          max=float(_g(cfg, 'commit_adapt_max', 4.0)),
+          vel=float(_g(cfg, 'commit_adapt_vel', 0.02)),
+          # inverse=False: AutoAdapt grows its multiplier while the regulated
+          # quantity is ABOVE target. Perplexity above target means there is
+          # room for a stronger commitment term, which is the direction we
+          # want. inverse=True would raise the weight as the codebook dies.
+          inverse=False,
+          init=float(_g(cfg, 'commit_adapt_init', 0.25)),
+          name='goal_commit_adapt')
     self._goal_vq_kw = dict(
         som=bool(cfg.som), ste=ste, agg=str(cfg.agg),
         codebook_scale=float(cfg.codebook_scale),
@@ -883,9 +902,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # One encoder pass shared by the loss and the diagnostics below.
       z_e = self.goal_enc.latent(deter_feat, 2)
       encoded_goal = self.goal_enc.code_from_latent(z_e)
+      # The controller only steps its multiplier while training; at report time
+      # it reads the current value without moving it.
+      commit_adapt = None
+      if self._commit_adapt is not None:
+        def commit_adapt(perplexity):
+          if training:
+            self._commit_adapt.update(perplexity)
+          return self._commit_adapt.scale()
       goal_base_loss, vq_mets = goal_ae.vq_goal_loss(
           self.goal_enc, self.goal_dec, deter_feat, 2, z_e=z_e,
-          **self._goal_vq_kw)
+          commit_adapt=commit_adapt, **self._goal_vq_kw)
       # ``vq/x`` -> ``goal/x`` so everything lands under the same log prefix as
       # the Director-arm goal metrics.
       metrics.update({f'goal/{k.split("/", 1)[1]}': v for k, v in vq_mets.items()})

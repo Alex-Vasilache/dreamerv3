@@ -156,6 +156,23 @@ defaults:
       # split. Gradient-identical to the split (only the logged value differs);
       # exists so an arm can be literally the equation in the source paper.
       commit_joint: False
+      # Controller on the commitment weight, targeting codebook perplexity.
+      # Replaces commit_scale when on. Targets perplexity and not used_frac:
+      # used_frac sits at 0.99-1.00 in every healthy run and only moves once
+      # the codebook is dead, while perplexity varies smoothly over the healthy
+      # range (6.3-7.6 of 8) and falls to ~1.3 on collapse. Perplexity cannot
+      # reach 8 (that needs every entry used equally), so the target must sit
+      # inside the reachable range.
+      # The controller raises the weight while perplexity is ABOVE target, so
+      # it settles on the LARGEST commitment weight that keeps the codebook
+      # alive. The other direction is ill-posed: a weight of zero maximizes
+      # perplexity by untying the encoder from the codebook.
+      commit_adapt: False
+      commit_adapt_target: 7.0    # of a possible 8
+      commit_adapt_init: 0.25     # start at the VQ-VAE commitment weight
+      commit_adapt_min: 1e-3
+      commit_adapt_max: 4.0
+      commit_adapt_vel: 0.02      # slow: perplexity is a noisy batch statistic
       codebook_scale: 1.0       # ||sg[z_e] - z_q||^2
       commit_scale: 1.0         # ||z_e - sg[z_q]||^2  (equal weights == the
                                 # single alpha term in motivation.tex)
@@ -628,6 +645,20 @@ goal_som_orig_line:
 # normalization and penalty. Differs from goal_som_orig_line by lip alone, so
 # the pair isolates the Lipschitz component under the pure SOM-VAE objective.
 # Launch with COMMIT_SCALE=0.25 to match its sibling.
+# Pure SOM-VAE on a line, with the commitment weight under a controller instead
+# of fixed. Answers "what commitment weight does the system want" rather than
+# testing one value, and so is a complement to the e488-e492 fixed sweep rather
+# than a member of it. The weight it settles on is the largest that holds
+# codebook perplexity at the target.
+goal_som_orig_line_adapt:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: False, topology: line, ste: 'off', commit_joint: True, commit_adapt: True}
+
 goal_som_orig_lipvq_line:
   agent:
     goal_ae_impl: vq

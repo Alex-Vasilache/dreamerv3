@@ -632,3 +632,59 @@ class TestJointCommitment:
     a = vq.vq_losses(z_e, z_q, nb, commit_joint=True)['som']
     b = vq.vq_losses(z_e, z_q, nb, commit_joint=False)['som']
     np.testing.assert_allclose(np.asarray(a), np.asarray(b), rtol=1e-6)
+
+
+class TestCommitAdapt:
+  """Direction of the controller on the commitment weight."""
+
+  def _adapter(self, target=7.0, init=0.25, vel=0.1):
+    import embodied.jax
+    return embodied.jax.AutoAdapt(
+        shape=(), impl='mult', target=target, min=1e-3, max=4.0, vel=vel,
+        inverse=False, init=init, name='ca')
+
+  def _step(self, perplexity, n=1, **kw):
+    a = self._adapter(**kw)
+    def fn(p):
+      for _ in range(n):
+        a.update(p)
+      return a.scale()
+    params = nj.init(fn)({}, jnp.float32(perplexity), seed=0)
+    return float(nj.pure(fn)(params, jnp.float32(perplexity))[1])
+
+  def test_healthy_codebook_raises_the_weight(self):
+    # Perplexity above target means there is room for a stronger commitment
+    # term, so the controller should push the weight UP. This is the direction
+    # that makes the controller find the LARGEST weight the codebook tolerates.
+    assert self._step(7.8, n=5) > 0.25
+
+  def test_collapsing_codebook_lowers_the_weight(self):
+    # Perplexity below target means the commitment term is winning against the
+    # reconstruction, which is the collapse. Back it off.
+    assert self._step(1.3, n=5) < 0.25
+
+  def test_on_target_leaves_the_weight_alone(self):
+    # Inside the deadband the multiplier must not drift.
+    np.testing.assert_allclose(self._step(7.0, n=5), 0.25, rtol=1e-6)
+
+  def test_the_weight_is_clipped_to_its_range(self):
+    assert self._step(8.0, n=400) <= 4.0 + 1e-6
+    assert self._step(1.0, n=400) >= 1e-3 - 1e-9
+
+  def test_the_inverse_flag_would_drive_it_the_wrong_way(self):
+    # Guard against the sign being flipped later. inverse=True grows the
+    # multiplier while the quantity is BELOW target, which here would raise the
+    # commitment weight precisely as the codebook collapses. This is the sign
+    # error the first version of this controller shipped with.
+    import embodied.jax
+    a = embodied.jax.AutoAdapt(
+        shape=(), impl='mult', target=7.0, min=1e-3, max=4.0, vel=0.1,
+        inverse=True, init=0.25, name='plain')
+    def fn(p):
+      for _ in range(5):
+        a.update(p)
+      return a.scale()
+    params = nj.init(fn)({}, jnp.float32(1.3), seed=0)
+    plain = float(nj.pure(fn)(params, jnp.float32(1.3))[1])
+    assert plain > 0.25          # wrong direction: up while collapsing
+    assert self._step(1.3, n=5) < 0.25   # ours

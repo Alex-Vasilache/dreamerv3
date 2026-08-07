@@ -83,7 +83,8 @@ case "$ARM" in
   som_lipvq_line_mgr) ARM_CONFIG="goal_som_lipvq_line_mgr" ;;
   som_orig_line) ARM_CONFIG="goal_som_orig_line" ;;
   som_orig_lipvq_line) ARM_CONFIG="goal_som_orig_lipvq_line" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line)" >&2; exit 1 ;;
+  som_orig_line_adapt) ARM_CONFIG="goal_som_orig_line_adapt" ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 

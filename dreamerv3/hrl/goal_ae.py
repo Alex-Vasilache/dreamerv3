@@ -262,7 +262,8 @@ class GoalVQDecoder(nj.Module):
 def vq_goal_loss(
     enc, dec, deter, bdims, som=False, ste=None, agg='sum',
     codebook_scale=1.0, commit_scale=1.0, som_scale=0.9, lip_scale=0.03,
-    lip_impl='logprod', rec_scale=1.0, z_e=None, commit_joint=False):
+    lip_impl='logprod', rec_scale=1.0, z_e=None, commit_joint=False,
+    commit_adapt=None):
   """Assemble the full goal-autoencoder objective for the VQ arms.
 
   Returns ``(loss, metrics)`` where ``loss`` has the leading batch dims of
@@ -317,6 +318,26 @@ def vq_goal_loss(
   nb_mask = dec.codebook.neighbor_mask(quant['ids']) if som else None
   terms = vq_losses(z_e, quant['z_q'], neighbors, agg, nb_mask=nb_mask,
                     commit_joint=commit_joint)
+
+  # Optional controller on the commitment weight. ``commit_adapt`` is called
+  # with the batch's codebook perplexity and returns the weight to use in place
+  # of ``commit_scale``.
+  #
+  # Perplexity rather than ``used_frac`` because ``used_frac`` is pinned at
+  # 0.99 to 1.00 in every healthy run and only moves once the codebook is
+  # already dead, while perplexity varies smoothly across the healthy range
+  # (6.3 to 7.6 of a possible 8) and falls to ~1.3 on collapse. Perplexity
+  # cannot reach 8, which would need all entries used equally, so the target
+  # must be set inside the reachable range.
+  #
+  # The controller raises the weight while perplexity is ABOVE target, so it
+  # settles on the LARGEST commitment weight that still keeps the codebook
+  # alive. Driving it the other way would be ill-posed: a weight of zero
+  # trivially maximizes perplexity by untying the encoder from the codebook.
+  usage = dec.codebook.metrics(quant['ids'])
+  if commit_adapt is not None:
+    commit_scale = sg(commit_adapt(sg(usage['perplexity'])))
+
   loss = (
       rec_scale * rec
       + codebook_scale * terms['codebook']
@@ -359,8 +380,9 @@ def vq_goal_loss(
   }
   if som:
     metrics['vq/rec_e'] = rec_e.mean()
-  metrics.update({f'vq/{k}': v for k, v in dec.codebook.metrics(
-      quant['ids']).items()})
+  metrics.update({f'vq/{k}': v for k, v in usage.items()})
+  if commit_adapt is not None:
+    metrics['vq/commit_scale'] = commit_scale
   metrics = {k: sg(v) for k, v in metrics.items()}
   return loss, metrics
 
