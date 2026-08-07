@@ -146,6 +146,11 @@ defaults:
       temp: 1.0                 # softmax temperature for the soft code / entropy
       stddev: 0.05              # codebook init scale (official SOM-VAE value)
       include_self: False       # official SOM-VAE also pulls the winner
+      # 'ring' wraps and has no boundary; 'line' is an open path whose end
+      # entries have one neighbor, masked rather than replaced by a zero
+      # vector. A line spans a wider range of code distances (ideal
+      # adjacent/arbitrary ratio 0.333 at C=8, against a ring's 0.533).
+      topology: ring            # ring | line
       codebook_scale: 1.0       # ||sg[z_e] - z_q||^2
       commit_scale: 1.0         # ||z_e - sg[z_q]||^2  (equal weights == the
                                 # single alpha term in motivation.tex)
@@ -575,6 +580,25 @@ goal_som_lipvq_mgr:
     goal_struct_adapt: False
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: True, mgr_ring: True}
+
+# Line (open path) instead of a ring, no manager changes.
+goal_som_line:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: False, topology: line}
+
+goal_som_lipvq_line:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, topology: line}
 
 # som+lipvq with ring-smoothed REINFORCE credit. Differs from goal_som_lipvq by
 # the single number mgr_smooth, so the comparison isolates credit assignment.

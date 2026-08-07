@@ -28,14 +28,24 @@ from functools import partial as bind
 import elements, embodied, numpy as np, jax, jax.numpy as jnp, ninjax as nj
 import dreamerv3.main as m
 from diag_goal_struct_corr import load_config, pairwise_cosmax, pearson_offdiag
+from dreamerv3.hrl.heads import _head_inner
 
 
-def code_sims(ids, z_q, onehot, C):
-    """The four code-space similarity matrices for one batch."""
+def code_sims(ids, z_q, onehot, soft, C):
+    """Code-space similarity matrices for one batch, one per definition.
+
+    ``soft``  the encoder's pre-argmax probabilities (Director: the categorical
+              posterior; quantized arms: softmax(-d^2/temp))
+    ``hard``  fraction of blocks picking the same entry -- what the manager
+              acts on, and what goal/struct_corr_hard logs
+    ``embed`` cosine_max between the vectors the DECODER receives; reduces to
+              ``hard`` for a one-hot decoder input
+    ``ring``  circular index distance, meaningful only where a ring exists
+    """
     diff = np.abs(ids[:, None, :] - ids[None, :, :])
     return {
-        'hamming': 1.0 - (ids[:, None, :] != ids[None, :, :]).mean(-1),
-        'onehot': pairwise_cosmax(onehot.reshape(len(ids), -1)),
+        'soft': pairwise_cosmax(soft.reshape(len(ids), -1)),
+        'hard': 1.0 - (ids[:, None, :] != ids[None, :, :]).mean(-1),
         'embed': pairwise_cosmax(z_q.reshape(len(ids), -1)),
         'ring': 1.0 - np.minimum(diff, C - diff).mean(-1) / (C // 2),
     }
@@ -70,24 +80,28 @@ def run(run_dir, stride=8, seed=0, n_batches=6, n_envs=8):
         if impl == 'vq':
             z_e = model.goal_enc.latent(d, 1)
             q = model.goal_dec.codebook.quantize(z_e)
-            return q['ids'], q['z_q'], q['onehot']
+            code = model.goal_enc.code_from_latent(z_e)
+            soft = jax.nn.softmax(_head_inner(code).dist.logits, -1)
+            return q['ids'], q['z_q'], q['onehot'], soft
         enc = model.goal_enc(d, 1)
-        oh = (enc['skill'] if isinstance(enc, dict) else enc).pred()
-        return jnp.argmax(oh, -1), oh, oh
-    out = {k: [] for k in ('hamming', 'onehot', 'embed', 'ring')}
+        head = enc['skill'] if isinstance(enc, dict) else enc
+        oh = head.pred()
+        soft = jax.nn.softmax(_head_inner(head).dist.logits, -1)
+        return jnp.argmax(oh, -1), oh, oh, soft
+    out = {k: [] for k in ('soft', 'hard', 'embed', 'ring')}
     for b in range(n_batches):
         d = deters[b * n_states:(b + 1) * n_states]
         if len(d) < n_states:
             break
-        ids, z_q, oh = [np.asarray(x) for x in
-                        nj.pure(encode)(agent.params, jnp.asarray(d))[1]]
+        ids, z_q, oh, soft = [np.asarray(x) for x in
+                              nj.pure(encode)(agent.params, jnp.asarray(d))[1]]
         sd = pairwise_cosmax(d)
-        for k, sc in code_sims(ids, z_q, oh, C).items():
+        for k, sc in code_sims(ids, z_q, oh, soft, C).items():
             out[k].append(pearson_offdiag(sd, sc))
     name = pathlib.Path(run_dir.rstrip('/')).name
-    print(f'\n=== {name}  impl={impl}  batches={len(out["hamming"])} '
+    print(f'\n=== {name}  impl={impl}  batches={len(out["hard"])} '
           f'x {n_states} states ===')
-    for k in ('hamming', 'onehot', 'embed', 'ring'):
+    for k in ('soft', 'hard', 'embed', 'ring'):
         v = np.array(out[k])
         print(f'   corr[{k:8s}] = {v.mean():.3f} +/- {v.std():.3f}')
     return {k: (float(np.mean(v)), float(np.std(v))) for k, v in out.items()}

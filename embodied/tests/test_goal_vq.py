@@ -493,3 +493,86 @@ class TestVQLosses:
     z = jnp.zeros((2, L, D), f32)
     with pytest.raises(NotImplementedError):
       vq.vq_losses(z, z, agg='median')
+
+
+class TestLineTopology:
+  """Open path instead of a ring: end entries have one neighbor, not two."""
+
+  def _cb(self, **kw):
+    cb = vq.BlockCodebook(L, C, 1, name='cb', topology='line', **kw)
+    table = np.arange(L * C, dtype=np.float32).reshape(L, C, 1)
+    table = table + np.arange(L)[:, None, None] * 100.0
+    return cb, {'cb/table': jnp.asarray(table, f32)}
+
+  def test_no_wraparound(self):
+    # The defining difference from a ring: entry 0's "left" neighbor does not
+    # exist, so it must not be entry C-1.
+    cb, params = self._cb()
+    table = np.asarray(params['cb/table'])
+    ids = jnp.asarray([[0, 1, C - 2, C - 1]], jnp.int32)
+    got = np.asarray(run(cb, cb.neighbors, params, ids))
+    # Index is clamped, so the out-of-range side duplicates the entry itself;
+    # the mask is what removes it from the loss.
+    np.testing.assert_array_equal(got[0, 0, 0], table[0, 0])      # clamped
+    np.testing.assert_array_equal(got[0, 0, 1], table[0, 1])      # real
+    np.testing.assert_array_equal(got[0, 3, 1], table[3, C - 1])  # clamped
+
+  def test_mask_marks_only_the_missing_ends(self):
+    cb, params = self._cb()
+    ids = jnp.asarray([[0, 1, C - 2, C - 1]], jnp.int32)
+    m = np.asarray(run(cb, cb.neighbor_mask, params, ids))
+    assert m.shape == (1, L, 2)
+    np.testing.assert_array_equal(m[0, 0], [0.0, 1.0])   # no left of entry 0
+    np.testing.assert_array_equal(m[0, 1], [1.0, 1.0])   # interior
+    np.testing.assert_array_equal(m[0, 2], [1.0, 1.0])   # interior
+    np.testing.assert_array_equal(m[0, 3], [1.0, 0.0])   # no right of C-1
+
+  def test_ring_mask_is_all_ones(self):
+    cb = vq.BlockCodebook(L, C, 1, name='cb')      # default topology='ring'
+    params = {'cb/table': jnp.zeros((L, C, 1), f32)}
+    ids = jnp.asarray([[0, 1, C - 2, C - 1]], jnp.int32)
+    m = np.asarray(run(cb, cb.neighbor_mask, params, ids))
+    np.testing.assert_array_equal(m, np.ones((1, L, 2)))
+
+  def test_masked_neighbor_contributes_nothing_to_the_loss(self):
+    z_e = jnp.ones((1, L, 1), f32)
+    nb = jnp.stack([jnp.full((1, L, 1), 5.0, f32),
+                    jnp.full((1, L, 1), 2.0, f32)], -2)     # (1, L, 2, 1)
+    mask = jnp.zeros((1, L, 2), f32).at[..., 1].set(1.0)     # keep only the 2nd
+    los = vq.vq_losses(z_e, z_e, nb, 'sum', nb_mask=mask)
+    np.testing.assert_allclose(los['som'], [L * 1.0], rtol=1e-6)  # (2-1)^2 each
+    full = vq.vq_losses(z_e, z_e, nb, 'sum')
+    np.testing.assert_allclose(full['som'], [L * (16.0 + 1.0)], rtol=1e-6)
+
+  def test_masked_neighbor_receives_no_gradient(self):
+    # An entry past the end of the line is a clamped duplicate; if it were not
+    # masked it would be pulled twice as hard as any interior entry.
+    cb, params = self._cb()
+    z_e = jnp.zeros((1, L, 1), f32)
+    ids = jnp.zeros((1, L), jnp.int32)          # every block picks entry 0
+    def loss(params):
+      nb = nj.pure(cb.neighbors)(params, ids)[1]
+      m = nj.pure(cb.neighbor_mask)(params, ids)[1]
+      return vq.vq_losses(z_e, z_e, nb, 'sum', nb_mask=m)['som'].sum()
+    g = np.asarray(jax.grad(loss)(params)['cb/table'])
+    for l in range(L):
+      np.testing.assert_array_equal(g[l, 0], 0.0)   # the clamped duplicate
+      assert np.abs(g[l, 1]).max() > 0.0            # the real neighbor
+
+  def test_line_spans_a_wider_distance_range_than_a_ring(self):
+    # Evenly spaced points: a path's adjacent/arbitrary ratio is lower than a
+    # ring's, because a ring's wrap keeps its farthest pairs closer together.
+    def ratio(points):
+      nb = np.linalg.norm(np.diff(points, axis=0), axis=-1).mean()
+      d = np.linalg.norm(points[:, None] - points[None, :], axis=-1)
+      return nb / d[~np.eye(len(points), dtype=bool)].mean()
+    RC = 8                      # the project's C; the module constant here is 5
+    line = np.arange(RC, dtype=np.float64)[:, None]
+    ang = 2 * np.pi * np.arange(RC) / RC
+    ring = np.stack([np.cos(ang), np.sin(ang)], 1)
+    nb_r = np.linalg.norm(ring - np.roll(ring, 1, 0), axis=-1).mean()
+    d_r = np.linalg.norm(ring[:, None] - ring[None, :], axis=-1)
+    ring_ratio = nb_r / d_r[~np.eye(RC, dtype=bool)].mean()
+    assert ratio(line) < ring_ratio
+    np.testing.assert_allclose(ratio(line), 1 / 3, rtol=1e-6)
+    np.testing.assert_allclose(ring_ratio, 0.533, atol=5e-3)

@@ -42,6 +42,19 @@ from .hrl import (
     worker_split_window,
 )
 from .hrl import goal_ae
+
+
+def _g(cfg, key, default):
+  """Read a config key that may postdate a checkpoint's saved config.yaml."""
+  try:
+    return getattr(cfg, key)
+  except (AttributeError, KeyError):
+    return default
+
+
+def _vqcfg(config, key, default):
+  return _g(_g(config, 'goal_vq', None) or config, key, default)
+
 from .hrl.heads import _head_inner
 
 f32 = jnp.float32
@@ -243,7 +256,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         self.manager_pol = embodied.jax.MLPHead(
             mgr_space, mgr_out, **mgr_cfg, name='manager_pol')
       else:
-        if self.goal_ae_impl == 'vq' and bool(config.goal_vq.mgr_ring):
+        if self.goal_ae_impl == 'vq' and bool(_vqcfg(config, 'mgr_ring', False)):
           # Ring-aware manager: logits are distances to the (stop-gradiented)
           # goal codebook, so REINFORCE credit generalizes to ring neighbours.
           mgr_cfg = {k: v for k, v in dict(config.manager_policy).items()
@@ -251,14 +264,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           self.manager_pol = goal_ae.ManagerRingHead(
               self.goal_dec.codebook, int(skill_shape_t[0]),
               int(config.goal_vq.dim),
-              scale_init=float(config.goal_vq.mgr_ring_scale_init),
+              scale_init=float(_vqcfg(config, 'mgr_ring_scale_init', 5.0)),
               **mgr_cfg, name='manager_pol')
         else:
           self.manager_pol = embodied.jax.MLPHead(
               self.goal_code_space, **config.manager_policy, name='manager_pol')
       self.manager_sample_freq = config.manager_sample_freq
       self._mgr_smooth = float(
-          config.goal_vq.mgr_smooth) if self.goal_ae_impl == 'vq' else 0.0
+          _vqcfg(config, 'mgr_smooth', 0.0)) if self.goal_ae_impl == 'vq' else 0.0
 
     if self.use_hrl:
       # Separate extrinsic and exploratory value heads (+ EMA targets).
@@ -826,11 +839,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     lipkw = dict(
         lip_out=bool(cfg.lip_out), per_row=bool(cfg.lip_per_row),
         cinit=float(cfg.lip_cinit), clamp=bool(cfg.lip_clamp),
-        strict_bound=bool(cfg.strict_bound), dtype=str(cfg.dtype))
+        strict_bound=bool(_g(cfg, 'strict_bound', False)),
+        dtype=str(_g(cfg, 'dtype', 'default')))
     self.goal_dec = goal_ae.GoalVQDecoder(
         self.goal_shape, blocks, int(skill_classes), dim,
         lip=lip and apply_to in ('dec', 'enc_dec'),
         stddev=float(cfg.stddev), include_self=bool(cfg.include_self),
+        topology=str(_g(cfg, 'topology', 'ring')),
         **lipkw, **config.goal_vq_dec, name='goal_dec')
     self.goal_enc = goal_ae.GoalVQEncoder(
         self.goal_dec.codebook, blocks, dim,

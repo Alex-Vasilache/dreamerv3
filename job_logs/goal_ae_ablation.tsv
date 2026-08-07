@@ -10,3 +10,4 @@
 2026-08-06T21:01:34+09:00	4676046	e423	dmc_acrobot_swingup	som_lipvq	0	e423_acrobot_som_lipvq_s0
 2026-08-06T21:01:34+09:00	4676047	e420	dmc_cartpole_swingup	som_lipvq	0	e420_cartpole_som_lipvq_s0
 2026-08-06T22:18:09+09:00	4676077	e478	dmc_hopper_hop	som_lipvq_mgr	0	e478_hopper_som_lipvq_mgr_s0
+2026-08-06T22:32:03+09:00	4676082	e479	dmc_hopper_hop	som_lipvq_smooth	0	e479_hopper_som_lipvq_smooth_s0

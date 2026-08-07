@@ -203,6 +203,7 @@ class GoalVQDecoder(nj.Module):
   stddev: float = 0.05
   include_self: bool = False
   radius: int = 1
+  topology: str = 'ring'
 
   def __init__(self, shape, blocks, classes, dim):
     self.shape = (shape,) if isinstance(shape, int) else tuple(shape)
@@ -211,7 +212,8 @@ class GoalVQDecoder(nj.Module):
     self.dim = int(dim)
     self.codebook = BlockCodebook(
         blocks, classes, dim, stddev=self.stddev,
-        include_self=self.include_self, radius=self.radius, name='codebook')
+        include_self=self.include_self, radius=self.radius,
+        topology=self.topology, name='codebook')
     self.mlp = LipMLP(
         self.layers, self.units, act=self.act, norm=self.norm, bias=self.bias,
         winit=self.winit, binit=self.binit, lip=self.lip, per_row=self.per_row,
@@ -310,7 +312,8 @@ def vq_goal_loss(
     rec = rec + rec_e
 
   neighbors = dec.codebook.neighbors(quant['ids']) if som else None
-  terms = vq_losses(z_e, quant['z_q'], neighbors, agg)
+  nb_mask = dec.codebook.neighbor_mask(quant['ids']) if som else None
+  terms = vq_losses(z_e, quant['z_q'], neighbors, agg, nb_mask=nb_mask)
   loss = (
       rec_scale * rec
       + codebook_scale * terms['codebook']

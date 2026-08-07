@@ -51,7 +51,7 @@ def _agg(x, dims, impl):
   raise NotImplementedError(impl)
 
 
-def vq_losses(z_e, z_q, neighbors=None, agg='sum'):
+def vq_losses(z_e, z_q, neighbors=None, agg='sum', nb_mask=None):
   """The VQ / SOM quadratic terms, reduced to the leading batch dims.
 
   Args:
@@ -59,6 +59,8 @@ def vq_losses(z_e, z_q, neighbors=None, agg='sum'):
     z_q: ``(..., L, D)`` quantized output (gathered embeddings).
     neighbors: ``(..., L, N, D)`` SOM neighbors of the winning entries, or
       ``None`` to skip the SOM term.
+    nb_mask: ``(..., L, N)`` 1 where the neighbor exists. Required by the open
+      ``line`` topology, whose end entries have a neighbor on one side only.
     agg: ``sum`` over ``(L, D)`` per ``motivation.tex``'s ``sum_l ||.||^2``, or
       ``mean`` as in both reference implementations.
 
@@ -76,6 +78,10 @@ def vq_losses(z_e, z_q, neighbors=None, agg='sum'):
         neighbors.shape, z_e.shape)
     assert neighbors.shape[-1] == z_e.shape[-1], (neighbors.shape, z_e.shape)
     err = jnp.square(neighbors - sg(z_e)[..., None, :])
+    if nb_mask is not None:
+      assert nb_mask.shape == neighbors.shape[:-1], (
+          nb_mask.shape, neighbors.shape)
+      err = err * nb_mask[..., None]
     out['som'] = _agg(err, 3, agg)
   return out
 
@@ -92,9 +98,18 @@ class BlockCodebook(nj.Module):
 
   stddev: float = 0.05
   include_self: bool = False
-  # Neighborhood radius on the ring. 1 reproduces SOM-VAE's immediate
-  # neighborhood; larger values pull more entries toward each encoding.
+  # Neighborhood radius. 1 reproduces SOM-VAE's immediate neighborhood; larger
+  # values pull more entries toward each encoding (measured: strictly worse).
   radius: int = 1
+  # 'ring' wraps, so every entry has 2*radius neighbors and there is no
+  # boundary. 'line' is an open path: the end entries have neighbors on one
+  # side only, and the missing ones are MASKED OUT of the loss rather than
+  # replaced by a zero vector, which is what the official SOM-VAE code does for
+  # its 2D grid's edge cells and which pulls border entries toward the origin.
+  # A line spans a wider range of code distances than a ring: for C=8 an evenly
+  # spaced path has an adjacent-to-arbitrary distance ratio of 0.333 against a
+  # ring's 0.533, because a ring's wrap keeps its farthest pairs closer.
+  topology: str = 'ring'      # ring | line
 
   def __init__(self, blocks, classes, dim):
     assert blocks >= 1 and classes >= 1 and dim >= 1, (blocks, classes, dim)
@@ -161,10 +176,30 @@ class BlockCodebook(nj.Module):
     """
     C = self.classes
     assert 1 <= self.radius <= C // 2, (self.radius, C)
+    assert self.topology in ('ring', 'line'), self.topology
     picks = [ids] if self.include_self else []
     for r in range(1, self.radius + 1):
-      picks += [(ids - r) % C, (ids + r) % C]
+      if self.topology == 'ring':
+        picks += [(ids - r) % C, (ids + r) % C]
+      else:
+        picks += [jnp.clip(ids - r, 0, C - 1), jnp.clip(ids + r, 0, C - 1)]
     return jnp.stack([self.lookup(self.onehot(p)) for p in picks], -2)
+
+  def neighbor_mask(self, ids):
+    """``(..., L) -> (..., L, N)`` 1 where that neighbor exists.
+
+    All ones on a ring. On a line the positions past either end do not exist;
+    ``neighbors`` clamps their index, so this mask is what keeps the resulting
+    duplicate out of the loss.
+    """
+    C = self.classes
+    cols = [jnp.ones(ids.shape, f32)] if self.include_self else []
+    for r in range(1, self.radius + 1):
+      if self.topology == 'ring':
+        cols += [jnp.ones(ids.shape, f32), jnp.ones(ids.shape, f32)]
+      else:
+        cols += [(ids - r >= 0).astype(f32), (ids + r <= C - 1).astype(f32)]
+    return jnp.stack(cols, -1)
 
   def soft_probs(self, z_e, temp=1.0):
     """``softmax(-d^2 / temp)`` over entries: the differentiable stand-in for
