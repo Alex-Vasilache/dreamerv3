@@ -151,9 +151,16 @@ def report(tag, step, rows, blocks, classes, target):
     checks.append((
         'ent_ctrl_quiet', mult < 0.5,
         f'multiplier={mult:.3g} (controls run 5e-4 to 3e-3)'))
-  checks.append(('codebook', used is not None and used > 0.5 and perp and perp > 2.0,
-                 f'used_frac={used}, perplexity={perp:.3g}'
-                 if used is not None and perp is not None else 'missing'))
+  # Perplexity threshold set from the arms that learn, not from total collapse.
+  # At 100k: 6.4 to 6.5 with the straight-through estimator, 5.6 for pure
+  # SOM-VAE plus Lipschitz, 3.9 for pure SOM-VAE at alpha=0.25, 1.8 at alpha=1.
+  # An earlier threshold of 2.0 only caught the last of these and called a
+  # half-dead codebook healthy.
+  checks.append((
+      'codebook',
+      used is not None and used > 0.9 and perp is not None and perp > 5.5,
+      f'used_frac={used:.3f}, perplexity={perp:.3g} (want >0.9 and >5.5)'
+      if used is not None and perp is not None else 'missing'))
 
   out = [f'=== {tag} @ {step // 1000}k steps ===']
   for name, ok, detail in checks:
