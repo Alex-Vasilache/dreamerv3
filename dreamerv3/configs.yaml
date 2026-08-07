@@ -624,6 +624,19 @@ goal_som_orig_line:
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: False, topology: line, ste: 'off', commit_joint: True}
 
+# The same original SOM-VAE loss as goal_som_orig_line, plus the LipVQ weight
+# normalization and penalty. Differs from goal_som_orig_line by lip alone, so
+# the pair isolates the Lipschitz component under the pure SOM-VAE objective.
+# Launch with COMMIT_SCALE=0.25 to match its sibling.
+goal_som_orig_lipvq_line:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, topology: line, ste: 'off', commit_joint: True}
+
 goal_som_lipvq_line_mgr:
   agent:
     goal_ae_impl: vq
