@@ -635,7 +635,17 @@ class TestJointCommitment:
 
 
 class TestCommitAdapt:
-  """Direction of the controller on the commitment weight."""
+  """Direction of the controller on the commitment weight.
+
+  These pin the controller to the direction it was BUILT for -- lower the
+  weight when perplexity is below target -- which assumes a higher weight
+  collapses the codebook. That assumption is contradicted on the line topology:
+  e488 (alpha=1.0) and e486 (alpha=0.25) are identical but for alpha, and give
+  perplexity 5.14 and 4.03 at 100k, so raising the weight IMPROVED the codebook.
+  The controller is disabled by default for that reason. These tests still guard
+  the wiring and the clipping; the sign has to be re-derived from the fixed
+  sweep before the controller is used.
+  """
 
   def _adapter(self, target=7.0, init=0.25, vel=0.1):
     import embodied.jax
