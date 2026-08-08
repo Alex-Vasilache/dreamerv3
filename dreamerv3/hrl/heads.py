@@ -48,7 +48,14 @@ def align_skill_events(skills, policy):
     if e.shape == ref.shape:
       events[k] = e
     elif e.ndim + 1 == ref.ndim and e.shape == ref.shape[:e.ndim]:
-      events[k] = jnp.broadcast_to(e[:, None], ref.shape)
+      # The event is missing the head's TRAILING (class) axis, so the new axis
+      # belongs at the end. ``e[:, None]`` inserted it at position 1 instead,
+      # which makes the broadcast fail outright for the usual (B, T) -> (B, T, C)
+      # case and, when T happens to equal C, silently broadcasts the time axis
+      # into the class axis. Dead in production only because every OneHot head's
+      # ``sample()`` already returns a one-hot of ``pred()``'s shape, so the
+      # first branch always wins. See test_heads_helpers.py.
+      events[k] = jnp.broadcast_to(e[..., None], ref.shape)
     elif e.ndim == ref.ndim and e.shape[0] == ref.shape[1] and e.shape[1] == ref.shape[0]:
       events[k] = jnp.swapaxes(e, 0, 1)
     else:

@@ -49,7 +49,14 @@ class Uniform:
 
   def __delitem__(self, key):
     with self.lock:
-      assert 2 <= len(self), len(self)
+      # The swap-with-last removal below is correct at len == 1 too: `index`
+      # is 0, `keys.pop()` empties the list, and `index != len(self.keys)` is
+      # then False so no swap is attempted, leaving keys == [] and
+      # indices == {} -- verified directly. The old `assert 2 <= len(self)`
+      # rejected that valid state, which made `Replay(capacity=1)` crash on its
+      # second insert (eviction has to empty the selector before re-filling it)
+      # and left 10 of test_replay.py's parametrizations failing.
+      assert 1 <= len(self), len(self)
       index = self.indices.pop(key)
       last = self.keys.pop()
       if index != len(self.keys):
