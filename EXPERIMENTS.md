@@ -76,6 +76,70 @@ condensed (§2).
 
 ---
 
+## 2a. Current state (2026-08-09) — the replay buffer never evicted; e495–e499 test the fix
+
+**Root cause found for the hopper Director seed variance.** `replay.size` is the
+upstream DreamerV3 default of `5e6`, but these runs are `4e6` steps, so
+`Replay._insert` never reaches capacity and **nothing is ever evicted**. Confirmed
+directly in the logs: `replay/items` grows linearly to 3,999,440 and equals the step
+count. TF Director uses `replay_size: 1e6`.
+
+Sampling is `fracs.uniform: 1.0`, and the online queue supplies only ~12.5% of a batch
+(8 workers × 1 per 64 steps, against 1 sequence drawn per env step — `samples/insert`
+measured at 1.00 in e403). So **~87.5% of every training batch was drawn uniformly over
+the entire run history**, mean sample age ~2M steps at 4M. Item 0 — collected by the
+untrained policy — was still sampleable at the end of training.
+
+Two consequences, both measured:
+
+1. **`train/mgr_extr_rew` is not a progress signal.** It is computed on imagined
+   rollouts whose start states come from replay, so with a never-evicting buffer it is a
+   cumulative average over history by construction and cannot fall when the current
+   policy collapses. Correlation with the cumulative mean score is 0.92–0.996 across all
+   five hopper seeds; with the recent-100-episode mean only 0.44–0.94, and the gap is
+   widest in exactly the two seeds that collapsed. **Use `episode/score` on a sliding
+   window instead.**
+2. **It is the leading candidate for the seed spread**, because early outcomes stay in
+   the training distribution forever.
+
+**Measured baseline** (e391/e395/e399/e403/e407, replay 5e6, sliding mean of last 100
+episodes):
+
+| step | s0 | s1 | s2 | s3 | s4 | median | spread |
+|---|---|---|---|---|---|---|---|
+| 0.2M | 8.8 | 2.1 | 1.0 | 4.1 | 3.6 | 3.6 | 7.8 |
+| 0.5M | 170.0 | 22.0 | 33.6 | 4.5 | 9.8 | 22.0 | 165.5 |
+| 1.0M | 273.0 | 14.0 | 7.5 | 3.3 | 4.2 | 7.5 | **269.7** |
+| 2.0M | 276.6 | 40.8 | 155.5 | 31.6 | 53.7 | 53.7 | 245.0 |
+
+**e495–e499 (launched 2026-08-09, jobs 4676723–4676727)** — hopper Director, seeds 0–4,
+identical to e391/e395/e399/e403/e407 in every respect **except `replay.size = 1e6`.
+Hypothesis:** bounding the buffer so it actually evicts removes the lock-in of early
+data and both raises the median and narrows the spread, most visibly at 1.0M where the
+baseline is at its most bimodal (median 7.5, spread 269.7). **Expected if the
+hypothesis holds:** median well above 30 at 1.0M and spread well below 150. Verified
+before launch that the flag takes effect: `--replay.size 300` caps `replay/items` at
+exactly 300 (job 4676722).
+
+**Also ruled out, with evidence** (see `docs/AUDIT_FINDINGS.md`): gradient clipping is
+not binding (actor-critic grad/param 0.003–0.009 against `agc` 0.3); the discount is a
+4.5% effect at `imag_length 16` because `return_lambda 0.95` truncates first;
+`lambda_return` is exactly Director's `gve`; fixed-K block pooling is exactly Director's
+`abstract_traj`; the percentile return normalizer floors correctly at `limit 1.0`.
+
+**Determinism:** runs are *not* reproducible from `--seed`, and neither is TF Director —
+DMC environments are never seeded (`suite.load` with no `task_kwargs`), the replay
+sampler is always `Uniform(0)` regardless of `--seed`, and report/save/log fire on
+wall-clock. So the measured spread is seed variance *plus* uncontrolled run-to-run
+variance, and nothing so far separates the two.
+
+**Cancelled 2026-08-09:** e488, e489, e490, e494 (α-sweep arms) to free the A100s.
+e486 finished at 4M with score 0.3 (late collapse, same pattern as the pure Director
+baselines e403 131→13 and e395 186→73); e487 finished at 129.5. All six archived and
+deleted from `/work`.
+
+---
+
 ## 2. Current state (2026-07-27 — e326–e341 16-cell batch finished @4M, plus
 e294/e295/e242/e246 finals and e312/e313 live pull. Headline: the tensor-level
 equivalence proof (below) does NOT translate into trained equivalence — e334/e335
