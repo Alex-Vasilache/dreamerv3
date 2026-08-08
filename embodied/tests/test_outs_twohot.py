@@ -220,7 +220,14 @@ class TestTwoHotLoss:
 
 
 class TestSymexpTwohotRoundTrip:
-  """The configured reward/critic head: symlog squash with 255 bins."""
+  """TwoHot's squash mechanism, exercised with a symlog squash and uniform bins.
+
+  NOTE this is NOT how the production head is configured. `heads.py`'s
+  `symexp_twohot` passes *symexp-spaced* bins and no squash at all, so the
+  interpolation happens in raw reward units -- see
+  `test_jax_heads.py::TestSymexpTwohotBins`. The tests here exercise the
+  squash/unsquash plumbing, which the goal-AE arms can use, not the reward head.
+  """
 
   @staticmethod
   def head(logits):
