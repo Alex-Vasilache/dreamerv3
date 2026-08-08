@@ -68,6 +68,14 @@ RUN_STEPS="${RUN_STEPS:-4000000}"
 # seed 4 logged it) -- costs an O((batch_size*batch_length)^2) similarity matrix
 # per train step and does NOT enter any loss.
 GOAL_STRUCT_DIAG="${GOAL_STRUCT_DIAG:-True}"
+# Replay capacity. The upstream DreamerV3 default is 5e6, which EXCEEDS the 4e6
+# steps these runs take, so `Replay._insert` never reaches capacity and nothing
+# is ever evicted: `replay/items` grows linearly to the step count (measured in
+# e403). Sampling is `fracs.uniform: 1.0` and only ~12.5% of a batch comes from
+# the online queue, so ~87.5% of every training batch is drawn uniformly over
+# the WHOLE run history, mean sample age ~2M steps. TF Director uses 1e6.
+# Written as an integer, not 1e6: PyYAML parses unquoted `1e6` as a STRING.
+REPLAY_SIZE="${REPLAY_SIZE:-1000000}"
 
 case "$ARM" in
   director)  ARM_CONFIG="" ;;
@@ -104,6 +112,7 @@ CONFIGS=$CONFIGS
 TASK=$TASK
 ARM=$ARM SEED=$SEED
 SIZE=BIG IMAGE=64x64 IMAG=$IMAG_LENGTH BATCH=16x64 TRAIN_RATIO=64 CONV=native
+REPLAY_SIZE=$REPLAY_SIZE
 COMMIT_SCALE=${COMMIT_SCALE:-default} SOM_SCALE=${SOM_SCALE:-default}
 RECIPE=director MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W
 STRUCT_W=0.0 STRUCT_ADAPT=False GOAL_SOFT_REUSE_ADAPT=False GOAL_STRUCT_DIAG=$GOAL_STRUCT_DIAG
@@ -178,6 +187,7 @@ python -u "$REPO/dreamerv3/main.py" \
   --run.envs "$RUN_ENVS" \
   --run.steps "$RUN_STEPS" \
   --run.train_ratio 64 \
+  --replay.size "$REPLAY_SIZE" \
   --logger.outputs jsonl,scope,wandb \
   --logger.wandb_mode online \
   --logger.wandb_entity vasilache \
