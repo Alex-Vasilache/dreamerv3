@@ -121,6 +121,14 @@ hypothesis holds:** median well above 30 at 1.0M and spread well below 150. Veri
 before launch that the flag takes effect: `--replay.size 300` caps `replay/items` at
 exactly 300 (job 4676722).
 
+**IMPORTANT — when the fix can first act.** A 1e6 buffer and a 5e6 buffer are
+*identical* until 1e6 steps: neither has evicted anything, so both hold the whole
+history. The 0.2M / 0.5M / 1.0M checkpoints therefore CANNOT show an effect, and
+agreement with the baseline there is expected, not evidence against the fix.
+Divergence begins just after 1M and grows with training: at 2M the baseline's mean
+sample age is ~1M against our ~0.5M; at 4M it is ~2M against ~0.5M. **The first real
+test is 2M, and the full one is 4M.**
+
 **Also ruled out, with evidence** (see `docs/AUDIT_FINDINGS.md`): gradient clipping is
 not binding (actor-critic grad/param 0.003–0.009 against `agc` 0.3); the discount is a
 4.5% effect at `imag_length 16` because `return_lambda 0.95` truncates first;
