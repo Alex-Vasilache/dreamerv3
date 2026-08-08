@@ -76,6 +76,60 @@ condensed (§2).
 
 ---
 
+## 2c. Current state (2026-08-09) — RESOLVED: the implementation is fine, hopper is the problem
+
+Three independent measurements now agree, and together they close the question this
+investigation opened.
+
+**1. On Director's own task, our implementation works and is tightly consistent.**
+e500/e501 (`dmc_walker_walk`, Director arm, identical config to the hopper runs):
+
+| run | step | score (last 100 eps) |
+|---|---|---|
+| e500 | 868k | **923.7** |
+| e501 | 838k | **897.2** |
+
+Two seeds, both near the DMC maximum of 1000, agreeing within 2.9%. `walker_walk` is
+one of Director's two configured DMC tasks. A broken HRL implementation does not
+score 900+ on it with seeds this consistent.
+
+**2. On hopper the original Director is no better than we are.** At a matched 310k
+steps: ours median 31.9 / spread 77.9, TF Director median 10.3 / spread 69.0, same
+2-of-5 bimodality (§2b).
+
+**3. Five seeds on hopper cannot detect even a 15x effect.** At 1.0M the new runs'
+median is 112.7 against the baseline's 7.5 — a 15x difference — with permutation
+p = 0.381. A bootstrap power analysis over the two empirical distributions:
+
+| seeds per group | power at p<0.05 |
+|---|---|
+| 5 | **0.01** |
+| 10 | 0.24 |
+| 15 | 0.26 |
+| 20 | 0.60 |
+| 30 | 0.72 |
+| 50 | 0.91 |
+
+**At five seeds the power is 1%.** Every five-seed (and every single-seed) comparison
+this project has run on `hopper_hop` has been statistically uninformative, including
+the observation that started this investigation and the goal-AE arm comparisons.
+
+### What follows
+
+- **Stop using `hopper_hop` to compare arms.** Its outcome distribution is bimodal
+  and heavy-tailed; it needs ~20-30 seeds per arm to resolve effects that walker
+  resolves with two. `walker_walk` and `cartpole_swingup` are Director's actual DMC
+  tasks and should be the comparison substrate.
+- **Do not read the e495-e499 numbers as validating the replay fix.** The fix is a
+  real defect worth correcting (it deviates from both TF Director and DreamerV3's
+  intended regime) but nothing measured so far distinguishes its effect from luck.
+- **Further code auditing on this question has low expected value.** Six real bugs
+  were found and fixed and the suite went from 57 failing to 0, but none of them
+  explained the variance, and walker scoring 900+ says the remaining algorithm is
+  sound. The variance is a property of the task.
+
+---
+
 ## 2b. Current state (2026-08-09, later) — the original Director has the SAME hopper variance
 
 **The premise behind this whole investigation does not survive a direct test.** The
