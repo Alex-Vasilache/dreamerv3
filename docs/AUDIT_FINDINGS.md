@@ -190,6 +190,49 @@ Failure sets were compared directly between a pristine baseline worktree
 `zerofun`, which the codebase replaced with `portal` and which is not installed.
 Pre-existing and unrelated.
 
+## Round 2 (2026-08-09) -- audit continued while e495-e499 train
+
+No new bugs in production code. Six more areas verified, each previously
+unasserted, and three more variance candidates ruled out with measurements
+rather than argument.
+
+| Area | Tests | Result |
+|---|---|---|
+| Worker credit vs Director `split_traj` | 45 | Our boundary-masked `lambda_return` equals Director's per-window return elementwise, across T/k and lambda in {0, 0.5, 0.95, 1}. Credit provably does not cross a goal boundary; a control shows the isolation comes from the mask, not the horizon. |
+| `Consec` training-batch slicer | 23 | Windows tile the source with no gap and no overlap; the prefix repeats the previous window's tail. Previously untested despite every batch passing through it. |
+| `embodied/jax/heads.py` | 30 | Bin construction, entropy bounds, outscale, shapes, gradients. |
+| `Initializer` scaling | 26 | std is 1/sqrt(fan_in) at every production width; the scale is seed-independent. |
+| `chunk.py` replay storage | 29 | Slice/update/save/load round-trip exactly; the `succ` link survives. |
+| Env wrapper chain | read | `NormalizeAction` functionally identical to Director's. |
+
+**Corrected a wrong assumption of my own.** While testing `heads.py` I found that
+`symexp_twohot` does *not* squash the target and does *not* use uniform bins: it
+builds `linspace(-20, 0)`, applies `symexp`, mirrors it, and hands `TwoHot` raw
+reward-space bins that are geometrically spaced (~0.17 apart near zero, ~7e7 at
+the ends). My earlier `test_outs_twohot.py` class was labelled "the configured
+reward/critic head" while actually exercising a symlog squash with uniform bins,
+which production never uses. Relabelled, and the real construction is now pinned.
+The coarse spacing at hopper's return scale (~49 units at a return of 300) is
+harmless: the two-hot mean is exact between bins, demonstrated by fitting logits
+to targets between bins 100 apart.
+
+**Variance candidates ruled out with data** (in addition to gradient clipping,
+the discount, and the percentile normalizer from round 1):
+
+- **Manager entropy controller.** Across baseline seeds, normalized entropy holds
+  0.50-0.56 against its 0.5 target and the multiplier stays in a narrow band. It
+  never saturates, so it is not driving seeds apart.
+- **Missing worker `advnorm`.** `wkr_goal_adv_mag` is 0.017-0.026 across all five
+  baseline seeds at both 1M and 4M. Director used `mean_std` here and we use
+  `none`, but the realised scale is stable, so this is not causing drift.
+- **Parameter initialization.** The realised std varies by under 2% across five
+  seeds. Seeds differ in draw, not in scale.
+
+**One latent limitation pinned, not fixed:** `Consec.load` restores the cycle
+index but not the current batch, so a mid-cycle resume raises. Unreachable in
+production -- the train loop checkpoints only step/agent/replay, and
+`consec_train = 1` forces a fresh batch on resume.
+
 ## Verified correct (no change needed)
 
 | Component | Evidence |
