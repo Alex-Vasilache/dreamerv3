@@ -201,7 +201,13 @@ with Director's HRL and Director's layer sizes", not a port of TF Director.
 | `lambda_return` vs TF `gve` | OK | `test_lambda_return.py::TestMatchesDirector` |
 | lambda/gamma limit cases | OK | `TestLimitCases`, `TestHorizonSensitivity` |
 | `last`-flag trajectory boundaries | OK | `TestTrajectoryBoundaries` (ours only; TF has no equivalent) |
-| Worker goal reward (`cosine_max`) | OK | Verified earlier this project. |
+| Worker goal reward (`cosine_max`) | OK | `test_tensors_vs_director.py::TestGoalRewardMatchesDirector` -- matches Director's formula exactly, including the `max(norm)` magnitude penalty. |
+| Worker credit windows vs Director `split_traj` | OK | `test_split_traj_equivalence.py` (45 tests). Our boundary-masked `lambda_return` equals Director's per-window return elementwise across T/k combinations and lambda in {0, 0.5, 0.95, 1}; credit provably does not cross a goal boundary. |
+| Worker reward composition | OK | Worker receives only `wkr_goal_rew`; no extrinsic or exploration term, matching Director's `worker_rews: {extr: 0, expl: 0, goal: 1}`. |
+| `Consec` training-batch slicing | OK | `test_streams_consec.py` (23 tests). Windows tile the source with no gap and no overlap; the prefix repeats the previous window's tail. Previously untested despite every batch passing through it. |
+| Env wrapper chain | OK (equivalent) | `NormalizeAction` is functionally identical to Director's (same finite-bound mask, same affine map). We add `ClipAction` and `UnifyDtypes`; Director adds `ExpandScalars` and applies `TimeLimit` itself. For DMC with `repeat: 1` the resulting task is the same. |
+| Manager entropy controller | OK (not a variance source) | Measured across baseline seeds: normalized entropy holds 0.50-0.56 against the 0.5 target and the multiplier stays in a narrow band. Never saturated. |
+| Worker advantage scale | OK (not a variance source) | `wkr_goal_adv_mag` is 0.017-0.026 across all five baseline seeds at both 1M and 4M, so the missing `advnorm` is not producing cross-seed scale drift. |
 | Manager extrinsic reward block aggregation | TODO | |
 | Manager block/skill boundary alignment | TODO | |
 | Skill duration / `split_traj` equivalence | TODO | |
