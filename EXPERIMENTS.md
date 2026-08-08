@@ -179,6 +179,21 @@ Divergence begins just after 1M and grows with training: at 2M the baseline's me
 sample age is ~1M against our ~0.5M; at 4M it is ~2M against ~0.5M. **The first real
 test is 2M, and the full one is 4M.**
 
+**Experiment cleanliness checked by config diff** (e391 baseline vs e495). Of 50
+differing keys, 46 are `goal_vq.*` / `goal_vq_enc.*` / `goal_vq_dec.*` entries that
+simply did not exist when the baselines ran and are inert here because
+`goal_ae_impl: director`. Four are real value changes on keys present in both
+(`goal_soft_reuse_target` 0.7->0.5, `..._init` 0.7->0.0, `..._vel` 0.01->3.9e-6,
+`goal_struct_adapt_target` 0.005->0.01) — all inert, because
+`goal_struct_adapt: False` and `goal_soft_reuse_adapt: False` in BOTH. Every
+training-relevant knob matches exactly: `manager_sample_freq` 8, `imag_length` 16,
+`goal_kl` True, `goal_struct_weight` 0.0, `goal_autoencoder_beta` 0.25,
+`goal_rec_loss_agg` sum, `variable_goal_length` False, `worker_timed_goals` False.
+The one genuine addition is `goal_struct_diag: True` (a geometry diagnostic absent
+from the baselines' code); it costs an O((B*T)^2) similarity matrix per train step
+but enters no loss — `goal_struct_weight` is 0.0 — so it does not affect training.
+**So `replay.size` is the only substantive difference.**
+
 **Also ruled out, with evidence** (see `docs/AUDIT_FINDINGS.md`): gradient clipping is
 not binding (actor-critic grad/param 0.003–0.009 against `agc` 0.3); the discount is a
 4.5% effect at `imag_length 16` because `return_lambda 0.95` truncates first;
