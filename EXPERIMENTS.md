@@ -76,6 +76,48 @@ condensed (§2).
 
 ---
 
+## 2b. Current state (2026-08-09, later) — the original Director has the SAME hopper variance
+
+**The premise behind this whole investigation does not survive a direct test.** The
+five TF Director seeds (original codebase, `code/director`, jobs 4676386/4676394–7)
+have now reached ~310k steps on `dmc_hopper_hop`. Compared like-for-like against our
+JAX baselines at the *same* step:
+
+| implementation | seeds @310k (sorted) | median | spread | near-zero (<10) |
+|---|---|---|---|---|
+| JAX (ours, replay 5e6) | 87.4  47.2  31.9  9.8  9.5 | **31.9** | 77.9 | 2/5 |
+| TF Director (original, replay 1e6) | 69.3  45.3  10.3  5.9  0.3 | **10.3** | 69.0 | 2/5 |
+
+**Our port is not worse than the original.** Its median is higher (31.9 vs 10.3) and
+its spread is comparable (77.9 vs 69.0), with the same 2-of-5 near-zero bimodality.
+The original Director shows the same wide, bimodal seed spread on this task.
+
+Two consequences:
+
+1. **There is no "our variance vs the published Director plots" gap to close on
+   hopper.** Director's own DMC configs default to `dmc_walker_walk` and
+   `dmc_cartpole_swingup` — `hopper_hop` is not a task Director was configured or
+   reported on, so there were never comparable published curves for it. The wide
+   spread looks like a property of hopper_hop under Director-style HRL, not a defect
+   in the port.
+2. **The audit still stands on its own.** Six real bugs were found and fixed, and the
+   replay buffer never evicting IS a genuine deviation from both TF Director (1e6) and
+   DreamerV3's intended regime. e495–e499 remain a worthwhile test of that fix — but
+   the expectation should now be "does it improve on our own baseline", not "does it
+   close a gap to Director".
+
+**Caveat:** the TF runs are at 310k–450k of a much longer budget, and both
+implementations are still in the regime where neither buffer has evicted (TF's 1e6 cap
+is not yet binding at 310k either). The comparison should be repeated at 1M and 2M.
+
+**Where to look next for the variance itself**, now that the port is not the
+suspect: task choice (walker_walk / cartpole_swingup are Director's actual tasks and
+should be far better behaved), seed count (5 seeds cannot distinguish bimodality from
+noise, especially since neither implementation is reproducible — see §2a), and the
+possibility that hopper_hop simply needs a different exploration setting.
+
+---
+
 ## 2a. Current state (2026-08-09) — the replay buffer never evicted; e495–e499 test the fix
 
 **Root cause found for the hopper Director seed variance.** `replay.size` is the
