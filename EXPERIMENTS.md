@@ -179,6 +179,38 @@ Divergence begins just after 1M and grows with training: at 2M the baseline's me
 sample age is ~1M against our ~0.5M; at 4M it is ~2M against ~0.5M. **The first real
 test is 2M, and the full one is 4M.**
 
+### Interim result at 0.5M (2026-08-09) — looks better, is not yet evidence
+
+| | seeds @0.5M | median | spread |
+|---|---|---|---|
+| baseline (e391…e407) | 170.0  33.6  22.0  9.8  4.5 | 22.0 | 165.5 |
+| e495–e499 (replay 1e6) | 62.9  62.4  36.7  32.1  25.7 | **36.7** | **37.2** |
+
+Higher median, 4.4x tighter spread, and no near-zero seed. **This is not evidence
+that the fix worked, for two independent reasons:**
+
+1. **The fix cannot be acting at 0.5M.** Both a 1e6 and a 5e6 buffer hold the entire
+   history at that point; neither has evicted. Whatever produced this difference, it
+   is not replay capacity.
+2. **It is not statistically distinguishable from chance.** Exact permutation tests
+   on the two groups of five: p = 0.238 on the median difference, p = 0.103 on the
+   spread. With five seeds and a bimodal outcome distribution, a difference this size
+   arises by luck roughly a quarter / a tenth of the time.
+
+No training-relevant code changed between the two batches either: the commits since
+the baselines ran (2026-08-01/02) are goal-AE additions, inert under
+`goal_ae_impl: director`, plus the audit fixes, none of which alter training. The
+resolved configs differ only in `replay.size` (checked below).
+
+So the most likely reading is **run-to-run luck** — which is exactly what §2a's
+determinism finding predicts, since the environments are unseeded and a "seed" is
+not reproducible. **Five seeds cannot resolve this question.** Distinguishing a real
+effect from luck at this effect size needs on the order of 15–20 seeds, or a task
+with a less bimodal outcome distribution.
+
+The 2M checkpoint remains the first point where the fix *can* act, and the same
+significance caveat will apply there.
+
 **Experiment cleanliness checked by config diff** (e391 baseline vs e495). Of 50
 differing keys, 46 are `goal_vq.*` / `goal_vq_enc.*` / `goal_vq_dec.*` entries that
 simply did not exist when the baselines ran and are inert here because
