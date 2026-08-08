@@ -359,6 +359,14 @@ def vq_goal_loss(
   # introduce one.
   tiny = 1e-12
   metrics = {
+      # Per-element reconstruction, kept UNREDUCED so the caller can report a
+      # real spread. The leading underscore marks it internal: `agent.py` pops
+      # it before logging, because the logger expects scalars. Without it the
+      # agent had only `rec_q.mean()` to work with and `goal/rec_std` came out
+      # as `scalar.std()` -- identically 0.0 in every VQ/SOM/LipVQ run (checked
+      # against e486/e488/e490: 0.0 in all ~2000 logged rows), while the
+      # Director arm reported a real std. Comparing the two was meaningless.
+      'vq/_rec_bt': rec,
       'vq/rec_q': rec_q.mean(),
       'vq/codebook': terms['codebook'].mean(),
       'vq/commit': terms['commit'].mean(),
@@ -370,6 +378,15 @@ def vq_goal_loss(
       'vq/lip_penalty': penalty,
       'vq/lip_bound_max': (
           jnp.stack(bounds).max() if bounds else jnp.zeros((), f32)),
+      # The smallest per-layer bound. This is the number that decides whether
+      # the `logprod` penalty is safe: Liu et al. (SIGGRAPH 2022, Eq. 14)
+      # reject the log form because log(b) -> -inf as b -> 0, so the penalty is
+      # unbounded below and keeps pushing whichever layer is already smallest.
+      # `lip_bound_max` cannot see that -- a single layer collapsing leaves the
+      # max untouched. If this trends toward 0 while `lip_penalty` falls without
+      # settling, the log form is misbehaving exactly as they describe.
+      'vq/lip_bound_min': (
+          jnp.stack(bounds).min() if bounds else jnp.zeros((), f32)),
       # Fraction of output units whose weights are actually being rescaled.
       # 0.0 means the constraint is inert and the arm is equivalent to plain
       # VQ; this is what says whether the Lipschitz arm is doing anything.

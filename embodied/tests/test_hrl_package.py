@@ -13,7 +13,14 @@ import pytest
 
 import dreamerv3.hrl as hrl
 
-SUBMODULES = ['heads', 'losses', 'tensors', 'video', 'goals', 'manager', 'reporting']
+# Kept in sync with dreamerv3/hrl/ by test_no_unlisted_submodules below.
+# `goal_ae`, `lipschitz` and `vq` arrived with the SOM-VAE / LipVQ goal
+# autoencoder and were never added here, so that test had been failing on the
+# branch since those modules landed.
+SUBMODULES = [
+    'goal_ae', 'goals', 'heads', 'lipschitz', 'losses', 'manager',
+    'reporting', 'tensors', 'video', 'vq',
+]
 
 
 def test_every_submodule_imports():

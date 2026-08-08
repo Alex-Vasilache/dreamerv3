@@ -11,18 +11,34 @@ so the layer's inf-norm operator norm ``max_i sum_j |W_ij|`` is bounded by
 Lipschitz constant is bounded by the product of the per-layer bounds, which is
 the quantity the ``L_Lipschitz`` penalty shrinks.
 
-Two details where the LipVQ-VAE paper and its released code disagree with the
-project's ``motivation.tex`` write-up; both are exposed as options here:
+The normalization itself matches the papers exactly, including the clamp: the
+piecewise form in ``motivation.tex`` Eq. (lip_weight_norm) -- keep the row if
+its absolute row sum is already under ``softplus(c_l)``, otherwise rescale it
+to saturate the bound -- is ``jnp.minimum(1.0, softplus(c)/absrowsum)``, which
+is what Liu et al.'s listing and the LipVQ-VAE released code
+(``robomimic/models/vq_vae/backbone_lfqvae_v5.py``) both do. ``clamp=False``
+exposes the unconditional rescale, and is off.
 
-  * ``motivation.tex`` writes the normalization as an unconditional rescale
-    ``W_i / sum_j |W_ij| * softplus(c_i)``. The paper's text ("If the absolute
-    row sum is already smaller than softplus(c_l), no rescaling is applied")
-    and the released code (``torch.minimum(1.0, softplus(c)/absrowsum)`` in
-    ``robomimic/models/vq_vae/backbone_lfqvae_v5.py``) both clamp at 1. We
-    follow the paper/code; ``clamp=False`` restores the unconditional form.
-  * The penalty is a PRODUCT over layers in the paper (and in Liu et al.,
-    where it equals the network's Lipschitz bound) but a SUM in
-    ``motivation.tex``. ``lip_penalty`` supports both.
+Two places where the DEFAULTS here depart from the papers. Both are options,
+and the ``goal_som_orig_lipvq_line_paper`` arm sets both to the paper values:
+
+  * The penalty is a PRODUCT over layers in Liu et al. Eq. (10) and in
+    ``motivation.tex`` Eq. (lipvqvae_loss), where it equals the network's
+    Lipschitz bound. The default here is ``logprod``, which is their Eq. (14)
+    -- a form they consider and reject; see ``lip_penalty``.
+  * ``c_l`` is a single SCALAR per layer in both papers (Liu et al. Eq. 9 and
+    its listing broadcast one ``softplus(c_l)`` against the vector of row
+    sums), and in ``motivation.tex`` Eq. (lip_weight_norm), whose subscript is
+    the layer ``l`` and not the row ``i``. ``per_row=True``, the default here,
+    gives one bound per output unit instead. Since ``bound()`` reduces them
+    with ``max``, the penalty reaches only the widest unit of each layer, which
+    makes it far weaker than the paper's.
+
+One assumption the write-up leaves implicit: Eq. (lipschitz_constant_product),
+``c = prod_l ||W^(l)||``, holds only when the activations are 1-Lipschitz. The
+goal-AE trunks default to ``act='silu'``, whose slope peaks at ~1.0998, so the
+composed bound understates the true constant by ~1.0998 per activation. The
+paper arm uses ``relu``.
 
 Indexing note: ``embodied.jax.nets.Linear`` stores its kernel as ``(in, out)``
 and computes ``x @ kernel``, i.e. the LipVQ "row" ``W_i`` (torch layout
@@ -94,6 +110,18 @@ def lip_penalty(bounds, impl='logprod'):
   same quantity, so it shrinks exactly what ``prod`` shrinks, but its gradient
   with respect to a layer's bound is ``1/bound`` rather than the product of the
   other layers' bounds, which keeps a single gamma usable across architectures.
+
+  Liu et al. consider and REJECT ``logprod`` (their Eq. 14): ``log`` goes to
+  negative infinity as a bound approaches zero, so the penalty is unbounded
+  below and its gradient ``1/b`` grows the smaller a layer already is, giving
+  "the tendency to continue penalizing the layer with a smaller Lipschitz
+  constant". They report bounds that never converge. That objection is real and
+  the depth-independence argument above does not answer it; the reason it does
+  not bite here is ``per_row=True`` (see the module docstring), under which the
+  penalty reaches one unit per layer rather than the layer as a whole. The
+  runs bear this out -- over 3.7M steps of e481 the penalty sits at 24.9-25.0
+  and the largest bound moves 27.88 -> 27.33. ``vq/lip_bound_min`` is logged to
+  catch the failure mode if it ever does appear.
 
   An empty layer list yields ``0`` for every impl (an off switch, not a product
   identity of 1, so that ``gamma * penalty`` vanishes when Lipschitz is off).

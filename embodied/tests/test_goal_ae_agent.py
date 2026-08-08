@@ -345,6 +345,44 @@ class TestManagerRingHead:
                  ['mgr_ent_norm_skill_mean'])
     for v in (ring, base):
       assert 0.0 <= v <= 1.0, (ring, base)
-    # Fresh heads start near uniform, so both should sit high; an L-sized
-    # discrepancy in maxent would show up as one of them near 1/L of the other.
-    assert abs(ring - base) < 0.35, (ring, base)
+    # The Director head starts near uniform, so its normalized entropy sits
+    # high. The ring head deliberately does NOT: `scale_init` is a temperature
+    # on std-normalized distances, chosen so the head starts at or BELOW the
+    # 0.5 entropy target, because the adapter is one-directional and can only
+    # raise entropy. `goal_ae.ManagerRingHead`'s docstring quantifies this --
+    # "at scale_init = 8 the normalized entropy is 0.16 on a random codebook".
+    #
+    # The old assertion here (`abs(ring - base) < 0.35`) predates commit
+    # 4c0e3cb "Make the ring head's scale an actual temperature" and has been
+    # failing ever since; it asserted the two heads start at similar entropy,
+    # which the redesign deliberately broke.
+    #
+    # What that assertion was really guarding -- an L-sized error in the
+    # normalization constant -- is checked directly below instead, which does
+    # not depend on the initial entropy at all.
+    assert base > 0.5, base
+    assert ring <= 0.5 + 1e-6, (
+        f'ring head must start at or below the 0.5 entropy target, got {ring}')
+
+  def test_both_heads_normalise_entropy_by_the_same_constant(self):
+    """The invariant an L-sized maxent bug would break.
+
+    Both must use `maxent = blocks * log(classes)`: `embodied/jax/heads.py`
+    for the Director head, `hrl/goal_ae.py` for the ring head. Comparing the
+    constants is decisive, whereas comparing initial entropies is not -- the
+    ring head's 0.14 is close to 1/L of the Director head's 1.0, so the two
+    explanations are numerically indistinguishable at that level.
+    """
+    import numpy as np
+    blocks, classes = 8, 8
+    want = float(blocks * np.log(classes))
+    from embodied.jax import heads as jheads
+    import inspect
+    src = inspect.getsource(jheads)
+    assert 'outer * np.log(classes)' in src.replace('  ', ' '), (
+        'the Director head no longer uses outer * log(classes) for maxent')
+    from dreamerv3.hrl import goal_ae as ga
+    gsrc = inspect.getsource(ga)
+    assert 'self.blocks * np.log(self.codebook.classes)' in gsrc, (
+        'the ring head no longer uses blocks * log(classes) for maxent')
+    assert want == pytest.approx(float(blocks * np.log(classes)))

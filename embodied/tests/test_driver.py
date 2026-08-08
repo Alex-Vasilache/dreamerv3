@@ -54,7 +54,12 @@ class TestDriver:
     seq = {k: np.array([seq[i][k] for i in range(len(seq))]) for k in seq[0]}
     assert (seq['is_first'] == [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]).all()
     assert (seq['is_last']  == [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1]).all()
-    assert (seq['reset']    == [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1]).all()
+    # `reset` is no longer recorded in the transition: `Driver._step` builds
+    # `trans` from obs/acts/outs/logs and only afterwards puts `reset` into
+    # `self.acts` for the NEXT env call. The episode-boundary information the
+    # old assertion checked is exactly `is_last`, asserted on the line above.
+    assert 'reset' not in seq
+    assert (driver.acts['reset'] == seq['is_last'][-1:]).all()
     assert (seq['act_disc'] == [1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0]).all()
 
   def test_agent_inputs(self):
@@ -107,7 +112,9 @@ class TestDriver:
     driver(agent.policy, episodes=1)
     assert len(steps) == 8
     steps = {k: np.array([x[k] for x in steps]) for k in steps[0]}
-    assert (steps['reset'] == [0, 0, 0, 0, 0, 0, 0, 1]).all()
+    # See test_env_reset: `reset` is not part of the recorded transition any
+    # more, and the vector this asserted is identical to `is_last` below.
+    assert 'reset' not in steps
     assert (steps['is_first'] == [1, 0, 0, 1, 0, 0, 0, 0]).all()
     assert (steps['is_last'] == [0, 0, 0, 0, 0, 0, 0, 1]).all()
 

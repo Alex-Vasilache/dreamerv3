@@ -195,7 +195,13 @@ defaults:
       # small GOAL edit, which is the property being tested.
       lip_apply: enc_dec        # enc | dec | enc_dec
       lip_out: True             # also constrain the final projection
-      lip_per_row: True         # one bound per output unit (paper text + code)
+      # One bound per output unit. NOT the paper's form: Liu et al. carry a
+      # single scalar c_i per layer (their listing broadcasts `softplus_ci`
+      # against the vector of row sums), and LipVQ-VAE follows them. Because
+      # `bound()` reduces the per-unit bounds with `max`, the penalty's
+      # gradient is a one-hot on the widest unit, so it pulls on 1 of 1024
+      # bounds per layer instead of all of them. Set False for the paper form.
+      lip_per_row: True
       lip_cinit: -1.0           # <0: init the bound to the layer's own row sums
       lip_clamp: True           # never scale a compliant row UP (paper + code)
       # Require norm=none so the per-layer bounds compose into a bound on the
@@ -672,6 +678,57 @@ goal_som_orig_lipvq_line:
     goal_struct_adapt: False
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: True, topology: line, ste: 'off', commit_joint: True}
+
+# Liu et al. (SIGGRAPH 2022) exactly as written, on top of the pure SOM-VAE
+# line. Differs from goal_som_orig_lipvq_line by the four places our default
+# departed from the paper, and by nothing else:
+#
+#   lip_per_row: False  Sec. 4.1.1 gives "a trainable Lipschitz bound c_i for
+#                       layer i" -- ONE scalar per layer, broadcast against the
+#                       vector of row sums. Our per-unit default made the
+#                       penalty reach 1 of 1024 bounds per layer (`bound()`
+#                       reduces with max, whose gradient is a one-hot).
+#   lip_impl: prod      Eq. (10), alpha * prod_i softplus(c_i). Our `logprod`
+#                       is their Eq. (14), which they consider and reject.
+#   lip_scale: 1.1e-11  Their alpha. It is swept per task in the paper, and the
+#                       form change moves its scale entirely. Taken from the
+#                       measured value rather than estimated: e481 logs
+#                       lip_penalty = 24.93 at init (BIG scale), and that IS
+#                       log(prod), so prod = e^24.93 = 6.7e10. Do not estimate
+#                       it as bound_max^8 -- the 8 constrained layers have
+#                       different input widths (the encoder's first takes deter
+#                       at 8192), so their bounds are not equal, and 27.9^8
+#                       overstates it by 5x. 1.1e-11 * 6.7e10 = 0.75, the same
+#                       absolute contribution 0.03 * logprod had, against a
+#                       goal-AE reconstruction of ~25 (3%). So this arm differs
+#                       from its sibling in the FORM of the penalty, not its
+#                       size.
+#                       Unlike `logprod`, `prod` is self-limiting: the gradient
+#                       on each bound is prod(others), which collapses as the
+#                       bounds fall, so a too-large alpha settles rather than
+#                       running away.
+#   act: relu           Eq. (2)'s product-of-bounds is a bound on the network
+#                       only for a 1-Lipschitz activation ("e.g. ReLU"). SiLU
+#                       peaks at ~1.0998, so with 3 hidden layers our composed
+#                       bound understated the true constant by ~1.33x and
+#                       `strict_bound` did not deliver what it claims.
+#
+# Everything else already matched the paper: the min(1, .) clamp (lip_clamp),
+# normalization applied in the forward pass with the raw weights left
+# unconstrained ("we never clip the weights during training"), norm=none so the
+# per-layer bounds compose, and the reduction axis (ours is theirs transposed,
+# since our kernel is (in, out) and theirs is (out, in)).
+goal_som_orig_lipvq_line_paper:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq_enc: {act: relu}
+    goal_vq_dec: {act: relu}
+    goal_vq: {som: True, lip: True, topology: line, ste: 'off', commit_joint: True,
+              lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11}
 
 goal_som_lipvq_line_mgr:
   agent:

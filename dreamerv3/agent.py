@@ -913,13 +913,15 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       goal_base_loss, vq_mets = goal_ae.vq_goal_loss(
           self.goal_enc, self.goal_dec, deter_feat, 2, z_e=z_e,
           commit_adapt=commit_adapt, **self._goal_vq_kw)
+      # Reconstruction only: from z_q, plus from z_e on the SOM arms. Taken
+      # UNREDUCED so ``goal/rec_std`` below is a real spread; the scalar
+      # ``vq/rec_q`` would make it ``scalar.std()`` == 0.0 always.
+      goal_rec_loss = vq_mets.pop('vq/_rec_bt')
       # ``vq/x`` -> ``goal/x`` so everything lands under the same log prefix as
-      # the Director-arm goal metrics.
+      # the Director-arm goal metrics. Popped above so the unreduced tensor is
+      # not handed to the logger, which expects scalars.
       metrics.update({f'goal/{k.split("/", 1)[1]}': v for k, v in vq_mets.items()})
       metrics['goal/total'] = goal_base_loss.mean()
-      # Reconstruction only: from z_q, plus from z_e on the SOM arms.
-      goal_rec_loss = vq_mets['vq/rec_q'] + vq_mets.get(
-          'vq/rec_e', jnp.zeros((), f32))
       # goal/rec_* must stay the RECONSTRUCTION for continuity with the
       # Director arm, not the total: the VQ objective carries codebook,
       # commitment, neighborhood and Lipschitz terms too, and reporting their

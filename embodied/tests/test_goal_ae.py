@@ -286,7 +286,11 @@ class TestVQGoalLoss:
     loss, mets = self._run(enc, dec, params, x)
     assert loss.shape == (2, 3)
     assert jnp.isfinite(loss).all()
-    assert jnp.isfinite(jnp.stack(list(mets.values()))).all()
+    # Keys starting with an underscore after the prefix are internal
+    # unreduced tensors (see `vq/_rec_bt`); everything else is a scalar.
+    scalars = [v for k, v in mets.items() if not k.split('/', 1)[1].startswith('_')]
+    assert jnp.isfinite(jnp.stack(scalars)).all()
+    assert all(jnp.asarray(v).ndim == 0 for v in scalars)
 
   def test_som_off_has_no_neighbor_term_and_no_second_reconstruction(self):
     enc, dec = build()
@@ -1161,3 +1165,52 @@ class TestLineSmoothedCredit:
   def test_rejects_an_unknown_topology(self):
     with pytest.raises(AssertionError):
       hrl_heads.smooth_skill_event(self._event(np.array([[0]])), 0.1, 'grid')
+
+
+class TestReconstructionSpreadMetric:
+  """Regression for `goal/rec_std` reading 0.0 in every VQ arm.
+
+  `agent.py` computed `goal/rec_std` from `vq/rec_q`, which is already
+  `rec_q.mean()`. `scalar.std()` is 0.0, so the metric was identically zero in
+  every VQ/SOM/LipVQ run while the Director arm reported a real spread, making
+  the two arms' `goal/rec_std` incomparable. `vq_goal_loss` now also returns the
+  unreduced per-element reconstruction as `vq/_rec_bt`.
+  """
+
+  def _mets(self, **kw):
+    enc, dec = build()
+    x = deters((2, 3))
+    params = init_all(enc, dec, x)
+    def fn(x):
+      return goal_ae.vq_goal_loss(enc, dec, x, 2, **kw)
+    return nj.pure(fn)(params, x)[1][1]
+
+  def test_the_unreduced_reconstruction_is_returned(self):
+    mets = self._mets()
+    assert 'vq/_rec_bt' in mets
+    assert mets['vq/_rec_bt'].shape == (2, 3)
+
+  def test_its_mean_matches_the_scalar_reconstruction_metric(self):
+    mets = self._mets(som=False)
+    assert float(mets['vq/_rec_bt'].mean()) == pytest.approx(
+        float(mets['vq/rec_q']), rel=1e-5)
+
+  def test_on_the_som_arm_it_is_the_sum_of_both_reconstructions(self):
+    mets = self._mets(som=True)
+    want = float(mets['vq/rec_q']) + float(mets['vq/rec_e'])
+    assert float(mets['vq/_rec_bt'].mean()) == pytest.approx(want, rel=1e-5)
+
+  def test_the_spread_is_not_degenerate(self):
+    """The whole point: a real std, not 0.0."""
+    mets = self._mets()
+    assert float(mets['vq/_rec_bt'].std()) > 0.0
+
+  def test_it_carries_no_gradient(self):
+    """Metrics are stop-gradiented so they cannot open a backward path."""
+    enc, dec = build()
+    x = deters((2, 3))
+    params = init_all(enc, dec, x)
+    def fn(x):
+      return goal_ae.vq_goal_loss(enc, dec, x, 2)[1]['vq/_rec_bt'].sum()
+    g = nj.pure(jax.grad(fn))(params, x)[1]
+    assert jnp.all(g == 0.0)

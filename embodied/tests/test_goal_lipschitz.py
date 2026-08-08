@@ -103,6 +103,53 @@ class TestRowSumAndScale:
         normed[0, 0] / normed[1, 0], kernel[0, 0] / kernel[1, 0], rtol=1e-5)
 
 
+def paper_normalization(Wi, softplus_ci):
+  """Liu et al. (SIGGRAPH 2022) Sec. 4.1.1, transcribed verbatim.
+
+  Their layout is torch's ``(out, in)`` and they compute ``W @ x``; ours is
+  ``(in, out)`` computing ``x @ W``, so the two differ by a transpose and
+  nothing else. Kept literal (including the reduction axis) so the comparison
+  below is against the paper rather than against a paraphrase of it.
+  """
+  absrowsum = jnp.sum(jnp.abs(Wi), axis=1)
+  scale = jnp.minimum(1.0, softplus_ci / absrowsum)
+  return Wi * scale[:, None]
+
+
+class TestMatchesThePaperListing:
+
+  def test_normalization_equals_the_paper_snippet(self):
+    rng = np.random.default_rng(0)
+    W = jnp.asarray(rng.normal(0, 1, (5, 7)), f32)        # (out, in)
+    for spc in (0.1, 1.0, 3.0, 100.0):
+      want = paper_normalization(W, spc)
+      got = lip.lip_normalize(W.T, lip.softplus_inv(spc))  # (in, out)
+      np.testing.assert_allclose(got, want.T, rtol=1e-5, atol=1e-6)
+
+  def test_our_row_reduction_is_theirs_after_the_transpose(self):
+    rng = np.random.default_rng(1)
+    W = jnp.asarray(rng.normal(0, 1, (5, 7)), f32)
+    np.testing.assert_allclose(
+        lip.abs_row_sum(W.T), jnp.sum(jnp.abs(W), axis=1), rtol=1e-6)
+
+  def test_activation_lipschitz_constants(self):
+    # The composed bound prod_i softplus(c_i) is a bound on the TRUNK only if
+    # the activation is 1-Lipschitz -- Liu et al. assume this ("1-Lipschitz
+    # activation functions (e.g. ReLU)", Eq. 2). `strict_bound` asserts
+    # norm='none' but says nothing about the activation, and the goal-AE trunks
+    # run act='silu' (configs.yaml goal_vq_enc/goal_vq_dec). SiLU is not
+    # 1-Lipschitz, so the composed bound is understated by ~1.1 per activation.
+    x = jnp.linspace(-20.0, 20.0, 200_001, dtype=f32)
+    def maxslope(name):
+      d = jax.vmap(jax.grad(lambda v: nets.act(name)(v)))(x)
+      return float(jnp.abs(d).max())
+    assert maxslope('relu') <= 1.0 + 1e-5
+    silu = maxslope('silu')
+    assert silu > 1.09, silu
+    # Three hidden activations in the goal-AE trunk (layers=3).
+    assert silu ** 3 > 1.3
+
+
 class TestPenalty:
 
   def test_prod_sum_and_logprod(self):
@@ -151,6 +198,37 @@ class TestPenalty:
     # grows by 4^3 = 64x going from 3 layers to 6.
     np.testing.assert_allclose(
         grad_of(6, 'prod') / grad_of(3, 'prod'), 64.0, rtol=1e-4)
+
+  def test_logprod_is_unbounded_below_as_a_bound_vanishes(self):
+    # Liu et al. (SIGGRAPH 2022) Sec. 4.2 Eq. (14) reject exactly the form this
+    # project defaults to: "this makes the regularization unbounded because log
+    # goes to negative infinity when one of the Lipschitz constants approaches
+    # zero. In practice, this implies the tendency to continue penalizing the
+    # layer with a smaller Lipschitz constant."
+    #
+    # Both halves of that are properties of the function, not of their setup,
+    # so they are asserted here rather than argued about. `prod` has a floor at
+    # 0; `logprod` does not.
+    for b in (1e-2, 1e-4, 1e-6):
+      bounds = [jnp.asarray(b, f32)] + [jnp.asarray(4.0, f32)] * 3
+      assert lip.lip_penalty(bounds, 'prod') > 0.0
+      assert lip.lip_penalty(bounds, 'logprod') < 0.0
+    # ...and it keeps falling without settling.
+    assert (lip.lip_penalty([jnp.asarray(1e-6, f32)] * 4, 'logprod')
+            < lip.lip_penalty([jnp.asarray(1e-2, f32)] * 4, 'logprod'))
+
+  def test_prod_self_limits_where_logprod_accelerates(self):
+    # The mechanism behind the paper's objection. For the shrinking layer, the
+    # product form's gradient is prod(others), which is CONSTANT in b and so
+    # gets outweighed by the task loss as b falls; the log form's is 1/b, which
+    # diverges, so the pressure to shrink grows the smaller the layer gets.
+    def grad_of(b, impl):
+      v = jnp.asarray([b, 4.0, 4.0, 4.0], f32)
+      return float(np.asarray(
+          jax.grad(lambda v: lip.lip_penalty(list(v), impl))(v))[0])
+    np.testing.assert_allclose(grad_of(1e-2, 'prod'), 64.0, rtol=1e-4)
+    np.testing.assert_allclose(grad_of(1e-6, 'prod'), 64.0, rtol=1e-4)
+    assert grad_of(1e-6, 'logprod') > 100 * grad_of(1e-2, 'logprod')
 
   def test_empty_is_zero_for_every_impl(self):
     # Off switch: gamma * penalty must vanish, so an empty product is 0, not 1
@@ -203,6 +281,32 @@ class TestLipLinear:
     _, bound = nj.pure(net.bound)(params)
     expect = jax.nn.softplus(params['lin/c']).max()
     np.testing.assert_allclose(bound, expect, rtol=1e-6)
+
+  def test_penalty_gradient_reaches_only_the_widest_row(self):
+    # Where this project departs from Liu et al., and why the Eq. (14) runaway
+    # above does not show up in the runs. In the paper c_i is ONE scalar per
+    # layer (their listing broadcasts `softplus_ci` against a vector of row
+    # sums), so the penalty pulls on every row of that layer. Here `per_row`
+    # gives a bound per output unit and `bound()` reduces them with `max`, so
+    # the penalty's gradient is a one-hot on the widest row and every other
+    # row of the layer receives nothing from it.
+    net, params, x = self._make(D=6, U=4)
+    c = np.asarray(params['lin/c'], np.float64)
+    def penalty(p):
+      return jnp.log(nj.pure(net.bound)(p)[1])
+    g = np.asarray(jax.grad(penalty)(params)['lin/c'])
+    assert (np.abs(g) > 0).sum() == 1, g
+    assert int(np.argmax(np.abs(g))) == int(np.argmax(c))
+
+  def test_scalar_bound_gradient_reaches_the_whole_layer(self):
+    # Contrast: with the paper's per-layer scalar there is one knob and it
+    # governs all rows, so the penalty cannot be inert on any of them.
+    net, params, x = self._make(D=6, U=4, per_row=False)
+    def penalty(p):
+      return jnp.log(nj.pure(net.bound)(p)[1])
+    g = np.asarray(jax.grad(penalty)(params)['lin/c'])
+    assert g.shape == ()
+    assert abs(float(g)) > 1e-6
 
   def test_enforces_inf_norm_lipschitz(self):
     net, params, x = self._make(D=6, U=4, cinit=0.3)

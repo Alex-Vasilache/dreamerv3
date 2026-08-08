@@ -22,7 +22,8 @@
 #   sbatch sbatch/run_smoke_goal_ae_ablation.sbatch
 set -uo pipefail
 
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+# Overridable so the audit worktree can smoke-test its own code.
+REPO="${REPO:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae}"
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 export MUJOCO_GL=egl
 
@@ -31,7 +32,7 @@ STEPS="${STEPS:-400}"
 # the a100s are full. PLATFORM=cpu falls back to no GPU at all; debug scale is
 # small enough that it still exercises the env/replay/driver loop.
 PLATFORM="${PLATFORM:-cuda}"
-ARMS="${ARMS:-director vq som lipvq som_lipvq som_lipvq_mgr som_lipvq_smooth som_line som_lipvq_line som_lipvq_line_smooth som_lipvq_line_mgr som_orig_line som_orig_lipvq_line som_orig_line_adapt}"
+ARMS="${ARMS:-director vq som lipvq som_lipvq som_lipvq_mgr som_lipvq_smooth som_line som_lipvq_line som_lipvq_line_smooth som_lipvq_line_mgr som_orig_line som_orig_lipvq_line som_orig_line_adapt som_orig_lipvq_line_paper}"
 BASE="${BASE:-/work/DoyaU/vasilache/work/smoke_goal_ae_j${SLURM_JOB_ID}}"
 mkdir -p "$BASE"
 
@@ -52,6 +53,11 @@ for arm in $ARMS; do
     som_orig_line) cfg="goal_som_orig_line" ;;
     som_orig_lipvq_line) cfg="goal_som_orig_lipvq_line" ;;
     som_orig_line_adapt) cfg="goal_som_orig_line_adapt" ;;
+    som_orig_lipvq_line_paper) cfg="goal_som_orig_lipvq_line_paper" ;;
+    # Without this, an arm missing from the list above leaves `cfg` unset and
+    # `set -u` kills the whole script at the echo below with "cfg: unbound
+    # variable" -- naming neither the arm nor the real problem.
+    *) echo "unknown ARM=$arm; add it to the case above" >&2; fail=1; continue ;;
   esac
   echo "=============== ARM=$arm (configs: debug $cfg) ==============="
   logdir="$BASE/$arm"
