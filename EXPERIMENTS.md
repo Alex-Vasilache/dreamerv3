@@ -110,6 +110,14 @@ Two consequences:
 implementations are still in the regime where neither buffer has evicted (TF's 1e6 cap
 is not yet binding at 310k either). The comparison should be repeated at 1M and 2M.
 
+**e500/e501 (launched 2026-08-09, jobs 4676752/4676753)** — `dmc_walker_walk`,
+Director arm, seeds 0-1, replay 1e6, otherwise identical to e495-e499. Launched on
+otherwise-idle A100 capacity to test the obvious follow-up: `walker_walk` IS one of
+Director's configured DMC tasks, so if the wide spread is a property of hopper rather
+than of the implementation, walker should be markedly better behaved. Two seeds is
+enough to see whether scores are healthy and consistent; it is not enough to estimate
+a variance.
+
 **Where to look next for the variance itself**, now that the port is not the
 suspect: task choice (walker_walk / cartpole_swingup are Director's actual tasks and
 should be far better behaved), seed count (5 seeds cannot distinguish bimodality from
