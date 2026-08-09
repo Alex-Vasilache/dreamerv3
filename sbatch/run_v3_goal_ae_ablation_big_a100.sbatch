@@ -63,11 +63,27 @@ MGR_EXPL_W="${MGR_EXPL_W:-0.1}"
 IMAG_LENGTH="${IMAG_LENGTH:-16}"
 RUN_ENVS="${RUN_ENVS:-8}"
 RUN_STEPS="${RUN_STEPS:-4000000}"
-# Track goal-code/goal-space geometry across training. This is the property the
-# whole architecture targets, so it is ON here (unlike the baselines, where only
-# seed 4 logged it) -- costs an O((batch_size*batch_length)^2) similarity matrix
-# per train step and does NOT enter any loss.
-GOAL_STRUCT_DIAG="${GOAL_STRUCT_DIAG:-True}"
+# Track goal-code/goal-space geometry across training. Costs an
+# O((batch_size*batch_length)^2 = 1024^2) similarity matrix per train step --
+# i.e. 64 of them per env step at train_ratio 64 -- and does NOT enter any
+# loss. Now OFF by default: it was the single biggest avoidable cost in the
+# 4M-step budget (see below), and nothing in the current programme reads
+# goal/struct_corr*. Set GOAL_STRUCT_DIAG=True to get it back.
+GOAL_STRUCT_DIAG="${GOAL_STRUCT_DIAG:-False}"
+# Speed knobs. None of these change what is computed by training -- they only
+# remove diagnostics/IO -- so runs with different values stay comparable.
+#   PREALLOC   True = grab the GPU allocation once up front instead of growing
+#              it per step (memory use is ~21% of an 80GB A100, so this is free)
+#   LOG_OUTPUT scope wrote ~400MB of episode video per run that nothing reads
+#   LOG_VIDEO  False stops stacking every frame of worker 0's episodes in RAM
+PREALLOC="${PREALLOC:-True}"
+LOG_OUTPUTS="${LOG_OUTPUTS:-jsonl,wandb}"
+LOG_VIDEO="${LOG_VIDEO:-False}"
+#   RUN_DEBUG  Driver placement. True = envs stepped in-process, False = one
+#              process per env. Measured 2026-08-09 on this exact recipe:
+#              in-process 40.0 env fps / GPU 0.90, subprocess 36.4 / 0.79 --
+#              piping 64x64 observations costs more than stepping DMC inline.
+RUN_DEBUG="${RUN_DEBUG:-True}"
 # Replay capacity. The upstream DreamerV3 default is 5e6, which EXCEEDS the 4e6
 # steps these runs take, so `Replay._insert` never reaches capacity and nothing
 # is ever evicted: `replay/items` grows linearly to the step count (measured in
@@ -116,6 +132,7 @@ REPLAY_SIZE=$REPLAY_SIZE
 COMMIT_SCALE=${COMMIT_SCALE:-default} SOM_SCALE=${SOM_SCALE:-default}
 RECIPE=director MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W
 STRUCT_W=0.0 STRUCT_ADAPT=False GOAL_SOFT_REUSE_ADAPT=False GOAL_STRUCT_DIAG=$GOAL_STRUCT_DIAG
+PREALLOC=$PREALLOC LOG_OUTPUTS=$LOG_OUTPUTS LOG_VIDEO=$LOG_VIDEO RUN_DEBUG=$RUN_DEBUG
 CODE=$REPO GIT_COMMIT=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
 NOTE=goal-AE ablation vs e390-e409 pure-Director baselines (identical except the goal AE)
 EOF
@@ -187,12 +204,14 @@ python -u "$REPO/dreamerv3/main.py" \
   --run.envs "$RUN_ENVS" \
   --run.steps "$RUN_STEPS" \
   --run.train_ratio 64 \
+  --run.log_video "$LOG_VIDEO" \
+  --run.debug "$RUN_DEBUG" \
   --replay.size "$REPLAY_SIZE" \
-  --logger.outputs jsonl,scope,wandb \
+  --logger.outputs "$LOG_OUTPUTS" \
   --logger.wandb_mode online \
   --logger.wandb_entity vasilache \
   --jax.platform cuda \
-  --jax.prealloc False \
+  --jax.prealloc "$PREALLOC" \
   "${AGENT_FLAGS[@]}" &
 TRAIN_PID=$!
 # Backgrounded + wait so the USR1 trap can run while training is in flight

@@ -5,6 +5,8 @@ import elements
 import embodied
 import numpy as np
 
+from . import milestones
+
 
 def train_eval(
     make_agent,
@@ -39,6 +41,7 @@ def train_eval(
   should_log = elements.when.Clock(args.log_every)
   should_report = elements.when.Clock(args.report_every)
   should_save = elements.when.Clock(args.save_every)
+  log_video = bool(args.log_video)  # see run/train.py
 
   @elements.timer.section('logfn')
   def logfn(tran, worker, mode):
@@ -51,7 +54,7 @@ def train_eval(
     episode.add('rewards', tran['reward'], agg='stack')
     for key, value in tran.items():
       if value.dtype == np.uint8 and value.ndim == 3:
-        if worker == 0:
+        if worker == 0 and log_video:
           episode.add(f'policy_{key}', value, agg='stack')
       elif key.startswith('log/'):
         assert value.ndim == 0, (key, value.shape, value.dtype)
@@ -121,6 +124,7 @@ def train_eval(
         agent=bind(agent.load, regex=args.from_checkpoint_regex)))
   cp.load_or_save()
   should_save(step)  # Register that we just saved.
+  save_milestone = milestones.make_saver(cp, logdir, args.save_every_steps)
 
   print('Start training loop')
   train_policy = lambda *args: agent.policy(*args, mode='train')
@@ -154,5 +158,7 @@ def train_eval(
 
     if should_save(step):
       cp.save()
+
+    save_milestone(step)
 
   logger.close()

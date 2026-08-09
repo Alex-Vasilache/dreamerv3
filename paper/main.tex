@@ -521,6 +521,35 @@ cross-recipe comparisons are within-scale.}
 \label{tab:scales}
 \end{table}
 
+\subsection{Task selection and statistical power (2026-08-09)}
+\label{sec:power}
+Hopper hop, used above as the primary sparse-reward task, does not support
+comparisons at the seed counts this project has run. Three measurements
+establish this.
+
+First, the implementation is sound on a task Director itself is configured
+for: two seeds of walker walk (pure Director arm, BIG, otherwise identical
+settings) reach $923.7$ and $897.2$ at ${\sim}850$k steps, i.e.\ near the DMC
+maximum and within $3\%$ of each other.
+
+Second, on hopper hop the original TensorFlow Director is no better than this
+implementation. At a matched 310k steps, five seeds each: median $31.9$
+(spread $77.9$) here against median $10.3$ (spread $69.0$) for the reference
+implementation, with the same 2-of-5 bimodal split --- most seeds near zero,
+a minority climbing.
+
+Third, that bimodality makes five seeds uninformative. Bootstrapping over the
+two empirical seed distributions, the power to detect a difference at
+$p<0.05$ is $0.01$ at 5 seeds per group, $0.24$ at 10, $0.60$ at 20 and
+$0.91$ at 50. Concretely: a $15\times$ median difference at 1M steps
+($112.7$ against $7.5$) returns a permutation $p$ of $0.38$.
+
+Consequently every single-seed and five-seed ordering reported on hopper hop
+--- including those in Sec.~\ref{sec:results} --- must be read as
+uninformative about the mechanism under test, and comparisons move to
+cartpole swingup, walker walk and hopper stand with at least four seeds per
+arm.
+
 \section{Results to date}
 \label{sec:results}
 

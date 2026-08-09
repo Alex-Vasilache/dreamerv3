@@ -5,6 +5,8 @@ import elements
 import embodied
 import numpy as np
 
+from . import milestones
+
 
 def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
 
@@ -26,6 +28,10 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
   should_log = embodied.LocalClock(args.log_every)
   should_report = embodied.LocalClock(args.report_every)
   should_save = embodied.LocalClock(args.save_every)
+  # Episode videos: every frame of worker 0's episode is stacked in RAM and
+  # handed to the logger at episode end. Off costs nothing else -- scores,
+  # lengths and all scalar log/ keys are unaffected.
+  log_video = bool(args.log_video)
 
   @elements.timer.section('logfn')
   def logfn(tran, worker):
@@ -36,7 +42,7 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
     episode.add('rewards', tran['reward'], agg='stack')
     for key, value in tran.items():
       if value.dtype == np.uint8 and value.ndim == 3:
-        if worker == 0:
+        if worker == 0 and log_video:
           # Strip log/ prefix: policy extras injected as log/ to avoid replay storage.
           vis_key = key[4:] if key.startswith('log/') else key
           episode.add(f'policy_{vis_key}', value, agg='stack')
@@ -90,6 +96,7 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
     elements.checkpoint.load(args.from_checkpoint, dict(
         agent=bind(agent.load, regex=args.from_checkpoint_regex)))
   cp.load_or_save()
+  save_milestone = milestones.make_saver(cp, logdir, args.save_every_steps)
 
   print('Start training loop')
   policy = lambda *args: agent.policy(*args, mode='train')
@@ -112,10 +119,19 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
       logger.add(usage.stats(), prefix='usage')
       logger.add({'fps/policy': policy_fps.result()})
       logger.add({'fps/train': train_fps.result()})
-      logger.add({'timer': elements.timer.stats()['summary']})
+      # Per-section wall-clock shares as scalars, not just the terminal-only
+      # summary string: `timer/<section>/frac` is what tells you whether a run
+      # is spending its time in the jitted train step, in replay sampling, or
+      # in logging. JSONL/wandb drop the string, so without this the breakdown
+      # is invisible after the fact.
+      stats = elements.timer.stats()
+      logger.add({'timer': stats.pop('summary')})
+      logger.add(stats, prefix='timer')
       logger.write()
 
     if should_save(step):
       cp.save()
+
+    save_milestone(step)
 
   logger.close()

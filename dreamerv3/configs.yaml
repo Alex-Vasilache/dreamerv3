@@ -64,6 +64,12 @@ defaults:
     log_every: 120
     report_every: 1000
     save_every: 900
+    # Permanent analysis checkpoints on a step grid, kept forever under
+    # logdir/ckpt_milestones/ (agent params only, no replay). 0 disables.
+    save_every_steps: 500000
+    # Stack worker 0's frames into an episode video for the logger. Pure
+    # logging; scalars are unaffected.
+    log_video: True
     envs: 16
     eval_envs: 4
     eval_eps: 1
@@ -80,6 +86,12 @@ defaults:
     remote_replay: False
     remote_envs: False
     usage: {psutil: True, nvsmi: True, gputil: False, malloc: False, gc: False}
+    # Driver placement, not a logging switch: True steps every env in-process,
+    # False gives each env its own process. Upstream defaults it False, but
+    # measured on BIG/A100 (2026-08-09, 8 DMC envs at 64x64) in-process is
+    # FASTER -- 40.0 vs 36.4 env fps, GPU busy 0.90 vs 0.79 -- because piping
+    # every observation to a subprocess costs more than stepping these envs
+    # inline. Leave True unless envs get much more expensive to step.
     debug: True
 
   jax:
