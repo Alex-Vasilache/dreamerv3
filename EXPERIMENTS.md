@@ -233,6 +233,31 @@ Divergence begins just after 1M and grows with training: at 2M the baseline's me
 sample age is ~1M against our ~0.5M; at 4M it is ~2M against ~0.5M. **The first real
 test is 2M, and the full one is 4M.**
 
+### RESULT at 2.0M — the replay fix does NOT reduce the spread
+
+2.0M is the first checkpoint where a 1e6 buffer differs from a 5e6 one (below 1M
+neither has evicted). This is therefore the decisive measurement.
+
+| | seeds @2.0M | median | spread | seeds < 50 |
+|---|---|---|---|---|
+| baseline (replay 5e6) | 276.6  155.5  53.7  40.8  31.6 | 53.7 | 245.0 | 2/5 |
+| e495–e499 (replay 1e6) | 250.1  191.3  176.8  33.0  16.5 | 176.8 | **233.6** | 2/5 |
+
+- **spread 245.0 -> 233.6 (0.95x), p = 0.881.** The quantity the experiment was set
+  up to move did not move. The distribution is still bimodal, still with two of five
+  seeds under 50.
+- median 53.7 -> 176.8 (3.3x) but p = 0.524, and hopper at five seeds has ~4% power
+  to detect even a 20% effect, so this is not interpretable.
+
+**Verdict: bounding the replay buffer does not fix hopper's seed variance.** The fix
+remains correct (5e6 against a 4e6-step run means the buffer never evicts, which
+deviates from both TF Director's 1e6 and DreamerV3's intended regime) and should stay
+in, but it is not the cause of the variance and does not cure it.
+
+This is consistent with everything else in §2c: DreamerV3's own published 10-seed data
+has hopper at 127% relative spread with 3/10 seeds failed, against 0.9% for walker.
+The variance is the task.
+
 ### Interim result at 0.5M (2026-08-09) — looks better, is not yet evidence
 
 | | seeds @0.5M | median | spread |
