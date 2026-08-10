@@ -23,7 +23,14 @@ set -uo pipefail
 
 REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
-unset DREAMERV3_CONV_IMPL
+# Native cuDNN conv is ~2x faster but is broken on V100 sm_70 in this env (it
+# needs the Route-A clone). This measurement is a forward pass over a few
+# thousand states, so the conv path costs nothing either way -- keep the
+# reference impl when running on a V100, which is where there is free capacity
+# while the A100 lanes are saturated by the batch.
+#   CONV=native  on A100        CONV=reference  on V100/P100
+CONV="${CONV:-native}"
+[ "$CONV" = "native" ] && unset DREAMERV3_CONV_IMPL || export DREAMERV3_CONV_IMPL=reference
 export MUJOCO_GL=egl
 
 RUNS="${RUNS:?set RUNS to one or more run dirs}"
