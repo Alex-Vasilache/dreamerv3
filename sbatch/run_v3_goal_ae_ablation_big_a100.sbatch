@@ -92,6 +92,25 @@ RUN_DEBUG="${RUN_DEBUG:-True}"
 # the WHOLE run history, mean sample age ~2M steps. TF Director uses 1e6.
 # Written as an integer, not 1e6: PyYAML parses unquoted `1e6` as a STRING.
 REPLAY_SIZE="${REPLAY_SIZE:-1000000}"
+# Checkpoint interval in seconds. 900 is the default and is right for a 48h
+# job that never restarts; on `short-a100`, where the association caps a job at
+# 2h and the run requeues itself ~16 times over its life, every requeue throws
+# away the progress since the last checkpoint, so a shorter interval pays for
+# itself (a 1GB checkpoint write costs seconds; 15 minutes of lost training
+# costs minutes). Bookkeeping only -- it changes nothing about what is
+# computed, so runs with different values stay comparable.
+SAVE_EVERY="${SAVE_EVERY:-900}"
+# Persistent XLA compilation cache. Also only bookkeeping, and the same reason:
+# a 2h slice spends 10-15 minutes compiling the BIG graph and autotuning cuDNN
+# from cold, which is ~10% of the slice. The cache is keyed on the HLO, the
+# backend and the jax version, so arms with different configs cannot collide,
+# and concurrent jobs are what the cache is designed for. Set JAX_CACHE_DIR=
+# (empty) to switch it off.
+JAX_CACHE_DIR="${JAX_CACHE_DIR:-/work/DoyaU/vasilache/work/jax_cache}"
+if [ -n "$JAX_CACHE_DIR" ]; then
+  mkdir -p "$JAX_CACHE_DIR"
+  export JAX_COMPILATION_CACHE_DIR="$JAX_CACHE_DIR"
+fi
 
 case "$ARM" in
   director)  ARM_CONFIG="" ;;
@@ -210,6 +229,7 @@ run_training() {
     --online_actor_cpu False \
     --run.envs "$RUN_ENVS" \
     --run.steps "$RUN_STEPS" \
+    --run.save_every "$SAVE_EVERY" \
     --run.train_ratio 64 \
     --run.log_video "$LOG_VIDEO" \
     --run.debug "$RUN_DEBUG" \

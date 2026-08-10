@@ -35,7 +35,15 @@ TSV="${TSV:-$REPO/job_logs/e510_e557_goal_ae_comparison.tsv}"
 STATE="${STATE:-$REPO/job_logs/e510_e557_watchdog_state.tsv}"
 WORK="${WORK:-/work/DoyaU/vasilache/work}"
 
-PARTITION="${PARTITION:-gpu-a100,short-a100}"
+# The lane a run was launched into is recorded in the TSV, and a resubmission
+# goes back to the same one: the two lanes have different association wall
+# limits (2h vs 48h), so a job resubmitted into the wrong one is rejected or
+# never scheduled.
+DEFAULT_PARTITION="${DEFAULT_PARTITION:-short-a100}"
+SHORT_WALL="${SHORT_WALL:-02:00:00}"
+SHORT_SAVE_EVERY="${SHORT_SAVE_EVERY:-300}"
+LONG_WALL="${LONG_WALL:-2-00:00:00}"
+LONG_SAVE_EVERY="${LONG_SAVE_EVERY:-900}"
 GRES="${GRES:-gpu:a100:1}"
 RUN_STEPS="${RUN_STEPS:-4000000}"
 DONE_FRAC="${DONE_FRAC:-0.999}"
@@ -108,8 +116,9 @@ pass() {
     qstart["$jname"]=$(date -d "$jstart" +%s 2>/dev/null || echo 0)
   done < <(squeue -u "$(whoami)" -h -o "%i|%j|%T|%S" 2>/dev/null)
 
-  while IFS=$'\t' read -r _ts _jobid tag task arm seed name; do
+  while IFS=$'\t' read -r _ts _jobid tag task arm seed name part; do
     [ -z "${name:-}" ] && continue
+    part="${part:-$DEFAULT_PARTITION}"
     read -r step dir mtime < <(probe "$tag" "$task" "$arm" "$seed")
 
     if [ "$step" -ge "$target" ] 2>/dev/null; then
@@ -148,12 +157,17 @@ pass() {
     fi
 
     nresub=$((nresub + 1))
-    local exportvars="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed,RUN_STEPS=$RUN_STEPS"
+    local wall="$LONG_WALL" save="$LONG_SAVE_EVERY"
+    local sig=()
+    if [ "$part" = "short-a100" ]; then
+      wall="$SHORT_WALL"; save="$SHORT_SAVE_EVERY"; sig=(--signal=B:USR1@240)
+    fi
+    local exportvars="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed,RUN_STEPS=$RUN_STEPS,SAVE_EVERY=$save"
     [ -n "$dir" ] && exportvars="$exportvars,RUN_DIR=$dir"
-    log "RESUBMIT $name step=$step resume=${dir:-<fresh>} (attempt $((n + 1)))"
+    log "RESUBMIT $name step=$step lane=$part resume=${dir:-<fresh>} (attempt $((n + 1)))"
     if [ "$DRY_RUN" != "1" ]; then
       local out
-      out=$(sbatch -J "$name" -p "$PARTITION" --gres="$GRES" \
+      out=$(sbatch -J "$name" -p "$part" -t "$wall" "${sig[@]}" --gres="$GRES" \
               --export="$exportvars" "$SCRIPT" 2>&1)
       log "         $out"
       printf '%s\t%s\t%s\t%s\n' "$(date -Is)" "$name" resubmit "${out##* }" >> "$STATE"

@@ -111,6 +111,75 @@ runs with the 2026-08-09 run-cost defaults and with 500k-step milestone
 checkpoints (`logdir/ckpt_milestones/`), so any arm launched from here on can be
 compared against them at 0.5M, 1M, ... and not only at the end.
 
+**Interim (2026-08-10, 2.6M/65%):** cartpole 728 ± 101 (615.5 / 695.5 / 744.1 /
+857.4), hopper_stand 802 ± 14 (796.7 / 784.4 / 816.5 / 810.8). Both unimodal.
+Hopper_stand's spread is 32 points against the < 300 pre-registered; cartpole's
+is 242 against < 200, i.e. slightly wide but with every seed already over the
+600 bar. The first branch of §6 is on track to fire.
+
+### e510–e557 — the goal-autoencoder comparison, four seeds a cell
+
+Launched 2026-08-10 via `sbatch/submit_e510_e557_goal_ae_comparison.sh`. Five
+goal-AE arms x {cartpole_swingup, hopper_stand} x seeds 0–3, plus eight
+lower-priority Director baselines on two further tasks. BIG/A100, 4M steps,
+identical to e502–e509 in everything except the goal autoencoder.
+
+| exps | arm | config | isolates |
+|---|---|---|---|
+| e510–e517 | `som_line` | `goal_som_line` | SOM on a line, straight-through **on** |
+| e518–e525 | `som_orig_line` | `goal_som_orig_line` | the same, straight-through **off** (motivation.tex Eq. 12 verbatim) |
+| e526–e533 | `lipvq_prod` | `goal_lipvq_prod` | Lipschitz alone, no SOM |
+| e534–e541 | `som_lipvq_line_prod` | `goal_som_lipvq_line_prod` | = `som_line` + Lipschitz |
+| e542–e549 | `som_orig_lipvq_line_prod` | `goal_som_orig_lipvq_line_prod` | = `som_orig_line` + Lipschitz |
+| e550–e553 | `director` | — | cartpole_swingup_**sparse**, seeds 0–3 |
+| e554–e557 | `director` | — | cheetah_run, seeds 0–3 |
+
+Within each arm block the first four exps are cartpole_swingup seeds 0–3 and the
+next four hopper_stand seeds 0–3. Job ids are in
+`job_logs/e510_e557_goal_ae_comparison.tsv`.
+
+**The Lipschitz form.** The three `_prod` blocks are new (commit `b7aae0c`) and
+take the penalty as Liu et al. write it — one trainable scalar bound per *layer*
+(`lip_per_row: False`) and the *product* over layers (`lip_impl: prod`,
+`lip_scale: 1.1e-11`) — rather than the per-unit `logprod` default, under which
+`bound()`'s `max` reduction let the penalty reach one unit of each 1024-unit
+layer. They keep `silu`, which is the one place they depart from
+`goal_som_orig_lipvq_line_paper`: the activation is not part of the mechanism
+under test, and changing it would confound every LiP-vs-no-LiP contrast in the
+family. Cost of that choice: silu's slope peaks at ~1.0998, so the composed
+bound understates the true constant by ~1.33x over three hidden layers.
+Calibration verified at production scale before launch — the smoke logs
+`lip_penalty` = 6.6e10 against the 6.7e10 the weight was derived from, so the
+`_prod` arms differ from their `logprod` siblings in the *form* of the penalty
+and not its size (0.73 vs 0.75 absolute).
+
+**α and β are the defaults**, `commit_scale: 1.0` and `som_scale: 0.9`, i.e. the
+official SOM-VAE weights. The e485–e494 sweep did not establish that α matters
+on a line (perplexity at 100k was 4.96 / 4.03 / 4.75 / 5.14 for α = 0.1 / 0.25 /
+0.5 / 1.0, an ordering that reshuffled between readings), and 1.0 was nominally
+the healthiest as well as the value in the paper.
+
+**Scheduling.** The account's two A100 lanes have different limits: `gpu-a100`
+is 8 concurrent with a 48h wall, `short-a100` is 16 concurrent (256 CPUs at 16
+a job) with a **2h** wall, so runs there requeue themselves ~16 times and resume
+from checkpoint. Seeds 0–1 and half of seed 2 went to `short-a100`, where they
+started immediately; the tail went to `gpu-a100`, where it starts as e502–e509
+finish. Two bookkeeping knobs differ by lane and change nothing about what is
+computed: `run.save_every` 300s on the sliced lane vs 900s, and a persistent XLA
+compilation cache (`JAX_COMPILATION_CACHE_DIR`) so a 2h slice does not spend
+10–15 minutes recompiling from cold.
+
+Jobs are **submitted seed-major** — all five arms on both tasks at seed 0, then
+seed 1, and so on — so the first wave to finish is a complete comparison at n=2
+rather than two finished arms and three that never started.
+
+`sbatch/watchdog_e510_e557.sh` (job 4677013, on `intel`) supervises them every
+30 minutes until 2026-08-16: it resumes runs that died and requeues runs whose
+`metrics.jsonl` has gone stale for 90 minutes, always into the lane the run was
+launched in and always with `RUN_DIR` pinned so it continues from its
+checkpoint. It never cancels or deletes anything, gives up after five
+resubmissions of the same experiment, and stops resubmitting past the deadline.
+
 ---
 
 ## 3. Findings
@@ -173,6 +242,75 @@ be **unimodal across seeds**, unlike `hopper_hop`.
 - → If cartpole itself is bimodal, the variance is not task-specific and the
   implementation goes back under audit — that would contradict walker walk and
   would be the strongest evidence yet for a real defect.
+
+### e510–e549 — does a geometry-preserving goal code buy anything?
+
+**Question.** motivation.tex measures Director's goal code losing goal-space
+geometry (hard-code r = 0.36–0.62 across four tasks, *declining* over training)
+and argues this confounds the manager's REINFORCE advantage: a one-block edit
+can land anywhere in goal space, so the advantage credited to that edit is
+noise. A SOM topology makes adjacent codebook entries decode to nearby goals; a
+Lipschitz bound caps how far the decoder can move the goal per unit of code
+change. Do either, or both, convert into worker success and task return?
+
+**Hypothesis.** Yes, and mostly through the worker: the mediator to read first
+is `wkr_goal_rew`, then `mgr_extr_adv`, then return. Prior evidence is
+single-seed and on the now-retired `hopper_hop`, but it is consistent — the
+`som_lipvq` family produced that task's best numbers in the whole project
+(e481 `som_lipvq_line` 281.1 last-15 / 393.2 peak at 4M, against 176.8 median
+for the five-seed Director baseline e495–e499), and `som_lipvq` on cartpole
+reached 825.7 (e420).
+
+**Quantitative expectations (pre-registered).** Reference is the e502–e509 mean
+of four seeds at 4M, and its seed spread is the yardstick — a difference smaller
+than the baseline's own spread is not a difference.
+
+- **cartpole_swingup.** Baseline ≈ 730–800 with a spread of ~240. An arm
+  "beats" it only at ≥ 900 mean over four seeds. e420's single-seed 825.7 sits
+  *inside* the baseline spread, so it predicts a tie, not a win.
+- **hopper_stand.** Baseline ≈ 800 with a spread of ~30 — a tight distribution
+  that can resolve much smaller effects. An arm beats it at ≥ 850 mean.
+- **Codebook health, all VQ arms.** `goal/perplexity` ≥ 6 of 8 and
+  `goal/used_frac` ≥ 0.95 by 1M steps. Every healthy archived arm sat at
+  7.1–7.7; the collapse signature is ≤ 2 with reconstruction error climbing.
+  Early degeneracy is expected and is not the failure: perplexity ≈ 1.01 at 6k
+  steps in the pre-launch smoke of all five arms, and e415 recovered 1.28 at
+  577k to 7.55 at 2.28M.
+- **The Lipschitz bound must actually move.** `goal/lip_bound_max` starts at
+  ~28.7 and under the old `logprod` form moved 0.55 over 3.7M steps, i.e. the
+  constraint was inert. Under `prod` with a per-layer bound the penalty reaches
+  the whole layer, and at lr 4e-5 over ~250k gradient steps it can move ~10. If
+  `lip_bound_max` is still ≈ 28 at 2M, the `_prod` arms did not test anything
+  the `logprod` arms had not already tested, and that is the finding.
+- **Straight-through.** `som_line` vs `som_orig_line` is a clean one-factor
+  contrast on the estimator. Prior: e486 (`som_orig_line`, hopper_hop) ended at
+  `rec_q` 40.0 and perplexity 4.08 against 8–13 and 7.1–7.7 for every
+  straight-through arm. Expectation: the STE-off arms reconstruct worse and use
+  less of the codebook on these tasks too.
+
+**Branches.**
+- → **Any arm clears its bar on both tasks.** The geometry fix is real; it
+  becomes the recipe and the next question is which component carries it
+  (`lipvq_prod` vs `som_line` vs the two combined answer that directly).
+- → **Arms tie the baseline but the post-hoc geometry measurement improves.**
+  Then geometry preservation is achievable and *not* what limits return, which
+  contradicts motivation.tex's argument as stated and is the more interesting
+  negative result. It must be written up as such, not buried: the paper's
+  Sec. "Goal Code Learning" would need the claim narrowed from "this confound
+  costs performance" to "this confound exists".
+- → **Arms tie and geometry does not improve either.** The mechanism did not
+  engage; read `lip_bound_max` and `perplexity` to say which, and neither the
+  claim nor the architecture is tested.
+- → **Arms lose.** Most likely via codebook collapse (perplexity ≤ 2 with
+  `rec_q` climbing), which is a property of the quantizer and not of the
+  geometry hypothesis; report it as a bottleneck-swap cost.
+
+**Power.** Four seeds against four is the whole design, and it bounds what can
+be claimed: an exact two-sided permutation test on 4 vs 4 has a minimum
+attainable p of 2/70 = 0.029, reached only when the two groups do not overlap at
+all. Differences will therefore be reported as effect size with the per-cell
+seed spread, and p-values quoted with that floor stated, rather than leaning on
+a significance threshold that this n cannot support.
 
 ---
 ## 7. Config flags & metrics reference
