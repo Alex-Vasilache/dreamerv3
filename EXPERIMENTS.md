@@ -191,9 +191,43 @@ which is the priority order they were given.
 **The analysis horizon is chosen at the end, not now.** Every run logs
 continuously and snapshots at each 500k, so all 40 can be compared at whatever
 step the *slowest* of them reaches, against the e502–e509 baselines read at that
-same step. Nothing about the comparison requires every run to see 4M, and no
-decision has to be made in advance about cutting the budget: `run.steps` is a
-CLI flag and can be retargeted on a resumed run if the schedule ever demands it.
+same step. Nothing about the comparison requires every run to see 4M.
+
+### Revision, 2026-08-10 12:50 — one lane, and 3M steps for the arms
+
+`short-a100` was measured rather than assumed, and it does not work for this.
+e510 ran there for **28:43** before being preempted — of which ~10 minutes was
+compiling the BIG graph, leaving ~19 minutes of training (45,952 steps at 41
+fps) — and then sat queued for another 80 minutes. A ~17% duty cycle, because
+every A100 on the cluster is allocated and a PriorityTier=1 job gets only what
+nobody else wants. Preemption itself worked exactly as designed (same job id,
+same `RUN_DIR`, progress kept), but the lane cannot carry a 4M-step run.
+
+All 48 were therefore resubmitted into `gpu-a100` alone, the 8 GPUs this
+account is guaranteed, and **the arm runs were cut from 4M to 3M steps**:
+
+| | 4M arms | 3M arms |
+|---|---|---|
+| per run | ~27h | ~20.4h |
+| 40 arms, 5 rounds of 8 | 135h → Aug 16 07:00 | 102h → **Aug 15 02:00** |
+| then 8 Director extras at 4M | no room at all | 27h → **Aug 16 05:00** |
+
+against a return on Aug 17. At 4M the arms alone consume the entire window and
+the Director extras never start; at 3M everything the user asked for finishes
+with about a day of slack for preemption, node failures and restarts. The last
+quarter of a learning curve is worth less than the eight runs and the safety
+margin it costs — and the arms are a comparison against each other and against
+e502–e509, which log continuously and snapshot every 500k, so the reference is
+available at 3M exactly as it is at 4M.
+
+The Director extras stay at 4M: their job is to sit beside the e390–e409
+baselines in the paper's motivation figures, which are read at 4M.
+
+Runs that had already started were resubmitted with `RUN_DIR` pinned to their
+existing directory (`PIN_DIRS=1`), so they continued from their checkpoints
+rather than starting over. The launch TSV now carries a per-run step target and
+the watchdog reads it, so it does not resubmit a finished 3M arm or retire a
+Director extra a quarter early.
 
 `sbatch/watchdog_e510_e557.sh` (job 4677013, on `intel`) supervises them every
 30 minutes until 2026-08-16: it resumes runs that died and requeues runs whose

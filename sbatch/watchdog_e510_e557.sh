@@ -116,12 +116,19 @@ pass() {
     qstart["$jname"]=$(date -d "$jstart" +%s 2>/dev/null || echo 0)
   done < <(squeue -u "$(whoami)" -h -o "%i|%j|%T|%S" 2>/dev/null)
 
-  while IFS=$'\t' read -r _ts _jobid tag task arm seed name part; do
+  while IFS=$'\t' read -r _ts _jobid tag task arm seed name part steps; do
     [ -z "${name:-}" ] && continue
     part="${part:-$DEFAULT_PARTITION}"
+    # Per-run target: the arms stop at 3M and the Director extras at 4M, so a
+    # single global figure would either resubmit finished arms forever or
+    # declare the extras done a quarter early.
+    local want="$target"
+    if [ -n "${steps:-}" ]; then
+      want=$(python3 -c "print(int($steps * $DONE_FRAC))")
+    fi
     read -r step dir mtime < <(probe "$tag" "$task" "$arm" "$seed")
 
-    if [ "$step" -ge "$target" ] 2>/dev/null; then
+    if [ "$step" -ge "$want" ] 2>/dev/null; then
       ndone=$((ndone + 1)); continue
     fi
 
@@ -162,7 +169,7 @@ pass() {
     if [ "$part" = "short-a100" ]; then
       wall="$SHORT_WALL"; save="$SHORT_SAVE_EVERY"; sig=(--signal=B:USR1@240)
     fi
-    local exportvars="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed,RUN_STEPS=$RUN_STEPS,SAVE_EVERY=$save"
+    local exportvars="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed,RUN_STEPS=${steps:-$RUN_STEPS},SAVE_EVERY=$save"
     [ -n "$dir" ] && exportvars="$exportvars,RUN_DIR=$dir"
     log "RESUBMIT $name step=$step lane=$part resume=${dir:-<fresh>} (attempt $((n + 1)))"
     if [ "$DRY_RUN" != "1" ]; then

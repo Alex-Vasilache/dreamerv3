@@ -65,17 +65,37 @@ LOG="$LOGDIR/e510_e557_goal_ae_comparison.tsv"
 # to whenever the baselines finish rather than waiting behind the whole
 # short-a100 backlog. Both lanes draw on the same 32 physical A100s, so the
 # combined throughput is ~24 runs at a time.
-PARTITION="${PARTITION:-short-a100}"
-PART_WALL="${PART_WALL:-02:00:00}"        # association MaxWall on short-a100
-PART_SAVE_EVERY="${PART_SAVE_EVERY:-300}" # requeues often -> checkpoint often
-ALT_PARTITION="${ALT_PARTITION:-gpu-a100}"
-ALT_WALL="${ALT_WALL:-2-00:00:00}"
-ALT_SAVE_EVERY="${ALT_SAVE_EVERY:-900}"
-ALT_TAIL="${ALT_TAIL:-16}"       # last N arm jobs submitted to ALT_PARTITION
+# REVISED 2026-08-10 12:50 after measuring what short-a100 actually delivers.
+# e510 there ran 28:43 before being preempted, of which ~10 min was compiling
+# the BIG graph, and then sat queued for another 80 minutes: a duty cycle
+# around 17%, because every one of the cluster's 32 A100s is allocated and a
+# PriorityTier=1 job only gets what nobody else wants. So the batch now goes
+# entirely into `gpu-a100`, the 8 GPUs this account is actually guaranteed, and
+# short-a100 is used only if a later check-in finds it idle.
+PARTITION="${PARTITION:-gpu-a100}"
+PART_WALL="${PART_WALL:-2-00:00:00}"
+PART_SAVE_EVERY="${PART_SAVE_EVERY:-900}"
+ALT_PARTITION="${ALT_PARTITION:-short-a100}"
+ALT_WALL="${ALT_WALL:-02:00:00}"
+ALT_SAVE_EVERY="${ALT_SAVE_EVERY:-300}"
+ALT_TAIL="${ALT_TAIL:-0}"        # last N arm jobs submitted to ALT_PARTITION
 GRES="${GRES:-gpu:a100:1}"
 DRY_RUN="${DRY_RUN:-0}"
 SEEDS="${SEEDS:-0 1 2 3}"
-RUN_STEPS="${RUN_STEPS:-4000000}"
+# Separate horizons. Eight guaranteed GPUs put the 40 arm runs at five rounds:
+# at 4M (~27h a run) that is 135h and leaves the Director extras no room at
+# all, at 3M (~20.4h) it is 102h and everything fits with a day to spare. The
+# arms are a comparison against each other and against e502-e509, which log
+# continuously and snapshot every 500k, so 3M costs nothing but the last
+# quarter of a curve; "did not finish" would cost the whole experiment.
+# The Director extras stay at 4M because their job is to sit alongside the
+# e390-e409 baselines in the paper's motivation figures, which are read at 4M.
+ARM_STEPS="${ARM_STEPS:-3000000}"
+DIR_STEPS="${DIR_STEPS:-4000000}"
+# Resume in place: if this experiment already has a run directory with
+# progress in it, pin RUN_DIR to the furthest one instead of starting over.
+PIN_DIRS="${PIN_DIRS:-1}"
+WORK="${WORK:-/work/DoyaU/vasilache/work}"
 SUBSET="${SUBSET:-all}"
 NICE="${NICE:-5000}"
 
@@ -86,8 +106,36 @@ LABELS=(cartpole hopper)
 DIR_TASKS=(dmc_cartpole_swingup_sparse dmc_cheetah_run)
 DIR_LABELS=(cpsparse cheetah)
 
-submit() {  # partition exp task arm seed label extra_sbatch_args...
-  local part="$1" exp="$2" task="$3" arm="$4" seed="$5" label="$6"; shift 6
+# Furthest-along existing run dir for an experiment, or empty. Same rule the
+# watchdog uses, so a relaunch and a rescue land on the same directory.
+find_run_dir() {  # tag task arm seed
+  python3 - "$WORK" "$1" "$2" "$3" "$4" <<'PY'
+import glob, json, os, sys
+work, tag, task, arm, seed = sys.argv[1:6]
+best, bestdir = -1, ''
+for d in glob.glob(f'{work}/{tag}_{task}_{arm}_s{seed}_BIG_j*'):
+    p = os.path.join(d, 'logdir', 'metrics.jsonl')
+    if not os.path.exists(p):
+        continue
+    step = -1
+    with open(p, 'rb') as f:
+        f.seek(0, 2); f.seek(max(0, f.tell() - 200_000))
+        for line in f.read().decode('utf8', 'ignore').splitlines()[1:]:
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if 'step' in row:
+                step = max(step, int(row['step']))
+    if step > best:
+        best, bestdir = step, d
+print(bestdir if best > 0 else '')
+PY
+}
+
+submit() {  # partition exp task arm seed label steps extra_sbatch_args...
+  local part="$1" exp="$2" task="$3" arm="$4" seed="$5" label="$6" steps="$7"
+  shift 7
   local tag="e${exp}"
   local name="${tag}_${label}_${arm}_s${seed}"
   local wall="$PART_WALL" save="$PART_SAVE_EVERY"
@@ -98,19 +146,26 @@ submit() {  # partition exp task arm seed label extra_sbatch_args...
   if [ "$part" = "$ALT_PARTITION" ]; then
     wall="$ALT_WALL"; save="$ALT_SAVE_EVERY"; sig=()
   fi
+  local exportvars="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed"
+  exportvars="$exportvars,RUN_STEPS=$steps,SAVE_EVERY=$save"
+  local pinned=''
+  if [ "$PIN_DIRS" = "1" ]; then
+    pinned="$(find_run_dir "$tag" "$task" "$arm" "$seed")"
+    [ -n "$pinned" ] && exportvars="$exportvars,RUN_DIR=$pinned"
+  fi
   local cmd=(sbatch -J "$name" -p "$part" -t "$wall" "${sig[@]}" --gres="$GRES" "$@"
-       --export="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed,RUN_STEPS=$RUN_STEPS,SAVE_EVERY=$save"
-       "$SCRIPT")
+       --export="$exportvars" "$SCRIPT")
   if [ "$DRY_RUN" = "1" ]; then
-    echo "[dry-run] ${cmd[*]}"
+    echo "[dry-run] ${cmd[*]}${pinned:+   # resumes $pinned}"
     return
   fi
   local out jobid
   out="$("${cmd[@]}")"
   jobid="${out##* }"
-  echo "$out  ($name)"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$(date -Is)" "$jobid" "$tag" "$task" "$arm" "$seed" "$name" "$part" >> "$LOG"
+  echo "$out  ($name)${pinned:+  resuming $(basename "$pinned")}"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -Is)" "$jobid" "$tag" "$task" "$arm" "$seed" "$name" "$part" \
+    "$steps" >> "$LOG"
   sleep 2
 }
 
@@ -125,7 +180,7 @@ if [ "$SUBSET" = "all" ] || [ "$SUBSET" = "arms" ]; then
         part="$PARTITION"
         [ "$i" -gt "$((n_arms - ALT_TAIL))" ] && part="$ALT_PARTITION"
         submit "$part" $((510 + ai * 8 + ti * 4 + seed)) \
-          "${TASKS[$ti]}" "${ARMS[$ai]}" "$seed" "${LABELS[$ti]}"
+          "${TASKS[$ti]}" "${ARMS[$ai]}" "$seed" "${LABELS[$ti]}" "$ARM_STEPS"
       done
     done
   done
@@ -139,7 +194,8 @@ if [ "$SUBSET" = "all" ] || [ "$SUBSET" = "director" ]; then
   for seed in $SEEDS; do
     for ti in "${!DIR_TASKS[@]}"; do
       submit "$PARTITION" $((550 + ti * 4 + seed)) \
-        "${DIR_TASKS[$ti]}" director "$seed" "${DIR_LABELS[$ti]}" --nice="$NICE"
+        "${DIR_TASKS[$ti]}" director "$seed" "${DIR_LABELS[$ti]}" "$DIR_STEPS" \
+        --nice="$NICE"
     done
   done
 fi
