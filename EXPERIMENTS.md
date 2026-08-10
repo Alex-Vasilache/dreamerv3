@@ -222,6 +222,38 @@ existing directory (`PIN_DIRS=1`), so they continued from their checkpoints
 rather than starting over. The launch TSV carries a per-run step target and the
 watchdog reads it, so mixed horizons cannot confuse it.
 
+### Interim, 2026-08-11 06:47 (seed 0 only, 32–41% of 4M)
+
+Eight runs up since ~20:00, no failures, no watchdog interventions in 16h.
+Seed 0 of four arms; `lipvq_prod` had not started.
+
+| arm | cartpole | hopper_stand | perplexity | used | rec_q |
+|---|---|---|---|---|---|
+| som_line | 667.7 | 806.8 | 7.07 / 7.43 | 1.00 | 6.8 / 5.1 |
+| som_orig_line | 689.2 | 779.4 | 4.54 / 3.55 | 0.92 / 0.74 | 25.8 / 15.1 |
+| som_lipvq_line_prod | 767.3 | 819.6 | 7.01 / 7.45 | 1.00 | 6.0 / 7.3 |
+| som_orig_lipvq_line_prod | 726.5 | 802.7 | 4.52 / 4.12 | 0.86 / 0.88 | 15.7 / 14.7 |
+| *Director, final at 4M* | *753.7* | *822.3* | — | — | — |
+
+Nothing here is a result — one seed, and a third of the budget — but three
+things are worth recording before they are forgotten:
+
+1. **The straight-through split is the dominant effect on codebook health, and
+   the Lipschitz penalty does not touch it.** STE-on arms sit at perplexity
+   7.0–7.5 with the full codebook in use and reconstruction 5–7; STE-off arms
+   at 3.5–4.5, 74–92% used, reconstruction 15–26. Adding `lip` moves neither
+   group across the gap. The pre-registered expectation for
+   `som_line` vs `som_orig_line` is holding, and holding at both LiP settings,
+   which is what makes it a clean single-factor read.
+2. **The `_prod` penalty bites.** `goal/lip_bound_max` has fallen 28.7 → 26.2–28.1
+   and `lip_penalty` 6.6e10 → 1.9e10–3.4e10 in a third of a run. Under the old
+   `logprod` form the bound moved 27.88 → 27.33 over an entire 3.7M-step run.
+   The pre-registered failure case — "if `lip_bound_max` is still ≈ 28 at 2M,
+   the `_prod` arms did not test anything new" — will not fire.
+3. **Do not read early hopper numbers.** e538 was at last-15 = **13.1** (peak
+   108) at 11% and is at **819.6** at 34%. Any mid-run intervention on that
+   evidence would have killed the arm that is currently level with Director.
+
 ### Geometry tooling: validated, and the Director reference values
 
 `experiments/goal_geometry/diag_goal_geometry.py` (2m28s on one V100 per run,
