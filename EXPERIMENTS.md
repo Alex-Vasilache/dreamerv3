@@ -173,6 +173,28 @@ Jobs are **submitted seed-major** — all five arms on both tasks at seed 0, the
 seed 1, and so on — so the first wave to finish is a complete comparison at n=2
 rather than two finished arms and three that never started.
 
+**Capacity, measured at launch.** All 32 A100s in `saion-gpu[23-26]` were
+allocated (`sinfo -O GresUsed` reads `gpu:a100:8(IDX:0-7)` on all four nodes);
+most of that is other groups, whose jobs `squeue` hides from us
+(`PrivateData`). So the `short-a100` backlog is not a scheduling artifact to be
+tuned around — there is nothing free to backfill into. Holding our own pending
+`gpu-a100` jobs for a few minutes to test whether they were suppressing tier-1
+backfill changed nothing, which confirms it.
+
+What this account is actually guaranteed is the `gpu-a100` association: 8 GPUs
+at PriorityTier=10. That lane processes 8 runs per ~27h, so the 40 arm runs need
+five rounds ≈ 135h from when e502–e509 release it — landing 2026-08-15/16, ahead
+of the user's return, with `short-a100` (4 running at launch) as upside rather
+than as the plan. The eight `director` extras are the part that may not finish,
+which is the priority order they were given.
+
+**The analysis horizon is chosen at the end, not now.** Every run logs
+continuously and snapshots at each 500k, so all 40 can be compared at whatever
+step the *slowest* of them reaches, against the e502–e509 baselines read at that
+same step. Nothing about the comparison requires every run to see 4M, and no
+decision has to be made in advance about cutting the budget: `run.steps` is a
+CLI flag and can be retargeted on a resumed run if the schedule ever demands it.
+
 `sbatch/watchdog_e510_e557.sh` (job 4677013, on `intel`) supervises them every
 30 minutes until 2026-08-16: it resumes runs that died and requeues runs whose
 `metrics.jsonl` has gone stale for 90 minutes, always into the lane the run was
