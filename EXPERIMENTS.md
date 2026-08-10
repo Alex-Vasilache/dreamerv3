@@ -193,41 +193,42 @@ continuously and snapshots at each 500k, so all 40 can be compared at whatever
 step the *slowest* of them reaches, against the e502–e509 baselines read at that
 same step. Nothing about the comparison requires every run to see 4M.
 
-### Revision, 2026-08-10 12:50 — one lane, and 3M steps for the arms
+### Revision, 2026-08-10 13:00 — the lane split, at 4M
 
-`short-a100` was measured rather than assumed, and it does not work for this.
-e510 ran there for **28:43** before being preempted — of which ~10 minutes was
-compiling the BIG graph, leaving ~19 minutes of training (45,952 steps at 41
-fps) — and then sat queued for another 80 minutes. A ~17% duty cycle, because
-every A100 on the cluster is allocated and a PriorityTier=1 job gets only what
-nobody else wants. Preemption itself worked exactly as designed (same job id,
-same `RUN_DIR`, progress kept), but the lane cannot carry a 4M-step run.
+`short-a100` was measured rather than assumed. e510 ran there for **28:43**
+before being preempted — of which ~10 minutes was compiling the BIG graph,
+leaving ~19 minutes of training (45,952 steps at 41 fps) — and then sat queued
+for another 80 minutes. A ~17% duty cycle, because every A100 on the cluster is
+allocated and a PriorityTier=1 job gets only what nobody else wants. Preemption
+itself worked exactly as designed: same job id, same `RUN_DIR`, progress kept.
 
-All 48 were therefore resubmitted into `gpu-a100` alone, the 8 GPUs this
-account is guaranteed, and **the arm runs were cut from 4M to 3M steps**:
+Shortening the arms to 3M was proposed on schedule grounds and **rejected: the
+arms run to 4M.** The resulting layout:
 
-| | 4M arms | 3M arms |
+| lane | runs | wall |
 |---|---|---|
-| per run | ~27h | ~20.4h |
-| 40 arms, 5 rounds of 8 | 135h → Aug 16 07:00 | 102h → **Aug 15 02:00** |
-| then 8 Director extras at 4M | no room at all | 27h → **Aug 16 05:00** |
+| `gpu-a100`, 8 guaranteed GPUs | 32 arm runs, 4 rounds x ~27h | frees ~Aug 10 20:00 → **Aug 15 08:00** |
+| `short-a100`, opportunistic | 8 arm runs (seed 3 of arms 2–5), 2h slices | accumulate in parallel; whatever is unfinished moves to `gpu-a100` after Aug 15 → **≤ Aug 16 11:00** |
+| `gpu-a100`, after the arms | 8 Director extras | dependency-gated, ~27h → Aug 17, i.e. probably not |
 
-against a return on Aug 17. At 4M the arms alone consume the entire window and
-the Director extras never start; at 3M everything the user asked for finishes
-with about a day of slack for preemption, node failures and restarts. The last
-quarter of a learning curve is worth less than the eight runs and the safety
-margin it costs — and the arms are a comparison against each other and against
-e502–e509, which log continuously and snapshot every 500k, so the reference is
-available at 3M exactly as it is at 4M.
+Putting the last eight arm runs on the opportunistic lane costs nothing — they
+would otherwise sit in a queue until Aug 15 — and turns five rounds on the
+guaranteed lane into four. Even at a 17% duty cycle they accumulate a
+substantial fraction of 4M in the five days before the guaranteed lane frees up
+for them, and `PIN_DIRS=1` lets them be moved between lanes at any point
+without losing a step.
 
-The Director extras stay at 4M: their job is to sit beside the e390–e409
-baselines in the paper's motivation figures, which are read at 4M.
+The Director extras (e550–e557) are **not dropped and not merely niced**. A
+nice value orders a queue but does not stop a niced job taking the last free
+GPU once the arm queue is nearly drained, which would put a late arm restart
+behind 27 hours of Director. They carry `--dependency=afterany:` on all forty
+arm jobs, so they cannot start until every arm has ended — `afterany` rather
+than `afterok` so a single failed arm does not strand them.
 
 Runs that had already started were resubmitted with `RUN_DIR` pinned to their
 existing directory (`PIN_DIRS=1`), so they continued from their checkpoints
-rather than starting over. The launch TSV now carries a per-run step target and
-the watchdog reads it, so it does not resubmit a finished 3M arm or retire a
-Director extra a quarter early.
+rather than starting over. The launch TSV carries a per-run step target and the
+watchdog reads it, so mixed horizons cannot confuse it.
 
 `sbatch/watchdog_e510_e557.sh` (job 4677013, on `intel`) supervises them every
 30 minutes until 2026-08-16: it resumes runs that died and requeues runs whose

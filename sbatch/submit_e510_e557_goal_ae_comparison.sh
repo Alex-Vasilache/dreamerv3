@@ -139,13 +139,14 @@ submit() {  # partition exp task arm seed label steps extra_sbatch_args...
   local tag="e${exp}"
   local name="${tag}_${label}_${arm}_s${seed}"
   local wall="$PART_WALL" save="$PART_SAVE_EVERY"
-  # The script's own header asks for USR1 600s before the limit, which is 8% of
-  # a 2h slice spent not training. 240s is ample for `scontrol requeue; exit`
-  # and buys back ~6 minutes on every one of the ~16 slices a run needs.
-  local sig=(--signal=B:USR1@240)
   if [ "$part" = "$ALT_PARTITION" ]; then
-    wall="$ALT_WALL"; save="$ALT_SAVE_EVERY"; sig=()
+    wall="$ALT_WALL"; save="$ALT_SAVE_EVERY"
   fi
+  # The script's own header asks for USR1 600s before the limit. On a 48h job
+  # that never reaches its limit it is irrelevant; on a 2h slice it is 8% of
+  # the slice spent not training, and 240s is ample for `scontrol requeue; exit`.
+  local sig=()
+  [ "$wall" = "02:00:00" ] && sig=(--signal=B:USR1@240)
   local exportvars="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed"
   exportvars="$exportvars,RUN_STEPS=$steps,SAVE_EVERY=$save"
   local pinned=''
@@ -186,16 +187,21 @@ if [ "$SUBSET" = "all" ] || [ "$SUBSET" = "arms" ]; then
   done
 fi
 
-# The Director extras are the user's lowest priority ("can run once the others
-# finish"), so they go in the same lane as the bulk of the arms with a nice
-# value that keeps them behind every one of them. --nice only orders jobs
-# within a partition, which is why they are not sent to the other lane.
+# The Director extras run only if everything else finishes. A nice value alone
+# is not enough for that: it orders the queue, but once the arm queue is nearly
+# drained a niced job can still take the last free GPU, and then an arm that
+# needs a late restart waits behind 27 hours of Director. DIR_DEPEND holds them
+# behind the actual completion of every arm job --
+#   DIR_DEPEND="afterany:$(cut -f2 job_logs/....tsv | paste -sd:)"
+# -- `afterany` and not `afterok` so one failed arm does not strand them.
 if [ "$SUBSET" = "all" ] || [ "$SUBSET" = "director" ]; then
+  dep=()
+  [ -n "${DIR_DEPEND:-}" ] && dep=(--dependency="$DIR_DEPEND")
   for seed in $SEEDS; do
     for ti in "${!DIR_TASKS[@]}"; do
       submit "$PARTITION" $((550 + ti * 4 + seed)) \
         "${DIR_TASKS[$ti]}" director "$seed" "${DIR_LABELS[$ti]}" "$DIR_STEPS" \
-        --nice="$NICE"
+        --nice="$NICE" "${dep[@]}"
     done
   done
 fi
