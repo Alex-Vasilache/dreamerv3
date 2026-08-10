@@ -230,6 +230,49 @@ existing directory (`PIN_DIRS=1`), so they continued from their checkpoints
 rather than starting over. The launch TSV carries a per-run step target and the
 watchdog reads it, so mixed horizons cannot confuse it.
 
+### Geometry tooling: validated, and the Director reference values
+
+`experiments/goal_geometry/diag_goal_geometry.py` (2m28s on one V100 per run,
+so it costs nothing and does not need the A100 lanes). First run: e502
+(cartpole, Director) at its 3M milestone, 2048 states.
+
+**It agrees with the published measurement**, which is the check that matters
+before trusting anything else it says: hard-code `cosine_max` Pearson **0.586**
+against motivation.tex's 0.62 for cartpole (seed range 0.41–0.80), and soft-code
+**0.721** against the paper's 0.71. Same quantity, independent code path.
+
+**The new measurements, as Director reference values:**
+
+| quantity | e502 @3M | reads as |
+|---|---|---|
+| `cosmax/hard` Pearson / Spearman | 0.586 / 0.708 | the published figure |
+| `dist/embed` Pearson / Spearman | 0.618 / 0.721 | distance geometry ≈ cosine geometry here |
+| `dist/latent` Pearson / Spearman | **0.916 / 0.953** | the *continuous* logits track goal distance well |
+| empirical Lipschitz, encoder | p50 2.81, max 4.51 | |
+| empirical Lipschitz, decoder | p50 1.89, p99 5.46, max 7.35 | the number the `_prod` penalty should reduce |
+
+`dist/latent` 0.916 against `dist/embed` 0.618 puts a number on where the
+geometry is lost: not in the encoder, which maps goal distance to latent
+distance almost linearly, but in the discretization after it. That is the same
+conclusion motivation.tex draws from the soft-vs-hard `cosine_max` gap, now in
+the geometry the Lipschitz condition is actually written in.
+
+**Decoded-goal displacement vs code index distance** — the direct form of the
+architecture's claim. For Director, moving one block by *k* classes and
+decoding:
+
+| k | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| ‖Δgoal‖ | 1.47 | 1.54 | 1.45 | 1.44 | 1.63 | 1.49 | 1.67 |
+
+**Flat.** One class away and seven classes away move the goal by the same
+amount, because the entry index is an arbitrary label — exactly what a
+categorical head with no topology should do, stated as a measurement rather
+than as an argument. If the SOM-line arms return a monotone ramp here, that is
+the cleanest evidence in the programme that the topology does what it is for,
+and it needs no correlation and no p-value to read. Single seed at one
+milestone; all arms and seeds get measured once the batch finishes.
+
 `sbatch/watchdog_e510_e557.sh` (job 4677013, on `intel`) supervises them every
 30 minutes until 2026-08-16: it resumes runs that died and requeues runs whose
 `metrics.jsonl` has gone stale for 90 minutes, always into the lane the run was
