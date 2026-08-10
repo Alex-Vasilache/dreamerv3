@@ -96,14 +96,8 @@ Launched 2026-08-09 via `sbatch/submit_e502_e509_director_baselines.sh`
 
 | exp | job | task / scale | recipe | question | status |
 |---|---|---|---|---|---|
-| e502 | 4676883 | cartpole_swingup / BIG | pure Director | seed 0 | running |
-| e503 | 4676884 | cartpole_swingup / BIG | pure Director | seed 1 | running |
-| e504 | 4676885 | cartpole_swingup / BIG | pure Director | seed 2 | running |
-| e505 | 4676886 | cartpole_swingup / BIG | pure Director | seed 3 | running |
-| e506 | 4676887 | hopper_stand / BIG | pure Director | seed 0 | running |
-| e507 | 4676888 | hopper_stand / BIG | pure Director | seed 1 | running |
-| e508 | 4676889 | hopper_stand / BIG | pure Director | seed 2 | running |
-| e509 | 4676890 | hopper_stand / BIG | pure Director | seed 3 | running |
+| e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | seeds 0–3 | **done 4M** → §5 |
+| e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | seeds 0–3 | **done 4M** → §5 |
 
 These are the reference distributions every later arm is compared against: four
 seeds per task on two tasks that are not `hopper_hop`. They are also the first
@@ -111,11 +105,9 @@ runs with the 2026-08-09 run-cost defaults and with 500k-step milestone
 checkpoints (`logdir/ckpt_milestones/`), so any arm launched from here on can be
 compared against them at 0.5M, 1M, ... and not only at the end.
 
-**Interim (2026-08-10, 2.6M/65%):** cartpole 728 ± 101 (615.5 / 695.5 / 744.1 /
-857.4), hopper_stand 802 ± 14 (796.7 / 784.4 / 816.5 / 810.8). Both unimodal.
-Hopper_stand's spread is 32 points against the < 300 pre-registered; cartpole's
-is 242 against < 200, i.e. slightly wide but with every seed already over the
-600 bar. The first branch of §6 is on track to fire.
+**Finished 2026-08-10 ~20:00 at 4M**, results in §5: cartpole 753.7 ± 83.3
+(spread 204), hopper_stand 822.3 ± 3.5 (spread 7.6). Both unimodal, first §6
+branch fired.
 
 ### e510–e557 — the goal-autoencoder comparison, four seeds a cell
 
@@ -307,8 +299,26 @@ _(F-numbers continue from the archive; nothing new since the restart.)_
 
 ## 5. Experiment ledger
 
-| exp | job | task | arm | seeds | steps | score (last-N) | verdict |
+| exp | job | task | arm | seeds | steps | score (last-15) | verdict |
 |---|---|---|---|---|---|---|---|
+| e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | 0–3 | 4M | 655.2 / 753.1 / 747.3 / 859.0 — **mean 753.7, std 83.3, spread 203.8** | unimodal; every seed over the 600 bar. Spread 204 vs "< 200" predicted, i.e. on target. |
+| e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | 0–3 | 4M | 824.8 / 817.6 / 821.5 / 825.2 — **mean 822.3, std 3.5, spread 7.6** | unimodal and extraordinarily tight — spread 7.6 against a "< 300" prediction. |
+
+**Both finished 2026-08-10 ~20:00.** These are now the reference distributions
+for e510–e549, and the first `→` branch of the §6 e502–e509 entry fired: both
+tasks are unimodal, they are the standard comparison substrate, and four seeds
+per arm is the minimum for a claim.
+
+`hopper_stand`'s spread of **7.6 points** is the notable number. `hopper_hop`
+was retired for being bimodal with ~1% power at five seeds; the same body on a
+different task gives four seeds inside 8 points of each other. It can resolve
+differences an order of magnitude smaller than cartpole can, and any arm effect
+on hopper_stand will be far easier to establish than the pre-registered 850 bar
+assumed. **That bar stays where it was pre-registered** — restating it now that
+the spread is known would be exactly the move pre-registration exists to
+prevent — but it is worth recording, as a post-hoc observation, that a 30-point
+difference here would be ~4 standard deviations and would not need the 850 bar
+to be believed.
 
 ---
 
