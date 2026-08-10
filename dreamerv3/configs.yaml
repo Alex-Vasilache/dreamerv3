@@ -742,6 +742,86 @@ goal_som_orig_lipvq_line_paper:
     goal_vq: {som: True, lip: True, topology: line, ste: 'off', commit_joint: True,
               lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11}
 
+# --- The e510-e549 comparison family (launched 2026-08-10) -------------------
+#
+# Five arms, each a single-factor change from its neighbours, run on
+# cartpole_swingup and hopper_stand against the e502-e509 Director baselines:
+#
+#   goal_som_line                  SOM on a line, straight-through ON
+#   goal_som_orig_line             SOM on a line, straight-through OFF (Eq. 12)
+#   goal_lipvq_prod                Lipschitz only, no SOM               <- new
+#   goal_som_lipvq_line_prod       SOM-line (STE on)  + Lipschitz       <- new
+#   goal_som_orig_lipvq_line_prod  SOM-line (STE off) + Lipschitz       <- new
+#
+# The three new blocks take the Lipschitz penalty in the form Liu et al. write
+# it, which is what `goal_som_orig_lipvq_line_paper` established:
+#
+#   lip_per_row: False   one trainable scalar bound per LAYER, not per output
+#                        unit. Under the per-unit default `bound()` reduces
+#                        with `max`, whose gradient is a one-hot, so the
+#                        penalty pulled on 1 of 1024 bounds per layer.
+#   lip_impl: prod       Eq. (10), alpha * prod_l softplus(c_l) -- the actual
+#                        Lipschitz bound of the network, and self-limiting
+#                        (each bound's gradient is the product of the others,
+#                        which collapses as the bounds fall). `logprod` is
+#                        their Eq. (14), which they consider and reject.
+#   lip_scale: 1.1e-11   their alpha, calibrated to the measured prod at init
+#                        (e481 logs logprod = 24.93 at BIG scale, so prod =
+#                        e^24.93 = 6.7e10; 1.1e-11 * 6.7e10 = 0.75, the same
+#                        absolute contribution 0.03 * logprod had). The arms
+#                        therefore differ in the FORM of the penalty, not its
+#                        size at initialization.
+#
+# They deliberately do NOT take the paper arm's fourth change, `act: relu`.
+# The activation is not part of the Lipschitz mechanism being tested, and
+# changing it here would confound every LiP-vs-no-LiP contrast in the family
+# (goal_som_line vs goal_som_lipvq_line_prod, goal_som_orig_line vs
+# goal_som_orig_lipvq_line_prod) with an activation change. The cost of keeping
+# silu is that its slope peaks at ~1.0998, so the composed bound understates
+# the true constant by ~1.0998 per activation (~1.33x over the 3 hidden
+# layers); the penalty still shrinks exactly the quantity it claims to, just
+# against a bound that is not tight. `goal_som_orig_lipvq_line_paper` remains
+# the arm for the fully paper-faithful version.
+
+# Lipschitz alone: the blockwise quantizer with the weight normalization and
+# penalty, and no SOM neighbourhood term. Straight-through stays ON (the
+# default): `ste: off` with `som: False` is the released LipVQ-VAE code, which
+# has no second reconstruction to carry gradient to the encoder and collapses
+# outright (perplexity 1.00, see goal_vq.ste). Topology is left at its default
+# because with som=False no neighbourhood term is emitted and it is inert.
+goal_lipvq_prod:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: False, lip: True,
+              lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11}
+
+# goal_som_line + Lipschitz. Differs from goal_som_line by `lip` alone.
+goal_som_lipvq_line_prod:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, topology: line,
+              lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11}
+
+# goal_som_orig_line + Lipschitz. Differs from goal_som_orig_line by `lip`
+# alone, and from goal_som_orig_lipvq_line_paper by the activation alone.
+goal_som_orig_lipvq_line_prod:
+  agent:
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    goal_vq: {som: True, lip: True, topology: line, ste: 'off', commit_joint: True,
+              lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11}
+
 goal_som_lipvq_line_mgr:
   agent:
     goal_ae_impl: vq

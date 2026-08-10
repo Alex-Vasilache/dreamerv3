@@ -110,7 +110,13 @@ case "$ARM" in
   som_orig_line_adapt) ARM_CONFIG="goal_som_orig_line_adapt" ;;
   # Liu et al. 2022 verbatim: scalar per-layer bound, `prod` penalty, relu.
   som_orig_lipvq_line_paper) ARM_CONFIG="goal_som_orig_lipvq_line_paper" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper)" >&2; exit 1 ;;
+  # The e510-e549 family: Liu et al.'s penalty FORM (scalar per-layer bound,
+  # `prod`) without their activation change, so each arm is a single-factor
+  # change from its neighbours. See configs.yaml.
+  lipvq_prod)               ARM_CONFIG="goal_lipvq_prod" ;;
+  som_lipvq_line_prod)      ARM_CONFIG="goal_som_lipvq_line_prod" ;;
+  som_orig_lipvq_line_prod) ARM_CONFIG="goal_som_orig_lipvq_line_prod" ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 
@@ -184,38 +190,73 @@ on_usr1() {
 }
 trap on_usr1 USR1
 
-python -u "$REPO/dreamerv3/main.py" \
-  --logdir "$RUN_DIR/logdir" \
-  --seed "$SEED" \
-  --configs $CONFIGS \
-  --task "$TASK" \
-  --env.dmc.image True \
-  --env.dmc.proprio True \
-  --env.dmc.size 64 64 \
-  --batch_size 16 \
-  --batch_length 64 \
-  --agent.enc.simple.outer True \
-  --agent.dec.simple.outer True \
-  --agent.mgr_expl_weight "$MGR_EXPL_W" \
-  --agent.mgr_reward_agg "$MGR_REWARD_AGG" \
-  --agent.mgr_retnorm.impl meanstd \
-  --online_learning False \
-  --online_actor_cpu False \
-  --run.envs "$RUN_ENVS" \
-  --run.steps "$RUN_STEPS" \
-  --run.train_ratio 64 \
-  --run.log_video "$LOG_VIDEO" \
-  --run.debug "$RUN_DEBUG" \
-  --replay.size "$REPLAY_SIZE" \
-  --logger.outputs "$LOG_OUTPUTS" \
-  --logger.wandb_mode online \
-  --logger.wandb_entity vasilache \
-  --jax.platform cuda \
-  --jax.prealloc "$PREALLOC" \
-  "${AGENT_FLAGS[@]}" &
-TRAIN_PID=$!
-# Backgrounded + wait so the USR1 trap can run while training is in flight
-# (bash defers traps until a foreground command returns).
-wait "$TRAIN_PID"
+run_training() {
+  python -u "$REPO/dreamerv3/main.py" \
+    --logdir "$RUN_DIR/logdir" \
+    --seed "$SEED" \
+    --configs $CONFIGS \
+    --task "$TASK" \
+    --env.dmc.image True \
+    --env.dmc.proprio True \
+    --env.dmc.size 64 64 \
+    --batch_size 16 \
+    --batch_length 64 \
+    --agent.enc.simple.outer True \
+    --agent.dec.simple.outer True \
+    --agent.mgr_expl_weight "$MGR_EXPL_W" \
+    --agent.mgr_reward_agg "$MGR_REWARD_AGG" \
+    --agent.mgr_retnorm.impl meanstd \
+    --online_learning False \
+    --online_actor_cpu False \
+    --run.envs "$RUN_ENVS" \
+    --run.steps "$RUN_STEPS" \
+    --run.train_ratio 64 \
+    --run.log_video "$LOG_VIDEO" \
+    --run.debug "$RUN_DEBUG" \
+    --replay.size "$REPLAY_SIZE" \
+    --logger.outputs "$LOG_OUTPUTS" \
+    --logger.wandb_mode online \
+    --logger.wandb_entity vasilache \
+    --jax.platform cuda \
+    --jax.prealloc "$PREALLOC" \
+    "${AGENT_FLAGS[@]}" &
+  TRAIN_PID=$!
+  # Backgrounded + wait so the USR1 trap can run while training is in flight
+  # (bash defers traps until a foreground command returns).
+  wait "$TRAIN_PID"
+}
 
-exit $?
+# In-job retry (added 2026-08-10 for the unattended e510-e557 batch). A crash
+# that is not a signal -- a transient CUDA/NCCL error, a filesystem hiccup, an
+# OOM from a co-tenant -- otherwise ends the job and leaves its GPU slot to the
+# next queued run, so the failed experiment silently drops out of the matrix
+# until someone looks. Retrying in place resumes from the checkpoint in the
+# same RUN_DIR and costs only the restart.
+#
+# Deliberately NOT retried:
+#   rc >= 128  the process was signalled. That is SLURM preempting or killing
+#              the job (short-a100 is preemptible); --requeue handles it, and
+#              retrying here just races the teardown.
+#   attempt 4+ a fault that survives three restarts is a real bug, not a
+#              transient, and looping on it would burn the slot for days.
+MAX_ATTEMPTS="${MAX_ATTEMPTS:-4}"
+attempt=1
+rc=0
+while :; do
+  rc=0
+  run_training || rc=$?
+  [ "$rc" -eq 0 ] && break
+  if [ "$rc" -ge 128 ]; then
+    echo "[retry] attempt $attempt ended on signal (rc=$rc); leaving it to SLURM"
+    break
+  fi
+  if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+    echo "[retry] attempt $attempt failed (rc=$rc); giving up after $MAX_ATTEMPTS attempts"
+    break
+  fi
+  echo "[retry] attempt $attempt failed (rc=$rc); resuming from checkpoint in 60s"
+  attempt=$((attempt + 1))
+  sleep 60
+done
+
+exit $rc

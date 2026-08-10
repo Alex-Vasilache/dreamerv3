@@ -54,6 +54,9 @@ for arm in $ARMS; do
     som_orig_lipvq_line) cfg="goal_som_orig_lipvq_line" ;;
     som_orig_line_adapt) cfg="goal_som_orig_line_adapt" ;;
     som_orig_lipvq_line_paper) cfg="goal_som_orig_lipvq_line_paper" ;;
+    lipvq_prod)               cfg="goal_lipvq_prod" ;;
+    som_lipvq_line_prod)      cfg="goal_som_lipvq_line_prod" ;;
+    som_orig_lipvq_line_prod) cfg="goal_som_orig_lipvq_line_prod" ;;
     # Without this, an arm missing from the list above leaves `cfg` unset and
     # `set -u` kills the whole script at the echo below with "cfg: unbound
     # variable" -- naming neither the arm nor the real problem.
