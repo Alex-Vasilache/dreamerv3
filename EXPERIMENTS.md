@@ -222,21 +222,20 @@ existing directory (`PIN_DIRS=1`), so they continued from their checkpoints
 rather than starting over. The launch TSV carries a per-run step target and the
 watchdog reads it, so mixed horizons cannot confuse it.
 
-### Interim, 2026-08-11 06:47 (seed 0 only, 32–41% of 4M)
+### Interim, 2026-08-11 18:47 (seed 0 only, 75–86% of 4M)
 
-Eight runs up since ~20:00, no failures, no watchdog interventions in 16h.
-Seed 0 of four arms; `lipvq_prod` had not started.
+Round 1 (seed 0 of four arms; `lipvq_prod` had not started) has run ~23h with
+no failures and no watchdog interventions. **last-15 / peak**:
 
 | arm | cartpole | hopper_stand | perplexity | used | rec_q |
 |---|---|---|---|---|---|
-| som_line | 667.7 | 806.8 | 7.07 / 7.43 | 1.00 | 6.8 / 5.1 |
-| som_orig_line | 689.2 | 779.4 | 4.54 / 3.55 | 0.92 / 0.74 | 25.8 / 15.1 |
-| som_lipvq_line_prod | 767.3 | 819.6 | 7.01 / 7.45 | 1.00 | 6.0 / 7.3 |
-| som_orig_lipvq_line_prod | 726.5 | 802.7 | 4.52 / 4.12 | 0.86 / 0.88 | 15.7 / 14.7 |
+| som_line | 592.8 / 782.0 | 819.7 / 839.4 | 6.93 / 7.16 | 1.00 | 7.7 / 8.4 |
+| som_orig_line | 792.5 / 862.5 | 512.5 / 823.8 | **2.60** / 3.39 | 0.68 / 0.82 | **36.9** / 27.3 |
+| som_lipvq_line_prod | 833.8 / 867.5 | 833.6 / 842.8 | 7.13 / 7.51 | 1.00 | 7.7 / 9.2 |
+| som_orig_lipvq_line_prod | 834.5 / 858.5 | 669.7 / 825.6 | 3.72 / 3.62 | 0.81 / 0.79 | 21.5 / 18.5 |
 | *Director, final at 4M* | *753.7* | *822.3* | — | — | — |
 
-Nothing here is a result — one seed, and a third of the budget — but three
-things are worth recording before they are forgotten:
+One seed, so none of this is a result. Four things to carry forward:
 
 1. **The straight-through split is the dominant effect on codebook health, and
    the Lipschitz penalty does not touch it.** STE-on arms sit at perplexity
@@ -251,8 +250,26 @@ things are worth recording before they are forgotten:
    The pre-registered failure case — "if `lip_bound_max` is still ≈ 28 at 2M,
    the `_prod` arms did not test anything new" — will not fire.
 3. **Do not read early hopper numbers.** e538 was at last-15 = **13.1** (peak
-   108) at 11% and is at **819.6** at 34%. Any mid-run intervention on that
-   evidence would have killed the arm that is currently level with Director.
+   108) at 11% and is at **833.6** at 78%. Any mid-run intervention on that
+   evidence would have killed the arm that currently leads both tasks.
+4. **A codebook can be most of the way to collapse and the task still be
+   solved.** e518 (`som_orig_line`, cartpole) is at perplexity **2.60** of 8
+   with **68%** of entries used and reconstruction error **36.9** — four to
+   five times the STE-on arms on every one of those — and scores 792.5 with a
+   peak of 862.5, above Director's 753.7. If this survives four seeds it is a
+   problem for the argument in motivation.tex as written: the section treats
+   code quality as the thing that limits the manager, and here a manager with
+   an effectively 3-entry vocabulary beats the baseline. The geometry
+   measurement on this run is the follow-up that would say why — a coarse code
+   that is *well ordered* is a different object from a rich code that is not,
+   and `diag_goal_geometry.py` can tell them apart. Queued to run on every
+   round-1 checkpoint automatically (job 4677770, dependency on the eight).
+
+Note also that last-15 is volatile this late: e510 reads 592.8 against a peak
+of 782.0, and e522 512.5 against 823.8. The e502–e509 baselines did the same
+thing (e502 wandered 615 → 569 → 655). Both statistics are reported for every
+cell for that reason, and the final comparison should not rest on last-15
+alone.
 
 ### Geometry tooling: validated, and the Director reference values
 
