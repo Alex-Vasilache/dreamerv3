@@ -339,7 +339,68 @@ resubmissions of the same experiment, and stops resubmitting past the deadline.
 
 ## 3. Findings
 
-_(F-numbers continue from the archive; nothing new since the restart.)_
+### F19 — the SOM-on-a-line turns the code index into a coordinate, and the straight-through estimator is what makes it happen
+
+Measured on every round-1 checkpoint at 4M with
+`experiments/goal_geometry/diag_goal_geometry.py` (job 4677770). Batch-to-batch
+std on these quantities is 0.002–0.006, so the differences below are not noise.
+
+**Move one code block *k* classes away, decode, and measure how far the goal
+moved** (cartpole, seed 0, raw units):
+
+| arm | k=1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| Director | 1.47 | 1.54 | 1.45 | 1.44 | 1.63 | 1.49 | 1.67 |
+| `som_line` (STE on) | **1.44** | 3.24 | 5.14 | 7.12 | 8.98 | 11.45 | **13.23** |
+| `som_orig_line` (STE off) | **6.25** | 6.97 | 7.50 | 8.12 | 8.84 | 9.30 | 7.10 |
+
+Director is flat: its entry indices are arbitrary labels, one class away and
+seven classes away move the goal equally. `som_line` is a near-straight ramp
+from 1.44 to 13.23 — the index has become a **coordinate**, which is exactly
+the property motivation.tex argues is missing, now delivered and measured
+rather than asserted. `som_lipvq_line_prod` is the same or stronger (11.9x at
+k=7).
+
+**Without the straight-through estimator the mechanism does not merely fail, it
+inverts.** `som_orig_line`'s *nearest* edit already moves the goal 6.25 — four
+times Director's nearest edit, and further than Director's farthest. Its
+locality is worse than having no topology at all.
+
+**The Lipschitz measurement says why.** Empirical ratios over state pairs,
+median (max):
+
+| arm | encoder ‖Δz‖/‖Δs‖ | decoder ‖Δgoal‖/‖Δz_q‖ |
+|---|---|---|
+| Director | 2.81 (4.51) | 1.89 (7.35) |
+| `som_line` | 0.43 (1.43) | 2.53 (8.08) |
+| `som_orig_line` | **0.022 (0.048)** | **25.9 (140.1)** |
+| `som_orig_lipvq_line_prod` | 0.023 (—) | 16.2 (—) |
+
+The STE-off encoder is collapsed — it barely moves when the state moves
+(perturbation slope 0.040 against Director's 3.058) — and its decoder is wildly
+expansive to compensate, at a maximum ratio of **140** against Director's 7.4.
+That single pair of numbers explains the whole arm: a dead encoder gives a
+codebook nothing to separate (hence perplexity 3.0–3.6 and 21–34% of entries
+unused), and an expansive decoder makes every code edit a jump, which is why
+e518 peaked at 862.5 and finished at 283.2. The `_prod` penalty reduces the
+decoder ratio (25.9 → 16.2) but does not rescue it.
+
+**A caution about the metric motivation.tex currently uses.** Ranked by
+hard-code `cosine_max` correlation, the *worst* arm here looks like the best:
+`som_orig_line` scores r = 0.831 and `som_orig_lipvq_line_prod` 0.912, against
+Director's 0.586 and `som_line`'s 0.503. A degenerate codebook inflates that
+correlation — with three entries in use, most state pairs share a code and
+"agree" trivially. The correlation is not wrong, it is unidentifiable in the
+collapsed regime. The displacement sweep and the Lipschitz ratio separate the
+two cases cleanly and should carry the argument in the paper; the correlation
+should be reported next to codebook occupancy or not at all.
+
+Where the correlation *does* work, the SOM arms improve it in the geometry that
+matters: quantized-embedding distance against goal distance is r = 0.94/0.83
+(`som_line`) and 0.92/0.82 (`som_lipvq_line_prod`) against Director's 0.62.
+
+Seed 0 only; the remaining seeds are measured as they finish. The effect sizes
+(9–12x versus 1.1x) are far outside anything the seed spread has produced.
 
 ---
 ## 4. Dead ends (don't retry)
