@@ -222,20 +222,23 @@ existing directory (`PIN_DIRS=1`), so they continued from their checkpoints
 rather than starting over. The launch TSV carries a per-run step target and the
 watchdog reads it, so mixed horizons cannot confuse it.
 
-### Interim, 2026-08-11 18:47 (seed 0 only, 75–86% of 4M)
+### Round 1 complete, 2026-08-12 (seed 0, 4M)
 
-Round 1 (seed 0 of four arms; `lipvq_prod` had not started) has run ~23h with
-no failures and no watchdog interventions. **last-15 / peak**:
+The first full seed of four arms. `lipvq_prod` seed 0 had not started; its
+seed 1 is running. **last-15 / peak**, against the e502–e509 Director means:
 
 | arm | cartpole | hopper_stand | perplexity | used | rec_q |
 |---|---|---|---|---|---|
-| som_line | 592.8 / 782.0 | 819.7 / 839.4 | 6.93 / 7.16 | 1.00 | 7.7 / 8.4 |
-| som_orig_line | 792.5 / 862.5 | 512.5 / 823.8 | **2.60** / 3.39 | 0.68 / 0.82 | **36.9** / 27.3 |
-| som_lipvq_line_prod | 833.8 / 867.5 | 833.6 / 842.8 | 7.13 / 7.51 | 1.00 | 7.7 / 9.2 |
-| som_orig_lipvq_line_prod | 834.5 / 858.5 | 669.7 / 825.6 | 3.72 / 3.62 | 0.81 / 0.79 | 21.5 / 18.5 |
-| *Director, final at 4M* | *753.7* | *822.3* | — | — | — |
+| som_line | 744.9 / 824.3 | 821.6 / 839.4 | 7.24 / 7.36 | 1.00 | 11.2 / 8.3 |
+| som_orig_line | **283.2** / 862.5 | 797.7 / 823.8 | 3.61 / 3.04 | 0.79 / 0.86 | 41.8 / 33.8 |
+| som_lipvq_line_prod | **830.0** / 869.0 | 816.3 / **886.5** | 6.94 / 7.35 | 1.00 | 15.6 / 9.3 |
+| som_orig_lipvq_line_prod | 788.6* / 858.9 | 806.8 / 826.1 | 3.47 / 4.43 | 0.77 / 0.89 | 24.3 / 20.4 |
+| *Director (4 seeds)* | *753.7* | *822.3* | — | — | — |
 
-One seed, so none of this is a result. Four things to carry forward:
+(*at 97%.) One seed a cell, so no cell is a result yet — with the baseline's
+own cartpole spread at 204 points, a single seed cannot clear anything. What
+the round does establish is the shape of the comparison, and four things to
+carry forward:
 
 1. **The straight-through split is the dominant effect on codebook health, and
    the Lipschitz penalty does not touch it.** STE-on arms sit at perplexity
@@ -252,24 +255,35 @@ One seed, so none of this is a result. Four things to carry forward:
 3. **Do not read early hopper numbers.** e538 was at last-15 = **13.1** (peak
    108) at 11% and is at **833.6** at 78%. Any mid-run intervention on that
    evidence would have killed the arm that currently leads both tasks.
-4. **A codebook can be most of the way to collapse and the task still be
-   solved.** e518 (`som_orig_line`, cartpole) is at perplexity **2.60** of 8
-   with **68%** of entries used and reconstruction error **36.9** — four to
-   five times the STE-on arms on every one of those — and scores 792.5 with a
-   peak of 862.5, above Director's 753.7. If this survives four seeds it is a
-   problem for the argument in motivation.tex as written: the section treats
-   code quality as the thing that limits the manager, and here a manager with
-   an effectively 3-entry vocabulary beats the baseline. The geometry
-   measurement on this run is the follow-up that would say why — a coarse code
-   that is *well ordered* is a different object from a rich code that is not,
-   and `diag_goal_geometry.py` can tell them apart. Queued to run on every
-   round-1 checkpoint automatically (job 4677770, dependency on the eight).
+4. **CORRECTED at 4M — the near-collapsed codebook did not get away with it.**
+   The 18:47 reading of this entry said e518 (`som_orig_line`, cartpole) was
+   "most of the way to collapse and still beating the baseline" at 792.5 with
+   perplexity 2.60. It finished at **283.2**, with perplexity 3.61, 79% used
+   and reconstruction error **41.8**. The peak (862.5) was real and so was the
+   collapse after it; the earlier reading mistook a run on its way down for a
+   standing result. This is the same late-collapse signature the archive
+   records for the ring version of this arm (e415: perplexity 1.57 → 1.28 with
+   reconstruction 5.1 → 35.7) and for e486 (`som_orig_line` on hopper_hop,
+   ended 0.3 against a peak of 186.4). **Read `som_orig_*` arms at the end,
+   not in the middle, and report peak alongside final for every cell.**
 
-Note also that last-15 is volatile this late: e510 reads 592.8 against a peak
-of 782.0, and e522 512.5 against 823.8. The e502–e509 baselines did the same
-thing (e502 wandered 615 → 569 → 655). Both statistics are reported for every
-cell for that reason, and the final comparison should not rest on last-15
-alone.
+Note also that last-15 is volatile late in a run: e510 read 592.8 at 84% and
+744.9 at 100%; e522 read 512.5 and finished 797.7. The e502–e509 baselines did
+the same (e502 wandered 615 → 569 → 655). Both statistics are reported for
+every cell for that reason, and the final comparison should not rest on
+last-15 alone.
+
+**Lane change, 2026-08-12 00:50.** The eight arm runs parked on `short-a100`
+(seed 3 of arms 2–5) had waited **34 hours without starting a single time**,
+and `sinfo -O GresUsed` still reads all 32 A100s allocated, so the lane never
+paid off. They were cancelled and resubmitted to `gpu-a100` (fresh — they had
+no progress to preserve), the Director extras were re-gated with an
+`afterany` dependency on the new set of forty arm job ids, and the launch TSV
+was pruned so the watchdog sees exactly one row per experiment. Verified after:
+48 rows, `done=7 alive=41`, no spurious resubmissions. All forty arm runs are
+now in the one queue that actually schedules, at ~4.25 rounds of 8 remaining
+(→ ~Aug 16), which is the honest projection rather than one that assumed
+capacity that was never there.
 
 ### Geometry tooling: validated, and the Director reference values
 
