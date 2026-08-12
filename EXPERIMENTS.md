@@ -232,10 +232,17 @@ seed 1 is running. **last-15 / peak**, against the e502–e509 Director means:
 | som_line | 744.9 / 824.3 | 821.6 / 839.4 | 7.24 / 7.36 | 1.00 | 11.2 / 8.3 |
 | som_orig_line | **283.2** / 862.5 | 797.7 / 823.8 | 3.61 / 3.04 | 0.79 / 0.86 | 41.8 / 33.8 |
 | som_lipvq_line_prod | **830.0** / 869.0 | 816.3 / **886.5** | 6.94 / 7.35 | 1.00 | 15.6 / 9.3 |
-| som_orig_lipvq_line_prod | 788.6* / 858.9 | 806.8 / 826.1 | 3.47 / 4.43 | 0.77 / 0.89 | 24.3 / 20.4 |
+| som_orig_lipvq_line_prod | **843.4** / 858.9 | 755.6 / 826.1 | 3.38 / 4.46 | 0.75 / 0.90 | 21.0 / 20.8 |
 | *Director (4 seeds)* | *753.7* | *822.3* | — | — | — |
 
-(*at 97%.) One seed a cell, so no cell is a result yet — with the baseline's
+**The Lipschitz penalty may be what prevents the STE-off collapse.** On
+cartpole the two STE-off arms end 283.2 (no LiP, from a peak of 862.5) and
+**843.4** (with LiP) — the only difference between them is `lip` — and the
+geometry measurement puts their decoder expansion at 25.9 and 16.2. That is a
+single seed each and the two hopper cells do not show the same gap (797.7 vs
+755.6), so it is a hypothesis for the remaining seeds to test, not a finding.
+
+One seed a cell, so no cell is a result yet — with the baseline's
 own cartpole spread at 204 points, a single seed cannot clear anything. What
 the round does establish is the shape of the comparison, and four things to
 carry forward:
@@ -621,6 +628,25 @@ All flags default to DreamerV3/pre-HRL behavior.
   `wkr_ent/action`, `mgr_extr_rew(_block)`, `mgr_extr_adv`, `epstats/reward_rate`,
   `mgr_duration_lagrange_scale_mean`, `goal/mask_actent_scale_mean`,
   `goal/struct_adapt_scale` (pilot), plus §1's derived blk/step.
+
+### Infra gotcha: a run does not stop on `run.steps` exactly (2026-08-12)
+
+The driver advances in chunks and checks the step counter between them, so a
+run ends a few thousand steps *short* of its target, not on it. Round 1, all
+targeting 4M, finished between **3,995,992 and 3,998,592**; the e502–e509
+baselines did the same.
+
+This bit `sbatch/watchdog_e510_e557.sh`, whose "is it done" test was
+`step >= 0.999 * RUN_STEPS` = 3,996,000. e542 ended at 3,995,992 — **eight
+steps under** — so the watchdog correctly followed its rule and resubmitted a
+finished run to collect them, taking a GPU slot to do it. Caught at the next
+check-in, the job cancelled, and `DONE_FRAC` lowered to **0.995**, which clears
+the whole observed spread while staying far above any genuinely partial run
+(one round is 27h, so nothing lands accidentally within 0.5% of target).
+
+Worth stating as a general lesson for anything that automates on a step count:
+**compare against what runs actually reach, not against what they were asked
+for.**
 
 ### Run-cost / logging flags (added 2026-08-09)
 

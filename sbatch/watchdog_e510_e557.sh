@@ -46,7 +46,14 @@ LONG_WALL="${LONG_WALL:-2-00:00:00}"
 LONG_SAVE_EVERY="${LONG_SAVE_EVERY:-900}"
 GRES="${GRES:-gpu:a100:1}"
 RUN_STEPS="${RUN_STEPS:-4000000}"
-DONE_FRAC="${DONE_FRAC:-0.999}"
+# A run does not stop exactly on `run.steps`: the driver advances in chunks and
+# checks between them, so the final counter lands a few thousand steps short.
+# Round 1 finished between 3,995,992 and 3,998,592 for a 4M target. At 0.999
+# (>= 3,996,000) that put e542 EIGHT steps under the bar and the watchdog
+# resubmitted a completed run to collect them. 0.995 (>= 3,980,000) clears the
+# whole observed spread and is still far above any genuinely partial run --
+# one round of 8 is 27h, so nothing lands accidentally within 0.5% of target.
+DONE_FRAC="${DONE_FRAC:-0.995}"
 STALL_MIN="${STALL_MIN:-90}"
 MIN_RUN_MIN="${MIN_RUN_MIN:-30}"     # grace period before the stall check bites
 MAX_RESUBMITS="${MAX_RESUBMITS:-5}"
