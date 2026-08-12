@@ -280,6 +280,30 @@ the same (e502 wandered 615 → 569 → 655). Both statistics are reported for
 every cell for that reason, and the final comparison should not rest on
 last-15 alone.
 
+### Two seeds in, 2026-08-13 (complete runs only)
+
+| arm | cartpole (n) | hopper_stand (n) |
+|---|---|---|
+| *Director* | *753.6 ± 83.3 (4)* | *822.3 ± 3.5 (4)* |
+| som_line | 780.4 ± 50.2 (2) | **825.5 ± 5.4** (2) |
+| som_orig_line | 490.4 ± 293.0 (2) | 801.0 ± 4.7 (2) |
+| lipvq_prod | 823.5 (1) | 799.3 (1) |
+| som_lipvq_line_prod | 704.5 ± 177.5 (2) | **823.6 ± 10.3** (2) |
+| som_orig_lipvq_line_prod | 843.4 (1) | 755.6 (1) |
+
+**The shape that is emerging is a tie on return.** On hopper_stand, where the
+baseline resolves to ±3.5, the two straight-through arms land at 825.5 and
+823.6 against 822.3 — inside the noise, not above it. Cartpole is too wide to
+say anything at two seeds. Meanwhile F19 shows the geometry *is* measurably
+different: the same arms turn a flat displacement curve into a ramp and cut the
+one-class edit from 6.3 to 1.4.
+
+If that holds at four seeds it fires the **second pre-registered branch**:
+geometry preservation is achievable and is *not* what limits return. That is
+the more interesting negative result and the §6 entry commits to writing it up
+as one — narrowing motivation.tex's claim from "this confound costs
+performance" to "this confound exists" — rather than burying it.
+
 **Lane change, 2026-08-12 00:50.** The eight arm runs parked on `short-a100`
 (seed 3 of arms 2–5) had waited **34 hours without starting a single time**,
 and `sinfo -O GresUsed` still reads all 32 A100s allocated, so the lane never
@@ -628,6 +652,21 @@ All flags default to DreamerV3/pre-HRL behavior.
   `wkr_ent/action`, `mgr_extr_rew(_block)`, `mgr_extr_adv`, `epstats/reward_rate`,
   `mgr_duration_lagrange_scale_mean`, `goal/mask_actent_scale_mean`,
   `goal/struct_adapt_scale` (pilot), plus §1's derived blk/step.
+
+### Infra gotcha: the score collector averaged unfinished runs (2026-08-13)
+
+`collect_scores.py --at-step N` took, per run, the last 15 episodes recorded at
+or before N. For a run that had reached 700k of a 4M target that silently
+returns its 700k score and lets it into the cell mean as a finished seed. Read
+two hours into round 3 it produced hopper `som_line` = **573.7 ± 436** from two
+finished seeds at ~810 and one that had barely started, and every arm's mean
+was depressed the same way.
+
+Fixed with `--min-frac` (default 0.99): runs short of that fraction of
+`--at-step` are dropped and **listed** rather than averaged in, so the exclusion
+is visible in the output instead of silent. Same class of error as the watchdog
+one the day before — **an automated read has to check that a run reached the
+step it is being read at, not just that a number exists there.**
 
 ### Infra gotcha: a run does not stop on `run.steps` exactly (2026-08-12)
 

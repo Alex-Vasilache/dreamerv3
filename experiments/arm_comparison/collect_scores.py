@@ -127,7 +127,18 @@ def permutation_p(a, b, n_max=200000):
   return hits / len(combos), len(combos)
 
 
-def collect(roots, at_step, last_n, n_bins):
+def collect(roots, at_step, last_n, n_bins, min_frac=0.99):
+  """Per-run curves and endpoints.
+
+  `min_frac` is what keeps this honest. `endpoint()` takes the last `last_n`
+  episodes recorded at or before `at_step`, which for a run that has only
+  reached 700k of a 4M target silently returns its 700k score and lets it into
+  the cell mean as though it were a finished seed. Reading the batch at 4M
+  while round 3 was two hours old produced exactly that: hopper `som_line` came
+  out at 573.7 +/- 436 from two finished seeds at ~810 and one that had barely
+  started. Runs short of `min_frac * at_step` are therefore dropped and counted,
+  never averaged in.
+  """
   grid_max = at_step or 4_000_000
   grid = [int(grid_max * (i + 1) / n_bins) for i in range(n_bins)]
   runs = []
@@ -160,6 +171,12 @@ def collect(roots, at_step, last_n, n_bins):
       best[key] = r
   runs = sorted(best.values(), key=lambda r: (r['task'], r['arm'], r['seed']))
 
+  incomplete = []
+  if at_step:
+    need = at_step * min_frac
+    incomplete = [r for r in runs if r['max_step'] < need]
+    runs = [r for r in runs if r['max_step'] >= need]
+
   cells = {}
   for (task, _), (arm, _) in itertools.product(TASKS, ARMS):
     sel = [r for r in runs if r['task'] == task and r['arm'] == arm]
@@ -188,8 +205,10 @@ def collect(roots, at_step, last_n, n_bins):
       cell['p_floor'] = 2.0 / n_perm if n_perm else None
       cell['delta_vs_director'] = cell['mean'] - ref['mean']
 
-  return dict(grid=grid, at_step=at_step, last_n=last_n,
+  return dict(grid=grid, at_step=at_step, last_n=last_n, min_frac=min_frac,
               arms=ARMS, tasks=TASKS, cells=cells,
+              incomplete=[{k: v for k, v in r.items() if k != 'curve'}
+                          for r in incomplete],
               runs=[{k: v for k, v in r.items() if k != 'curve'}
                     for r in runs])
 
@@ -201,11 +220,18 @@ def main():
                   help='evaluate every arm at this common step (default: end)')
   ap.add_argument('--last-n', type=int, default=15)
   ap.add_argument('--n-bins', type=int, default=80)
+  ap.add_argument('--min-frac', type=float, default=0.99,
+                  help='drop runs short of this fraction of --at-step')
   ap.add_argument('--out', default=None)
   a = ap.parse_args()
 
   roots = [r for r in a.roots.split(',') if os.path.isdir(r)]
-  data = collect(roots, a.at_step, a.last_n, a.n_bins)
+  data = collect(roots, a.at_step, a.last_n, a.n_bins, a.min_frac)
+  if data['incomplete']:
+    print(f'excluded {len(data["incomplete"])} run(s) short of '
+          f'{a.min_frac:.0%} of {a.at_step}: ' + ', '.join(
+              f'{r["exp"]}({r["max_step"]//1000}k)'
+              for r in data['incomplete']))
 
   for (task, tlabel) in TASKS:
     ref = data['cells'].get(f'{task}|director')
