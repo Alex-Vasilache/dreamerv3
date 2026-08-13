@@ -280,23 +280,34 @@ the same (e502 wandered 615 → 569 → 655). Both statistics are reported for
 every cell for that reason, and the final comparison should not rest on
 last-15 alone.
 
-### Two seeds in, 2026-08-13 (complete runs only)
+### Three seeds in, 2026-08-14 (complete runs only, 23 of 40)
 
-| arm | cartpole (n) | hopper_stand (n) |
-|---|---|---|
-| *Director* | *753.6 ± 83.3 (4)* | *822.3 ± 3.5 (4)* |
-| som_line | 780.4 ± 50.2 (2) | **825.5 ± 5.4** (2) |
-| som_orig_line | 490.4 ± 293.0 (2) | 801.0 ± 4.7 (2) |
-| lipvq_prod | 823.5 (1) | 799.3 (1) |
-| som_lipvq_line_prod | 704.5 ± 177.5 (2) | **823.6 ± 10.3** (2) |
-| som_orig_lipvq_line_prod | 843.4 (1) | 755.6 (1) |
+| arm | cartpole (n) | p | hopper_stand (n) | p |
+|---|---|---|---|---|
+| *Director* | *753.6 ± 83.3 (4)* | — | *822.3 ± 3.5 (4)* | — |
+| som_line | 805.1 ± 55.7 (3) | 0.46 | **825.5 ± 3.8** (3) | 0.31 |
+| som_orig_line | 555.8 ± 236.2 (3) | 0.11 | 800.9 ± 3.3 (3) | **0.029** |
+| lipvq_prod | 787.4 ± 51.0 (2) | 0.67 | 799.3 (1) | 0.20 |
+| som_lipvq_line_prod | 704.5 ± 177.5 (2) | 0.73 | **823.6 ± 10.3** (2) | 0.87 |
+| som_orig_lipvq_line_prod | 844.3 ± 1.2 (2) | 0.33 | 786.0 ± 42.9 (2) | 0.07 |
 
-**The shape that is emerging is a tie on return.** On hopper_stand, where the
-baseline resolves to ±3.5, the two straight-through arms land at 825.5 and
-823.6 against 822.3 — inside the noise, not above it. Cartpole is too wide to
-say anything at two seeds. Meanwhile F19 shows the geometry *is* measurably
-different: the same arms turn a flat displacement curve into a ramp and cut the
-one-class edit from 6.3 to 1.4.
+**The shape is a tie on return, plus one small reliable loss.** On
+hopper_stand, where the baseline resolves to ±3.5, both straight-through arms
+sit on top of Director (825.5 and 823.6 against 822.3). Cartpole's ±83 cannot
+resolve anything at three seeds and probably will not at four.
+
+`som_orig_line` on hopper_stand is the **first cell to reach the floor of this
+test**: p = 0.029 is 1/35, the smallest value C(7,4) permutations can return,
+meaning all three of its seeds (798–805) fall below all four Director seeds
+(818–825) with no overlap. Read it precisely — it says the separation is
+consistent, not that it is large. The effect is **−21 points on a 1000 scale**,
+about 0.4% of the achievable return, and it is a *loss*, from the arm whose
+codebook F19 shows collapsing. Nothing here says the geometry work helps
+return; the tight task says the straight-through arms match the baseline and
+the estimator-free ones fall slightly behind it.
+
+Meanwhile F19 shows the geometry *is* measurably different: the same arms turn
+a flat displacement curve into a ramp (ratio 1.1 → 4.2–9.9).
 
 If that holds at four seeds it fires the **second pre-registered branch**:
 geometry preservation is achievable and is *not* what limits return. That is
