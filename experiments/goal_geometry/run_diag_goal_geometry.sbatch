@@ -40,9 +40,36 @@ N_BATCHES="${N_BATCHES:-4}"
 N_ENVS="${N_ENVS:-8}"
 mkdir -p "$OUTDIR"
 
+# Measuring an untrained model says nothing -- its codebook is still at
+# initialization, every state quantizes to one entry, and the geometry is that
+# of random weights. A run directory can exist with a checkpoint and no
+# training at all (a job that was submitted, created its dir, and was cancelled
+# before its first log), so require some actual progress before spending a slot
+# on it.
+MIN_STEPS="${MIN_STEPS:-100000}"
+
 fail=0
 for run in $RUNS; do
   name=$(basename "${run%/}")
+  steps=$(python3 - "$run" <<'PY'
+import json, os, sys
+p = os.path.join(sys.argv[1], 'logdir', 'metrics.jsonl')
+best = 0
+if os.path.exists(p):
+    with open(p, 'rb') as f:
+        f.seek(0, 2); f.seek(max(0, f.tell() - 200_000))
+        for line in f.read().decode('utf8', 'ignore').splitlines()[1:]:
+            try:
+                best = max(best, int(json.loads(line).get('step', 0)))
+            except Exception:
+                pass
+print(best)
+PY
+)
+  if [ "${steps:-0}" -lt "$MIN_STEPS" ]; then
+    echo "SKIP $name: only ${steps:-0} steps trained (< $MIN_STEPS)"
+    continue
+  fi
   args=(--run_dir "$run" --out "$OUTDIR/${name}.npz"
         --n_batches "$N_BATCHES" --n_envs "$N_ENVS")
   if [ -n "$CKPT_SUFFIX" ]; then

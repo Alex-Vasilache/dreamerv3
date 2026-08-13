@@ -116,6 +116,14 @@ def ratio_stats(num, den, eps=1e-9):
   num, den = offdiag(num), offdiag(den)
   keep = den > max(eps, np.percentile(den, 1.0))
   r = num[keep] / den[keep]
+  if r.size == 0:
+    # Every pair is at (numerically) the same distance, so there is no ratio to
+    # report. This is what a fully collapsed codebook looks like -- all states
+    # quantize to one entry, so z_q is constant and the denominator vanishes --
+    # and it is a real state a run can be in, not a bug. Returning NaN keeps a
+    # batch of 40 runs alive where `max()` on an empty array killed it.
+    nan = float('nan')
+    return dict(max=nan, p999=nan, p99=nan, p50=nan, mean=nan, n=0)
   return dict(max=float(r.max()), p999=float(np.percentile(r, 99.9)),
               p99=float(np.percentile(r, 99.0)), p50=float(np.median(r)),
               mean=float(r.mean()), n=int(r.size))
