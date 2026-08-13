@@ -341,8 +341,17 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   config, agent = build(run_dir, ckpt_path)
   impl, encode, decode = make_fns(config, agent)
   blocks, classes = [int(x) for x in config.agent.skill_shape]
+  # Index distance is only meaningful where a neighbourhood term actually
+  # ordered the codebook. `goal_vq.topology` defaults to 'ring' even when
+  # `som` is off, and taking it at face value made the LiP-only arm's distance
+  # wrap at C/2 -- so its sweep stopped at k=4 while Director's ran to k=7 and
+  # the two could not be read on one axis. With som=False no neighbour loss was
+  # ever emitted, the entries are unordered exactly as Director's are, and the
+  # plain |i-j| that Director gets is the comparable measure.
+  som_on = bool(getattr(config.agent.goal_vq, 'som', False)) if impl == 'vq' \
+      else False
   topology = str(getattr(config.agent.goal_vq, 'topology', 'ring')) \
-      if impl == 'vq' else 'none'
+      if som_on else 'none'
   name = pathlib.Path(str(run_dir).rstrip('/')).name
   print(f'=== {name} | impl={impl} topology={topology} L={blocks} C={classes}')
 

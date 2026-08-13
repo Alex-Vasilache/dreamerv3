@@ -430,8 +430,33 @@ Where the correlation *does* work, the SOM arms improve it in the geometry that
 matters: quantized-embedding distance against goal distance is r = 0.94/0.83
 (`som_line`) and 0.92/0.82 (`som_lipvq_line_prod`) against Director's 0.62.
 
-Seed 0 only; the remaining seeds are measured as they finish. The effect sizes
-(9–12x versus 1.1x) are far outside anything the seed spread has produced.
+**Two seeds (2026-08-13) reproduce it, and sharpen what the claim is.** Mean
+over seeds of the k=1 displacement, the k=7 displacement, their ratio, and the
+median decoder Lipschitz ratio:
+
+| task | arm | n | k=1 | k=7 | ratio | dec L |
+|---|---|---|---|---|---|---|
+| cartpole | Director | 1 | 1.47 | 1.67 | **1.1** | 1.88 |
+| cartpole | som_line | 2 | 1.25 | 12.29 | **9.9** | 2.32 |
+| cartpole | som_lipvq_line_prod | 2 | 1.22 | 12.09 | **9.9** | 2.20 |
+| cartpole | som_orig_line | 2 | 7.24 | 11.53 | 1.6 | **39.5** |
+| hopper | som_line | 2 | 1.53 | 6.84 | 4.5 | 2.04 |
+| hopper | som_lipvq_line_prod | 2 | 1.10 | 4.63 | 4.2 | 1.56 |
+| hopper | som_orig_line | 2 | 3.25 | 5.77 | 1.8 | **25.8** |
+
+**This corrects the 08-12 note that called locality "the robust claim".**
+Director's k=1 is 1.47 — as local as `som_line`'s 1.25. Director is not bad at
+small edits; it has *no gradation*, every edit moving the goal about the same
+distance whatever the index says (ratio 1.1). What the straight-through SOM arms
+add over Director is **ordering** — ratio 1.1 → 4.2–9.9, consistent across both
+seeds and both tasks. What the STE-off arms lose relative to *both* is locality:
+their nearest edit is 3.3–7.2, and their decoder expands by 26–39x against
+Director's 1.9. Two distinct claims, against two different references; the
+earlier note conflated them.
+
+Seed 0–1; remaining seeds measured as they finish. The effect sizes (4–10x
+versus 1.1x) are far outside anything the seed spread has produced, and
+batch-to-batch noise on these quantities is 0.002–0.006.
 
 ---
 ## 4. Dead ends (don't retry)
