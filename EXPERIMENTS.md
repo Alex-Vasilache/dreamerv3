@@ -455,19 +455,48 @@ median decoder Lipschitz ratio:
 | hopper | som_lipvq_line_prod | 2 | 1.10 | 4.63 | 4.2 | 1.56 |
 | hopper | som_orig_line | 2 | 3.25 | 5.77 | 1.8 | **25.8** |
 
-**This corrects the 08-12 note that called locality "the robust claim".**
-Director's k=1 is 1.47 — as local as `som_line`'s 1.25. Director is not bad at
-small edits; it has *no gradation*, every edit moving the goal about the same
-distance whatever the index says (ratio 1.1). What the straight-through SOM arms
-add over Director is **ordering** — ratio 1.1 → 4.2–9.9, consistent across both
-seeds and both tasks. What the STE-off arms lose relative to *both* is locality:
-their nearest edit is 3.3–7.2, and their decoder expands by 26–39x against
-Director's 1.9. Two distinct claims, against two different references; the
-earlier note conflated them.
+**Full baseline (4 seeds) + 2–3 seeds an arm, 2026-08-14.** mean ± std over
+seeds. `ratio` is k=7 displacement over k=1 — the gradation. `dec L` is the
+median decoder Lipschitz ratio.
 
-Seed 0–1; remaining seeds measured as they finish. The effect sizes (4–10x
-versus 1.1x) are far outside anything the seed spread has produced, and
-batch-to-batch noise on these quantities is 0.002–0.006.
+| task | arm | n | k=1 | ratio | dec L |
+|---|---|---|---|---|---|
+| cartpole | Director | 4 | 2.31 ± 0.49 | 1.13 ± 0.10 | 2.58 ± 0.76 |
+| cartpole | lipvq_prod | 2 | 4.87 ± 0.66 | **1.12 ± 0.04** | **1.03 ± 0.18** |
+| cartpole | som_line | 3 | 1.33 ± 0.19 | **9.70 ± 0.72** | 2.52 ± 0.32 |
+| cartpole | som_lipvq_line_prod | 2 | 1.22 ± 0.04 | **10.01 ± 1.86** | 2.20 ± 0.17 |
+| cartpole | som_orig_line | 3 | 6.74 ± 1.08 | 1.46 ± 0.34 | 36.7 ± 4.0 |
+| cartpole | som_orig_lipvq_line_prod | 2 | 6.73 ± 0.51 | 1.33 ± 0.28 | 35.6 ± 3.5 |
+| hopper | Director | 4 | 1.71 ± 0.19 | 1.00 ± 0.10 | 1.28 ± 0.14 |
+| hopper | lipvq_prod | 2 | 3.14 ± 0.23 | **0.93 ± 0.23** | **0.92 ± 0.10** |
+| hopper | som_line | 3 | 1.45 ± 0.28 | **5.27 ± 1.16** | 1.97 ± 0.14 |
+| hopper | som_lipvq_line_prod | 2 | 1.10 ± 0.13 | **4.36 ± 1.43** | 1.56 ± 0.12 |
+| hopper | som_orig_line | 3 | 3.56 ± 0.44 | 1.41 ± 0.58 | 24.4 ± 2.0 |
+| hopper | som_orig_lipvq_line_prod | 2 | 3.21 ± 0.06 | 2.48 ± 0.36 | 16.9 ± 0.7 |
+
+**The five arms separate the mechanism cleanly, which is what they were for:**
+
+1. **Ordering needs the SOM *and* the estimator; neither alone does it.**
+   Ratio is 1.0–1.1 for Director, and **1.12 / 0.93 for `lipvq_prod`** — a
+   Lipschitz bound with no topology leaves the index exactly as arbitrary as
+   Director's. Drop the estimator instead and it is 1.3–2.5. Only the two arms
+   with both reach 4.4–10.0.
+2. **The Lipschitz penalty does the job it claims, and only that job.** It
+   lowers the decoder's expansion in *every* pairing where it is added:
+   2.52 → 2.20 and 1.97 → 1.56 on the SOM arms, 24.4 → 16.9 on the STE-off
+   hopper arm, and `lipvq_prod` alone reaches **1.03 / 0.92**, below Director's
+   2.58 / 1.28. It changes ordering not at all, and (per §2) return not at all.
+3. **CORRECTS the 08-13 note.** That note said Director's k=1 (1.47) was as
+   local as `som_line`'s, so locality was not part of the claim. That reading
+   came from Director's *single* measured seed. With all four, Director is
+   2.31 ± 0.49 on cartpole against `som_line`'s 1.33 ± 0.19 — non-overlapping.
+   The SOM+STE arms improve locality **and** ordering; hopper's locality gap
+   (1.71 vs 1.45) is within noise, cartpole's is not. Two corrections in two
+   days on the same sentence, both caused by reading a one-seed baseline —
+   which is the argument for having measured all four.
+
+Batch-to-batch noise on these quantities is 0.002–0.006, and the seed spreads
+above are small next to the effects.
 
 ---
 ## 4. Dead ends (don't retry)
