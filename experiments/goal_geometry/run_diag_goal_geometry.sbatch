@@ -70,6 +70,13 @@ PY
     echo "SKIP $name: only ${steps:-0} steps trained (< $MIN_STEPS)"
     continue
   fi
+  # Idempotent: an existing result is only redone on FORCE=1. This is what lets
+  # the final pass be pointed at all forty run directories and measure only
+  # what is missing, instead of tracking which round measured what.
+  if [ -f "$OUTDIR/${name}.npz" ] && [ "${FORCE:-0}" != "1" ]; then
+    echo "HAVE $name: $OUTDIR/${name}.npz (FORCE=1 to redo)"
+    continue
+  fi
   args=(--run_dir "$run" --out "$OUTDIR/${name}.npz"
         --n_batches "$N_BATCHES" --n_envs "$N_ENVS")
   if [ -n "$CKPT_SUFFIX" ]; then
