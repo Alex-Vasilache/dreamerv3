@@ -1,110 +1,119 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="4416" height="3250" viewBox="0 0 4416 3250" font-family="Helvetica,Arial,sans-serif">
-<rect x="0" y="0" width="4416" height="3250" fill="white"/>
-<text x="2256.0" y="115.9" font-size="105.4" fill="#0b0b0b" text-anchor="middle">Cartpole Swingup</text>
-<text x="2256.0" y="232.1" font-size="72.6" fill="#52514e" text-anchor="middle">Director baseline 754 (655–859 across 4 seeds, shaded band)</text>
-<line x1="276.0" y1="1196.0" x2="4236.0" y2="1196.0" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="1225.5" font-size="82.0" fill="#52514e" text-anchor="end">0</text>
-<line x1="276.0" y1="1016.0" x2="4236.0" y2="1016.0" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="1045.5" font-size="82.0" fill="#52514e" text-anchor="end">200</text>
-<line x1="276.0" y1="836.0" x2="4236.0" y2="836.0" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="865.5" font-size="82.0" fill="#52514e" text-anchor="end">400</text>
-<line x1="276.0" y1="656.0" x2="4236.0" y2="656.0" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="685.5" font-size="82.0" fill="#52514e" text-anchor="end">600</text>
-<line x1="276.0" y1="476.0" x2="4236.0" y2="476.0" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="505.5" font-size="82.0" fill="#52514e" text-anchor="end">800</text>
-<line x1="276.0" y1="296.0" x2="4236.0" y2="296.0" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="325.5" font-size="82.0" fill="#52514e" text-anchor="end">1000</text>
-<text x="-51.8" y="746.0" font-size="87.8" fill="#0b0b0b" text-anchor="middle" transform="rotate(-90 -51.8 746.0)">episode return</text>
-<rect x="276.0" y="422.9" width="3960.0" height="183.4" fill="#e6e5e1"/>
-<line x1="276.0" y1="517.7" x2="4236.0" y2="517.7" stroke="#52514e" stroke-width="10.54" stroke-dasharray="35.1,28.1"/>
-<text x="606.0" y="1318.9" font-size="82.0" fill="#0b0b0b" text-anchor="middle">Director</text>
-<circle cx="542.8" cy="606.4" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<circle cx="584.9" cy="518.2" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<circle cx="627.1" cy="523.4" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<circle cx="669.2" cy="422.9" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<line x1="408.0" y1="517.7" x2="804.0" y2="517.7" stroke="#52514e" stroke-width="18.73"/>
-<text x="606.0" y="459.2" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">754</text><text x="606.0" y="459.2" font-size="72.6" text-anchor="middle" fill="#0b0b0b">754</text>
-<text x="1266.0" y="1318.9" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line</text>
-<circle cx="1244.9" cy="525.6" r="29.3" fill="#2a78d6" stroke="white" stroke-width="11.71"/>
-<circle cx="1287.1" cy="461.8" r="29.3" fill="#2a78d6" stroke="white" stroke-width="11.71"/>
-<line x1="1068.0" y1="493.7" x2="1464.0" y2="493.7" stroke="#2a78d6" stroke-width="18.73"/>
-<text x="1266.0" y="435.1" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">780</text><text x="1266.0" y="435.1" font-size="72.6" text-anchor="middle" fill="#0b0b0b">780</text>
-<text x="1266.0" y="1427.8" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.733</text>
-<text x="1926.0" y="1318.9" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG</text>
-<circle cx="1904.9" cy="941.2" r="29.3" fill="#eb6834" stroke="white" stroke-width="11.71"/>
-<circle cx="1947.1" cy="568.2" r="29.3" fill="#eb6834" stroke="white" stroke-width="11.71"/>
-<line x1="1728.0" y1="754.7" x2="2124.0" y2="754.7" stroke="#eb6834" stroke-width="18.73"/>
-<text x="1926.0" y="696.1" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">490</text><text x="1926.0" y="696.1" font-size="72.6" text-anchor="middle" fill="#0b0b0b">490</text>
-<text x="1926.0" y="1427.8" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.133*</text>
-<text x="2586.0" y="1318.9" font-size="82.0" fill="#0b0b0b" text-anchor="middle">LiP</text>
-<circle cx="2586.0" cy="454.8" r="29.3" fill="#1baf7a" stroke="white" stroke-width="11.71"/>
-<line x1="2388.0" y1="454.8" x2="2784.0" y2="454.8" stroke="#1baf7a" stroke-width="18.73"/>
-<text x="2586.0" y="396.3" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">824</text><text x="2586.0" y="396.3" font-size="72.6" text-anchor="middle" fill="#0b0b0b">824</text>
-<text x="2586.0" y="1427.8" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.600</text>
-<text x="3246.0" y="1318.9" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line + LiP</text>
-<circle cx="3224.9" cy="449.0" r="29.3" fill="#eda100" stroke="white" stroke-width="11.71"/>
-<circle cx="3267.1" cy="674.9" r="29.3" fill="#eda100" stroke="white" stroke-width="11.71"/>
-<line x1="3048.0" y1="562.0" x2="3444.0" y2="562.0" stroke="#eda100" stroke-width="18.73"/>
-<text x="3246.0" y="503.4" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">704</text><text x="3246.0" y="503.4" font-size="72.6" text-anchor="middle" fill="#0b0b0b">704</text>
-<text x="3246.0" y="1427.8" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.733</text>
-<text x="3906.0" y="1318.9" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG + LiP</text>
-<circle cx="3906.0" cy="436.9" r="29.3" fill="#e87ba4" stroke="white" stroke-width="11.71"/>
-<line x1="3708.0" y1="436.9" x2="4104.0" y2="436.9" stroke="#e87ba4" stroke-width="18.73"/>
-<text x="3906.0" y="378.4" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">843</text><text x="3906.0" y="378.4" font-size="72.6" text-anchor="middle" fill="#0b0b0b">843</text>
-<text x="3906.0" y="1427.8" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.600</text>
-<line x1="276.0" y1="1196.0" x2="4236.0" y2="1196.0" stroke="#8a8880" stroke-width="8.20"/>
-<text x="2256.0" y="1763.2" font-size="105.4" fill="#0b0b0b" text-anchor="middle">Hopper Stand</text>
-<text x="2256.0" y="1879.4" font-size="72.6" fill="#52514e" text-anchor="middle">Director baseline 822 (818–825 across 4 seeds, shaded band)</text>
-<line x1="276.0" y1="2843.3" x2="4236.0" y2="2843.3" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="2872.8" font-size="82.0" fill="#52514e" text-anchor="end">0</text>
-<line x1="276.0" y1="2663.3" x2="4236.0" y2="2663.3" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="2692.8" font-size="82.0" fill="#52514e" text-anchor="end">200</text>
-<line x1="276.0" y1="2483.3" x2="4236.0" y2="2483.3" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="2512.8" font-size="82.0" fill="#52514e" text-anchor="end">400</text>
-<line x1="276.0" y1="2303.3" x2="4236.0" y2="2303.3" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="2332.8" font-size="82.0" fill="#52514e" text-anchor="end">600</text>
-<line x1="276.0" y1="2123.3" x2="4236.0" y2="2123.3" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="2152.8" font-size="82.0" fill="#52514e" text-anchor="end">800</text>
-<line x1="276.0" y1="1943.3" x2="4236.0" y2="1943.3" stroke="#e6e5e1" stroke-width="5.85"/>
-<text x="229.2" y="1972.8" font-size="82.0" fill="#52514e" text-anchor="end">1000</text>
-<text x="-51.8" y="2393.3" font-size="87.8" fill="#0b0b0b" text-anchor="middle" transform="rotate(-90 -51.8 2393.3)">episode return</text>
-<rect x="276.0" y="2100.6" width="3960.0" height="6.8" fill="#e6e5e1"/>
-<line x1="276.0" y1="2103.2" x2="4236.0" y2="2103.2" stroke="#52514e" stroke-width="10.54" stroke-dasharray="35.1,28.1"/>
-<text x="606.0" y="2966.2" font-size="82.0" fill="#0b0b0b" text-anchor="middle">Director</text>
-<circle cx="542.8" cy="2101.0" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<circle cx="584.9" cy="2107.4" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<circle cx="627.1" cy="2103.9" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<circle cx="669.2" cy="2100.6" r="29.3" fill="#52514e" stroke="white" stroke-width="11.71"/>
-<line x1="408.0" y1="2103.2" x2="804.0" y2="2103.2" stroke="#52514e" stroke-width="18.73"/>
-<text x="606.0" y="2044.7" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">822</text><text x="606.0" y="2044.7" font-size="72.6" text-anchor="middle" fill="#0b0b0b">822</text>
-<text x="1266.0" y="2966.2" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line</text>
-<circle cx="1244.9" cy="2103.8" r="29.3" fill="#2a78d6" stroke="white" stroke-width="11.71"/>
-<circle cx="1287.1" cy="2096.9" r="29.3" fill="#2a78d6" stroke="white" stroke-width="11.71"/>
-<line x1="1068.0" y1="2100.4" x2="1464.0" y2="2100.4" stroke="#2a78d6" stroke-width="18.73"/>
-<text x="1266.0" y="2041.8" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">825</text><text x="1266.0" y="2041.8" font-size="72.6" text-anchor="middle" fill="#0b0b0b">825</text>
-<text x="1266.0" y="3075.1" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.400</text>
-<text x="1926.0" y="2966.2" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG</text>
-<circle cx="1904.9" cy="2125.4" r="29.3" fill="#eb6834" stroke="white" stroke-width="11.71"/>
-<circle cx="1947.1" cy="2119.4" r="29.3" fill="#eb6834" stroke="white" stroke-width="11.71"/>
-<line x1="1728.0" y1="2122.4" x2="2124.0" y2="2122.4" stroke="#eb6834" stroke-width="18.73"/>
-<text x="1926.0" y="2063.8" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">801</text><text x="1926.0" y="2063.8" font-size="72.6" text-anchor="middle" fill="#0b0b0b">801</text>
-<text x="1926.0" y="3075.1" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.067</text>
-<text x="2586.0" y="2966.2" font-size="82.0" fill="#0b0b0b" text-anchor="middle">LiP</text>
-<circle cx="2586.0" cy="2123.9" r="29.3" fill="#1baf7a" stroke="white" stroke-width="11.71"/>
-<line x1="2388.0" y1="2123.9" x2="2784.0" y2="2123.9" stroke="#1baf7a" stroke-width="18.73"/>
-<text x="2586.0" y="2065.4" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">799</text><text x="2586.0" y="2065.4" font-size="72.6" text-anchor="middle" fill="#0b0b0b">799</text>
-<text x="2586.0" y="3075.1" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.200</text>
-<text x="3246.0" y="2966.2" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line + LiP</text>
-<circle cx="3224.9" cy="2108.6" r="29.3" fill="#eda100" stroke="white" stroke-width="11.71"/>
-<circle cx="3267.1" cy="2095.5" r="29.3" fill="#eda100" stroke="white" stroke-width="11.71"/>
-<line x1="3048.0" y1="2102.1" x2="3444.0" y2="2102.1" stroke="#eda100" stroke-width="18.73"/>
-<text x="3246.0" y="2043.5" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">824</text><text x="3246.0" y="2043.5" font-size="72.6" text-anchor="middle" fill="#0b0b0b">824</text>
-<text x="3246.0" y="3075.1" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.867</text>
-<text x="3906.0" y="2966.2" font-size="82.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG + LiP</text>
-<circle cx="3906.0" cy="2163.2" r="29.3" fill="#e87ba4" stroke="white" stroke-width="11.71"/>
-<line x1="3708.0" y1="2163.2" x2="4104.0" y2="2163.2" stroke="#e87ba4" stroke-width="18.73"/>
-<text x="3906.0" y="2104.7" font-size="72.6" text-anchor="middle" fill="none" stroke="white" stroke-width="21.08" stroke-linejoin="round">756</text><text x="3906.0" y="2104.7" font-size="72.6" text-anchor="middle" fill="#0b0b0b">756</text>
-<text x="3906.0" y="3075.1" font-size="72.6" fill="#52514e" text-anchor="middle">p=0.200</text>
-<line x1="276.0" y1="2843.3" x2="4236.0" y2="2843.3" stroke="#8a8880" stroke-width="8.20"/>
-<text x="2208.0" y="3221.0" font-size="72.6" fill="#8a8880" text-anchor="middle">each dot is one seed; bar is the mean of 4. p: exact two-sided permutation vs Director, floor 0.029 at 4 vs 4. measured at 4M steps</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="4548" height="3392" viewBox="0 0 4548 3392" font-family="Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="4548" height="3392" fill="white"/>
+<text x="2388.0" y="119.4" font-size="108.5" fill="#0b0b0b" text-anchor="middle">Cartpole Swingup</text>
+<text x="2388.0" y="239.0" font-size="74.8" fill="#52514e" text-anchor="middle">Director baseline 754 (655–859 across 4 seeds, shaded band)</text>
+<line x1="408.0" y1="1204.8" x2="4368.0" y2="1204.8" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="1235.2" font-size="84.4" fill="#52514e" text-anchor="end">0</text>
+<line x1="408.0" y1="1024.8" x2="4368.0" y2="1024.8" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="1055.2" font-size="84.4" fill="#52514e" text-anchor="end">200</text>
+<line x1="408.0" y1="844.8" x2="4368.0" y2="844.8" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="875.2" font-size="84.4" fill="#52514e" text-anchor="end">400</text>
+<line x1="408.0" y1="664.8" x2="4368.0" y2="664.8" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="695.2" font-size="84.4" fill="#52514e" text-anchor="end">600</text>
+<line x1="408.0" y1="484.8" x2="4368.0" y2="484.8" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="515.2" font-size="84.4" fill="#52514e" text-anchor="end">800</text>
+<line x1="408.0" y1="304.8" x2="4368.0" y2="304.8" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="335.2" font-size="84.4" fill="#52514e" text-anchor="end">1000</text>
+<text x="132.6" y="754.8" font-size="90.4" fill="#0b0b0b" text-anchor="middle" transform="rotate(-90 132.6 754.8)">episode return</text>
+<rect x="408.0" y="431.8" width="3960.0" height="183.4" fill="#e6e5e1"/>
+<line x1="408.0" y1="526.6" x2="4368.0" y2="526.6" stroke="#52514e" stroke-width="10.85" stroke-dasharray="36.2,28.9"/>
+<text x="738.0" y="1331.5" font-size="76.0" fill="#0b0b0b" text-anchor="middle">Director</text>
+<circle cx="672.9" cy="615.2" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<circle cx="716.3" cy="527.1" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<circle cx="759.7" cy="532.3" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<circle cx="803.1" cy="431.8" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<line x1="540.0" y1="526.6" x2="936.0" y2="526.6" stroke="#52514e" stroke-width="19.29"/>
+<text x="738.0" y="466.3" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">754</text><text x="738.0" y="466.3" font-size="74.8" text-anchor="middle" fill="#0b0b0b">754</text>
+<text x="1398.0" y="1331.5" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line</text>
+<circle cx="1354.6" cy="534.4" r="30.1" fill="#2a78d6" stroke="white" stroke-width="12.06"/>
+<circle cx="1398.0" cy="470.6" r="30.1" fill="#2a78d6" stroke="white" stroke-width="12.06"/>
+<circle cx="1441.4" cy="435.6" r="30.1" fill="#2a78d6" stroke="white" stroke-width="12.06"/>
+<line x1="1200.0" y1="480.2" x2="1596.0" y2="480.2" stroke="#2a78d6" stroke-width="19.29"/>
+<text x="1398.0" y="419.9" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">805</text><text x="1398.0" y="419.9" font-size="74.8" text-anchor="middle" fill="#0b0b0b">805</text>
+<text x="1398.0" y="1443.6" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.457</text>
+<text x="2058.0" y="1331.5" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG</text>
+<circle cx="2014.6" cy="950.0" r="30.1" fill="#eb6834" stroke="white" stroke-width="12.06"/>
+<circle cx="2058.0" cy="577.1" r="30.1" fill="#eb6834" stroke="white" stroke-width="12.06"/>
+<circle cx="2101.4" cy="586.7" r="30.1" fill="#eb6834" stroke="white" stroke-width="12.06"/>
+<line x1="1860.0" y1="704.6" x2="2256.0" y2="704.6" stroke="#eb6834" stroke-width="19.29"/>
+<text x="2058.0" y="644.3" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">556</text><text x="2058.0" y="644.3" font-size="74.8" text-anchor="middle" fill="#0b0b0b">556</text>
+<text x="2058.0" y="1443.6" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.114</text>
+<text x="2718.0" y="1331.5" font-size="76.0" fill="#0b0b0b" text-anchor="middle">LiP</text>
+<circle cx="2696.3" cy="463.7" r="30.1" fill="#1baf7a" stroke="white" stroke-width="12.06"/>
+<circle cx="2739.7" cy="528.6" r="30.1" fill="#1baf7a" stroke="white" stroke-width="12.06"/>
+<line x1="2520.0" y1="496.2" x2="2916.0" y2="496.2" stroke="#1baf7a" stroke-width="19.29"/>
+<text x="2718.0" y="435.9" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">787</text><text x="2718.0" y="435.9" font-size="74.8" text-anchor="middle" fill="#0b0b0b">787</text>
+<text x="2718.0" y="1443.6" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.667</text>
+<text x="3378.0" y="1331.5" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line + LiP</text>
+<circle cx="3356.3" cy="457.9" r="30.1" fill="#eda100" stroke="white" stroke-width="12.06"/>
+<circle cx="3399.7" cy="683.8" r="30.1" fill="#eda100" stroke="white" stroke-width="12.06"/>
+<line x1="3180.0" y1="570.8" x2="3576.0" y2="570.8" stroke="#eda100" stroke-width="19.29"/>
+<text x="3378.0" y="510.5" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">704</text><text x="3378.0" y="510.5" font-size="74.8" text-anchor="middle" fill="#0b0b0b">704</text>
+<text x="3378.0" y="1443.6" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.733</text>
+<text x="4038.0" y="1331.5" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG + LiP</text>
+<circle cx="4016.3" cy="445.8" r="30.1" fill="#e87ba4" stroke="white" stroke-width="12.06"/>
+<circle cx="4059.7" cy="444.2" r="30.1" fill="#e87ba4" stroke="white" stroke-width="12.06"/>
+<line x1="3840.0" y1="445.0" x2="4236.0" y2="445.0" stroke="#e87ba4" stroke-width="19.29"/>
+<text x="4038.0" y="384.7" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">844</text><text x="4038.0" y="384.7" font-size="74.8" text-anchor="middle" fill="#0b0b0b">844</text>
+<text x="4038.0" y="1443.6" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.333</text>
+<line x1="408.0" y1="1204.8" x2="4368.0" y2="1204.8" stroke="#8a8880" stroke-width="8.44"/>
+<text x="2388.0" y="1782.9" font-size="108.5" fill="#0b0b0b" text-anchor="middle">Hopper Stand</text>
+<text x="2388.0" y="1902.5" font-size="74.8" fill="#52514e" text-anchor="middle">Director baseline 822 (818–825 across 4 seeds, shaded band)</text>
+<line x1="408.0" y1="2868.4" x2="4368.0" y2="2868.4" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="2898.8" font-size="84.4" fill="#52514e" text-anchor="end">700</text>
+<line x1="408.0" y1="2688.4" x2="4368.0" y2="2688.4" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="2718.8" font-size="84.4" fill="#52514e" text-anchor="end">740</text>
+<line x1="408.0" y1="2508.4" x2="4368.0" y2="2508.4" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="2538.8" font-size="84.4" fill="#52514e" text-anchor="end">780</text>
+<line x1="408.0" y1="2328.4" x2="4368.0" y2="2328.4" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="2358.8" font-size="84.4" fill="#52514e" text-anchor="end">820</text>
+<line x1="408.0" y1="2148.4" x2="4368.0" y2="2148.4" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="2178.8" font-size="84.4" fill="#52514e" text-anchor="end">860</text>
+<line x1="408.0" y1="1968.4" x2="4368.0" y2="1968.4" stroke="#e6e5e1" stroke-width="6.03"/>
+<text x="359.8" y="1998.8" font-size="84.4" fill="#52514e" text-anchor="end">900</text>
+<text x="132.6" y="2418.4" font-size="90.4" fill="#0b0b0b" text-anchor="middle" transform="rotate(-90 132.6 2418.4)">episode return</text>
+<rect x="408.0" y="2305.0" width="3960.0" height="34.1" fill="#e6e5e1"/>
+<line x1="408.0" y1="2318.1" x2="4368.0" y2="2318.1" stroke="#52514e" stroke-width="10.85" stroke-dasharray="36.2,28.9"/>
+<text x="738.0" y="2995.0" font-size="76.0" fill="#0b0b0b" text-anchor="middle">Director</text>
+<circle cx="672.9" cy="2306.8" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<circle cx="716.3" cy="2339.1" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<circle cx="759.7" cy="2321.6" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<circle cx="803.1" cy="2305.0" r="30.1" fill="#52514e" stroke="white" stroke-width="12.06"/>
+<line x1="540.0" y1="2318.1" x2="936.0" y2="2318.1" stroke="#52514e" stroke-width="19.29"/>
+<text x="738.0" y="2257.8" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">822</text><text x="738.0" y="2257.8" font-size="74.8" text-anchor="middle" fill="#0b0b0b">822</text>
+<text x="1398.0" y="2995.0" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line</text>
+<circle cx="1354.6" cy="2321.1" r="30.1" fill="#2a78d6" stroke="white" stroke-width="12.06"/>
+<circle cx="1398.0" cy="2286.5" r="30.1" fill="#2a78d6" stroke="white" stroke-width="12.06"/>
+<circle cx="1441.4" cy="2303.7" r="30.1" fill="#2a78d6" stroke="white" stroke-width="12.06"/>
+<line x1="1200.0" y1="2303.8" x2="1596.0" y2="2303.8" stroke="#2a78d6" stroke-width="19.29"/>
+<text x="1398.0" y="2243.5" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">825</text><text x="1398.0" y="2243.5" font-size="74.8" text-anchor="middle" fill="#0b0b0b">825</text>
+<text x="1398.0" y="3107.1" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.314</text>
+<text x="2058.0" y="2995.0" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG</text>
+<circle cx="2014.6" cy="2428.8" r="30.1" fill="#eb6834" stroke="white" stroke-width="12.06"/>
+<circle cx="2058.0" cy="2398.8" r="30.1" fill="#eb6834" stroke="white" stroke-width="12.06"/>
+<circle cx="2101.4" cy="2415.9" r="30.1" fill="#eb6834" stroke="white" stroke-width="12.06"/>
+<line x1="1860.0" y1="2414.5" x2="2256.0" y2="2414.5" stroke="#eb6834" stroke-width="19.29"/>
+<text x="2058.0" y="2354.2" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">801</text><text x="2058.0" y="2354.2" font-size="74.8" text-anchor="middle" fill="#0b0b0b">801</text>
+<text x="2058.0" y="3107.1" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.029</text>
+<text x="2718.0" y="2995.0" font-size="76.0" fill="#0b0b0b" text-anchor="middle">LiP</text>
+<circle cx="2696.3" cy="2421.7" r="30.1" fill="#1baf7a" stroke="white" stroke-width="12.06"/>
+<circle cx="2739.7" cy="2450.2" r="30.1" fill="#1baf7a" stroke="white" stroke-width="12.06"/>
+<line x1="2520.0" y1="2435.9" x2="2916.0" y2="2435.9" stroke="#1baf7a" stroke-width="19.29"/>
+<text x="2718.0" y="2375.6" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">796</text><text x="2718.0" y="2375.6" font-size="74.8" text-anchor="middle" fill="#0b0b0b">796</text>
+<text x="2718.0" y="3107.1" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.067</text>
+<text x="3378.0" y="2995.0" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line + LiP</text>
+<circle cx="3356.3" cy="2345.0" r="30.1" fill="#eda100" stroke="white" stroke-width="12.06"/>
+<circle cx="3399.7" cy="2279.4" r="30.1" fill="#eda100" stroke="white" stroke-width="12.06"/>
+<line x1="3180.0" y1="2312.2" x2="3576.0" y2="2312.2" stroke="#eda100" stroke-width="19.29"/>
+<text x="3378.0" y="2251.9" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">824</text><text x="3378.0" y="2251.9" font-size="74.8" text-anchor="middle" fill="#0b0b0b">824</text>
+<text x="3378.0" y="3107.1" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.867</text>
+<text x="4038.0" y="2995.0" font-size="76.0" fill="#0b0b0b" text-anchor="middle">SOM-line-OG + LiP</text>
+<circle cx="4016.3" cy="2618.0" r="30.1" fill="#e87ba4" stroke="white" stroke-width="12.06"/>
+<circle cx="4059.7" cy="2345.0" r="30.1" fill="#e87ba4" stroke="white" stroke-width="12.06"/>
+<line x1="3840.0" y1="2481.5" x2="4236.0" y2="2481.5" stroke="#e87ba4" stroke-width="19.29"/>
+<text x="4038.0" y="2421.2" font-size="74.8" text-anchor="middle" fill="none" stroke="white" stroke-width="21.71" stroke-linejoin="round">786</text><text x="4038.0" y="2421.2" font-size="74.8" text-anchor="middle" fill="#0b0b0b">786</text>
+<text x="4038.0" y="3107.1" font-size="74.8" fill="#52514e" text-anchor="middle">p=0.067</text>
+<line x1="408.0" y1="2868.4" x2="4368.0" y2="2868.4" stroke="#8a8880" stroke-width="8.44"/>
+<text x="2274.0" y="3268.6" font-size="74.8" fill="#8a8880" text-anchor="middle">each dot is one seed; bar is the cell mean; y range fitted per task</text>
+<text x="2274.0" y="3362.1" font-size="74.8" fill="#8a8880" text-anchor="middle">p: exact two-sided permutation vs Director, floor 0.029 at 4 vs 4; measured at 4M steps</text>
 </svg>

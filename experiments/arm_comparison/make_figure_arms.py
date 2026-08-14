@@ -29,6 +29,7 @@ which the palette documents as passing; orange and yellow are never adjacent.
 import argparse
 import json
 import os
+import math
 import pathlib
 import subprocess
 
@@ -54,7 +55,10 @@ TARGET_PT = INCLUDE_FRAC * TEXTWIDTH_PT
 RES = 6
 PANEL_W, PANEL_H = 660 * RES, 150 * RES
 GAP = 34 * RES
-PAD_L, PAD_R = 46 * RES, 30 * RES  # right pad clears the longest arm label
+# PAD_L holds a 4-digit tick label AND the rotated axis title. At 46*RES the
+# title was placed at a negative x and rendered off-canvas entirely -- the
+# figure had no y-axis label at all and it took rendering it to notice.
+PAD_L, PAD_R = 68 * RES, 30 * RES
 
 
 def pt(final_pt, fig_w):
@@ -80,6 +84,34 @@ def halo(x, y, size, fill, anchor, text, fig_w, weight=1.8):
           f'<text {common} fill="{fill}">{text}</text>')
 
 
+def yrange(data, task, ymax_cap):
+  """Per-panel y range fitted to the data.
+
+  The two panels are different tasks with different achievable returns, so a
+  shared 0-1000 axis is not the comparison anyone wants: on hopper_stand every
+  value sits between 750 and 830 and a full-height axis renders the one task
+  that can resolve a difference as six identical rows. These are dot plots --
+  position encodes the value, not length -- so a non-zero baseline is not the
+  bar-chart sin it would be. What keeps it honest is the Director band, which
+  is drawn on the same fitted axis: if an arm's dots sit inside the baseline's
+  own seed spread, the reader sees that at whatever zoom.
+  """
+  vals = []
+  for arm, _ in data['arms']:
+    cell = data['cells'].get(f'{task}|{arm}')
+    if cell:
+      vals += list(cell['values'])
+  if not vals:
+    return 0.0, ymax_cap
+  lo, hi = min(vals), max(vals)
+  pad = max((hi - lo) * 0.22, 25.0)
+  lo, hi = max(0.0, lo - pad), min(ymax_cap, hi + pad)
+  step = 50 if (hi - lo) <= 400 else 200
+  lo = step * math.floor(lo / step)
+  hi = step * math.ceil(hi / step)
+  return lo, hi
+
+
 def build(data, ymax):
   tasks = [(t, l) for t, l in data['tasks']]
   arms = [(a, l) for a, l in data['arms']]
@@ -87,16 +119,20 @@ def build(data, ymax):
   fig_w = PANEL_W + PAD_L + PAD_R
   f_title = pt(9.0, fig_w)
   f_tick = pt(7.0, fig_w)
+  f_xlab = pt(6.3, fig_w)   # 'SOM-line-OG + LiP' must fit one slot
   f_axis = pt(7.5, fig_w)
   f_note = pt(6.2, fig_w)
   # Per row: title, baseline subtitle, panel, one label line, one p line.
   pad_t = f_title * 1.5 + f_note * 1.9
   pad_b = f_tick * 1.6 + f_note * 1.6
   row_h = pad_t + PANEL_H + pad_b
-  fig_h = n * row_h + (n - 1) * GAP + f_note * 2.2
+  fig_h = n * row_h + (n - 1) * GAP + f_note * 3.6
 
-  def sy(v, top):
-    return top + (1.0 - v / ymax) * PANEL_H
+  ranges = {t: yrange(data, t, ymax) for t, _ in tasks}
+
+  def sy(v, top, task):
+    lo, hi = ranges[task]
+    return top + (1.0 - (v - lo) / (hi - lo)) * PANEL_H
 
   out = [
       f'<svg xmlns="http://www.w3.org/2000/svg" width="{fig_w:.0f}" '
@@ -126,25 +162,29 @@ def build(data, ymax):
           f'({ref["min"]:.0f}–{ref["max"]:.0f} across {ref["n"]} seeds, '
           f'shaded band)</text>')
 
-    for v in range(0, int(ymax) + 1, 200):
-      y = sy(v, top)
+    lo_r, hi_r = ranges[task]
+    n_ticks = 5
+    tick = (hi_r - lo_r) / n_ticks
+    for i in range(n_ticks + 1):
+      v = lo_r + i * tick
+      y = sy(v, top, task)
       out.append(f'<line x1="{x0:.1f}" y1="{y:.1f}" x2="{x0 + PANEL_W:.1f}" '
                  f'y2="{y:.1f}" stroke="{GRID}" '
                  f'stroke-width="{pt(0.5, fig_w):.2f}"/>')
       out.append(f'<text x="{x0 - pt(4, fig_w):.1f}" '
                  f'y="{y + f_tick * 0.36:.1f}" font-size="{f_tick:.1f}" '
-                 f'fill="{INK2}" text-anchor="end">{v}</text>')
+                 f'fill="{INK2}" text-anchor="end">{v:.0f}</text>')
     ycen = top + PANEL_H / 2
-    out.append(f'<text x="{x0 - pt(28, fig_w):.1f}" y="{ycen:.1f}" '
+    out.append(f'<text x="{pt(11, fig_w):.1f}" y="{ycen:.1f}" '
                f'font-size="{f_axis:.1f}" fill="{INK}" text-anchor="middle" '
-               f'transform="rotate(-90 {x0 - pt(28, fig_w):.1f} {ycen:.1f})">'
+               f'transform="rotate(-90 {pt(11, fig_w):.1f} {ycen:.1f})">'
                f'episode return</text>')
 
     if ref:
-      ytop, ybot = sy(ref['max'], top), sy(ref['min'], top)
+      ytop, ybot = sy(ref['max'], top, task), sy(ref['min'], top, task)
       out.append(f'<rect x="{x0:.1f}" y="{ytop:.1f}" width="{PANEL_W:.1f}" '
                  f'height="{max(ybot - ytop, 1):.1f}" fill="{REF_BAND}"/>')
-      ym = sy(ref['mean'], top)
+      ym = sy(ref['mean'], top, task)
       out.append(f'<line x1="{x0:.1f}" y1="{ym:.1f}" x2="{x0 + PANEL_W:.1f}" '
                  f'y2="{ym:.1f}" stroke="{REF_LINE}" '
                  f'stroke-width="{pt(0.9, fig_w):.2f}" stroke-dasharray="'
@@ -157,11 +197,11 @@ def build(data, ymax):
       color = REF_LINE if arm == 'director' else SERIES[(k - 1) % len(SERIES)]
 
       out.append(f'<text x="{cx:.1f}" y="{top + PANEL_H + f_tick * 1.5:.1f}" '
-                 f'font-size="{f_tick:.1f}" fill="{INK}" '
+                 f'font-size="{f_xlab:.1f}" fill="{INK}" '
                  f'text-anchor="middle">{esc(alabel)}</text>')
 
       if not cell:
-        out.append(f'<text x="{cx:.1f}" y="{sy(0, top) - pt(7, fig_w):.1f}" '
+        out.append(f'<text x="{cx:.1f}" y="{sy(ranges[task][0], top, task) - pt(7, fig_w):.1f}" '
                    f'font-size="{f_note:.1f}" fill="{INK3}" '
                    f'text-anchor="middle">not yet</text>')
         continue
@@ -169,11 +209,11 @@ def build(data, ymax):
       r = pt(2.5, fig_w)
       for j, v in enumerate(cell['values']):
         jitter = (j - (len(cell['values']) - 1) / 2.0) * pt(3.6, fig_w)
-        out.append(f'<circle cx="{cx + jitter:.1f}" cy="{sy(v, top):.1f}" '
+        out.append(f'<circle cx="{cx + jitter:.1f}" cy="{sy(v, top, task):.1f}" '
                    f'r="{r:.1f}" fill="{color}" stroke="white" '
                    f'stroke-width="{pt(1.0, fig_w):.2f}"/>')
       half = slot * 0.30
-      ym = sy(cell['mean'], top)
+      ym = sy(cell['mean'], top, task)
       out.append(f'<line x1="{cx - half:.1f}" y1="{ym:.1f}" '
                  f'x2="{cx + half:.1f}" y2="{ym:.1f}" stroke="{color}" '
                  f'stroke-width="{pt(1.6, fig_w):.2f}"/>')
@@ -189,18 +229,21 @@ def build(data, ymax):
                    f'font-size="{f_note:.1f}" fill="{INK2}" '
                    f'text-anchor="middle">{txt}</text>')
 
-    out.append(f'<line x1="{x0:.1f}" y1="{sy(0, top):.1f}" '
-               f'x2="{x0 + PANEL_W:.1f}" y2="{sy(0, top):.1f}" '
+    out.append(f'<line x1="{x0:.1f}" y1="{sy(ranges[task][0], top, task):.1f}" '
+               f'x2="{x0 + PANEL_W:.1f}" y2="{sy(ranges[task][0], top, task):.1f}" '
                f'stroke="{INK3}" stroke-width="{pt(0.7, fig_w):.2f}"/>')
 
   # bottom note
   step = data.get('at_step')
-  note = (f'each dot is one seed; bar is the mean of 4. '
-          f'p: exact two-sided permutation vs Director, floor 0.029 at 4 vs 4'
-          + (f'. measured at {step / 1e6:.0f}M steps' if step else ''))
-  out.append(f'<text x="{fig_w / 2:.1f}" y="{fig_h - pt(2.5, fig_w):.1f}" '
-             f'font-size="{f_note:.1f}" fill="{INK3}" text-anchor="middle">'
-             f'{esc(note)}</text>')
+  notes = [
+      'each dot is one seed; bar is the cell mean; y range fitted per task',
+      'p: exact two-sided permutation vs Director, floor 0.029 at 4 vs 4'
+      + (f'; measured at {step / 1e6:.0f}M steps' if step else '')]
+  for i, note in enumerate(notes):
+    out.append(f'<text x="{fig_w / 2:.1f}" '
+               f'y="{fig_h - pt(2.5, fig_w) - (len(notes) - 1 - i) * f_note * 1.25:.1f}" '
+               f'font-size="{f_note:.1f}" fill="{INK3}" text-anchor="middle">'
+               f'{esc(note)}</text>')
   out.append('</svg>')
   return '\n'.join(out), fig_w, fig_h
 
