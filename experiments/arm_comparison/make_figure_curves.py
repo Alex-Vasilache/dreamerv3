@@ -118,10 +118,11 @@ def build(data, ymax):
     ref = data['cells'].get(f'{task}|director')
     rmean, rlo, rhi = agg(ref['curves']) if ref else ([], [], [])
 
-    out.append(f'<text x="{PAD_L:.1f}" y="{row_top + f_title * 1.0:.1f}" '
+    out.append(f'<text xml:space="preserve" x="{PAD_L:.1f}" '
+               f'y="{row_top + f_title * 1.0:.1f}" '
                f'font-size="{f_title:.1f}" fill="{INK}">{esc(tlabel)}'
                f'<tspan fill="{INK2}" font-size="{f_note:.1f}">'
-               f'&#160;&#160;—&#160;grey: Director baseline, {ref["n"] if ref else 0} seeds'
+               f'   —  grey: Director baseline, {ref["n"] if ref else 0} seeds'
                f'</tspan></text>')
 
     for c, (arm, alabel) in enumerate(arms):
