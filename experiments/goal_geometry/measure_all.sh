@@ -11,13 +11,14 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-WORK="${WORK:-/work/DoyaU/vasilache/work}"
+# See watchdog_e510_e557.sh: the login profile exports WORK=/work.
+WD_RUNS_DIR="${WD_RUNS_DIR:-/work/DoyaU/vasilache/work}"
 RESULTS="${RESULTS:-$REPO/experiments/goal_geometry/results}"
 MIN_STEPS="${MIN_STEPS:-3900000}"   # only measure finished runs by default
 PER_JOB="${PER_JOB:-10}"            # run dirs per submitted job
 
 todo=()
-for d in "$WORK"/e5*_BIG_j*/; do
+for d in "$WD_RUNS_DIR"/e5*_BIG_j*/; do
   [ -d "$d" ] || continue
   name=$(basename "${d%/}")
   [ -f "$RESULTS/${name}.npz" ] && continue

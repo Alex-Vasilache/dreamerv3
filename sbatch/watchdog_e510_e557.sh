@@ -33,7 +33,13 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$REPO/sbatch/run_v3_goal_ae_ablation_big_a100.sbatch"
 TSV="${TSV:-$REPO/job_logs/e510_e557_goal_ae_comparison.tsv}"
 STATE="${STATE:-$REPO/job_logs/e510_e557_watchdog_state.tsv}"
-WORK="${WORK:-/work/DoyaU/vasilache/work}"
+# NOT named WORK. The cluster login profile exports WORK=/work, and because the
+# sbatch wrapper is a login shell that value won its way into "${WORK:-...}",
+# pointing every glob at /work/e510_* instead of /work/DoyaU/vasilache/work/e510_*.
+# Every probe then returned "no run directory", which the pass below reads as
+# "the run died", and one pass resubmitted all 32 finished runs. Second variable
+# collision of this batch after GROUPS; generic names are not safe here.
+WD_RUNS_DIR="${WD_RUNS_DIR:-/work/DoyaU/vasilache/work}"
 
 # The lane a run was launched into is recorded in the TSV, and a resubmission
 # goes back to the same one: the two lanes have different association wall
@@ -72,7 +78,7 @@ log() { echo "[$(date -Is)] $*"; }
 # the experiment has no run dir at all yet.
 probe() {  # tag task arm seed
   local tag="$1" task="$2" arm="$3" seed="$4"
-  python3 - "$WORK" "$tag" "$task" "$arm" "$seed" <<'PY'
+  python3 - "$WD_RUNS_DIR" "$tag" "$task" "$arm" "$seed" <<'PY'
 import glob, json, os, sys
 work, tag, task, arm, seed = sys.argv[1:6]
 best, bestdir, bestmtime = -1, '', 0
@@ -122,6 +128,23 @@ pass() {
     qstate["$jname"]="$jst"; qjob["$jname"]="$jid"
     qstart["$jname"]=$(date -d "$jstart" +%s 2>/dev/null || echo 0)
   done < <(squeue -u "$(whoami)" -h -o "%i|%j|%T|%S" 2>/dev/null)
+
+  # Refuse to act on a pass that cannot see the runs at all. A missing mount, a
+  # wrong root, an unreadable filesystem -- any of these make every probe report
+  # "no directory", which is indistinguishable from "every run died" unless the
+  # scale of it is checked. Acting on that once resubmitted the whole batch.
+  local seen=0 total=0
+  while IFS=$'\t' read -r _ts _jobid tag task arm seed name part steps; do
+    [ -z "${name:-}" ] && continue
+    total=$((total + 1))
+    compgen -G "$WD_RUNS_DIR/${tag}_${task}_${arm}_s${seed}_BIG_j*" >/dev/null \
+      && seen=$((seen + 1))
+  done < "$TSV"
+  if [ "$total" -gt 4 ] && [ "$seen" -lt $((total / 2)) ]; then
+    log "ABORT pass: only $seen of $total experiments have a run directory " \
+        "under $WD_RUNS_DIR -- refusing to act, this looks like the wrong root"
+    return
+  fi
 
   while IFS=$'\t' read -r _ts _jobid tag task arm seed name part steps; do
     [ -z "${name:-}" ] && continue

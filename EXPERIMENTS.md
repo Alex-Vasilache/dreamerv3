@@ -718,6 +718,35 @@ All flags default to DreamerV3/pre-HRL behavior.
   `mgr_duration_lagrange_scale_mean`, `goal/mask_actent_scale_mean`,
   `goal/struct_adapt_scale` (pilot), plus §1's derived blk/step.
 
+### Infra gotcha: WORK is set by the login profile (2026-08-15)
+
+The watchdog was moved between partitions and, on its first pass in the new
+job, **resubmitted all 32 finished runs at once**. Cause: the cluster's login
+profile exports `WORK=/work`, the sbatch wrapper is `#!/bin/bash -l`, and the
+script's `WORK="${WORK:-/work/DoyaU/vasilache/work}"` therefore kept `/work`.
+Every glob became `/work/e510_*` instead of
+`/work/DoyaU/vasilache/work/e510_*`, every probe returned "no run directory",
+and "no run directory" reads as "the run died".
+
+Caught within a minute; the 32 jobs were cancelled before any started, so no
+run directory was touched and no data was lost. Two fixes:
+
+1. The variable is now `WD_RUNS_DIR`. This is the **second** collision of the
+   batch after `GROUPS` (bash builtin) silently emptied the launcher's loops.
+   Generic environment names are not safe in scripts that run under a login
+   shell on this cluster.
+2. A pass now **aborts without acting** if fewer than half the experiments have
+   a run directory under the configured root. A missing mount, a wrong root or
+   an unreadable filesystem all look exactly like "every run died", and the
+   difference is the scale — no plausible failure kills 32 runs between two
+   30-minute passes. Verified by re-running under the exact login-shell
+   conditions that broke it: `done=32 resubmitted=0`.
+
+The deadline was also extended to 2026-08-17T06:00 in the same restart: the
+original 08-16T12:00 predates the last eight runs' finish, and a late failure
+there would have cost a cell its fourth seed for want of a resume that needs
+minutes, not a full run.
+
 ### Infra gotcha: the score collector averaged unfinished runs (2026-08-13)
 
 `collect_scores.py --at-step N` took, per run, the last 15 episodes recorded at
