@@ -280,6 +280,42 @@ the same (e502 wandered 615 → 569 → 655). Both statistics are reported for
 every cell for that reason, and the final comparison should not rest on
 last-15 alone.
 
+### Near-final, 2026-08-16 (39 of 40 complete; e549 at 94%)
+
+**last-15 episode mean at 4M, four seeds a cell**, against the e502–e509
+Director baselines. `Δ` is the difference of means; `p` is the exact two-sided
+permutation test, floor 0.029.
+
+| arm | cartpole | Δ | p | hopper_stand | Δ | p |
+|---|---|---|---|---|---|---|
+| *Director* | *753.6 ± 83.3* | — | — | *822.3 ± 3.5* | — | — |
+| som_line | 785.9 ± 59.6 | +32.2 | 0.66 | 816.4 ± 18.5 | −5.9 | 0.91 |
+| som_orig_line | 625.5 ± 238.0 | −128.1 | 0.43 | 706.4 ± 189.0 | −115.9 | **0.029** |
+| lipvq_prod | 784.7 ± 37.3 | +31.1 | 0.54 | 812.6 ± 20.3 | −9.7 | 0.34 |
+| som_lipvq_line_prod | 721.9 ± 104.5 | −31.7 | 0.60 | **835.6 ± 21.4** | +13.3 | 0.26 |
+| som_orig_lipvq_line_prod | **838.1 ± 7.5** | +84.5 | 0.14 | 760.1 ± 54.1 (n=3) | −62.1 | **0.029** |
+
+**The second pre-registered branch fires. No arm beats Director on either
+task.** On hopper_stand, the task whose baseline resolves to ±3.5, the three
+straight-through arms land at −5.9, −9.7 and +13.3 — ties. The two
+estimator-free arms are reliably *worse*, both at the 0.029 floor, i.e. every
+one of their seeds below every Director seed. On cartpole nothing is
+resolvable: the baseline's own seeds span 204 points, so even the largest
+effect (+84.5) sits inside it, and the two arms that look best there
+(`som_orig_lipvq_line_prod` +84.5) and worst on hopper (−62.1) are the same
+arm, which is what task-to-task noise looks like.
+
+**Read against F19 this is the substantive result of the batch.** The same
+arms that leave return unchanged turn the code index from a label into a
+coordinate — gradation 1.1 → 4.4–10.0, decoder expansion cut where the
+Lipschitz penalty is added. Geometry preservation is therefore *achievable and
+not what limits return*, which is precisely the §6 branch that reads: "then
+geometry preservation is achievable and not what limits return, which
+contradicts motivation.tex's argument as stated and is the more interesting
+negative result. It must be written up as such, not buried: the paper's Sec.
+'Goal Code Learning' would need the claim narrowed from 'this confound costs
+performance' to 'this confound exists'."
+
 ### Three seeds in, 2026-08-14 (complete runs only, 23 of 40)
 
 | arm | cartpole (n) | p | hopper_stand (n) | p |
