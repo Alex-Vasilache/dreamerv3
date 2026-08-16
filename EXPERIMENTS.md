@@ -280,11 +280,10 @@ the same (e502 wandered 615 → 569 → 655). Both statistics are reported for
 every cell for that reason, and the final comparison should not rest on
 last-15 alone.
 
-### Near-final, 2026-08-16 (39 of 40 complete; e549 at 94%)
+### FINAL, 2026-08-16 — all 40 runs complete at 4M, four seeds a cell
 
-**last-15 episode mean at 4M, four seeds a cell**, against the e502–e509
-Director baselines. `Δ` is the difference of means; `p` is the exact two-sided
-permutation test, floor 0.029.
+**last-15 episode mean**, against the e502–e509 Director baselines. `Δ` is the
+difference of means; `p` is the exact two-sided permutation test, floor 0.029.
 
 | arm | cartpole | Δ | p | hopper_stand | Δ | p |
 |---|---|---|---|---|---|---|
@@ -293,7 +292,18 @@ permutation test, floor 0.029.
 | som_orig_line | 625.5 ± 238.0 | −128.1 | 0.43 | 706.4 ± 189.0 | −115.9 | **0.029** |
 | lipvq_prod | 784.7 ± 37.3 | +31.1 | 0.54 | 812.6 ± 20.3 | −9.7 | 0.34 |
 | som_lipvq_line_prod | 721.9 ± 104.5 | −31.7 | 0.60 | **835.6 ± 21.4** | +13.3 | 0.26 |
-| som_orig_lipvq_line_prod | **838.1 ± 7.5** | +84.5 | 0.14 | 760.1 ± 54.1 (n=3) | −62.1 | **0.029** |
+| som_orig_lipvq_line_prod | **838.1 ± 7.5** | +84.5 | 0.14 | 767.9 ± 46.8 | −54.4 | **0.029** |
+
+**Geometry at four seeds** (`ratio` = displacement at k=7 over k=1):
+
+| arm | cartpole ratio | hopper ratio | cartpole k=1 | dec Lipschitz (cp / hop) |
+|---|---|---|---|---|
+| Director | 1.13 ± 0.10 | 1.00 ± 0.10 | 2.31 ± 0.49 | 2.58 / 1.28 |
+| som_line | **9.67 ± 0.63** | **5.18 ± 1.02** | 1.26 ± 0.21 | 2.47 / 2.09 |
+| som_orig_line | 1.55 ± 0.33 | 1.45 ± 0.51 | 6.70 ± 0.94 | 38.3 / 29.1 |
+| lipvq_prod | 1.07 ± 0.17 | 1.10 ± 0.34 | 5.03 ± 0.49 | **1.08 / 0.86** |
+| som_lipvq_line_prod | **9.27 ± 1.94** | **4.28 ± 1.07** | 1.33 ± 0.31 | 2.38 / 1.95 |
+| som_orig_lipvq_line_prod | 1.46 ± 0.37 | 2.71 ± 0.44 | 6.69 ± 0.62 | 33.3 / 15.9 |
 
 **The second pre-registered branch fires. No arm beats Director on either
 task.** On hopper_stand, the task whose baseline resolves to ±3.5, the three
@@ -560,6 +570,9 @@ above are small next to the effects.
 | e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | 0–3 | 4M | 655.2 / 753.1 / 747.3 / 859.0 — **mean 753.7, std 83.3, spread 203.8** | unimodal; every seed over the 600 bar. Spread 204 vs "< 200" predicted, i.e. on target. |
 | e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | 0–3 | 4M | 824.8 / 817.6 / 821.5 / 825.2 — **mean 822.3, std 3.5, spread 7.6** | unimodal and extraordinarily tight — spread 7.6 against a "< 300" prediction. |
 
+| e510–e549 | 4677164–4677819 | cartpole_swingup + hopper_stand / BIG | 5 goal-AE arms | 0–3 | 4M | see §2 FINAL table | **No arm beats Director on either task.** Straight-through arms tie on hopper (−5.9 / −9.7 / +13.3); estimator-free arms reliably worse (−115.9, −54.4, both p=0.029). Cartpole unresolvable (baseline spread 204). §6 second branch fired. |
+| e550–e557 | 4693xxx | cartpole_swingup_sparse + cheetah_run / BIG | pure Director | 0–3 | 4M | **incomplete** | Started 2026-08-16 14:20 once all 40 arm runs ended (dependency-gated). Will not finish before 08-17; resumable in place. |
+
 **Both finished 2026-08-10 ~20:00.** These are now the reference distributions
 for e510–e549, and the first `→` branch of the §6 e502–e509 entry fired: both
 tasks are unimodal, they are the standard comparison substrate, and four seeds
@@ -677,6 +690,36 @@ attainable p of 2/70 = 0.029, reached only when the two groups do not overlap at
 all. Differences will therefore be reported as effect size with the per-cell
 seed spread, and p-values quoted with that floor stated, rather than leaning on
 a significance threshold that this n cannot support.
+
+#### RESOLVED 2026-08-16 — the second branch fired
+
+> "**Arms tie the baseline but the post-hoc geometry measurement improves.**
+> Then geometry preservation is achievable and *not* what limits return, which
+> contradicts motivation.tex's argument as stated and is the more interesting
+> negative result. It must be written up as such, not buried."
+
+Exactly what happened, and it has been written up that way
+(`26_04_HRL-paper` commit `4fd2d64`, §2.1.2–2.1.3). Point by point against what
+was pre-registered:
+
+- **"An arm beats it only at ≥ 900 (cartpole) / ≥ 850 (hopper)."** None did. Best
+  cartpole 838.1, best hopper 835.6.
+- **"Codebook health ≥ 6 perplexity / ≥ 0.95 used by 1M."** Held for every
+  straight-through arm; failed for both estimator-free arms, which is the F19
+  mechanism and the source of their score loss.
+- **"If `lip_bound_max` is still ≈ 28 at 2M the `_prod` arms tested nothing."**
+  Did not fire — the bound fell to 25–28 and the realized decoder ratio dropped
+  in every pairing where the penalty was added.
+- **"The STE-off arms reconstruct worse and use less of the codebook."** Held,
+  and more strongly than expected: reconstruction 15–42 against 5–15, and the
+  collapse costs 116 points of return on the task that can measure it.
+
+The one pre-registered expectation that was *wrong* is worth recording: the
+hypothesis said the mediator to read first would be `wkr_goal_rew`, on the
+theory that better geometry would show up as worker success before return. The
+geometry moved by 4–10x and worker success did not track it. Whatever the code's
+local isometry buys, it is not delivered through the worker's ability to reach
+its goal.
 
 ---
 ## 7. Config flags & metrics reference
