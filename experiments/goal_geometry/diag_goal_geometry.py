@@ -230,6 +230,18 @@ def collect_states(config, agent, n_envs, stride, want):
 
 # ------------------------------------------------------------ measurements
 
+def pairwise_mse(x):
+  """Mean squared error between every pair of rows, in float64.
+
+  The ||a||^2 + ||b||^2 - 2ab expansion cancels badly for near-equal rows,
+  which is exactly the small-MSE end of the axis these figures plot.
+  """
+  x = np.asarray(x, np.float64)
+  sq = (x * x).sum(-1)
+  d2 = sq[:, None] + sq[None, :] - 2.0 * (x @ x.T)
+  return np.maximum(d2, 0.0) / x.shape[-1]
+
+
 def correlations(deters, z_e, z_q, ids, soft, topology, classes):
   """Section 1 and 2: correlation under both geometries, plus the constants."""
   sim_goal = pairwise_cosmax(deters)
@@ -251,6 +263,17 @@ def correlations(deters, z_e, z_q, ids, soft, topology, classes):
       'index': idx,
   }
 
+  # The same two code spaces under MSE, the metric the reconstruction loss is
+  # written in. One-hot blocks make the hard code's MSE 2 x (blocks differing)
+  # / (L*C), which is Hamming distance in other units; it is written out rather
+  # than scaled by hand so the plotted axis means what it says.
+  onehot = np.eye(classes, dtype=np.float32)[ids].reshape(n, -1)
+  mse_goal = pairwise_mse(deters)
+  mse_code = {
+      'soft': pairwise_mse(soft.reshape(n, -1)),
+      'hard': pairwise_mse(onehot),
+  }
+
   out = {}
   for key, sc in sim_code.items():
     out[f'cosmax/{key}/pearson'] = pearson_offdiag(sim_goal, sc)
@@ -258,7 +281,10 @@ def correlations(deters, z_e, z_q, ids, soft, topology, classes):
   for key, dc in dist_code.items():
     out[f'dist/{key}/pearson'] = pearson_offdiag(dist_goal, dc)
     out[f'dist/{key}/spearman'] = spearman_offdiag(dist_goal, dc)
-  return out, sim_goal, dist_goal, sim_code, dist_code
+  for key, mc in mse_code.items():
+    out[f'mse/{key}/pearson'] = pearson_offdiag(mse_goal, mc)
+    out[f'mse/{key}/spearman'] = spearman_offdiag(mse_goal, mc)
+  return (out, sim_goal, dist_goal, sim_code, dist_code, mse_goal, mse_code)
 
 
 def lipschitz(deters, z_e, z_q, decoded):
@@ -376,7 +402,7 @@ def total_index_sweep(onehot, decode, blocks, classes, n_ref, n_draws, rng):
   away.
 
   Returns (M, D+1) MSE, (D+1,) coverage fraction, and per-draw
-  (total index distance, blocks changed, code MSE, goal MSE).
+  (total index distance, blocks changed, code MSE, goal MSE, goal MAE).
   """
   pick = rng.choice(len(onehot), size=min(n_ref, len(onehot)), replace=False)
   base = onehot[pick]                                     # (M, L, C)
@@ -392,7 +418,7 @@ def total_index_sweep(onehot, decode, blocks, classes, n_ref, n_draws, rng):
   coverage = np.zeros(dmax + 1)
   mse[:, 0] = 0.0
   coverage[0] = 1.0
-  rec_d, rec_m, rec_cm, rec_gm = [], [], [], []
+  rec_d, rec_m, rec_cm, rec_gm, rec_ga = [], [], [], [], []
   for d in range(1, dmax + 1):
     rows = np.flatnonzero(total_cap >= d)
     coverage[d] = len(rows) / float(m_ref)
@@ -409,18 +435,24 @@ def total_index_sweep(onehot, decode, blocks, classes, n_ref, n_draws, rng):
         c2 = opts[int(rng.integers(len(opts)))]
         codes[j, b, :] = 0.0
         codes[j, b, c2] = 1.0
-    err = np.mean((decode(codes) - np.repeat(ref_goal[rows], n_draws, 0)) ** 2,
-                  -1)
+    delta = decode(codes) - np.repeat(ref_goal[rows], n_draws, 0)
+    err = np.mean(delta ** 2, -1)
+    abserr = np.mean(np.abs(delta), -1)
     mse[rows, d] = err.reshape(len(rows), n_draws).mean(-1)
     changed = (codes.argmax(-1) != ref_ids[owner]).sum(-1)
     rec_d.append(np.full(len(owner), d))
     rec_m.append(changed)
-    # the decoder's input is the one-hot for every arm, so this is the code
-    # distance the architecture actually presents: 2 x changed / (L*C)
+    # The decoder's input is the one-hot for every arm, so this is the code
+    # distance the architecture actually presents: 2 x changed / (L*C). Note
+    # this is the code's MAE as well as its MSE -- one-hot entries differ by
+    # +/-1, so |delta| and delta^2 agree elementwise, and only the goal side of
+    # the plot changes when the metric changes.
     rec_cm.append(2.0 * changed / float(blocks * classes))
     rec_gm.append(err)
+    rec_ga.append(abserr)
   rec = (np.concatenate(rec_d), np.concatenate(rec_m),
-         np.concatenate(rec_cm), np.concatenate(rec_gm))
+         np.concatenate(rec_cm), np.concatenate(rec_gm),
+         np.concatenate(rec_ga))
   return mse, coverage, rec
 
 
@@ -481,7 +513,18 @@ def perturb_sweep(deters, encode, scales, n_ref, rng):
 # ------------------------------------------------------------------- driver
 
 def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
-        n_batches=4, n_ref=64, n_pairs=16, n_steps=33, n_draws=8, seed=0):
+        n_batches=4, n_ref=64, n_pairs=16, n_steps=33, n_draws=8, seed=0,
+        fast=False, pairs_only=False):
+  """``fast`` runs only the total-index sweep -- the one the mse/mae-vs-code
+  figures are built from -- and skips the correlations, the Lipschitz
+  constants, and the other four sweeps. Those are what need several batches of
+  states; the sweeps only ever use the first, so fast mode also collects one
+  batch instead of n_batches. Roughly a fifth of the wall time, and the output
+  carries only ``index_total/*`` plus meta.
+
+  ``pairs_only`` is the opposite cut: the pairwise correlations and their pair
+  pools (cosmax and MSE, hard and soft), and none of the sweeps. Those need one
+  encode and no decode at all, so it is the cheapest mode of the three."""
   config, agent = build(run_dir, ckpt_path)
   impl, encode, decode = make_fns(config, agent)
   blocks, classes = [int(x) for x in config.agent.skill_shape]
@@ -499,7 +542,9 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   name = pathlib.Path(str(run_dir).rstrip('/')).name
   print(f'=== {name} | impl={impl} topology={topology} L={blocks} C={classes}')
 
-  deters = collect_states(config, agent, n_envs, stride, n_states * n_batches)
+  one_batch = fast or pairs_only
+  deters = collect_states(config, agent, n_envs, stride,
+                          n_states * (1 if one_batch else n_batches))
   print(f'collected {len(deters)} states, D={deters.shape[-1]}')
 
   rng = np.random.default_rng(seed)
@@ -509,14 +554,14 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   per_batch = []
   lip_batch = []
   keep = None
-  for b in range(n_batches):
+  for b in range(0 if fast else (1 if pairs_only else n_batches)):
     idx = perm[b * n_states:(b + 1) * n_states]
     if len(idx) < n_states:
       break
     d = deters[idx]
     z_e, z_q, ids, onehot, soft = encode(d)
-    corr, sim_goal, dist_goal, sim_code, dist_code = correlations(
-        d, z_e, z_q, ids, soft, topology, classes)
+    (corr, sim_goal, dist_goal, sim_code, dist_code, mse_goal,
+     mse_code) = correlations(d, z_e, z_q, ids, soft, topology, classes)
     per_batch.append(corr)
     lip_batch.append(lipschitz(d, z_e, z_q, decode(onehot)))
     if keep is None:  # one batch's raw matrices, for the scatter figures
@@ -524,70 +569,85 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
       keep = dict(
           sim_goal=sim_goal[np.ix_(sub, sub)],
           dist_goal=dist_goal[np.ix_(sub, sub)],
+          mse_goal=mse_goal[np.ix_(sub, sub)],
           **{f'sim_{k}': v[np.ix_(sub, sub)] for k, v in sim_code.items()},
-          **{f'dist_{k}': v[np.ix_(sub, sub)] for k, v in dist_code.items()})
+          **{f'dist_{k}': v[np.ix_(sub, sub)] for k, v in dist_code.items()},
+          **{f'mse_{k}': v[np.ix_(sub, sub)] for k, v in mse_code.items()})
 
-  for key in per_batch[0]:
+  for key in (per_batch[0] if per_batch else ()):
     vals = np.array([p[key] for p in per_batch])
     res[f'corr/{key}/mean'] = vals.mean()
     res[f'corr/{key}/std'] = vals.std()
     res[f'corr/{key}/per_batch'] = vals
-  for side in ('enc', 'dec'):
+  for side in (() if (fast or pairs_only) else ('enc', 'dec')):
     for stat in ('max', 'p999', 'p99', 'p50', 'mean'):
       vals = np.array([l[side][stat] for l in lip_batch])
       res[f'lip/{side}/{stat}/mean'] = vals.mean()
       res[f'lip/{side}/{stat}/std'] = vals.std()
 
   print('\n  correlation (mean +/- std over batches)')
-  for key in sorted(k for k in per_batch[0]):
+  for key in sorted(k for k in (per_batch[0] if per_batch else ())):
     print(f'    {key:28s} {res[f"corr/{key}/mean"]:+.3f} '
           f'+/- {res[f"corr/{key}/std"]:.3f}')
   print('\n  empirical Lipschitz ratio')
-  for side in ('enc', 'dec'):
+  for side in (() if (fast or pairs_only) else ('enc', 'dec')):
     print(f'    {side}: p50={res[f"lip/{side}/p50/mean"]:.4g} '
           f'p99={res[f"lip/{side}/p99/mean"]:.4g} '
           f'max={res[f"lip/{side}/max/mean"]:.4g}')
 
+  if pairs_only:
+    meta = dict(name=name, impl=impl, topology=topology, blocks=blocks,
+                classes=classes, dim=int(deters.shape[-1]),
+                task=str(config.task), run_dir=str(run_dir),
+                ckpt=str(ckpt_path or 'latest'), pairs_only=True)
+    out = pathlib.Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(str(out), meta=np.array(str(meta)), **keep, **res)
+    print(f'\nwrote {out_path} (pairs only)')
+    return res
+
   idx = perm[:n_states]
   d0 = deters[idx]
   _, _, _, onehot0, _ = encode(d0)
-  disp, ref_ids, ref_norm = code_sweep(
-      d0, onehot0, decode, blocks, classes, n_ref, rng)
-  res['sweep/disp'] = disp
-  res['sweep/ref_ids'] = ref_ids
-  res['sweep/ref_norm'] = ref_norm
+  if not fast:
+    disp, ref_ids, ref_norm = code_sweep(
+        d0, onehot0, decode, blocks, classes, n_ref, rng)
+    res['sweep/disp'] = disp
+    res['sweep/ref_ids'] = ref_ids
+    res['sweep/ref_norm'] = ref_norm
 
-  # Displacement as a function of index distance, the headline curve: flat
-  # means the index is a label, a ramp means it is a coordinate.
-  dist_axis = np.arange(classes)
-  curve = np.full((classes,), np.nan)
-  for k in range(classes):
-    m_ = np.zeros_like(disp, bool)
-    for b in range(blocks):
-      dd = np.abs(np.arange(classes)[None, :] - ref_ids[:, b:b + 1])
-      if topology == 'ring':
-        dd = np.minimum(dd, classes - dd)
-      m_[:, b, :] = dd == k
-    if m_.any():
-      curve[k] = disp[m_].mean()
-  res['sweep/index_distance'] = dist_axis
-  res['sweep/curve'] = curve
-  print('\n  decoded-goal displacement vs index distance')
-  print('    ' + '  '.join(f'{k}:{v:.3g}' for k, v in
-                           zip(dist_axis, curve) if v == v))
+    # Displacement as a function of index distance, the headline curve: flat
+    # means the index is a label, a ramp means it is a coordinate.
+    dist_axis = np.arange(classes)
+    curve = np.full((classes,), np.nan)
+    for k in range(classes):
+      m_ = np.zeros_like(disp, bool)
+      for b in range(blocks):
+        dd = np.abs(np.arange(classes)[None, :] - ref_ids[:, b:b + 1])
+        if topology == 'ring':
+          dd = np.minimum(dd, classes - dd)
+        m_[:, b, :] = dd == k
+      if m_.any():
+        curve[k] = disp[m_].mean()
+    res['sweep/index_distance'] = dist_axis
+    res['sweep/curve'] = curve
+    print('\n  decoded-goal displacement vs index distance')
+    print('    ' + '  '.join(f'{k}:{v:.3g}' for k, v in
+                             zip(dist_axis, curve) if v == v))
 
   # Same question on the axis the manager edits along: whole blocks. The
   # per-reference MSE is kept (not just its mean) so the figure can carry a
   # spread, and the Euclidean displacement alongside it so this curve and the
   # index curve above are directly comparable in the same units.
-  ham_mse, ham_dist = hamming_sweep(
-      onehot0, decode, blocks, classes, n_ref, n_draws, rng)
-  res['hamming/blocks'] = np.arange(blocks + 1)
-  res['hamming/mse'] = ham_mse
-  res['hamming/dist'] = ham_dist
-  print('\n  decoded-goal MSE vs blocks changed')
-  print('    ' + '  '.join(f'{m}:{v:.4g}' for m, v in
-                           enumerate(ham_mse.mean(0))))
+  if not fast:
+    ham_mse, ham_dist = hamming_sweep(
+        onehot0, decode, blocks, classes, n_ref, n_draws, rng)
+    res['hamming/blocks'] = np.arange(blocks + 1)
+    res['hamming/mse'] = ham_mse
+    res['hamming/dist'] = ham_dist
+    print('\n  decoded-goal MSE vs blocks changed')
+    print('    ' + '  '.join(f'{m}:{v:.4g}' for m, v in
+                             enumerate(ham_mse.mean(0))))
 
   # Both edit axes on one scale: total index distance summed over blocks.
   tot_mse, tot_cov, tot_rec = total_index_sweep(
@@ -599,6 +659,7 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   res['index_total/rec_blocks'] = tot_rec[1].astype(np.int16)
   res['index_total/rec_code_mse'] = tot_rec[2].astype(np.float32)
   res['index_total/rec_goal_mse'] = tot_rec[3].astype(np.float32)
+  res['index_total/rec_goal_mae'] = tot_rec[4].astype(np.float32)
   with np.errstate(invalid='ignore'):
     tot_curve = np.nanmean(tot_mse, 0)
   print('\n  decoded-goal MSE vs total index distance '
@@ -607,6 +668,17 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   print('    ' + '  '.join(f'{d}:{tot_curve[d]:.4g}'
                            for d in range(0, len(tot_curve), 7)
                            if tot_curve[d] == tot_curve[d]))
+
+  if fast:
+    meta = dict(name=name, impl=impl, topology=topology, blocks=blocks,
+                classes=classes, dim=int(deters.shape[-1]),
+                task=str(config.task), run_dir=str(run_dir),
+                ckpt=str(ckpt_path or 'latest'), fast=True)
+    out = pathlib.Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(str(out), meta=np.array(str(meta)), **res)
+    print(f'\nwrote {out_path} (fast: index_total only)')
+    return res
 
   xy, var = grid_sweep(d0, onehot0, decode, classes, (0, 1), rng)
   res['grid/xy'] = xy
@@ -651,10 +723,15 @@ def main():
   p.add_argument('--n_ref', type=int, default=64)
   p.add_argument('--n_draws', type=int, default=8)
   p.add_argument('--seed', type=int, default=0)
+  p.add_argument('--fast', action='store_true',
+                 help='only the total-index sweep (mse/mae-vs-code figures)')
+  p.add_argument('--pairs-only', action='store_true',
+                 help='only the pairwise correlations and their pair pools')
   a = p.parse_args()
   run(a.run_dir, a.out, ckpt_path=a.ckpt_path, n_envs=a.n_envs,
       stride=a.stride, n_states=a.n_states, n_batches=a.n_batches,
-      n_ref=a.n_ref, n_draws=a.n_draws, seed=a.seed)
+      n_ref=a.n_ref, n_draws=a.n_draws, seed=a.seed, fast=a.fast,
+      pairs_only=a.pairs_only)
 
 
 if __name__ == '__main__':

@@ -81,7 +81,7 @@ def arm_of(name, meta):
   return 'director' if meta.get('impl') == 'director' else None
 
 
-def load(results_dir, mode):
+def load(results_dir, mode, metric='mse'):
   """(task, arm) -> (per-seed curves, per-seed coverage, x values)."""
   out = {}
   for f in sorted(glob.glob(os.path.join(results_dir, '*.npz'))):
@@ -101,8 +101,13 @@ def load(results_dir, mode):
     else:
       # bin the per-draw records on the code's own metric; its L+1 exact
       # values are the natural bins, so no binning choice is made here
+      # For one-hot blocks |delta| and delta^2 agree elementwise, so the CODE
+      # axis is identical under MSE and MAE -- only the goal side changes.
       cm = np.asarray(d['index_total/rec_code_mse'], float)
-      gm = np.asarray(d['index_total/rec_goal_mse'], float)
+      key = 'index_total/rec_goal_' + metric
+      if key not in d:
+        continue
+      gm = np.asarray(d[key], float)
       xs = np.unique(cm)
       sel = [cm == v for v in xs]
       curve = np.array([gm[s].mean() for s in sel])
@@ -134,7 +139,7 @@ def fmt(v):
   return ('%g' % v) if abs(v - round(v)) < 1e-9 else ('%.3g' % v)
 
 
-def build(data, mode, ymax=None, min_cov=0.5, band=True):
+def build(data, mode, ymax=None, min_cov=0.5, band=True, metric='mse'):
   fig_w = 2 * PANEL_W + GAP + PAD_L + PAD_R
   f_title, f_tick = pt(9.0, fig_w), pt(7.0, fig_w)
   f_axis, f_lab = pt(7.5, fig_w), pt(6.4, fig_w)
@@ -173,7 +178,7 @@ def build(data, mode, ymax=None, min_cov=0.5, band=True):
          f'fill="white"/>']
 
   xlabel = ('total index distance across all blocks' if mode == 'total'
-            else 'goal-code MSE')
+            else 'goal-code ' + metric.upper())
   for ti, (task, tlabel) in enumerate(TASKS):
     x0 = PAD_L + ti * (PANEL_W + GAP)
     ymax_t = ymax_of[task]
@@ -220,7 +225,7 @@ def build(data, mode, ymax=None, min_cov=0.5, band=True):
       out.append(f'<text x="{pt(9, fig_w):.1f}" y="{yc:.1f}" '
                  f'font-size="{f_axis:.1f}" fill="{INK}" text-anchor="middle" '
                  f'transform="rotate(-90 {pt(9, fig_w):.1f} {yc:.1f})">'
-                 f'decoded goal shift (MSE)</text>')
+                 f'decoded goal shift ({metric.upper()})</text>')
     out.append(f'<line x1="{x0:.1f}" y1="{sy(0):.1f}" x2="{x0 + PANEL_W:.1f}" '
                f'y2="{sy(0):.1f}" stroke="{INK3}" '
                f'stroke-width="{pt(0.7, fig_w):.2f}"/>')
@@ -319,15 +324,19 @@ def main():
   ap.add_argument('--x', choices=['total', 'codemse'], default='total')
   ap.add_argument('--out', default=None)
   ap.add_argument('--ymax', type=float, default=None)
+  ap.add_argument('--metric', choices=['mse', 'mae'], default='mse',
+                  help='goal-axis metric; the code axis is the same for both')
   ap.add_argument('--min-coverage', type=float, default=0.5)
   ap.add_argument('--include-all', action='store_true',
                   help='also draw the estimator-free arms (see EXCLUDE)')
   ap.add_argument('--copy-to', default=None)
   a = ap.parse_args()
 
-  out_base = a.out or str(HERE / ('goal_code_index_total' if a.x == 'total'
-                                  else 'goal_code_mse_vs_mse'))
-  data_all = load(a.results, a.x)
+  out_base = a.out or str(HERE / (
+      'goal_code_index_total' if a.x == 'total'
+      else ('goal_code_mse_vs_mse' if a.metric == 'mse'
+            else 'goal_code_mae_vs_mae')))
+  data_all = load(a.results, a.x, a.metric)
   # Colour comes from each arm's fixed slot in ARMS, not from its position in
   # the filtered list, so hiding an arm never repaints the others.
   data = (data_all if a.include_all else
@@ -338,7 +347,7 @@ def main():
   print('cells:', ', '.join(f'{t.replace("dmc_", "")}/{arm}={len(v)}'
                             for (t, arm), v in sorted(data.items())))
   summarize(data_all, a.x, a.min_coverage)
-  svg, w, h = build(data, a.x, a.ymax, a.min_coverage)
+  svg, w, h = build(data, a.x, a.ymax, a.min_coverage, metric=a.metric)
   svg_path, pdf_path = out_base + '.svg', out_base + '.pdf'
   with open(svg_path, 'w') as f:
     f.write(svg)

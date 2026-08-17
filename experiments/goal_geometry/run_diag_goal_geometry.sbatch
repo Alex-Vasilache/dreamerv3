@@ -79,6 +79,13 @@ PY
   fi
   args=(--run_dir "$run" --out "$OUTDIR/${name}.npz"
         --n_batches "$N_BATCHES" --n_envs "$N_ENVS")
+  # FAST=1: only the total-index sweep, one batch of states. About a fifth of
+  # the wall time; the output carries index_total/* and meta only, so write it
+  # to its own OUTDIR rather than over a full result.
+  [ "${FAST:-0}" = "1" ] && args+=(--fast)
+  # PAIRS=1: only the pairwise correlations and their pair pools (the
+  # goal-code-vs-goal-space figures). One encode, no decode sweeps.
+  [ "${PAIRS:-0}" = "1" ] && args+=(--pairs-only)
   if [ -n "$CKPT_SUFFIX" ]; then
     if [ -d "$run/$CKPT_SUFFIX" ]; then
       args+=(--ckpt_path "$run/$CKPT_SUFFIX")

@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4668" height="1714" viewBox="0 0 4668 1714" font-family="Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="4668" height="1714" fill="white"/>
+<text x="987.0" y="122.5" font-size="111.4" fill="#0b0b0b" text-anchor="middle">Cartpole Swingup</text>
+<line x1="372.0" y1="1391.1" x2="1602.0" y2="1391.1" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="322.5" y="1422.3" font-size="86.6" fill="#52514e" text-anchor="end">0</text>
+<line x1="372.0" y1="1171.8" x2="1602.0" y2="1171.8" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="322.5" y="1203.0" font-size="86.6" fill="#52514e" text-anchor="end">0.1</text>
+<line x1="372.0" y1="952.5" x2="1602.0" y2="952.5" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="322.5" y="983.7" font-size="86.6" fill="#52514e" text-anchor="end">0.2</text>
+<line x1="372.0" y1="733.2" x2="1602.0" y2="733.2" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="322.5" y="764.4" font-size="86.6" fill="#52514e" text-anchor="end">0.3</text>
+<line x1="372.0" y1="513.9" x2="1602.0" y2="513.9" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="322.5" y="545.1" font-size="86.6" fill="#52514e" text-anchor="end">0.4</text>
+<line x1="372.0" y1="294.6" x2="1602.0" y2="294.6" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="322.5" y="325.8" font-size="86.6" fill="#52514e" text-anchor="end">0.5</text>
+<line x1="372.0" y1="1391.1" x2="372.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="372.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">0</text>
+<line x1="525.8" y1="1391.1" x2="525.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="525.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.03</text>
+<line x1="679.5" y1="1391.1" x2="679.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="679.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.06</text>
+<line x1="833.2" y1="1391.1" x2="833.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="833.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.09</text>
+<line x1="987.0" y1="1391.1" x2="987.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="987.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.12</text>
+<line x1="1140.8" y1="1391.1" x2="1140.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1140.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.16</text>
+<line x1="1294.5" y1="1391.1" x2="1294.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1294.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.19</text>
+<line x1="1448.2" y1="1391.1" x2="1448.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1448.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.22</text>
+<line x1="1602.0" y1="1391.1" x2="1602.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1602.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.25</text>
+<text x="987.0" y="1678.2" font-size="92.8" fill="#0b0b0b" text-anchor="middle">goal-code MAE</text>
+<text x="111.4" y="791.1" font-size="92.8" fill="#0b0b0b" text-anchor="middle" transform="rotate(-90 111.4 791.1)">decoded goal shift (MAE)</text>
+<line x1="372.0" y1="1391.1" x2="1602.0" y2="1391.1" stroke="#8a8880" stroke-width="8.66"/>
+<polygon points="372.0,1391.1 525.8,1202.7 679.5,922.7 833.2,624.4 987.0,508.0 1140.8,468.5 1294.5,447.5 1448.2,439.0 1602.0,440.6 1602.0,933.2 1448.2,963.9 1294.5,1022.2 1140.8,1090.7 987.0,1156.3 833.2,1227.2 679.5,1277.9 525.8,1321.8 372.0,1391.1" fill="#52514e" fill-opacity="0.16" stroke="none"/>
+<path d="M372.0,1391.1 L525.8,1267.6 L679.5,1144.4 L833.2,1016.0 L987.0,904.4 L1140.8,825.1 L1294.5,764.2 L1448.2,724.0 L1602.0,713.0" fill="none" stroke="#52514e" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="372.0" cy="1391.1" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="525.8" cy="1267.6" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="679.5" cy="1144.4" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="833.2" cy="1016.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="987.0" cy="904.4" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="1140.8" cy="825.1" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="1294.5" cy="764.2" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="1448.2" cy="724.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="713.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="713.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<polygon points="372.0,1391.1 525.8,1276.7 679.5,1204.0 833.2,1114.7 987.0,991.2 1140.8,726.3 1294.5,546.0 1448.2,481.6 1602.0,361.9 1602.0,878.3 1448.2,1132.0 1294.5,1207.7 1140.8,1252.9 987.0,1285.9 833.2,1312.9 679.5,1335.2 525.8,1359.8 372.0,1391.1" fill="#2a78d6" fill-opacity="0.16" stroke="none"/>
+<path d="M372.0,1391.1 L525.8,1322.5 L679.5,1272.2 L833.2,1214.9 L987.0,1154.7 L1140.8,1070.8 L1294.5,977.8 L1448.2,845.8 L1602.0,583.3" fill="none" stroke="#2a78d6" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="372.0" cy="1391.1" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="525.8" cy="1322.5" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="679.5" cy="1272.2" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="833.2" cy="1214.9" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="987.0" cy="1154.7" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="1140.8" cy="1070.8" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="1294.5" cy="977.8" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="1448.2" cy="845.8" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="583.3" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="583.3" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<polygon points="372.0,1391.1 525.8,868.1 679.5,576.0 833.2,460.5 987.0,421.1 1140.8,394.9 1294.5,362.9 1448.2,350.5 1602.0,324.9 1602.0,749.5 1448.2,811.1 1294.5,906.6 1140.8,993.4 987.0,1077.4 833.2,1157.3 679.5,1241.3 525.8,1325.4 372.0,1391.1" fill="#1baf7a" fill-opacity="0.16" stroke="none"/>
+<path d="M372.0,1391.1 L525.8,1143.0 L679.5,976.8 L833.2,849.0 L987.0,759.8 L1140.8,681.9 L1294.5,614.5 L1448.2,565.0 L1602.0,519.7" fill="none" stroke="#1baf7a" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="372.0" cy="1391.1" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="525.8" cy="1143.0" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="679.5" cy="976.8" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="833.2" cy="849.0" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="987.0" cy="759.8" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="1140.8" cy="681.9" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="1294.5" cy="614.5" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="1448.2" cy="565.0" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="519.7" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="519.7" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<polygon points="372.0,1391.1 525.8,1261.3 679.5,1166.9 833.2,1045.3 987.0,885.9 1140.8,697.5 1294.5,528.0 1448.2,418.4 1602.0,280.0 1602.0,869.3 1448.2,1151.1 1294.5,1225.9 1140.8,1267.3 987.0,1294.9 833.2,1319.7 679.5,1339.5 525.8,1364.4 372.0,1391.1" fill="#eda100" fill-opacity="0.16" stroke="none"/>
+<path d="M372.0,1391.1 L525.8,1318.4 L679.5,1264.5 L833.2,1204.5 L987.0,1136.1 L1140.8,1061.9 L1294.5,969.5 L1448.2,824.9 L1602.0,534.5" fill="none" stroke="#eda100" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="372.0" cy="1391.1" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="525.8" cy="1318.4" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="679.5" cy="1264.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="833.2" cy="1204.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="987.0" cy="1136.1" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="1140.8" cy="1061.9" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="1294.5" cy="969.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="1448.2" cy="824.9" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="534.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="1602.0" cy="534.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<text xml:space="preserve" x="1651.5" y="548.2" font-size="79.2" fill="#1baf7a">LiP</text>
+<text xml:space="preserve" x="1651.5" y="639.3" font-size="79.2" fill="#eda100">SOM-line + LiP</text>
+<text xml:space="preserve" x="1651.5" y="730.4" font-size="79.2" fill="#2a78d6">SOM-line</text>
+<text xml:space="preserve" x="1651.5" y="821.5" font-size="79.2" fill="#52514e">Director</text>
+<text x="3225.0" y="122.5" font-size="111.4" fill="#0b0b0b" text-anchor="middle">Hopper Stand</text>
+<line x1="2610.0" y1="1391.1" x2="3840.0" y2="1391.1" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="2560.5" y="1422.3" font-size="86.6" fill="#52514e" text-anchor="end">0</text>
+<line x1="2610.0" y1="1128.5" x2="3840.0" y2="1128.5" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="2560.5" y="1159.6" font-size="86.6" fill="#52514e" text-anchor="end">0.1</text>
+<line x1="2610.0" y1="865.8" x2="3840.0" y2="865.8" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="2560.5" y="897.0" font-size="86.6" fill="#52514e" text-anchor="end">0.2</text>
+<line x1="2610.0" y1="603.2" x2="3840.0" y2="603.2" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="2560.5" y="634.4" font-size="86.6" fill="#52514e" text-anchor="end">0.3</text>
+<line x1="2610.0" y1="340.5" x2="3840.0" y2="340.5" stroke="#e6e5e1" stroke-width="6.19"/>
+<text x="2560.5" y="371.7" font-size="86.6" fill="#52514e" text-anchor="end">0.4</text>
+<line x1="2610.0" y1="1391.1" x2="2610.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="2610.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">0</text>
+<line x1="2763.8" y1="1391.1" x2="2763.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="2763.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.03</text>
+<line x1="2917.5" y1="1391.1" x2="2917.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="2917.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.06</text>
+<line x1="3071.2" y1="1391.1" x2="3071.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3071.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.09</text>
+<line x1="3225.0" y1="1391.1" x2="3225.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3225.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.12</text>
+<line x1="3378.8" y1="1391.1" x2="3378.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3378.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.16</text>
+<line x1="3532.5" y1="1391.1" x2="3532.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3532.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.19</text>
+<line x1="3686.2" y1="1391.1" x2="3686.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3686.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.22</text>
+<line x1="3840.0" y1="1391.1" x2="3840.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3840.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.25</text>
+<text x="3225.0" y="1678.2" font-size="92.8" fill="#0b0b0b" text-anchor="middle">goal-code MAE</text>
+<line x1="2610.0" y1="1391.1" x2="3840.0" y2="1391.1" stroke="#8a8880" stroke-width="8.66"/>
+<polygon points="2610.0,1391.1 2763.8,1269.7 2917.5,1138.9 3071.2,975.3 3225.0,802.5 3378.8,709.5 3532.5,601.4 3686.2,574.6 3840.0,525.1 3840.0,1142.9 3686.2,1180.6 3532.5,1209.9 3378.8,1238.1 3225.0,1265.2 3071.2,1290.1 2917.5,1315.9 2763.8,1343.4 2610.0,1391.1" fill="#52514e" fill-opacity="0.16" stroke="none"/>
+<path d="M2610.0,1391.1 L2763.8,1310.0 L2917.5,1235.4 L3071.2,1171.0 L3225.0,1108.8 L3378.8,1060.0 L3532.5,1004.8 L3686.2,976.0 L3840.0,937.0" fill="none" stroke="#52514e" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="2610.0" cy="1391.1" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="2763.8" cy="1310.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="2917.5" cy="1235.4" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="3071.2" cy="1171.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="3225.0" cy="1108.8" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="3378.8" cy="1060.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="3532.5" cy="1004.8" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="3686.2" cy="976.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="937.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="937.0" r="21.0" fill="#52514e" stroke="white" stroke-width="8.66"/>
+<polygon points="2610.0,1391.1 2763.8,1221.3 2917.5,1088.9 3071.2,978.6 3225.0,878.9 3378.8,786.7 3532.5,681.2 3686.2,531.5 3840.0,395.9 3840.0,902.4 3686.2,1063.0 3532.5,1141.4 3378.8,1198.0 3225.0,1237.6 3071.2,1274.4 2917.5,1308.1 2763.8,1342.9 2610.0,1391.1" fill="#2a78d6" fill-opacity="0.16" stroke="none"/>
+<path d="M2610.0,1391.1 L2763.8,1287.3 L2917.5,1216.2 L3071.2,1152.4 L3225.0,1086.7 L3378.8,1023.1 L3532.5,950.2 L3686.2,847.7 L3840.0,640.8" fill="none" stroke="#2a78d6" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="2610.0" cy="1391.1" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="2763.8" cy="1287.3" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="2917.5" cy="1216.2" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="3071.2" cy="1152.4" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="3225.0" cy="1086.7" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="3378.8" cy="1023.1" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="3532.5" cy="950.2" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="3686.2" cy="847.7" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="640.8" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="640.8" r="21.0" fill="#2a78d6" stroke="white" stroke-width="8.66"/>
+<polygon points="2610.0,1391.1 2763.8,1023.0 2917.5,823.5 3071.2,615.6 3225.0,504.2 3378.8,462.5 3532.5,399.8 3686.2,361.9 3840.0,304.8 3840.0,1055.9 3686.2,1068.7 3532.5,1110.1 3378.8,1146.2 3225.0,1187.5 3071.2,1234.6 2917.5,1281.6 2763.8,1339.4 2610.0,1391.1" fill="#1baf7a" fill-opacity="0.16" stroke="none"/>
+<path d="M2610.0,1391.1 L2763.8,1203.2 L2917.5,1099.1 L3071.2,1010.6 L3225.0,944.6 L3378.8,889.1 L3532.5,850.1 L3686.2,804.9 L3840.0,751.3" fill="none" stroke="#1baf7a" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="2610.0" cy="1391.1" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="2763.8" cy="1203.2" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="2917.5" cy="1099.1" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="3071.2" cy="1010.6" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="3225.0" cy="944.6" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="3378.8" cy="889.1" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="3532.5" cy="850.1" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="3686.2" cy="804.9" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="751.3" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="751.3" r="21.0" fill="#1baf7a" stroke="white" stroke-width="8.66"/>
+<polygon points="2610.0,1391.1 2763.8,1257.7 2917.5,1169.0 3071.2,1105.2 3225.0,1008.2 3378.8,924.1 3532.5,754.2 3686.2,580.7 3840.0,280.0 3840.0,983.5 3686.2,1120.1 3532.5,1179.4 3378.8,1224.6 3225.0,1258.6 3071.2,1288.3 2917.5,1314.7 2763.8,1344.9 2610.0,1391.1" fill="#eda100" fill-opacity="0.16" stroke="none"/>
+<path d="M2610.0,1391.1 L2763.8,1303.9 L2917.5,1247.5 L3071.2,1198.2 L3225.0,1144.9 L3378.8,1082.5 L3532.5,1009.5 L3686.2,921.6 L3840.0,652.8" fill="none" stroke="#eda100" stroke-width="21.04" stroke-linejoin="round"/>
+<circle cx="2610.0" cy="1391.1" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="2763.8" cy="1303.9" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="2917.5" cy="1247.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="3071.2" cy="1198.2" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="3225.0" cy="1144.9" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="3378.8" cy="1082.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="3532.5" cy="1009.5" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="3686.2" cy="921.6" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="652.8" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<circle cx="3840.0" cy="652.8" r="21.0" fill="#eda100" stroke="white" stroke-width="8.66"/>
+<text xml:space="preserve" x="3889.5" y="669.3" font-size="79.2" fill="#2a78d6">SOM-line</text>
+<text xml:space="preserve" x="3889.5" y="760.4" font-size="79.2" fill="#eda100">SOM-line + LiP</text>
+<text xml:space="preserve" x="3889.5" y="851.5" font-size="79.2" fill="#1baf7a">LiP</text>
+<text xml:space="preserve" x="3889.5" y="965.5" font-size="79.2" fill="#52514e">Director</text>
+</svg>
