@@ -655,6 +655,19 @@ of 1.7–11.7), because it also contains reference-state and which-blocks
 variation. Only the controlled comparison isolates the index contribution — do
 not cite the raw band as an arm difference.
 
+### e495–e499 cannot be resumed — the replay is gone
+
+Asked on 2026-08-17 to resume the five hopper_hop Director baselines (e495–e499,
+stopped at ~2.3M). They were archived with `SKIP_REPLAY=1` and deleted from
+`/work`, so **only the checkpoints survive**. Restarting from one refills replay
+from scratch at 2.3M, which is a different experiment from a fresh 4M run and is
+not a valid baseline for one. Ran e566–e569 fresh to 4M instead, matching the
+e570–e573 arm runs they exist to be compared against.
+
+This is the second time the archive policy has cost a resume. `SKIP_REPLAY=1`
+is right for a *finished* run and wrong for a stopped one; check
+`metrics.jsonl` reaches the target step before archiving.
+
 ---
 ## 4. Dead ends (don't retry)
 
@@ -678,6 +691,10 @@ not cite the raw band as an arm difference.
 
 | exp | job | task | arm | seeds | steps | score (last-15) | verdict |
 |---|---|---|---|---|---|---|---|
+| e558–e561 | 4693736–43 | cartpole_swingup_sparse / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | baseline is e550–e553 |
+| e562–e565 | 4693737–43 | cheetah_run / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | baseline is e554–e557 |
+| e566–e569 | 4693744–47 | hopper_hop / BIG | pure Director | 0–3 | 4M | *launched 2026-08-17* | fresh, **not** a resume of e495–e499 (see below) |
+| e570–e573 | 4693748–51 | hopper_hop / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | measured against e566–e569 |
 | e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | 0–3 | 4M | 655.2 / 753.1 / 747.3 / 859.0 — **mean 753.7, std 83.3, spread 203.8** | unimodal; every seed over the 600 bar. Spread 204 vs "< 200" predicted, i.e. on target. |
 | e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | 0–3 | 4M | 824.8 / 817.6 / 821.5 / 825.2 — **mean 822.3, std 3.5, spread 7.6** | unimodal and extraordinarily tight — spread 7.6 against a "< 300" prediction. |
 

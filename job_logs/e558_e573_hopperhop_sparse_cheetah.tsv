@@ -1,0 +1,16 @@
+2026-08-17T13:11:51+09:00	4693736	e558	dmc_cartpole_swingup_sparse	som_lipvq_line_prod	0	e558_cpsparse_som_lipvq_line_prod_s0	gpu-a100	4000000
+2026-08-17T13:11:53+09:00	4693737	e562	dmc_cheetah_run	som_lipvq_line_prod	0	e562_cheetah_som_lipvq_line_prod_s0	gpu-a100	4000000
+2026-08-17T13:11:55+09:00	4693738	e559	dmc_cartpole_swingup_sparse	som_lipvq_line_prod	1	e559_cpsparse_som_lipvq_line_prod_s1	gpu-a100	4000000
+2026-08-17T13:11:57+09:00	4693739	e563	dmc_cheetah_run	som_lipvq_line_prod	1	e563_cheetah_som_lipvq_line_prod_s1	gpu-a100	4000000
+2026-08-17T13:11:59+09:00	4693740	e560	dmc_cartpole_swingup_sparse	som_lipvq_line_prod	2	e560_cpsparse_som_lipvq_line_prod_s2	gpu-a100	4000000
+2026-08-17T13:12:01+09:00	4693741	e564	dmc_cheetah_run	som_lipvq_line_prod	2	e564_cheetah_som_lipvq_line_prod_s2	gpu-a100	4000000
+2026-08-17T13:12:04+09:00	4693742	e561	dmc_cartpole_swingup_sparse	som_lipvq_line_prod	3	e561_cpsparse_som_lipvq_line_prod_s3	gpu-a100	4000000
+2026-08-17T13:12:06+09:00	4693743	e565	dmc_cheetah_run	som_lipvq_line_prod	3	e565_cheetah_som_lipvq_line_prod_s3	gpu-a100	4000000
+2026-08-17T13:12:08+09:00	4693744	e566	dmc_hopper_hop	director	0	e566_hopperhop_director_s0	gpu-a100	4000000
+2026-08-17T13:12:10+09:00	4693745	e567	dmc_hopper_hop	director	1	e567_hopperhop_director_s1	gpu-a100	4000000
+2026-08-17T13:12:12+09:00	4693746	e568	dmc_hopper_hop	director	2	e568_hopperhop_director_s2	gpu-a100	4000000
+2026-08-17T13:12:14+09:00	4693747	e569	dmc_hopper_hop	director	3	e569_hopperhop_director_s3	gpu-a100	4000000
+2026-08-17T13:12:16+09:00	4693748	e570	dmc_hopper_hop	som_lipvq_line_prod	0	e570_hopperhop_som_lipvq_line_prod_s0	gpu-a100	4000000
+2026-08-17T13:12:18+09:00	4693749	e571	dmc_hopper_hop	som_lipvq_line_prod	1	e571_hopperhop_som_lipvq_line_prod_s1	gpu-a100	4000000
+2026-08-17T13:12:21+09:00	4693750	e572	dmc_hopper_hop	som_lipvq_line_prod	2	e572_hopperhop_som_lipvq_line_prod_s2	gpu-a100	4000000
+2026-08-17T13:12:23+09:00	4693751	e573	dmc_hopper_hop	som_lipvq_line_prod	3	e573_hopperhop_som_lipvq_line_prod_s3	gpu-a100	4000000
