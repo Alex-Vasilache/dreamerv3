@@ -341,6 +341,89 @@ def hamming_sweep(onehot, decode, blocks, classes, n_ref, n_draws, rng):
   return mse, dist
 
 
+def total_index_sweep(onehot, decode, blocks, classes, n_ref, n_draws, rng):
+  """Section 3c: decoded-goal MSE against TOTAL index distance over all blocks.
+
+  ``hamming_sweep`` counts how many blocks changed and ignores how far each
+  moved; ``code_sweep`` measures how far one moved and ignores the rest. This
+  puts both on one scale:
+
+      D = sum_l |c'_l - c_l|,   0 <= D <= L * (C - 1)
+
+  so eight blocks each moved one class is D=8, and eight blocks each moved
+  seven classes is D=56. If the code is a coordinate system this is the natural
+  distance between two codes and the decoded goal should follow it smoothly.
+
+  Not every D is reachable from every reference. A block sitting at class c can
+  move at most max(c, C-1-c), so a reference whose classes are all mid-range
+  tops out well below L*(C-1); only a code with every class at 0 or C-1 can
+  reach the maximum. The per-D fraction of references that can supply the
+  distance is returned alongside the curve, and D values no reference can reach
+  come back NaN rather than silently averaging over a biased subset.
+
+  Allocation of D across blocks is uniform over the ways to do it: each block l
+  contributes cap_l "unit slots", D slots are drawn without replacement, and
+  each block's count is how far it moves. Direction is drawn uniformly among
+  those that stay in range.
+
+  Per-draw records are returned as well as the binned curve, because the same
+  draws answer a second question: the decoder's input is the one-hot code for
+  every arm, so code-space MSE is 2 x (blocks that differ) / (L*C) and does NOT
+  see index distance at all. Keeping (code MSE, goal MSE) per draw lets the
+  figure plot goal shift against code MSE directly -- pure MSE against MSE, the
+  same axes as the pairwise-similarity figures -- and the vertical spread at
+  each x is exactly the index-distance information the code's own metric throws
+  away.
+
+  Returns (M, D+1) MSE, (D+1,) coverage fraction, and per-draw
+  (total index distance, blocks changed, code MSE, goal MSE).
+  """
+  pick = rng.choice(len(onehot), size=min(n_ref, len(onehot)), replace=False)
+  base = onehot[pick]                                     # (M, L, C)
+  ref_ids = base.argmax(-1)                               # (M, L)
+  ref_goal = decode(base)                                 # (M, D)
+  m_ref = len(pick)
+  caps = np.maximum(ref_ids, classes - 1 - ref_ids)       # (M, L)
+  total_cap = caps.sum(-1)                                # (M,)
+  slot_block = [np.repeat(np.arange(blocks), caps[i]) for i in range(m_ref)]
+
+  dmax = blocks * (classes - 1)
+  mse = np.full((m_ref, dmax + 1), np.nan)
+  coverage = np.zeros(dmax + 1)
+  mse[:, 0] = 0.0
+  coverage[0] = 1.0
+  rec_d, rec_m, rec_cm, rec_gm = [], [], [], []
+  for d in range(1, dmax + 1):
+    rows = np.flatnonzero(total_cap >= d)
+    coverage[d] = len(rows) / float(m_ref)
+    if len(rows) == 0:
+      continue
+    codes = np.repeat(base[rows], n_draws, axis=0)
+    owner = np.repeat(rows, n_draws)
+    for j, i in enumerate(owner):
+      alloc = np.bincount(
+          slot_block[i][rng.permutation(total_cap[i])[:d]], minlength=blocks)
+      for b in np.flatnonzero(alloc):
+        c, a = ref_ids[i, b], alloc[b]
+        opts = [x for x in (c - a, c + a) if 0 <= x <= classes - 1]
+        c2 = opts[int(rng.integers(len(opts)))]
+        codes[j, b, :] = 0.0
+        codes[j, b, c2] = 1.0
+    err = np.mean((decode(codes) - np.repeat(ref_goal[rows], n_draws, 0)) ** 2,
+                  -1)
+    mse[rows, d] = err.reshape(len(rows), n_draws).mean(-1)
+    changed = (codes.argmax(-1) != ref_ids[owner]).sum(-1)
+    rec_d.append(np.full(len(owner), d))
+    rec_m.append(changed)
+    # the decoder's input is the one-hot for every arm, so this is the code
+    # distance the architecture actually presents: 2 x changed / (L*C)
+    rec_cm.append(2.0 * changed / float(blocks * classes))
+    rec_gm.append(err)
+  rec = (np.concatenate(rec_d), np.concatenate(rec_m),
+         np.concatenate(rec_cm), np.concatenate(rec_gm))
+  return mse, coverage, rec
+
+
 def grid_sweep(deters, onehot, decode, classes, blocks_pair, rng):
   """Section 4: the full C x C lattice for two blocks, projected to 2D."""
   i = int(rng.integers(len(deters)))
@@ -505,6 +588,25 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   print('\n  decoded-goal MSE vs blocks changed')
   print('    ' + '  '.join(f'{m}:{v:.4g}' for m, v in
                            enumerate(ham_mse.mean(0))))
+
+  # Both edit axes on one scale: total index distance summed over blocks.
+  tot_mse, tot_cov, tot_rec = total_index_sweep(
+      onehot0, decode, blocks, classes, n_ref, n_draws, rng)
+  res['index_total/d'] = np.arange(tot_mse.shape[1])
+  res['index_total/mse'] = tot_mse
+  res['index_total/coverage'] = tot_cov
+  res['index_total/rec_d'] = tot_rec[0].astype(np.int16)
+  res['index_total/rec_blocks'] = tot_rec[1].astype(np.int16)
+  res['index_total/rec_code_mse'] = tot_rec[2].astype(np.float32)
+  res['index_total/rec_goal_mse'] = tot_rec[3].astype(np.float32)
+  with np.errstate(invalid='ignore'):
+    tot_curve = np.nanmean(tot_mse, 0)
+  print('\n  decoded-goal MSE vs total index distance '
+        f'(reachable to D={int(np.flatnonzero(tot_cov > 0).max())}, '
+        f'coverage>=0.5 to D={int(np.flatnonzero(tot_cov >= 0.5).max())})')
+  print('    ' + '  '.join(f'{d}:{tot_curve[d]:.4g}'
+                           for d in range(0, len(tot_curve), 7)
+                           if tot_curve[d] == tot_curve[d]))
 
   xy, var = grid_sweep(d0, onehot0, decode, classes, (0, 1), rng)
   res['grid/xy'] = xy

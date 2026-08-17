@@ -607,6 +607,54 @@ steeply over the first fifth of the goal-space range and is then flat — past
 code at all. A single r understates the problem at the far end and overstates it
 at the near end.
 
+### F22 — at identical code distance, only the straight-through SOM code knows how far it moved
+
+Measured 2026-08-17, same 48 checkpoints (`index_total/*` in the geometry npz,
+`make_figure_index_total.py`). Third sweep: move m of the L blocks so the index
+shifts sum to exactly `D = Σ|c'−c|`, D = 0..L(C−1) = 56.
+
+**Reachability caveat.** A block at class c can move at most `max(c, C−1−c)`, so
+D=56 needs every class at an end of its range. Real codes reach D≈50 at best and
+coverage falls below half past D≈43. The sweep records per-D coverage; the
+figure draws solid to coverage 0.5 and dashed beyond. **Do not quote a number
+from the faded tail** — it averages over a shrinking, increasingly extreme
+subset, and it is where hopper Director appears to go *down*.
+
+Gain from D=8 (one class step in every block) to the coverage limit:
+
+| arm | cartpole | hopper |
+|---|---|---|
+| director | 1.29 ± 0.22 | 1.35 ± 0.65 |
+| lipvq_prod | 1.39 ± 0.18 | 1.66 ± 0.77 |
+| som_orig_line | 1.28 ± 0.09 | 1.83 ± 0.29 |
+| som_orig_lipvq_line_prod | 1.09 ± 0.12 | 2.51 ± 0.99 |
+| **som_line** | **5.96 ± 0.72** | **4.90 ± 2.13** |
+| **som_lipvq_line_prod** | **6.91 ± 1.82** | **6.39 ± 1.39** |
+
+Director and LiP-only flatten by D≈15: once all 8 blocks have changed there is
+nothing left to vary but index distance, which for them means nothing.
+
+**The controlled version is the decisive one.** The decoder's input is the
+one-hot code for every arm, so code-space MSE = 2·(blocks differing)/(L·C) — it
+counts blocks and cannot see index distance. Take only the draws where **all L
+blocks changed** (code MSE identical, 0.25, for every one) and compare the
+bottom quartile of D (≈19) against the top (≈40):
+
+| | cartpole | hopper |
+|---|---|---|
+| STE-SOM arms pooled | **2.13** (1.64–2.42) | **2.41** (1.33–3.30) |
+| all other arms pooled | 0.99 (0.79–1.15) | 1.14 (0.75–1.61) |
+| exact 2-sided perm. test | p = 1.4e-06 | p = 2.5e-05 |
+
+At a distance the manager's code space reports as identical, the STE-SOM code
+still moves the goal 2x further when the index distance is larger; Director,
+LiP-only and the estimator-free arms move it not at all.
+
+Note the *raw* spread at fixed code distance is large for **every** arm (p90/p10
+of 1.7–11.7), because it also contains reference-state and which-blocks
+variation. Only the controlled comparison isolates the index contribution — do
+not cite the raw band as an arm difference.
+
 ---
 ## 4. Dead ends (don't retry)
 

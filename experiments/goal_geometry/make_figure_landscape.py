@@ -49,7 +49,7 @@ PANEL_W, PANEL_H = 205 * RES, 200 * RES
 # The left panel's end-labels are drawn to the right of its plot area, so the
 # inter-panel gap -- not just the figure's right pad -- has to hold the longest
 # of them. At 46*RES they printed on top of the second panel.
-GAP = 120 * RES
+GAP = 168 * RES
 # The right pad has to hold the longest end-label in full
 # ("SOM-line-OG + LiP (n=4)"); at 76*RES it clipped the second panel's. The
 # left pad holds MSE tick labels ("0.015"), which are wider than the integer
@@ -141,10 +141,13 @@ def build(data, ymax=None, ylabel='decoded goal shift'):
   pad_b = f_tick * 1.8 + f_axis * 1.8
   fig_h = PANEL_H + pad_t + pad_b
 
-  if ymax is None:
-    vals = [v for curves in data.values() for c in curves for v in c[1:]
-            if v == v]
-    ymax = max(vals) * 1.08 if vals else 15.0
+  # Per-task y range: the two tasks differ in scale by ~2x, and a shared axis
+  # spent half of the Hopper panel's height on empty space.
+  ymax_of = {}
+  for task, _ in TASKS:
+    vals = [v for (t, _a), curves in data.items() if t == task
+            for c in curves for v in c[1:] if v == v]
+    ymax_of[task] = ymax if ymax else (max(vals) * 1.08 if vals else 15.0)
 
   out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{fig_w:.0f}" '
          f'height="{fig_h:.0f}" viewBox="0 0 {fig_w:.0f} {fig_h:.0f}" '
@@ -155,26 +158,26 @@ def build(data, ymax=None, ylabel='decoded goal shift'):
   kmax = 7
   for ti, (task, tlabel) in enumerate(TASKS):
     x0 = PAD_L + ti * (PANEL_W + GAP)
+    ymax_t = ymax_of[task]
 
     def sx(k, x0=x0):
       return x0 + (k - 1) / (kmax - 1) * PANEL_W
 
-    def sy(v):
-      return pad_t + (1.0 - v / ymax) * PANEL_H
+    def sy(v, ymax_t=ymax_t):
+      return pad_t + (1.0 - min(v / ymax_t, 1.02)) * PANEL_H
 
     out.append(f'<text x="{x0 + PANEL_W / 2:.1f}" y="{f_title * 1.1:.1f}" '
                f'font-size="{f_title:.1f}" fill="{INK}" text-anchor="middle">'
                f'{esc(tlabel)}</text>')
 
-    for v in ticks(ymax):
+    for v in ticks(ymax_t):
       y = sy(v)
       out.append(f'<line x1="{x0:.1f}" y1="{y:.1f}" x2="{x0 + PANEL_W:.1f}" '
                  f'y2="{y:.1f}" stroke="{GRID}" '
                  f'stroke-width="{pt(0.5, fig_w):.2f}"/>')
-      if ti == 0:
-        out.append(f'<text x="{x0 - pt(4, fig_w):.1f}" '
-                   f'y="{y + f_tick * 0.36:.1f}" font-size="{f_tick:.1f}" '
-                   f'fill="{INK2}" text-anchor="end">{fmt(v)}</text>')
+      out.append(f'<text x="{x0 - pt(4, fig_w):.1f}" '
+                 f'y="{y + f_tick * 0.36:.1f}" font-size="{f_tick:.1f}" '
+                 f'fill="{INK2}" text-anchor="end">{fmt(v)}</text>')
     for k in range(1, kmax + 1):
       out.append(f'<text x="{sx(k):.1f}" y="{sy(0) + f_tick * 1.6:.1f}" '
                  f'font-size="{f_tick:.1f}" fill="{INK2}" '
