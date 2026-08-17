@@ -699,7 +699,8 @@ is right for a *finished* run and wrong for a stopped one; check
 | e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | 0–3 | 4M | 824.8 / 817.6 / 821.5 / 825.2 — **mean 822.3, std 3.5, spread 7.6** | unimodal and extraordinarily tight — spread 7.6 against a "< 300" prediction. |
 
 | e510–e549 | 4677164–4677819 | cartpole_swingup + hopper_stand / BIG | 5 goal-AE arms | 0–3 | 4M | see §2 FINAL table | **No arm beats Director on either task.** Straight-through arms tie on hopper (−5.9 / −9.7 / +13.3); estimator-free arms reliably worse (−115.9, −54.4, both p=0.029). Cartpole unresolvable (baseline spread 204). §6 second branch fired. |
-| e550–e557 | 4693xxx | cartpole_swingup_sparse + cheetah_run / BIG | pure Director | 0–3 | 4M | **incomplete** | Started 2026-08-16 14:20 once all 40 arm runs ended (dependency-gated). Will not finish before 08-17; resumable in place. |
+| e550–e553 | 4677820–26 | cartpole_swingup_**sparse** / BIG | pure Director | 0–3 | 4M | 781.0 / 787.7 / 785.6 / 748.3 — **mean 775.7, std 15.9, spread 39.4** | complete 2026-08-17. Tight, and the sparse variant is no harder for Director than the dense one (753.7 on e502–e505). Baseline for e558–e561. |
+| e554–e557 | 4677821–27 | cheetah_run / BIG | pure Director | 0–3 | 4M | 244.6 / 517.1 / 510.9 / 497.7 — **mean 442.6, std 114.2, spread 272.5** | complete 2026-08-17. One low seed (e554, 245) against three near 500; peaks 261 vs 538–631, so e554 is genuinely worse and not just noisy at the end. Wide baseline — a small effect will not resolve here. Baseline for e562–e565. |
 
 **Both finished 2026-08-10 ~20:00.** These are now the reference distributions
 for e510–e549, and the first `→` branch of the §6 e502–e509 entry fired: both
