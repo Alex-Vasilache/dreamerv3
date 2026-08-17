@@ -11,12 +11,24 @@
 <text x="322.5" y="605.8" font-size="86.6" fill="#52514e" text-anchor="end">0.3</text>
 <line x1="372.0" y1="302.5" x2="1602.0" y2="302.5" stroke="#e6e5e1" stroke-width="6.19"/>
 <text x="322.5" y="333.7" font-size="86.6" fill="#52514e" text-anchor="end">0.4</text>
-<text x="372.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0</text>
-<text x="618.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.05</text>
-<text x="864.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.1</text>
-<text x="1110.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.15</text>
-<text x="1356.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.2</text>
-<text x="1602.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.25</text>
+<line x1="372.0" y1="1391.1" x2="372.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="372.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">0</text>
+<line x1="525.8" y1="1391.1" x2="525.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="525.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.03</text>
+<line x1="679.5" y1="1391.1" x2="679.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="679.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.06</text>
+<line x1="833.2" y1="1391.1" x2="833.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="833.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.09</text>
+<line x1="987.0" y1="1391.1" x2="987.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="987.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.12</text>
+<line x1="1140.8" y1="1391.1" x2="1140.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1140.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.16</text>
+<line x1="1294.5" y1="1391.1" x2="1294.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1294.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.19</text>
+<line x1="1448.2" y1="1391.1" x2="1448.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1448.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.22</text>
+<line x1="1602.0" y1="1391.1" x2="1602.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="1602.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.25</text>
 <text x="987.0" y="1678.2" font-size="92.8" fill="#0b0b0b" text-anchor="middle">goal-code MSE</text>
 <text x="111.4" y="791.1" font-size="92.8" fill="#0b0b0b" text-anchor="middle" transform="rotate(-90 111.4 791.1)">decoded goal shift (MSE)</text>
 <line x1="372.0" y1="1391.1" x2="1602.0" y2="1391.1" stroke="#8a8880" stroke-width="8.66"/>
@@ -87,12 +99,24 @@
 <text x="2560.5" y="460.6" font-size="86.6" fill="#52514e" text-anchor="end">0.25</text>
 <line x1="2610.0" y1="237.1" x2="3840.0" y2="237.1" stroke="#e6e5e1" stroke-width="6.19"/>
 <text x="2560.5" y="268.2" font-size="86.6" fill="#52514e" text-anchor="end">0.3</text>
-<text x="2610.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0</text>
-<text x="2856.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.05</text>
-<text x="3102.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.1</text>
-<text x="3348.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.15</text>
-<text x="3594.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.2</text>
-<text x="3840.0" y="1529.7" font-size="86.6" fill="#52514e" text-anchor="middle">0.25</text>
+<line x1="2610.0" y1="1391.1" x2="2610.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="2610.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">0</text>
+<line x1="2763.8" y1="1391.1" x2="2763.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="2763.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.03</text>
+<line x1="2917.5" y1="1391.1" x2="2917.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="2917.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.06</text>
+<line x1="3071.2" y1="1391.1" x2="3071.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3071.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.09</text>
+<line x1="3225.0" y1="1391.1" x2="3225.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3225.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.12</text>
+<line x1="3378.8" y1="1391.1" x2="3378.8" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3378.8" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.16</text>
+<line x1="3532.5" y1="1391.1" x2="3532.5" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3532.5" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.19</text>
+<line x1="3686.2" y1="1391.1" x2="3686.2" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3686.2" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.22</text>
+<line x1="3840.0" y1="1391.1" x2="3840.0" y2="1415.8" stroke="#8a8880" stroke-width="8.66"/>
+<text x="3840.0" y="1529.7" font-size="71.0" fill="#52514e" text-anchor="middle">.25</text>
 <text x="3225.0" y="1678.2" font-size="92.8" fill="#0b0b0b" text-anchor="middle">goal-code MSE</text>
 <line x1="2610.0" y1="1391.1" x2="3840.0" y2="1391.1" stroke="#8a8880" stroke-width="8.66"/>
 <polygon points="2610.0,1391.1 2763.8,1366.9 2917.5,1287.0 3071.2,1026.2 3225.0,735.6 3378.8,557.0 3532.5,548.6 3686.2,462.1 3840.0,414.3 3840.0,1307.7 3686.2,1330.2 3532.5,1345.4 3378.8,1359.3 3225.0,1368.6 3071.2,1377.1 2917.5,1383.2 2763.8,1387.8 2610.0,1391.1" fill="#52514e" fill-opacity="0.16" stroke="none"/>

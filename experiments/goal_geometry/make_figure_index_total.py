@@ -195,10 +195,22 @@ def build(data, mode, ymax=None, min_cov=0.5, band=True):
       out.append(f'<text x="{x0 - pt(4, fig_w):.1f}" '
                  f'y="{y + f_tick * 0.36:.1f}" font-size="{f_tick:.1f}" '
                  f'fill="{INK2}" text-anchor="end">{fmt(v)}</text>')
-    for v in ticks(xmax, 7 if mode == 'total' else 4):
+    # On the code axis the quantity is discrete -- one-hot blocks give exactly
+    # L+1 possible distances, 2m/(L*C) -- so it ticks at the values it can take
+    # rather than at round numbers, one tick per plotted point.
+    if mode == 'codemse':
+      xt = list(next(iter(cells.values()))[0])
+      f_xt = f_tick * 0.82        # 9 labels in a panel sized for 6
+      xfmt = lambda v: '0' if v == 0 else ('%.2f' % v).lstrip('0')
+    else:
+      xt, f_xt, xfmt = ticks(xmax, 7), f_tick, fmt
+    for v in xt:
+      out.append(f'<line x1="{sx(v):.1f}" y1="{sy(0):.1f}" x2="{sx(v):.1f}" '
+                 f'y2="{sy(0) + pt(2.0, fig_w):.1f}" stroke="{INK3}" '
+                 f'stroke-width="{pt(0.7, fig_w):.2f}"/>')
       out.append(f'<text x="{sx(v):.1f}" y="{sy(0) + f_tick * 1.6:.1f}" '
-                 f'font-size="{f_tick:.1f}" fill="{INK2}" '
-                 f'text-anchor="middle">{fmt(v)}</text>')
+                 f'font-size="{f_xt:.1f}" fill="{INK2}" '
+                 f'text-anchor="middle">{xfmt(v)}</text>')
     out.append(f'<text x="{x0 + PANEL_W / 2:.1f}" '
                f'y="{sy(0) + f_tick * 1.6 + f_axis * 1.6:.1f}" '
                f'font-size="{f_axis:.1f}" fill="{INK}" text-anchor="middle">'
