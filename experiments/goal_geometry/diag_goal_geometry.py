@@ -1,4 +1,4 @@
-"""Goal-code <-> goal-space geometry, measured five ways from one checkpoint.
+"""Goal-code <-> goal-space geometry, measured six ways from one checkpoint.
 
 `diag_goal_struct_corr.py` answers "does code similarity track goal similarity"
 under `cosine_max`. That is the right question for Director's worker, whose
@@ -29,6 +29,14 @@ Lipschitz claim, and it says nothing about the SHAPE of the map. This adds:
      and should ramp monotonically for a SOM on a line, where adjacent entries
      are trained to be neighbours. This is the property the architecture is for,
      stated as directly as it can be stated.
+
+  3b. THE SAME ON THE AXIS THE MANAGER EDITS ALONG.
+     The manager does not move a class index, it rewrites whole blocks. So take
+     a code, change m of its L blocks to random other classes, decode, and
+     record the decoded goal's MSE as a function of m = 0..L. A coordinate-like
+     code rises with m and keeps m=1 small; a code of arbitrary labels is
+     already at its full range at m=1, because one block changed lands
+     somewhere unrelated. This is the version reported in motivation.tex.
 
   4. THE SAME IN TWO DIMENSIONS.
      Sweep two blocks jointly over the full C x C lattice, decode all of them,
@@ -288,6 +296,51 @@ def code_sweep(deters, onehot, decode, blocks, classes, n_ref, rng):
   return disp, ref_ids, np.linalg.norm(ref_goal, axis=-1)
 
 
+def hamming_sweep(onehot, decode, blocks, classes, n_ref, n_draws, rng):
+  """Section 3b: how far the decoded goal moves when m whole blocks change.
+
+  ``code_sweep`` moves one block within its own class axis, which asks whether
+  the class *index* is ordered. This asks the coarser question the manager
+  actually faces: it edits whole blocks, so the distance it can travel in one
+  decision is measured in blocks changed, not in class indices. For every
+  reference code and every m = 0..L we draw ``n_draws`` codes at Hamming
+  distance exactly m -- a random subset of m blocks, each moved to a uniformly
+  random class other than the one the encoder assigned -- and record the mean
+  squared error between the decoded goals. m=0 is 0 by construction (same code,
+  same goal).
+
+  A code space that behaves like a coordinate system rises smoothly with m and
+  keeps the m=1 edit small; a code space of arbitrary labels jumps to its full
+  range at m=1 and is flat thereafter, because one block changed already lands
+  somewhere unrelated.
+
+  Returns (M, L+1) MSE and (M, L+1) Euclidean displacement, per reference.
+  """
+  pick = rng.choice(len(onehot), size=min(n_ref, len(onehot)), replace=False)
+  base = onehot[pick]                                    # (M, L, C)
+  ref_ids = base.argmax(-1)                              # (M, L)
+  ref_goal = decode(base)                                # (M, D)
+  m_ref = len(pick)
+  mse = np.zeros((m_ref, blocks + 1), np.float64)
+  dist = np.zeros((m_ref, blocks + 1), np.float64)
+  ref_rep = np.repeat(ref_goal, n_draws, axis=0)
+  ids_rep = np.repeat(ref_ids, n_draws, axis=0)
+  for m in range(1, blocks + 1):
+    mod = np.repeat(base, n_draws, axis=0)               # (M*n_draws, L, C)
+    for i in range(len(mod)):
+      for b in rng.choice(blocks, size=m, replace=False):
+        # uniform over the C-1 classes that are not the assigned one
+        c = int(rng.integers(classes - 1))
+        c += int(c >= ids_rep[i, b])
+        mod[i, b, :] = 0.0
+        mod[i, b, c] = 1.0
+    delta = decode(mod) - ref_rep
+    mse[:, m] = np.mean(delta ** 2, -1).reshape(m_ref, n_draws).mean(-1)
+    dist[:, m] = np.linalg.norm(
+        delta, axis=-1).reshape(m_ref, n_draws).mean(-1)
+  return mse, dist
+
+
 def grid_sweep(deters, onehot, decode, classes, blocks_pair, rng):
   """Section 4: the full C x C lattice for two blocks, projected to 2D."""
   i = int(rng.integers(len(deters)))
@@ -345,7 +398,7 @@ def perturb_sweep(deters, encode, scales, n_ref, rng):
 # ------------------------------------------------------------------- driver
 
 def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
-        n_batches=4, n_ref=64, n_pairs=16, n_steps=33, seed=0):
+        n_batches=4, n_ref=64, n_pairs=16, n_steps=33, n_draws=8, seed=0):
   config, agent = build(run_dir, ckpt_path)
   impl, encode, decode = make_fns(config, agent)
   blocks, classes = [int(x) for x in config.agent.skill_shape]
@@ -440,6 +493,19 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   print('    ' + '  '.join(f'{k}:{v:.3g}' for k, v in
                            zip(dist_axis, curve) if v == v))
 
+  # Same question on the axis the manager edits along: whole blocks. The
+  # per-reference MSE is kept (not just its mean) so the figure can carry a
+  # spread, and the Euclidean displacement alongside it so this curve and the
+  # index curve above are directly comparable in the same units.
+  ham_mse, ham_dist = hamming_sweep(
+      onehot0, decode, blocks, classes, n_ref, n_draws, rng)
+  res['hamming/blocks'] = np.arange(blocks + 1)
+  res['hamming/mse'] = ham_mse
+  res['hamming/dist'] = ham_dist
+  print('\n  decoded-goal MSE vs blocks changed')
+  print('    ' + '  '.join(f'{m}:{v:.4g}' for m, v in
+                           enumerate(ham_mse.mean(0))))
+
   xy, var = grid_sweep(d0, onehot0, decode, classes, (0, 1), rng)
   res['grid/xy'] = xy
   res['grid/var'] = var
@@ -458,9 +524,12 @@ def run(run_dir, out_path, ckpt_path=None, n_envs=8, stride=8, n_states=1024,
   res['perturb/slope_small'] = slope
   print(f'\n  encoder local slope at eps={eps[1]:.3g}: {slope:.4g}')
 
+  # dim is the goal/state dimensionality: it is what turns a stored squared
+  # displacement into a mean squared error, so the index sweep above can be
+  # read in MSE without re-measuring.
   meta = dict(name=name, impl=impl, topology=topology, blocks=blocks,
-              classes=classes, task=str(config.task), run_dir=str(run_dir),
-              ckpt=str(ckpt_path or 'latest'))
+              classes=classes, dim=int(deters.shape[-1]), task=str(config.task),
+              run_dir=str(run_dir), ckpt=str(ckpt_path or 'latest'))
   out = pathlib.Path(out_path)
   out.parent.mkdir(parents=True, exist_ok=True)
   np.savez_compressed(str(out), meta=np.array(str(meta)), **keep, **res)
@@ -478,11 +547,12 @@ def main():
   p.add_argument('--n_states', type=int, default=1024)
   p.add_argument('--n_batches', type=int, default=4)
   p.add_argument('--n_ref', type=int, default=64)
+  p.add_argument('--n_draws', type=int, default=8)
   p.add_argument('--seed', type=int, default=0)
   a = p.parse_args()
   run(a.run_dir, a.out, ckpt_path=a.ckpt_path, n_envs=a.n_envs,
       stride=a.stride, n_states=a.n_states, n_batches=a.n_batches,
-      n_ref=a.n_ref, seed=a.seed)
+      n_ref=a.n_ref, n_draws=a.n_draws, seed=a.seed)
 
 
 if __name__ == '__main__':

@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""The code->goal landscape: is a code index a label or a coordinate?
+"""How far does the decoded goal move when m of the L code blocks change?
 
-For each arm: take a state's code, move ONE block k classes away, decode, and
-measure how far the decoded goal moved. Plotted against k this is flat when
-entry indices are arbitrary labels (Director, whose categorical head has no
-topology) and a rising line when they are a coordinate (a SOM on an open path,
-where adjacent entries are trained to decode nearby).
+The manager does not nudge a class index, it rewrites whole blocks: a REINFORCE
+update raises or lowers the probability of the code it just sampled, and the
+smallest move it can make from there is one block. So the axis that matters for
+"can this policy make a small correction" is Hamming distance in blocks, and the
+question is whether the decoded goal moves a little when one block changes and a
+lot when all eight do.
 
-This is the figure that states motivation.tex's argument as a measurement.
-No correlation, no p-value: a flat line and a ramp are different objects and
-the reader can see which is which.
+For every reference state and every m = 0..L we draw codes at Hamming distance
+exactly m -- a random subset of m blocks, each sent to a uniformly random other
+class -- decode, and record the mean squared error against the reference goal.
+m=0 is 0 by construction.
 
-Six series in one panel is normally where a categorical palette runs out, but
-identity here does not rest on hue -- the curves separate monotonically and
-each is labelled at its own right-hand end, so position carries it and colour
-only reinforces. Director is drawn in neutral grey as the reference, and the
-palette's fixed slot order supplies the rest.
+Two panels, one per task, six arms each. Absolute MSE, because the size of the
+smallest available edit is half the claim; the shape alone would hide a code
+whose every edit is huge. `--normalize` divides each curve by its own m=L value
+to compare shapes when that is the question instead.
 
-  python3 make_figure_landscape.py --out goal_code_landscape \
+  python3 make_figure_blocks.py --out goal_code_blocks \
       --copy-to ../../../26_04_HRL-paper/figures/motivation
 """
 import argparse
@@ -50,10 +51,6 @@ PANEL_W, PANEL_H = 205 * RES, 200 * RES
 # inter-panel gap -- not just the figure's right pad -- has to hold the longest
 # of them. At 46*RES they printed on top of the second panel.
 GAP = 120 * RES
-# The right pad has to hold the longest end-label in full
-# ("SOM-line-OG + LiP (n=4)"); at 76*RES it clipped the second panel's. The
-# left pad holds MSE tick labels ("0.015"), which are wider than the integer
-# ticks the Euclidean version used.
 PAD_L, PAD_R = 62 * RES, 138 * RES
 PAD_T_EXTRA = 4 * RES
 
@@ -66,39 +63,13 @@ def esc(s):
   return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-def mse_curve(d, meta):
-  """The index-distance curve in MSE instead of Euclidean displacement.
-
-  ``sweep/disp`` holds ||dec(z_c') - dec(z_c)|| per (reference, block, class),
-  so the mean squared error is disp^2 / dim -- exact, per element, no
-  re-measurement needed. Recomputed here rather than stored because the
-  averaging has to happen after squaring (the mean of squares is not the square
-  of the mean), which the saved ``sweep/curve`` has already destroyed.
-  """
-  disp = np.asarray(d['sweep/disp'], float)
-  ref_ids = np.asarray(d['sweep/ref_ids'], int)
-  classes = int(meta['classes'])
-  blocks = int(meta['blocks'])
-  dim = int(meta['dim'])
-  mse = disp * disp / dim
-  curve = np.full(classes, np.nan)
-  for k in range(classes):
-    m = np.zeros_like(mse, bool)
-    for b in range(blocks):
-      dd = np.abs(np.arange(classes)[None, :] - ref_ids[:, b:b + 1])
-      if meta.get('topology') == 'ring':
-        dd = np.minimum(dd, classes - dd)
-      m[:, b, :] = dd == k
-    if m.any():
-      curve[k] = mse[m].mean()
-  return curve
-
-
-def load(results_dir, mse=False):
-  """(task, arm) -> list of per-seed displacement curves."""
+def load(results_dir):
+  """(task, arm) -> list of per-seed (L+1,) mean MSE curves."""
   out = {}
   for f in sorted(glob.glob(os.path.join(results_dir, '*.npz'))):
     d = np.load(f, allow_pickle=True)
+    if 'hamming/mse' not in d:
+      continue
     meta = ast.literal_eval(str(d['meta']))
     name = os.path.basename(f)
     arm = None
@@ -110,17 +81,14 @@ def load(results_dir, mse=False):
       arm = 'director'
     if arm is None:
       continue
-    if mse:
-      if 'dim' not in meta:
-        continue    # measured before dim was recorded; re-run the diagnostic
-      curve = mse_curve(d, meta)
-    else:
-      curve = np.array(d['sweep/curve'], float)
-    out.setdefault((meta['task'], arm), []).append(curve)
+    # mean over reference states; the spread that matters for the paper is
+    # across seeds, which is taken at the figure/summary stage.
+    out.setdefault((meta['task'], arm), []).append(
+        np.asarray(d['hamming/mse'], float).mean(0))
   return out
 
 
-def ticks(hi, n=6):
+def ticks(hi, n=5):
   raw = hi / float(n)
   mag = 10.0 ** np.floor(np.log10(raw)) if raw > 0 else 1.0
   step = min([m * mag for m in (1, 2, 2.5, 5, 10)], key=lambda s: abs(s - raw))
@@ -131,7 +99,7 @@ def fmt(v):
   return '0' if v == 0 else ('%.3g' % v)
 
 
-def build(data, ymax=None, ylabel='decoded goal shift'):
+def build(data, ymax=None, normalize=False, band=False):
   fig_w = 2 * PANEL_W + GAP + PAD_L + PAD_R
   f_title = pt(9.0, fig_w)
   f_tick = pt(7.0, fig_w)
@@ -141,10 +109,15 @@ def build(data, ymax=None, ylabel='decoded goal shift'):
   pad_b = f_tick * 1.8 + f_axis * 1.8
   fig_h = PANEL_H + pad_t + pad_b
 
+  curves = {}
+  for key, seeds in data.items():
+    a = np.stack(seeds)
+    if normalize:
+      a = a / np.maximum(a[:, -1:], 1e-30)
+    curves[key] = (a.mean(0), a.std(0), len(seeds))
   if ymax is None:
-    vals = [v for curves in data.values() for c in curves for v in c[1:]
-            if v == v]
-    ymax = max(vals) * 1.08 if vals else 15.0
+    ymax = max((m + (s if band else 0)).max()
+               for m, s, _ in curves.values()) * 1.08
 
   out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{fig_w:.0f}" '
          f'height="{fig_h:.0f}" viewBox="0 0 {fig_w:.0f} {fig_h:.0f}" '
@@ -152,15 +125,15 @@ def build(data, ymax=None, ylabel='decoded goal shift'):
          f'<rect x="0" y="0" width="{fig_w:.0f}" height="{fig_h:.0f}" '
          f'fill="white"/>']
 
-  kmax = 7
+  mmax = 8
   for ti, (task, tlabel) in enumerate(TASKS):
     x0 = PAD_L + ti * (PANEL_W + GAP)
 
-    def sx(k, x0=x0):
-      return x0 + (k - 1) / (kmax - 1) * PANEL_W
+    def sx(m, x0=x0):
+      return x0 + m / float(mmax) * PANEL_W
 
     def sy(v):
-      return pad_t + (1.0 - v / ymax) * PANEL_H
+      return pad_t + (1.0 - min(v / ymax, 1.02)) * PANEL_H
 
     out.append(f'<text x="{x0 + PANEL_W / 2:.1f}" y="{f_title * 1.1:.1f}" '
                f'font-size="{f_title:.1f}" fill="{INK}" text-anchor="middle">'
@@ -175,52 +148,58 @@ def build(data, ymax=None, ylabel='decoded goal shift'):
         out.append(f'<text x="{x0 - pt(4, fig_w):.1f}" '
                    f'y="{y + f_tick * 0.36:.1f}" font-size="{f_tick:.1f}" '
                    f'fill="{INK2}" text-anchor="end">{fmt(v)}</text>')
-    for k in range(1, kmax + 1):
-      out.append(f'<text x="{sx(k):.1f}" y="{sy(0) + f_tick * 1.6:.1f}" '
+    for m in range(0, mmax + 1):
+      out.append(f'<text x="{sx(m):.1f}" y="{sy(0) + f_tick * 1.6:.1f}" '
                  f'font-size="{f_tick:.1f}" fill="{INK2}" '
-                 f'text-anchor="middle">{k}</text>')
+                 f'text-anchor="middle">{m}</text>')
     out.append(f'<text x="{x0 + PANEL_W / 2:.1f}" '
                f'y="{sy(0) + f_tick * 1.6 + f_axis * 1.6:.1f}" '
                f'font-size="{f_axis:.1f}" fill="{INK}" text-anchor="middle">'
-               f'code index distance k</text>')
+               f'code blocks changed</text>')
     if ti == 0:
       yc = pad_t + PANEL_H / 2
+      lab = ('decoded goal shift, MSE / MSE at 8' if normalize
+             else 'decoded goal shift (MSE)')
       out.append(f'<text x="{pt(9, fig_w):.1f}" y="{yc:.1f}" '
                  f'font-size="{f_axis:.1f}" fill="{INK}" text-anchor="middle" '
                  f'transform="rotate(-90 {pt(9, fig_w):.1f} {yc:.1f})">'
-                 f'{ylabel}</text>')
+                 f'{lab}</text>')
     out.append(f'<line x1="{x0:.1f}" y1="{sy(0):.1f}" x2="{x0 + PANEL_W:.1f}" '
                f'y2="{sy(0):.1f}" stroke="{INK3}" '
                f'stroke-width="{pt(0.7, fig_w):.2f}"/>')
 
     ends = []
     for ai, (arm, alabel) in enumerate(ARMS):
-      curves = data.get((task, arm))
-      if not curves:
+      if (task, arm) not in curves:
         continue
-      m = np.nanmean(np.stack(curves), 0)
+      mean, std, n = curves[(task, arm)]
       color = REF if arm == 'director' else SERIES[(ai - 1) % len(SERIES)]
-      pts = [(sx(k), sy(m[k])) for k in range(1, kmax + 1) if m[k] == m[k]]
-      if len(pts) < 2:
-        continue
+      ms = list(range(mmax + 1))
+      if band and n > 1:
+        poly = ([(sx(m), sy(mean[m] + std[m])) for m in ms] +
+                [(sx(m), sy(max(mean[m] - std[m], 0.0))) for m in ms][::-1])
+        out.append('<polygon points="%s" fill="%s" fill-opacity="0.16" '
+                   'stroke="none"/>' % (
+                       ' '.join(f'{x:.1f},{y:.1f}' for x, y in poly), color))
+      pts = [(sx(m), sy(mean[m])) for m in ms]
       d = 'M' + ' L'.join(f'{x:.1f},{y:.1f}' for x, y in pts)
       out.append(f'<path d="{d}" fill="none" stroke="{color}" '
                  f'stroke-width="{pt(1.7, fig_w):.2f}" '
                  f'stroke-linejoin="round"/>')
       for x, y in pts:
-        out.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{pt(1.7, fig_w):.1f}" '
-                   f'fill="{color}" stroke="white" '
+        out.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" '
+                   f'r="{pt(1.7, fig_w):.1f}" fill="{color}" stroke="white" '
                    f'stroke-width="{pt(0.7, fig_w):.2f}"/>')
-      ends.append([pts[-1][1], color, alabel, len(curves)])
+      ends.append([pts[-1][1], color, alabel, n])
 
-    # Direct end-labels, pushed apart so overlapping curve ends stay readable.
     ends.sort()
     minsep = f_lab * 1.15
     for i in range(1, len(ends)):
       if ends[i][0] - ends[i - 1][0] < minsep:
         ends[i][0] = ends[i - 1][0] + minsep
     for y, color, alabel, n in ends:
-      out.append(f'<text xml:space="preserve" x="{x0 + PANEL_W + pt(4, fig_w):.1f}" '
+      out.append(f'<text xml:space="preserve" '
+                 f'x="{x0 + PANEL_W + pt(4, fig_w):.1f}" '
                  f'y="{y + f_lab * 0.36:.1f}" font-size="{f_lab:.1f}" '
                  f'fill="{color}">{esc(alabel)}</text>')
 
@@ -228,25 +207,51 @@ def build(data, ymax=None, ylabel='decoded goal shift'):
   return '\n'.join(out), fig_w, fig_h
 
 
+def summarize(data):
+  """Per-cell statistics, seed mean +/- seed std.
+
+  ``add`` is the additivity ratio MSE(L) / (L x MSE(1)): what changing all L
+  blocks costs, against L times what changing one costs. It is 1 when blocks
+  contribute independently, above 1 when they interact (the whole edit moves the
+  goal further than its parts), below 1 when the goal shift saturates. This is
+  the statistic that matters for the manager's credit assignment: REINFORCE
+  raises the probability of the blocks it sampled, which only transfers to the
+  next decision if a block's contribution does not depend on the other seven.
+  """
+  print(f'\n{"task":22s} {"arm":26s} {"n":>2s} {"MSE m=1":>18s} '
+        f'{"MSE m=8":>18s} {"m1/m8":>14s} {"add":>14s}')
+  for (task, arm) in sorted(data):
+    a = np.stack(data[(task, arm)])
+    L = a.shape[1] - 1
+    m1, m8 = a[:, 1], a[:, -1]
+    frac = m1 / np.maximum(m8, 1e-30)
+    add = m8 / np.maximum(L * m1, 1e-30)
+    print(f'{task.replace("dmc_", ""):22s} {arm:26s} {len(a):2d} '
+          f'{m1.mean():9.4g}+/-{m1.std():<7.2g} '
+          f'{m8.mean():9.4g}+/-{m8.std():<7.2g} '
+          f'{frac.mean():6.3f}+/-{frac.std():<6.3f} '
+          f'{add.mean():6.2f}+/-{add.std():<6.2f}')
+
+
 def main():
   ap = argparse.ArgumentParser()
   ap.add_argument('--results', default=str(HERE / 'results'))
-  ap.add_argument('--out', default=str(HERE / 'goal_code_landscape'))
+  ap.add_argument('--out', default=str(HERE / 'goal_code_blocks'))
   ap.add_argument('--ymax', type=float, default=None)
-  ap.add_argument('--mse', action='store_true',
-                  help='y axis in decoded-goal MSE instead of Euclidean shift')
+  ap.add_argument('--normalize', action='store_true')
+  ap.add_argument('--band', action='store_true',
+                  help='shade +/- 1 std across seeds')
   ap.add_argument('--copy-to', default=None)
   a = ap.parse_args()
 
-  data = load(a.results, a.mse)
+  data = load(a.results)
   if not data:
-    print('no npz results in', a.results)
+    print('no npz with hamming/mse in', a.results)
     return
   print('cells:', ', '.join(f'{t.replace("dmc_", "")}/{arm}={len(v)}'
                             for (t, arm), v in sorted(data.items())))
-  svg, w, h = build(data, a.ymax,
-                    'decoded goal shift (MSE)' if a.mse
-                    else 'decoded goal shift')
+  summarize(data)
+  svg, w, h = build(data, a.ymax, a.normalize, a.band)
   svg_path, pdf_path = a.out + '.svg', a.out + '.pdf'
   with open(svg_path, 'w') as f:
     f.write(svg)

@@ -544,6 +544,69 @@ median decoder Lipschitz ratio.
 Batch-to-batch noise on these quantities is 0.002–0.006, and the seed spreads
 above are small next to the effects.
 
+### F20 — Director's blocks are not independent, which is the real reason per-block credit assignment cannot work
+
+Measured 2026-08-17 on the same 48 checkpoints as F19 (`hamming/mse` in
+`experiments/goal_geometry/results/*.npz`, figure
+`experiments/goal_geometry/make_figure_blocks.py`). F19 asked which *class* a
+block moves to; this asks how many *blocks* move. Change `m` of the L=8 blocks
+to uniformly random other classes, decode, record MSE against the reference
+goal, for m = 0..8.
+
+Every arm rises with m — so unlike the class index, blocks-changed is a real
+distance for all of them. What separates them is curvature, measured as the
+**additivity ratio** `α = MSE(8) / (8 × MSE(1))`: 1 if blocks contribute
+independently, >1 if they interact, <1 if the shift saturates.
+
+| arm | α cartpole | α hopper | MSE m=1 cartpole | MSE m=1 hopper |
+|---|---|---|---|---|
+| director | **3.07 ± 1.15** | **2.30 ± 0.58** | 0.0078 | 0.0040 |
+| lipvq_prod | 0.80 ± 0.12 | 0.94 ± 0.10 | 0.0403 | 0.0160 |
+| som_line | 0.75 ± 0.04 | 0.75 ± 0.15 | 0.0324 | 0.0224 |
+| som_lipvq_line_prod | 0.88 ± 0.21 | 0.87 ± 0.15 | 0.0321 | 0.0165 |
+| som_orig_line | 0.43 ± 0.02 | 0.88 ± 0.29 | 0.0742 | 0.0328 |
+| som_orig_lipvq_line_prod | 0.42 ± 0.07 | 0.80 ± 0.16 | 0.1110 | 0.0444 |
+
+All 8 Director seeds are above 1.72; all 40 other seeds are below 1.25 — the
+groups do not overlap (exact two-sided permutation test, p = 9.4e-05 on each
+task).
+
+**Do not read Director's small m=1 as good locality.** It has the smallest
+single-block edit of any arm, which taken alone looks like exactly the property
+we want. It is the opposite. The decoder reads the eight blocks jointly, so one
+block moved on its own barely disturbs the goal and the movement only appears
+once several move together — and F19 shows that edit is *unsteerable* anyway
+(d7/d1 = 1.19 / 0.75, every class the same distance away). Director offers one
+edit size, in the middle, with no way to ask for less. The SOM+STE arms have a
+larger *average* block edit (their codebook has spread out, so a random class is
+typically far) but the smallest *available* one, and it can be chosen: in MSE
+their nearest index edit is 0.0019–0.0026 against Director's 0.0078, still
+smallest after normalizing by each arm's own full-code range (1.0% vs 4.7%).
+
+The two sweeps have to be read together. Either alone gives the wrong answer.
+
+### F21 — the cosine_max geometry result is not an artifact of a scale-free metric
+
+Re-measured 2026-08-17 on all 20 four-env Director baselines (e390–e409,
+restaged from `/bucket`), adding pairwise MSE alongside `cosine_max` in
+`diag_goal_struct_corr.py`. The fresh rollout reproduces the published cosine
+numbers to within 0.01 (hard 0.61/0.48/0.35/0.37 vs the paper's
+0.62/0.48/0.36/0.37), so the two metrics are being compared on like data.
+
+| | cartpole | hopper hop | acrobot | cheetah |
+|---|---|---|---|---|
+| hard, cosine_max | 0.61 ± 0.15 | 0.48 ± 0.08 | 0.35 ± 0.06 | 0.37 ± 0.06 |
+| hard, MSE | 0.62 ± 0.14 | 0.50 ± 0.04 | 0.34 ± 0.06 | 0.43 ± 0.07 |
+| soft, cosine_max | 0.70 ± 0.14 | 0.61 ± 0.10 | 0.44 ± 0.06 | 0.52 ± 0.03 |
+| soft, MSE | 0.75 ± 0.11 | 0.68 ± 0.05 | 0.41 ± 0.06 | 0.67 ± 0.02 |
+
+Same moderate values, same soft > hard ordering, under both metrics. What the
+distance view adds is **saturation**: plotted as MSE-vs-MSE the soft code rises
+steeply over the first fifth of the goal-space range and is then flat — past
+~0.1 goal MSE on cartpole, moving the goal twice as far again does not move the
+code at all. A single r understates the problem at the far end and overstates it
+at the near end.
+
 ---
 ## 4. Dead ends (don't retry)
 
