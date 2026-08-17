@@ -243,15 +243,19 @@ for i, task in enumerate(TASKS):
     svg.append(f'<text x="{gx:.1f}" y="{tick_text_y:.1f}" '
                f'font-size="{F_TICK:.1f}" font-weight="bold" '
                f'text-anchor="middle" fill="black">{fmt(v)}</text>')
-  for v in ticks(ymax):
+  # The hard code's MSE is discrete -- one-hot blocks give exactly L+1 possible
+  # distances, 2k/(L*C) -- so tick at the values it can take, one per stripe,
+  # rather than at round numbers.
+  for v in (levels if HARD else ticks(ymax)):
     gy = sy(v)
     svg.append(f'<line x1="{ax0 - TICK_LEN:.1f}" y1="{gy:.1f}" '
                f'x2="{ax0:.1f}" y2="{gy:.1f}" stroke="black" '
                f'stroke-width="{pt(1.8):.1f}"/>')
     svg.append(f'<text x="{ax0 - TICK_LEN - F_TICK * 0.5:.1f}" '
-               f'y="{gy + F_TICK * 0.35:.1f}" font-size="{F_TICK:.1f}" '
+               f'y="{gy + F_TICK * 0.35:.1f}" '
+               f'font-size="{F_TICK * (0.86 if HARD else 1.0):.1f}" '
                f'font-weight="bold" text-anchor="end" fill="black">'
-               f'{fmt(v)}</text>')
+               f'{("%.2f" % v).lstrip("0") if HARD and v else fmt(v)}</text>')
 
   svg.append(f'<text x="{x0 + CELL / 2:.1f}" y="{y0 + F_TITLE * 1.15:.1f}" '
              f'font-size="{F_TITLE:.1f}" font-weight="bold" '
