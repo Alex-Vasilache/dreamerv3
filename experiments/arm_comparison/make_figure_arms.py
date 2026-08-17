@@ -35,6 +35,9 @@ import subprocess
 
 HERE = pathlib.Path(__file__).resolve().parent
 
+# Measured and tabulated, but not drawn: collapsed codebooks.
+EXCLUDE = ('som_orig_line', 'som_orig_lipvq_line_prod')
+
 # Reference palette, categorical slots 1-5, light mode, fixed order.
 SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4']
 REF_LINE = '#52514e'      # text-secondary: the Director mean
@@ -114,7 +117,7 @@ def yrange(data, task, ymax_cap):
 
 def build(data, ymax):
   tasks = [(t, l) for t, l in data['tasks']]
-  arms = [(a, l) for a, l in data['arms']]
+  arms = [(a, l) for a, l in data['arms'] if a not in EXCLUDE]
   n = len(tasks)
   fig_w = PANEL_W + PAD_L + PAD_R
   f_title = pt(9.0, fig_w)

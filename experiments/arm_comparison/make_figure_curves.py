@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Learning curves for the five goal-AE arms, as small multiples.
+"""Learning curves for the goal-AE arms, as small multiples.
 
 One panel per (task, arm), each showing that arm's mean across seeds against
 the Director baseline in grey. Small multiples rather than six lines in one
@@ -9,9 +9,8 @@ guarantee past three slots -- and the question the reader has is "does this arm
 beat Director", which is a two-series question. Faceting answers it once per
 panel with two series, and never asks anyone to untangle a spaghetti plot.
 
-Bands are min-max across seeds, not standard error: with four seeds the range
-is the honest summary, and it is the same quantity the endpoint figure's
-baseline band shows, so the two figures agree by construction.
+Bands are +/- 1 standard deviation across seeds (population std, the same
+convention as the endpoint figure and the tables).
 
   python3 make_figure_curves.py --json results/arms_3M.json --out arm_curves
 """
@@ -25,6 +24,7 @@ import subprocess
 HERE = pathlib.Path(__file__).resolve().parent
 
 SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4']
+EXCLUDE = ('som_orig_line', 'som_orig_lipvq_line_prod')
 REF_LINE = '#8a8880'
 REF_BAND = '#ebeae6'
 INK = '#0b0b0b'
@@ -56,7 +56,13 @@ def finite(seq):
 
 
 def agg(curves):
-  """Per-bin mean / min / max across seeds, skipping bins nobody has reached."""
+  """Per-bin mean and +/- 1 std across seeds, skipping bins nobody reached.
+
+  Population std (divide by n), not the sample estimate: these four seeds are
+  the whole population of runs for this cell, not a sample drawn from a larger
+  one, and it is the same convention the endpoint figure and every table in
+  EXPERIMENTS.md use.
+  """
   if not curves:
     return [], [], []
   n = len(curves[0])
@@ -64,7 +70,9 @@ def agg(curves):
   for i in range(n):
     vals = finite([c[i] for c in curves])
     if vals:
-      mean.append(sum(vals) / len(vals)); lo.append(min(vals)); hi.append(max(vals))
+      m = sum(vals) / len(vals)
+      sd = (sum((v - m) ** 2 for v in vals) / len(vals)) ** 0.5
+      mean.append(m); lo.append(m - sd); hi.append(m + sd)
     else:
       mean.append(None); lo.append(None); hi.append(None)
   return mean, lo, hi
@@ -93,7 +101,10 @@ def band_of(xs, lo, hi, sx, sy):
 
 def build(data, ymax):
   tasks = data['tasks']
-  arms = [a for a in data['arms'] if a[0] != 'director']
+  # The estimator-free arms are measured and tabulated but not drawn: their
+  # codebooks collapsed, and the figure is about the arms still in contention.
+  arms = [a for a in data['arms']
+          if a[0] != 'director' and a[0] not in EXCLUDE]
   grid = data['grid']
   xmax = grid[-1] if grid else 4e6
 
@@ -195,7 +206,7 @@ def build(data, ymax):
 
   out.append(f'<text x="{fig_w / 2:.1f}" y="{fig_h - pt(2, fig_w):.1f}" '
              f'font-size="{f_note:.1f}" fill="{INK3}" text-anchor="middle">'
-             f'line: mean across seeds; band: min-max across seeds; '
+             f'line: mean across seeds; band: +/-1 std across seeds; '
              f'x: environment steps</text>')
   out.append('</svg>')
   return '\n'.join(out), fig_w, fig_h
