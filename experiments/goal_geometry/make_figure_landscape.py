@@ -39,6 +39,13 @@ ARMS = [('director', 'Director'), ('som_line', 'SOM-line'),
         ('som_orig_line', 'SOM-line-OG'), ('lipvq_prod', 'LiP'),
         ('som_lipvq_line_prod', 'SOM-line + LiP'),
         ('som_orig_lipvq_line_prod', 'SOM-line-OG + LiP')]
+# The two estimator-free arms (STE off) are measured but not plotted: their
+# codebooks collapsed, so their curves say more about a dead encoder than about
+# the geometry question, and six series in one panel crowded the readable ones.
+# Their numbers are still in the npz and in the summary tables below; pass
+# --include-all to draw them.
+EXCLUDE = ('som_orig_line', 'som_orig_lipvq_line_prod')
+
 TASKS = [('dmc_cartpole_swingup', 'Cartpole Swingup'),
          ('dmc_hopper_stand', 'Hopper Stand')]
 
@@ -238,10 +245,16 @@ def main():
   ap.add_argument('--ymax', type=float, default=None)
   ap.add_argument('--mse', action='store_true',
                   help='y axis in decoded-goal MSE instead of Euclidean shift')
+  ap.add_argument('--include-all', action='store_true',
+                  help='also draw the estimator-free arms (see EXCLUDE)')
   ap.add_argument('--copy-to', default=None)
   a = ap.parse_args()
 
-  data = load(a.results, a.mse)
+  data_all = load(a.results, a.mse)
+  # Colour comes from each arm's fixed slot in ARMS, not from its position in
+  # the filtered list, so hiding an arm never repaints the others.
+  data = (data_all if a.include_all else
+          {k: v for k, v in data_all.items() if k[1] not in EXCLUDE})
   if not data:
     print('no npz results in', a.results)
     return

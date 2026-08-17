@@ -47,6 +47,13 @@ ARMS = [('director', 'Director'), ('som_line', 'SOM-line'),
         ('som_orig_line', 'SOM-line-OG'), ('lipvq_prod', 'LiP'),
         ('som_lipvq_line_prod', 'SOM-line + LiP'),
         ('som_orig_lipvq_line_prod', 'SOM-line-OG + LiP')]
+# The two estimator-free arms (STE off) are measured but not plotted: their
+# codebooks collapsed, so their curves say more about a dead encoder than about
+# the geometry question, and six series in one panel crowded the readable ones.
+# Their numbers are still in the npz and in the summary tables below; pass
+# --include-all to draw them.
+EXCLUDE = ('som_orig_line', 'som_orig_lipvq_line_prod')
+
 TASKS = [('dmc_cartpole_swingup', 'Cartpole Swingup'),
          ('dmc_hopper_stand', 'Hopper Stand')]
 
@@ -301,18 +308,24 @@ def main():
   ap.add_argument('--out', default=None)
   ap.add_argument('--ymax', type=float, default=None)
   ap.add_argument('--min-coverage', type=float, default=0.5)
+  ap.add_argument('--include-all', action='store_true',
+                  help='also draw the estimator-free arms (see EXCLUDE)')
   ap.add_argument('--copy-to', default=None)
   a = ap.parse_args()
 
   out_base = a.out or str(HERE / ('goal_code_index_total' if a.x == 'total'
                                   else 'goal_code_mse_vs_mse'))
-  data = load(a.results, a.x)
+  data_all = load(a.results, a.x)
+  # Colour comes from each arm's fixed slot in ARMS, not from its position in
+  # the filtered list, so hiding an arm never repaints the others.
+  data = (data_all if a.include_all else
+          {k: v for k, v in data_all.items() if k[1] not in EXCLUDE})
   if not data:
     print('no npz with index_total/* in', a.results)
     return
   print('cells:', ', '.join(f'{t.replace("dmc_", "")}/{arm}={len(v)}'
                             for (t, arm), v in sorted(data.items())))
-  summarize(data, a.x, a.min_coverage)
+  summarize(data_all, a.x, a.min_coverage)
   svg, w, h = build(data, a.x, a.ymax, a.min_coverage)
   svg_path, pdf_path = out_base + '.svg', out_base + '.pdf'
   with open(svg_path, 'w') as f:
