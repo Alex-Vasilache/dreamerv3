@@ -91,13 +91,9 @@ def fmt(v):
 
 def load(results_dir, code, metric):
   gk = 'sim_goal' if metric == 'cosmax' else 'mse_goal'
-  ck = ('sim_' if metric == 'cosmax' else 'mse_') + code
-  rk = f'corr/{metric}/{code}/pearson/mean'
   out = {}
   for f in sorted(glob.glob(os.path.join(results_dir, '*.npz'))):
     d = np.load(f, allow_pickle=True)
-    if gk not in d or ck not in d:
-      continue
     meta = ast.literal_eval(str(d['meta']))
     name = os.path.basename(f)
     arm = next((k for k, _ in sorted(ARMS, key=lambda a: -len(a[0]))
@@ -105,6 +101,23 @@ def load(results_dir, code, metric):
     if arm is None and meta.get('impl') == 'director':
       arm = 'director'
     if arm is None:
+      continue
+    # Plain Hamming equality ("hard": same id per block or not) is the wrong
+    # metric for a codebook trained with the SOM neighborhood loss -- a
+    # 1-apart neighbor decodes to a nearby goal but counts as a full miss.
+    # Where the codebook has a real topology (meta['topology'] != 'none'),
+    # swap in the already-computed topology-aware graded distance instead
+    # (diag_goal_geometry.correlations' sim_code['index'] / dist_code['index']
+    # -- mean per-block |id_i - id_j|, ring-wrapped or not per the codebook's
+    # own topology, normalized to a similarity). No graded analog exists yet
+    # under mse (mse_hard is proportional to plain Hamming by construction --
+    # see its own comment in correlations() -- so mse stays as is).
+    graded = (code == 'hard' and metric == 'cosmax' and
+              meta.get('topology', 'none') != 'none')
+    ck = 'sim_index' if graded else (('sim_' if metric == 'cosmax' else 'mse_') + code)
+    rk = ('corr/cosmax/index/pearson/mean' if graded else
+          f'corr/{metric}/{code}/pearson/mean')
+    if gk not in d or ck not in d:
       continue
     g, c = np.asarray(d[gk], float), np.asarray(d[ck], float)
     iu = np.triu_indices(g.shape[0], k=1)
@@ -137,26 +150,37 @@ def main():
          f'fill="white"/>']
   COS = a.metric == 'cosmax'
 
-  # Shared axis ranges per metric so the arms are comparable across panels.
-  if COS:
-    xlo, xhi, ylo, yhi = -0.2, 1.05, -0.05, 1.05
-  else:
-    allx = np.concatenate([g for v in data.values() for g, _, _ in v])
-    ally = np.concatenate([c for v in data.values() for _, c, _ in v])
-    xlo, ylo = 0.0, 0.0
-    xhi = float(np.percentile(allx, 99.0)) * 1.04
-    yhi = float(np.percentile(ally, 99.9)) * 1.04
-
   for ti, (task, tlabel) in enumerate(TASKS):
     y0 = ti * (ROW_H + GAP_Y)
     for ai, (arm, alabel) in enumerate(ARMS):
       x0 = ai * (CELL + GAP_X)
       seeds = data.get((task, arm))
 
-      def sx(v, x0=x0):
+      # Axis ranges. cosmax shares one range for x and y (both are the same
+      # similarity measure) so the y=x reference below is already a true
+      # diagonal. MSE code-distance and goal-distance live in unrelated units
+      # (L*C-dim one-hot vs. 1024-dim deter), so a range shared ACROSS PANELS
+      # either flattens arms with small code MSE or clips the ones with large
+      # goal MSE -- scale each panel to its own data instead. Deriving yhi
+      # from the panel's own least-squares slope (rather than its own y
+      # percentile) makes the reference line land exactly on the top-right
+      # corner, so it reads as a real diagonal here too.
+      if COS:
+        xlo, xhi, ylo, yhi = -0.2, 1.05, -0.05, 1.05
+      elif seeds:
+        xf = np.concatenate([g for g, _, _ in seeds])
+        yf = np.concatenate([c for _, c, _ in seeds])
+        xlo, ylo = 0.0, 0.0
+        xhi = float(np.percentile(xf, 99.0)) * 1.04
+        slope = float((xf * yf).sum() / max((xf * xf).sum(), 1e-30))
+        yhi = slope * xhi if slope > 0 else float(np.percentile(yf, 99.9)) * 1.04
+      else:
+        xlo, xhi, ylo, yhi = 0.0, 1.0, 0.0, 1.0  # unused: panel has no data
+
+      def sx(v, x0=x0, xlo=xlo, xhi=xhi):
         return x0 + PAD_L + np.clip((v - xlo) / (xhi - xlo), -0.02, 1.02) * PANEL
 
-      def sy(v, y0=y0):
+      def sy(v, y0=y0, ylo=ylo, yhi=yhi):
         return y0 + PAD_T + (1 - np.clip((v - ylo) / (yhi - ylo), -0.02, 1.02)) * PANEL
 
       ax0, ay0, ax1, ay1 = sx(xlo), sy(ylo), sx(xhi), sy(yhi)
@@ -198,9 +222,17 @@ def main():
                       f'fill-opacity="0.13"/>')
       svg.append(''.join(dots))
 
-      # trend: the hard code takes L+1 exact values, so bin on ITS axis; the
-      # soft code is continuous and bins on x like any scatter
-      if a.code == 'hard':
+      # trend: a genuinely discrete code (Hamming's L+1 exact levels) bins on
+      # ITS OWN axis; a continuous one -- the soft code, or "hard" once it is
+      # the graded topology-aware distance for a som-topology arm, which
+      # takes far more than a handful of realized values -- bins on x like
+      # any scatter. Detected from what actually got loaded for this panel,
+      # not from --code, since one cosmax-hard figure can mix discrete
+      # (director, lipvq_prod) and graded-continuous (som_line,
+      # som_lipvq_line_prod) panels.
+      all_c = np.concatenate([c for _, c, _ in seeds])
+      discrete = len(np.unique(np.round(all_c, 6))) <= 2 * NBINS
+      if discrete:
         lv = np.unique(np.concatenate([np.unique(c) for _, c, _ in seeds]))
         rows = [[g[np.isclose(c, v)].mean() if np.isclose(c, v).sum() >= 10
                  else np.nan for v in lv] for g, c, _ in seeds]
@@ -219,7 +251,7 @@ def main():
       ok = ~np.isnan(tm)
       if ok.sum() >= 2:
         vv, vm, vs = tv[ok], tm[ok], ts[ok]
-        if a.code == 'hard':
+        if discrete:
           band = ([(m + s, y) for m, s, y in zip(vm, vs, vv)] +
                   [(m - s, y) for m, s, y in zip(vm, vs, vv)][::-1])
           line = list(zip(vm, vv))
@@ -253,7 +285,11 @@ def main():
         svg.append(f'<line x1="{ax0 - TICK_LEN:.1f}" y1="{sy(v):.1f}" '
                    f'x2="{ax0:.1f}" y2="{sy(v):.1f}" stroke="black" '
                    f'stroke-width="{pt(1.2):.1f}"/>')
-        if ai == 0:
+        # cosmax panels share one y-range across the whole row, so labeling
+        # only the leftmost column was enough; MSE panels now scale
+        # independently (each has its own yhi), so every column needs its
+        # own labels or the other three are unreadable.
+        if ai == 0 or not COS:
           svg.append(f'<text x="{ax0 - TICK_LEN - F_TICK * 0.4:.1f}" '
                      f'y="{sy(v) + F_TICK * 0.35:.1f}" '
                      f'font-size="{F_TICK:.1f}" text-anchor="end" '

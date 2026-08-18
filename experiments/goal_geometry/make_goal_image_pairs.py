@@ -151,6 +151,30 @@ def make_image_fn(agent):
   return image
 
 
+def block_distance_similarity(ids, topology, classes):
+  """Graded hard-code similarity for a codebook with a real neighborhood
+  ordering (``som: True``): per block, |id_i - id_j| (mod-wrapped for a ring,
+  not for a line) instead of a plain match/no-match. Summed over blocks and
+  normalized by the maximum achievable total distance -- L blocks each at the
+  farthest-apart pair, ``classes/2`` for a ring (wrap) or ``classes - 1`` for
+  a line (no wrap).
+
+  Plain Hamming equality (``1 - mean(id_i != id_j)``, what ``sim_hard`` used
+  before this) treats a 1-apart codebook neighbor exactly like the opposite
+  end of the line -- both just "different id" -- even though the SOM
+  neighborhood loss trained adjacent ids to decode to nearby goals. This is
+  the same formula ``diag_goal_geometry.correlations()`` uses for
+  ``sim_code['index']``, just written as a sum instead of a mean so the
+  intermediate "total blocks apart" (0..L*(classes-1) for a line) is visible."""
+  ids = np.asarray(ids)
+  blocks = ids.shape[-1]
+  diff = np.abs(ids[:, None, :].astype(np.int64) - ids[None, :, :])
+  if topology == 'ring':
+    diff = np.minimum(diff, classes - diff)
+  half = classes / 2.0 if topology == 'ring' else float(classes - 1)
+  return 1.0 - diff.sum(-1) / (blocks * half)
+
+
 # ---------------------------------------------------------------- sampling
 
 def pick_pairs_hard(sim_hard, targets, n_per_bin, rng):
@@ -227,8 +251,25 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
   z_e, z_q, ids, onehot, soft = encode(deters)
   n = len(deters)
   sim_goal = pairwise_cosmax(deters)
-  sim_hard = 1.0 - (ids[:, None, :] != ids[None, :, :]).mean(-1)
   sim_soft = pairwise_cosmax(soft.reshape(n, -1))
+
+  # Hard-code similarity: plain Hamming equality (match/no-match per block) is
+  # the right metric for Director's argmax labels, which carry no ordering --
+  # but for a codebook trained with the SOM neighborhood loss, two ids one
+  # apart decode to nearby goals and equality treats that exactly like the
+  # opposite end of the line. Use the graded per-block distance there instead
+  # (see block_distance_similarity), matching the codebook's own topology.
+  som_on = bool(getattr(config.agent.goal_vq, 'som', False)) if impl == 'vq' \
+      else False
+  topology = str(getattr(config.agent.goal_vq, 'topology', 'ring')) \
+      if som_on else 'none'
+  if som_on:
+    sim_hard = block_distance_similarity(ids, topology, classes)
+    hard_metric = f'block-distance ({topology})'
+  else:
+    sim_hard = 1.0 - (ids[:, None, :] != ids[None, :, :]).mean(-1)
+    hard_metric = 'hamming'
+  print(f'hard-code metric: {hard_metric}')
 
   rng = np.random.default_rng(seed)
   UPSAMPLE = 2  # native dmc render is small (e.g. 64x64); upscale for legibility
@@ -239,17 +280,25 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
 
   # --- Panel A: hard code, full range 1.0 .. 0.2, decode through the code.
   targets_a = [round(1.0 - 0.1 * k, 2) for k in range(9)]
-  bins_a = pick_pairs_hard(sim_hard, targets_a, n_per_bin, rng)
+  if som_on:
+    # sim_hard is graded/continuous here (steps of 1/(L*(classes-1))); use a
+    # tolerance window per target instead of snapping to a handful of levels.
+    bins_a = pick_pairs_binned(sim_hard, targets_a, n_per_bin, rng, half_width=0.05)
+  else:
+    # Plain Hamming sim only takes L+1 discrete levels; snap each target to
+    # the nearest one actually realized in the pool.
+    bins_a = [(t, pairs) for t, _, pairs in
+              pick_pairs_hard(sim_hard, targets_a, n_per_bin, rng)]
   goal_a = upsample(image(decode(onehot)))  # decode every code once, index below
   CH, CW = goal_a.shape[1:3]
   rows_a = []
-  for t, level, pairs in bins_a:
+  for t, pairs in bins_a:
     tiles = []
     for i, j in pairs:
       tiles.append((goal_a[i], goal_a[j],
-                     f'{level:.2f} {sim_goal[i, j]:.2f}'))
+                     f'{sim_hard[i, j]:.2f} {sim_goal[i, j]:.2f}'))
     rows_a.append((f'{t:.1f}', tiles))
-    print(f'  [A hard] target={t:.2f} actual={level:.3f} n_pairs={len(pairs)}')
+    print(f'  [A hard] target={t:.2f} n_pairs={len(pairs)}')
   canvas_a = build_grid(rows_a, CW, CH, MARGIN, GAP)
   path_a = f'{out_prefix}_hard.png'
   write_png(path_a, canvas_a)
@@ -274,12 +323,19 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
 
   readme = pathlib.Path(f'{out_prefix}_README.txt')
   readme.write_text(
-      f'{name}  impl={impl}  task={config.task}\n\n'
+      f'{name}  impl={impl}  task={config.task}  hard_metric={hard_metric}\n\n'
       f'{path_a.rsplit("/", 1)[-1]} -- panel A, HARD code, full range.\n'
       '  One row per target code-similarity (left margin: 1.0..0.2). Each\n'
       '  pair-block is two goal IMAGES decoded from two DIFFERENT codes whose\n'
-      '  hard cosine-max similarity is (nearest realized level to) that row.\n'
+      '  hard-code similarity falls in that row.\n'
       '  Label under each pair: "<actual code sim> <true goal-state sim>".\n'
+      + ('  Metric: graded per-block index distance on the codebook\'s own\n'
+         f'  {topology} topology (see block_distance_similarity) -- a\n'
+         '  1-apart neighbor counts as a near-miss, not a full miss, because\n'
+         '  the SOM loss trained adjacent ids to decode to nearby goals.\n'
+         if som_on else
+         '  Metric: plain Hamming equality (same id per block or not) -- the\n'
+         '  right metric for Director\'s unordered argmax labels.\n') +
       '  If images still look near-identical at a low row (e.g. 0.2), that is\n'
       '  code collapse (many dissimilar codes -> one goal), not subtlety.\n\n'
       f'{path_b.rsplit("/", 1)[-1]} -- panel B, SOFT code, narrow range.\n'

@@ -1,10 +1,14 @@
-e538_dmc_hopper_stand_som_lipvq_line_prod_s0_BIG_j4677171  impl=vq  task=dmc_hopper_stand
+e538_dmc_hopper_stand_som_lipvq_line_prod_s0_BIG_j4677171  impl=vq  task=dmc_hopper_stand  hard_metric=block-distance (line)
 
 e538_som_lipvq_hopper_hard.png -- panel A, HARD code, full range.
   One row per target code-similarity (left margin: 1.0..0.2). Each
   pair-block is two goal IMAGES decoded from two DIFFERENT codes whose
-  hard cosine-max similarity is (nearest realized level to) that row.
+  hard-code similarity falls in that row.
   Label under each pair: "<actual code sim> <true goal-state sim>".
+  Metric: graded per-block index distance on the codebook's own
+  line topology (see block_distance_similarity) -- a
+  1-apart neighbor counts as a near-miss, not a full miss, because
+  the SOM loss trained adjacent ids to decode to nearby goals.
   If images still look near-identical at a low row (e.g. 0.2), that is
   code collapse (many dissimilar codes -> one goal), not subtlety.
 
