@@ -1,40 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" font-family="Helvetica,Arial,sans-serif">
-<rect x="0" y="0" width="1200" height="1200" fill="white"/>
-<text x="140" y="54" font-size="38" font-weight="bold" fill="#0b0b0b">Codes this similar -&gt; state similarity (Director)</text>
-<text x="140" y="92" font-size="24" fill="#52514e">hopper_stand, pooled over 4 seeds, error band = +/-1 std</text>
-<line x1="140" y1="1050.0" x2="1090" y2="1050.0" stroke="#c3c2b7" stroke-width="1"/>
-<text x="124" y="1057.0" font-size="21" text-anchor="end" fill="#898781">0.00</text>
-<line x1="140" y1="835.0" x2="1090" y2="835.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="842.0" font-size="21" text-anchor="end" fill="#898781">0.25</text>
-<line x1="140" y1="620.0" x2="1090" y2="620.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="627.0" font-size="21" text-anchor="end" fill="#898781">0.50</text>
-<line x1="140" y1="405.0" x2="1090" y2="405.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="412.0" font-size="21" text-anchor="end" fill="#898781">0.75</text>
-<line x1="140" y1="190.0" x2="1090" y2="190.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="197.0" font-size="21" text-anchor="end" fill="#898781">1.00</text>
-<text x="140.0" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.1</text>
-<text x="245.6" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.2</text>
-<text x="351.1" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.3</text>
-<text x="456.7" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.4</text>
-<text x="562.2" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.5</text>
-<text x="667.8" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.6</text>
-<text x="773.3" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.7</text>
-<text x="878.9" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.8</text>
-<text x="984.4" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.9</text>
-<text x="1090.0" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">1.0</text>
-<text x="615.0" y="1166" font-size="24" text-anchor="middle" fill="#52514e">hard-code similarity bin</text>
-<text x="34" y="620.0" font-size="24" text-anchor="middle" fill="#52514e" transform="rotate(-90 34 620.0)">goal-state similarity</text>
-<polygon points="140.0,190.0 245.6,190.0 351.1,190.0 456.7,190.0 562.2,190.0 667.8,193.4 773.3,196.9 878.9,196.9 984.4,196.0 1090.0,195.2 1090.0,212.4 984.4,220.1 878.9,226.1 773.3,226.1 667.8,239.9 562.2,275.1 456.7,353.4 351.1,473.8 245.6,473.8 140.0,594.2" fill="#2a78d6" fill-opacity="0.13" stroke="none"/>
-<polyline points="140.0,363.7 245.6,296.6 351.1,296.6 456.7,247.6 562.2,225.3 667.8,216.7 773.3,211.5 878.9,211.5 984.4,208.1 1090.0,203.8" fill="none" stroke="#2a78d6" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="140.0" cy="363.7" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="245.6" cy="296.6" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="351.1" cy="296.6" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="456.7" cy="247.6" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="562.2" cy="225.3" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="667.8" cy="216.7" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="773.3" cy="211.5" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="878.9" cy="211.5" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="984.4" cy="208.1" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="1090.0" cy="203.8" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<text x="1104.0" y="201.8" font-size="26" font-weight="bold" fill="#2a78d6">0.98</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000" viewBox="0 0 2000 2000" font-family="Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="2000" height="2000" fill="white"/>
+<text x="320" y="90" font-size="66" font-weight="bold" fill="#0b0b0b">Codes this similar -&gt; state similarity (Director)</text>
+<text x="320" y="155" font-size="40" fill="#52514e">hopper_stand, pooled over 4 seeds, error band = +/-1 std</text>
+<line x1="320" y1="1680.0" x2="1740" y2="1680.0" stroke="#c3c2b7" stroke-width="1.5"/>
+<text x="294" y="1693.0" font-size="34" text-anchor="end" fill="#898781">0.00</text>
+<line x1="320" y1="1365.0" x2="1740" y2="1365.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="1378.0" font-size="34" text-anchor="end" fill="#898781">0.25</text>
+<line x1="320" y1="1050.0" x2="1740" y2="1050.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="1063.0" font-size="34" text-anchor="end" fill="#898781">0.50</text>
+<line x1="320" y1="735.0" x2="1740" y2="735.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="748.0" font-size="34" text-anchor="end" fill="#898781">0.75</text>
+<line x1="320" y1="420.0" x2="1740" y2="420.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="433.0" font-size="34" text-anchor="end" fill="#898781">1.00</text>
+<text x="320.0" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.1</text>
+<text x="477.8" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.2</text>
+<text x="635.6" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.3</text>
+<text x="793.3" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.4</text>
+<text x="951.1" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.5</text>
+<text x="1108.9" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.6</text>
+<text x="1266.7" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.7</text>
+<text x="1424.4" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.8</text>
+<text x="1582.2" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.9</text>
+<text x="1740.0" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">1.0</text>
+<text x="1030.0" y="1940" font-size="40" text-anchor="middle" fill="#52514e">hard-code similarity bin</text>
+<text x="60" y="1050.0" font-size="40" text-anchor="middle" fill="#52514e" transform="rotate(-90 60 1050.0)">goal-state similarity</text>
+<polygon points="320.0,420.0 477.8,420.0 635.6,420.0 793.3,420.0 951.1,420.0 1108.9,425.0 1266.7,430.1 1424.4,430.1 1582.2,428.8 1740.0,427.6 1740.0,452.8 1582.2,464.1 1424.4,472.9 1266.7,472.9 1108.9,493.1 951.1,544.7 793.3,659.4 635.6,835.8 477.8,835.8 320.0,1012.2" fill="#2a78d6" fill-opacity="0.13" stroke="none"/>
+<polyline points="320.0,674.5 477.8,576.2 635.6,576.2 793.3,504.4 951.1,471.7 1108.9,459.1 1266.7,451.5 1424.4,451.5 1582.2,446.5 1740.0,440.2" fill="none" stroke="#2a78d6" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="320.0" cy="674.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="477.8" cy="576.2" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="635.6" cy="576.2" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="793.3" cy="504.4" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="951.1" cy="471.7" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1108.9" cy="459.1" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1266.7" cy="451.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1424.4" cy="451.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1582.2" cy="446.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1740.0" cy="440.2" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<text x="1764.0" y="436.2" font-size="46" font-weight="bold" fill="#2a78d6">0.98</text>
 </svg>

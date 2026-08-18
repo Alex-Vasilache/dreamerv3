@@ -32,8 +32,8 @@ DATA2 = {  # hard-code sim bin -> state-sim
 COLOR = {'director': '#2a78d6', 'somlip': '#eb6834'}
 NAME = {'director': 'Director', 'somlip': 'SOM-line + LiP'}
 
-S = 1200  # square canvas
-PAD_L, PAD_R, PAD_T, PAD_B = 140, 110, 190, 150
+S = 2000  # square canvas
+PAD_L, PAD_R, PAD_T, PAD_B = 320, 260, 420, 320
 PLOT = S - PAD_L - PAD_R  # also used for height since square interior
 
 
@@ -54,42 +54,42 @@ def build(data, title, sub, x_label, y_label, out_base, keys=('director', 'somli
          f'viewBox="0 0 {S} {S}" font-family="Helvetica,Arial,sans-serif">',
          f'<rect x="0" y="0" width="{S}" height="{S}" fill="white"/>']
 
-  svg.append(f'<text x="{PAD_L}" y="54" font-size="38" font-weight="bold" '
+  svg.append(f'<text x="{PAD_L}" y="90" font-size="66" font-weight="bold" '
              f'fill="#0b0b0b">{esc(title)}</text>')
-  svg.append(f'<text x="{PAD_L}" y="92" font-size="24" fill="#52514e">'
+  svg.append(f'<text x="{PAD_L}" y="155" font-size="40" fill="#52514e">'
              f'{esc(sub)}</text>')
 
   # legend -- skipped for a single series (its color is unambiguous from the
   # title/subtitle alone, per the one-series-no-legend-box rule)
   if len(keys) > 1:
-    ly = 145
+    ly = 250
     lx = PAD_L
     for key in keys:
-      svg.append(f'<line x1="{lx}" y1="{ly - 7}" x2="{lx + 40}" y2="{ly - 7}" '
-                 f'stroke="{COLOR[key]}" stroke-width="5"/>')
-      svg.append(f'<text x="{lx + 50}" y="{ly}" font-size="24" fill="#52514e">'
+      svg.append(f'<line x1="{lx}" y1="{ly - 12}" x2="{lx + 70}" y2="{ly - 12}" '
+                 f'stroke="{COLOR[key]}" stroke-width="10"/>')
+      svg.append(f'<text x="{lx + 84}" y="{ly}" font-size="40" fill="#52514e">'
                  f'{esc(NAME[key])}</text>')
-      lx += 50 + 15 * len(NAME[key]) + 60
+      lx += 84 + 25 * len(NAME[key]) + 90
 
   # gridlines + y ticks
   for v in (0.0, 0.25, 0.5, 0.75, 1.0):
     y = sy(v)
     stroke = '#c3c2b7' if v == 0 else '#e1e0d9'
     svg.append(f'<line x1="{PAD_L}" y1="{y:.1f}" x2="{S - PAD_R}" y2="{y:.1f}" '
-               f'stroke="{stroke}" stroke-width="1"/>')
-    svg.append(f'<text x="{PAD_L - 16}" y="{y + 7:.1f}" font-size="21" '
+               f'stroke="{stroke}" stroke-width="1.5"/>')
+    svg.append(f'<text x="{PAD_L - 26}" y="{y + 13:.1f}" font-size="34" '
                f'text-anchor="end" fill="#898781">{v:.2f}</text>')
 
   # x ticks
   for i, t in enumerate(TARGETS):
     x = sx(i)
-    svg.append(f'<text x="{x:.1f}" y="{S - PAD_B + 36:.1f}" font-size="21" '
+    svg.append(f'<text x="{x:.1f}" y="{S - PAD_B + 56:.1f}" font-size="34" '
                f'text-anchor="middle" fill="#898781">{t:.1f}</text>')
-  svg.append(f'<text x="{PAD_L + PLOT / 2:.1f}" y="{S - 34}" font-size="24" '
+  svg.append(f'<text x="{PAD_L + PLOT / 2:.1f}" y="{S - 60}" font-size="40" '
              f'text-anchor="middle" fill="#52514e">{esc(x_label)}</text>')
-  svg.append(f'<text x="34" y="{PAD_T + plot_h / 2:.1f}" font-size="24" '
+  svg.append(f'<text x="60" y="{PAD_T + plot_h / 2:.1f}" font-size="40" '
              f'text-anchor="middle" fill="#52514e" '
-             f'transform="rotate(-90 34 {PAD_T + plot_h / 2:.1f})">'
+             f'transform="rotate(-90 60 {PAD_T + plot_h / 2:.1f})">'
              f'{esc(y_label)}</text>')
 
   for key in keys:
@@ -114,20 +114,20 @@ def build(data, title, sub, x_label, y_label, out_base, keys=('director', 'somli
                  f'stroke="none"/>')
       line_pts = ' '.join(f'{sx(i):.1f},{sy(d["mean"][i]):.1f}' for i in seg)
       svg.append(f'<polyline points="{line_pts}" fill="none" stroke="{color}" '
-                 f'stroke-width="4" stroke-linejoin="round" '
+                 f'stroke-width="7" stroke-linejoin="round" '
                  f'stroke-linecap="round"/>')
     for i, m in enumerate(d['mean']):
       if m is None:
         continue
-      svg.append(f'<circle cx="{sx(i):.1f}" cy="{sy(m):.1f}" r="7.5" '
-                 f'fill="{color}" stroke="white" stroke-width="3"/>')
+      svg.append(f'<circle cx="{sx(i):.1f}" cy="{sy(m):.1f}" r="13" '
+                 f'fill="{color}" stroke="white" stroke-width="5"/>')
     last = max(i for i, m in enumerate(d['mean']) if m is not None)
     # nudge the two end labels apart vertically so close-converging curves
     # (both arms end near 1.0 in the codes->state chart) don't overlap
-    nudge = -10 if key == 'director' else 22
-    svg.append(f'<text x="{sx(last) + 14:.1f}" '
-               f'y="{sy(d["mean"][last]) + 8 + nudge:.1f}" '
-               f'font-size="26" font-weight="bold" fill="{color}">'
+    nudge = -18 if key == 'director' else 38
+    svg.append(f'<text x="{sx(last) + 24:.1f}" '
+               f'y="{sy(d["mean"][last]) + 14 + nudge:.1f}" '
+               f'font-size="46" font-weight="bold" fill="{color}">'
                f'{d["mean"][last]:.2f}</text>')
 
   svg.append('</svg>')

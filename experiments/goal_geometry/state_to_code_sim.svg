@@ -1,57 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" font-family="Helvetica,Arial,sans-serif">
-<rect x="0" y="0" width="1200" height="1200" fill="white"/>
-<text x="140" y="54" font-size="38" font-weight="bold" fill="#0b0b0b">States this similar -&gt; code similarity</text>
-<text x="140" y="92" font-size="24" fill="#52514e">hopper_stand, pooled over 4 seeds, error bands = +/-1 std</text>
-<line x1="140" y1="138" x2="180" y2="138" stroke="#2a78d6" stroke-width="5"/>
-<text x="190" y="145" font-size="24" fill="#52514e">Director</text>
-<line x1="370" y1="138" x2="410" y2="138" stroke="#eb6834" stroke-width="5"/>
-<text x="420" y="145" font-size="24" fill="#52514e">SOM-line + LiP</text>
-<line x1="140" y1="1050.0" x2="1090" y2="1050.0" stroke="#c3c2b7" stroke-width="1"/>
-<text x="124" y="1057.0" font-size="21" text-anchor="end" fill="#898781">0.00</text>
-<line x1="140" y1="835.0" x2="1090" y2="835.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="842.0" font-size="21" text-anchor="end" fill="#898781">0.25</text>
-<line x1="140" y1="620.0" x2="1090" y2="620.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="627.0" font-size="21" text-anchor="end" fill="#898781">0.50</text>
-<line x1="140" y1="405.0" x2="1090" y2="405.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="412.0" font-size="21" text-anchor="end" fill="#898781">0.75</text>
-<line x1="140" y1="190.0" x2="1090" y2="190.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="124" y="197.0" font-size="21" text-anchor="end" fill="#898781">1.00</text>
-<text x="140.0" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.1</text>
-<text x="245.6" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.2</text>
-<text x="351.1" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.3</text>
-<text x="456.7" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.4</text>
-<text x="562.2" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.5</text>
-<text x="667.8" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.6</text>
-<text x="773.3" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.7</text>
-<text x="878.9" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.8</text>
-<text x="984.4" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">0.9</text>
-<text x="1090.0" y="1086.0" font-size="21" text-anchor="middle" fill="#898781">1.0</text>
-<text x="615.0" y="1166" font-size="24" text-anchor="middle" fill="#52514e">goal-state similarity bin</text>
-<text x="34" y="620.0" font-size="24" text-anchor="middle" fill="#52514e" transform="rotate(-90 34 620.0)">soft-code similarity</text>
-<polygon points="140.0,874.6 245.6,854.8 351.1,855.6 456.7,854.8 562.2,833.3 667.8,826.4 773.3,834.1 878.9,817.8 984.4,681.9 1090.0,477.2 1090.0,769.6 984.4,905.5 878.9,969.2 773.3,980.3 667.8,974.3 562.2,977.8 456.7,987.2 351.1,982.9 245.6,982.1 140.0,984.6" fill="#2a78d6" fill-opacity="0.13" stroke="none"/>
-<polyline points="140.0,929.6 245.6,918.4 351.1,919.3 456.7,921.0 562.2,905.5 667.8,900.4 773.3,907.2 878.9,893.5 984.4,793.7 1090.0,623.4" fill="none" stroke="#2a78d6" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="140.0" cy="929.6" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="245.6" cy="918.4" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="351.1" cy="919.3" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="456.7" cy="921.0" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="562.2" cy="905.5" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="667.8" cy="900.4" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="773.3" cy="907.2" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="878.9" cy="893.5" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="984.4" cy="793.7" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<circle cx="1090.0" cy="623.4" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
-<text x="1104.0" y="621.4" font-size="26" font-weight="bold" fill="#2a78d6">0.50</text>
-<polygon points="140.0,688.8 245.6,707.7 351.1,665.6 456.7,684.5 562.2,683.6 667.8,636.3 773.3,577.9 878.9,482.4 984.4,353.4 1090.0,264.8 1090.0,445.4 984.4,559.8 878.9,709.4 773.3,779.1 667.8,841.0 562.2,862.5 456.7,892.6 351.1,882.3 245.6,884.9 140.0,878.0" fill="#eb6834" fill-opacity="0.13" stroke="none"/>
-<polyline points="140.0,783.4 245.6,796.3 351.1,773.9 456.7,788.6 562.2,773.1 667.8,738.7 773.3,678.5 878.9,595.9 984.4,456.6 1090.0,355.1" fill="none" stroke="#eb6834" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="140.0" cy="783.4" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="245.6" cy="796.3" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="351.1" cy="773.9" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="456.7" cy="788.6" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="562.2" cy="773.1" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="667.8" cy="738.7" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="773.3" cy="678.5" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="878.9" cy="595.9" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="984.4" cy="456.6" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="1090.0" cy="355.1" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<text x="1104.0" y="385.1" font-size="26" font-weight="bold" fill="#eb6834">0.81</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000" viewBox="0 0 2000 2000" font-family="Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="2000" height="2000" fill="white"/>
+<text x="320" y="90" font-size="66" font-weight="bold" fill="#0b0b0b">States this similar -&gt; code similarity</text>
+<text x="320" y="155" font-size="40" fill="#52514e">hopper_stand, pooled over 4 seeds, error bands = +/-1 std</text>
+<line x1="320" y1="238" x2="390" y2="238" stroke="#2a78d6" stroke-width="10"/>
+<text x="404" y="250" font-size="40" fill="#52514e">Director</text>
+<line x1="694" y1="238" x2="764" y2="238" stroke="#eb6834" stroke-width="10"/>
+<text x="778" y="250" font-size="40" fill="#52514e">SOM-line + LiP</text>
+<line x1="320" y1="1680.0" x2="1740" y2="1680.0" stroke="#c3c2b7" stroke-width="1.5"/>
+<text x="294" y="1693.0" font-size="34" text-anchor="end" fill="#898781">0.00</text>
+<line x1="320" y1="1365.0" x2="1740" y2="1365.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="1378.0" font-size="34" text-anchor="end" fill="#898781">0.25</text>
+<line x1="320" y1="1050.0" x2="1740" y2="1050.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="1063.0" font-size="34" text-anchor="end" fill="#898781">0.50</text>
+<line x1="320" y1="735.0" x2="1740" y2="735.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="748.0" font-size="34" text-anchor="end" fill="#898781">0.75</text>
+<line x1="320" y1="420.0" x2="1740" y2="420.0" stroke="#e1e0d9" stroke-width="1.5"/>
+<text x="294" y="433.0" font-size="34" text-anchor="end" fill="#898781">1.00</text>
+<text x="320.0" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.1</text>
+<text x="477.8" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.2</text>
+<text x="635.6" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.3</text>
+<text x="793.3" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.4</text>
+<text x="951.1" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.5</text>
+<text x="1108.9" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.6</text>
+<text x="1266.7" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.7</text>
+<text x="1424.4" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.8</text>
+<text x="1582.2" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.9</text>
+<text x="1740.0" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">1.0</text>
+<text x="1030.0" y="1940" font-size="40" text-anchor="middle" fill="#52514e">goal-state similarity bin</text>
+<text x="60" y="1050.0" font-size="40" text-anchor="middle" fill="#52514e" transform="rotate(-90 60 1050.0)">soft-code similarity</text>
+<polygon points="320.0,1423.0 477.8,1394.0 635.6,1395.2 793.3,1394.0 951.1,1362.5 1108.9,1352.4 1266.7,1363.7 1424.4,1339.8 1582.2,1140.7 1740.0,840.8 1740.0,1269.2 1582.2,1468.3 1424.4,1561.6 1266.7,1577.9 1108.9,1569.1 951.1,1574.2 793.3,1588.0 635.6,1581.7 477.8,1580.5 320.0,1584.2" fill="#2a78d6" fill-opacity="0.13" stroke="none"/>
+<polyline points="320.0,1503.6 477.8,1487.2 635.6,1488.5 793.3,1491.0 951.1,1468.3 1108.9,1460.8 1266.7,1470.8 1424.4,1450.7 1582.2,1304.5 1740.0,1055.0" fill="none" stroke="#2a78d6" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="320.0" cy="1503.6" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="477.8" cy="1487.2" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="635.6" cy="1488.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="793.3" cy="1491.0" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="951.1" cy="1468.3" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1108.9" cy="1460.8" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1266.7" cy="1470.8" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1424.4" cy="1450.7" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1582.2" cy="1304.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<circle cx="1740.0" cy="1055.0" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
+<text x="1764.0" y="1051.0" font-size="46" font-weight="bold" fill="#2a78d6">0.50</text>
+<polygon points="320.0,1150.8 477.8,1178.5 635.6,1116.8 793.3,1144.5 951.1,1143.2 1108.9,1073.9 1266.7,988.3 1424.4,848.4 1582.2,659.4 1740.0,529.6 1740.0,794.2 1582.2,961.8 1424.4,1181.0 1266.7,1283.1 1108.9,1373.8 951.1,1405.3 793.3,1449.4 635.6,1434.3 477.8,1438.1 320.0,1428.0" fill="#eb6834" fill-opacity="0.13" stroke="none"/>
+<polyline points="320.0,1289.4 477.8,1308.3 635.6,1275.5 793.3,1297.0 951.1,1274.3 1108.9,1223.9 1266.7,1135.7 1424.4,1014.7 1582.2,810.6 1740.0,661.9" fill="none" stroke="#eb6834" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="320.0" cy="1289.4" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="477.8" cy="1308.3" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="635.6" cy="1275.5" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="793.3" cy="1297.0" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="951.1" cy="1274.3" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="1108.9" cy="1223.9" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="1266.7" cy="1135.7" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="1424.4" cy="1014.7" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="1582.2" cy="810.6" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<circle cx="1740.0" cy="661.9" r="13" fill="#eb6834" stroke="white" stroke-width="5"/>
+<text x="1764.0" y="713.9" font-size="46" font-weight="bold" fill="#eb6834">0.81</text>
 </svg>
