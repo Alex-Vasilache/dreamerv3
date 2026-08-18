@@ -32,8 +32,8 @@ DATA2 = {  # hard-code sim bin -> state-sim
 COLOR = {'director': '#2a78d6', 'somlip': '#eb6834'}
 NAME = {'director': 'Director', 'somlip': 'SOM-line + LiP'}
 
-S = 1000  # square canvas
-PAD_L, PAD_R, PAD_T, PAD_B = 90, 40, 110, 90
+S = 1200  # square canvas
+PAD_L, PAD_R, PAD_T, PAD_B = 140, 110, 190, 150
 PLOT = S - PAD_L - PAD_R  # also used for height since square interior
 
 
@@ -41,7 +41,7 @@ def esc(s):
   return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-def build(data, title, sub, x_label, y_label, out_base):
+def build(data, title, sub, x_label, y_label, out_base, keys=('director', 'somlip')):
   plot_h = S - PAD_T - PAD_B
 
   def sx(i):
@@ -54,20 +54,22 @@ def build(data, title, sub, x_label, y_label, out_base):
          f'viewBox="0 0 {S} {S}" font-family="Helvetica,Arial,sans-serif">',
          f'<rect x="0" y="0" width="{S}" height="{S}" fill="white"/>']
 
-  svg.append(f'<text x="{PAD_L}" y="34" font-size="21" font-weight="bold" '
+  svg.append(f'<text x="{PAD_L}" y="54" font-size="38" font-weight="bold" '
              f'fill="#0b0b0b">{esc(title)}</text>')
-  svg.append(f'<text x="{PAD_L}" y="56" font-size="13.5" fill="#52514e">'
+  svg.append(f'<text x="{PAD_L}" y="92" font-size="24" fill="#52514e">'
              f'{esc(sub)}</text>')
 
-  # legend
-  ly = 82
-  lx = PAD_L
-  for key in ('director', 'somlip'):
-    svg.append(f'<line x1="{lx}" y1="{ly - 4}" x2="{lx + 22}" y2="{ly - 4}" '
-               f'stroke="{COLOR[key]}" stroke-width="3"/>')
-    svg.append(f'<text x="{lx + 28}" y="{ly}" font-size="13" fill="#52514e">'
-               f'{esc(NAME[key])}</text>')
-    lx += 28 + 9 * len(NAME[key]) + 34
+  # legend -- skipped for a single series (its color is unambiguous from the
+  # title/subtitle alone, per the one-series-no-legend-box rule)
+  if len(keys) > 1:
+    ly = 145
+    lx = PAD_L
+    for key in keys:
+      svg.append(f'<line x1="{lx}" y1="{ly - 7}" x2="{lx + 40}" y2="{ly - 7}" '
+                 f'stroke="{COLOR[key]}" stroke-width="5"/>')
+      svg.append(f'<text x="{lx + 50}" y="{ly}" font-size="24" fill="#52514e">'
+                 f'{esc(NAME[key])}</text>')
+      lx += 50 + 15 * len(NAME[key]) + 60
 
   # gridlines + y ticks
   for v in (0.0, 0.25, 0.5, 0.75, 1.0):
@@ -75,22 +77,22 @@ def build(data, title, sub, x_label, y_label, out_base):
     stroke = '#c3c2b7' if v == 0 else '#e1e0d9'
     svg.append(f'<line x1="{PAD_L}" y1="{y:.1f}" x2="{S - PAD_R}" y2="{y:.1f}" '
                f'stroke="{stroke}" stroke-width="1"/>')
-    svg.append(f'<text x="{PAD_L - 10}" y="{y + 4:.1f}" font-size="12" '
+    svg.append(f'<text x="{PAD_L - 16}" y="{y + 7:.1f}" font-size="21" '
                f'text-anchor="end" fill="#898781">{v:.2f}</text>')
 
   # x ticks
   for i, t in enumerate(TARGETS):
     x = sx(i)
-    svg.append(f'<text x="{x:.1f}" y="{S - PAD_B + 22:.1f}" font-size="12" '
+    svg.append(f'<text x="{x:.1f}" y="{S - PAD_B + 36:.1f}" font-size="21" '
                f'text-anchor="middle" fill="#898781">{t:.1f}</text>')
-  svg.append(f'<text x="{PAD_L + PLOT / 2:.1f}" y="{S - 24}" font-size="13" '
+  svg.append(f'<text x="{PAD_L + PLOT / 2:.1f}" y="{S - 34}" font-size="24" '
              f'text-anchor="middle" fill="#52514e">{esc(x_label)}</text>')
-  svg.append(f'<text x="20" y="{PAD_T + plot_h / 2:.1f}" font-size="13" '
+  svg.append(f'<text x="34" y="{PAD_T + plot_h / 2:.1f}" font-size="24" '
              f'text-anchor="middle" fill="#52514e" '
-             f'transform="rotate(-90 20 {PAD_T + plot_h / 2:.1f})">'
+             f'transform="rotate(-90 34 {PAD_T + plot_h / 2:.1f})">'
              f'{esc(y_label)}</text>')
 
-  for key in ('director', 'somlip'):
+  for key in keys:
     d = data[key]
     color = COLOR[key]
     segs, cur = [], []
@@ -112,33 +114,49 @@ def build(data, title, sub, x_label, y_label, out_base):
                  f'stroke="none"/>')
       line_pts = ' '.join(f'{sx(i):.1f},{sy(d["mean"][i]):.1f}' for i in seg)
       svg.append(f'<polyline points="{line_pts}" fill="none" stroke="{color}" '
-                 f'stroke-width="2.6" stroke-linejoin="round" '
+                 f'stroke-width="4" stroke-linejoin="round" '
                  f'stroke-linecap="round"/>')
     for i, m in enumerate(d['mean']):
       if m is None:
         continue
-      svg.append(f'<circle cx="{sx(i):.1f}" cy="{sy(m):.1f}" r="5" '
-                 f'fill="{color}" stroke="white" stroke-width="2"/>')
+      svg.append(f'<circle cx="{sx(i):.1f}" cy="{sy(m):.1f}" r="7.5" '
+                 f'fill="{color}" stroke="white" stroke-width="3"/>')
     last = max(i for i, m in enumerate(d['mean']) if m is not None)
-    svg.append(f'<text x="{sx(last) + 10:.1f}" y="{sy(d["mean"][last]) + 4:.1f}" '
-               f'font-size="14" font-weight="bold" fill="{color}">'
+    # nudge the two end labels apart vertically so close-converging curves
+    # (both arms end near 1.0 in the codes->state chart) don't overlap
+    nudge = -10 if key == 'director' else 22
+    svg.append(f'<text x="{sx(last) + 14:.1f}" '
+               f'y="{sy(d["mean"][last]) + 8 + nudge:.1f}" '
+               f'font-size="26" font-weight="bold" fill="{color}">'
                f'{d["mean"][last]:.2f}</text>')
 
   svg.append('</svg>')
   base = pathlib.Path(out_base)
   base.with_suffix('.svg').write_text('\n'.join(svg))
-  subprocess.run(['rsvg-convert', '-f', 'png', '-w', '1000', '-h', '1000',
+  subprocess.run(['rsvg-convert', '-f', 'png', '-w', str(S), '-h', str(S),
                   '-o', str(base.with_suffix('.png')), str(base.with_suffix('.svg'))],
                  check=True)
   print('wrote', base.with_suffix('.png'))
 
 
+HERE = pathlib.Path(__file__).resolve().parent
+
 build(DATA1, 'States this similar -> code similarity',
       'hopper_stand, pooled over 4 seeds, error bands = +/-1 std',
       'goal-state similarity bin', 'soft-code similarity',
-      '/home/g/george-vasilache/.claude/jobs/9dc8f8d0/tmp/state_to_code_sim')
+      str(HERE / 'state_to_code_sim'))
 
 build(DATA2, 'Codes this similar -> state similarity',
       'hopper_stand, pooled over 4 seeds, error bands = +/-1 std',
       'hard-code similarity bin', 'goal-state similarity',
-      '/home/g/george-vasilache/.claude/jobs/9dc8f8d0/tmp/code_to_state_sim')
+      str(HERE / 'code_to_state_sim'))
+
+build(DATA1, 'States this similar -> code similarity (Director)',
+      'hopper_stand, pooled over 4 seeds, error band = +/-1 std',
+      'goal-state similarity bin', 'soft-code similarity',
+      str(HERE / 'state_to_code_sim_director_only'), keys=('director',))
+
+build(DATA2, 'Codes this similar -> state similarity (Director)',
+      'hopper_stand, pooled over 4 seeds, error band = +/-1 std',
+      'hard-code similarity bin', 'goal-state similarity',
+      str(HERE / 'code_to_state_sim_director_only'), keys=('director',))

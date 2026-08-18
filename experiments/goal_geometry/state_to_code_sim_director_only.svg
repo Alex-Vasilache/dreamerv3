@@ -1,11 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" font-family="Helvetica,Arial,sans-serif">
 <rect x="0" y="0" width="1200" height="1200" fill="white"/>
-<text x="140" y="54" font-size="38" font-weight="bold" fill="#0b0b0b">States this similar -&gt; code similarity</text>
-<text x="140" y="92" font-size="24" fill="#52514e">hopper_stand, pooled over 4 seeds, error bands = +/-1 std</text>
-<line x1="140" y1="138" x2="180" y2="138" stroke="#2a78d6" stroke-width="5"/>
-<text x="190" y="145" font-size="24" fill="#52514e">Director</text>
-<line x1="370" y1="138" x2="410" y2="138" stroke="#eb6834" stroke-width="5"/>
-<text x="420" y="145" font-size="24" fill="#52514e">SOM-line + LiP</text>
+<text x="140" y="54" font-size="38" font-weight="bold" fill="#0b0b0b">States this similar -&gt; code similarity (Director)</text>
+<text x="140" y="92" font-size="24" fill="#52514e">hopper_stand, pooled over 4 seeds, error band = +/-1 std</text>
 <line x1="140" y1="1050.0" x2="1090" y2="1050.0" stroke="#c3c2b7" stroke-width="1"/>
 <text x="124" y="1057.0" font-size="21" text-anchor="end" fill="#898781">0.00</text>
 <line x1="140" y1="835.0" x2="1090" y2="835.0" stroke="#e1e0d9" stroke-width="1"/>
@@ -41,17 +37,4 @@
 <circle cx="984.4" cy="793.7" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
 <circle cx="1090.0" cy="623.4" r="7.5" fill="#2a78d6" stroke="white" stroke-width="3"/>
 <text x="1104.0" y="621.4" font-size="26" font-weight="bold" fill="#2a78d6">0.50</text>
-<polygon points="140.0,688.8 245.6,707.7 351.1,665.6 456.7,684.5 562.2,683.6 667.8,636.3 773.3,577.9 878.9,482.4 984.4,353.4 1090.0,264.8 1090.0,445.4 984.4,559.8 878.9,709.4 773.3,779.1 667.8,841.0 562.2,862.5 456.7,892.6 351.1,882.3 245.6,884.9 140.0,878.0" fill="#eb6834" fill-opacity="0.13" stroke="none"/>
-<polyline points="140.0,783.4 245.6,796.3 351.1,773.9 456.7,788.6 562.2,773.1 667.8,738.7 773.3,678.5 878.9,595.9 984.4,456.6 1090.0,355.1" fill="none" stroke="#eb6834" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="140.0" cy="783.4" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="245.6" cy="796.3" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="351.1" cy="773.9" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="456.7" cy="788.6" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="562.2" cy="773.1" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="667.8" cy="738.7" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="773.3" cy="678.5" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="878.9" cy="595.9" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="984.4" cy="456.6" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<circle cx="1090.0" cy="355.1" r="7.5" fill="#eb6834" stroke="white" stroke-width="3"/>
-<text x="1104.0" y="385.1" font-size="26" font-weight="bold" fill="#eb6834">0.81</text>
 </svg>
