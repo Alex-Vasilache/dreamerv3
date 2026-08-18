@@ -1,40 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="2000" viewBox="0 0 2000 2000" font-family="Helvetica,Arial,sans-serif">
-<rect x="0" y="0" width="2000" height="2000" fill="white"/>
-<text x="320" y="90" font-size="66" font-weight="bold" fill="#0b0b0b">States this similar -&gt; code similarity (Director)</text>
-<text x="320" y="155" font-size="40" fill="#52514e">hopper_stand, pooled over 4 seeds, error band = +/-1 std</text>
-<line x1="320" y1="1680.0" x2="1740" y2="1680.0" stroke="#c3c2b7" stroke-width="1.5"/>
-<text x="294" y="1693.0" font-size="34" text-anchor="end" fill="#898781">0.00</text>
-<line x1="320" y1="1365.0" x2="1740" y2="1365.0" stroke="#e1e0d9" stroke-width="1.5"/>
-<text x="294" y="1378.0" font-size="34" text-anchor="end" fill="#898781">0.25</text>
-<line x1="320" y1="1050.0" x2="1740" y2="1050.0" stroke="#e1e0d9" stroke-width="1.5"/>
-<text x="294" y="1063.0" font-size="34" text-anchor="end" fill="#898781">0.50</text>
-<line x1="320" y1="735.0" x2="1740" y2="735.0" stroke="#e1e0d9" stroke-width="1.5"/>
-<text x="294" y="748.0" font-size="34" text-anchor="end" fill="#898781">0.75</text>
-<line x1="320" y1="420.0" x2="1740" y2="420.0" stroke="#e1e0d9" stroke-width="1.5"/>
-<text x="294" y="433.0" font-size="34" text-anchor="end" fill="#898781">1.00</text>
-<text x="320.0" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.1</text>
-<text x="477.8" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.2</text>
-<text x="635.6" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.3</text>
-<text x="793.3" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.4</text>
-<text x="951.1" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.5</text>
-<text x="1108.9" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.6</text>
-<text x="1266.7" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.7</text>
-<text x="1424.4" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.8</text>
-<text x="1582.2" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">0.9</text>
-<text x="1740.0" y="1736.0" font-size="34" text-anchor="middle" fill="#898781">1.0</text>
-<text x="1030.0" y="1940" font-size="40" text-anchor="middle" fill="#52514e">goal-state similarity bin</text>
-<text x="60" y="1050.0" font-size="40" text-anchor="middle" fill="#52514e" transform="rotate(-90 60 1050.0)">soft-code similarity</text>
-<polygon points="320.0,1423.0 477.8,1394.0 635.6,1395.2 793.3,1394.0 951.1,1362.5 1108.9,1352.4 1266.7,1363.7 1424.4,1339.8 1582.2,1140.7 1740.0,840.8 1740.0,1269.2 1582.2,1468.3 1424.4,1561.6 1266.7,1577.9 1108.9,1569.1 951.1,1574.2 793.3,1588.0 635.6,1581.7 477.8,1580.5 320.0,1584.2" fill="#2a78d6" fill-opacity="0.13" stroke="none"/>
-<polyline points="320.0,1503.6 477.8,1487.2 635.6,1488.5 793.3,1491.0 951.1,1468.3 1108.9,1460.8 1266.7,1470.8 1424.4,1450.7 1582.2,1304.5 1740.0,1055.0" fill="none" stroke="#2a78d6" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
-<circle cx="320.0" cy="1503.6" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="477.8" cy="1487.2" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="635.6" cy="1488.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="793.3" cy="1491.0" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="951.1" cy="1468.3" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="1108.9" cy="1460.8" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="1266.7" cy="1470.8" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="1424.4" cy="1450.7" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="1582.2" cy="1304.5" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<circle cx="1740.0" cy="1055.0" r="13" fill="#2a78d6" stroke="white" stroke-width="5"/>
-<text x="1764.0" y="1051.0" font-size="46" font-weight="bold" fill="#2a78d6">0.50</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000" font-family="Helvetica,Arial,sans-serif">
+<rect x="0" y="0" width="1000" height="1000" fill="white"/>
+<text x="190" y="58" font-size="26.0" font-weight="bold" fill="#000000">States this similar -&gt; code similarity (Director)</text>
+<text x="190" y="98" font-size="24" fill="#1a1a1a">hopper_stand, pooled over 4 seeds, error band = +/-1 std</text>
+<line x1="190" y1="810.0" x2="810" y2="810.0" stroke="#5c5b56" stroke-width="2.5"/>
+<text x="174" y="818.0" font-size="21" font-weight="600" text-anchor="end" fill="#000000">0.00</text>
+<line x1="190" y1="672.5" x2="810" y2="672.5" stroke="#b0afa8" stroke-width="1.5"/>
+<text x="174" y="680.5" font-size="21" font-weight="600" text-anchor="end" fill="#000000">0.25</text>
+<line x1="190" y1="535.0" x2="810" y2="535.0" stroke="#b0afa8" stroke-width="1.5"/>
+<text x="174" y="543.0" font-size="21" font-weight="600" text-anchor="end" fill="#000000">0.50</text>
+<line x1="190" y1="397.5" x2="810" y2="397.5" stroke="#b0afa8" stroke-width="1.5"/>
+<text x="174" y="405.5" font-size="21" font-weight="600" text-anchor="end" fill="#000000">0.75</text>
+<line x1="190" y1="260.0" x2="810" y2="260.0" stroke="#b0afa8" stroke-width="1.5"/>
+<text x="174" y="268.0" font-size="21" font-weight="600" text-anchor="end" fill="#000000">1.00</text>
+<text x="190.0" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.1</text>
+<text x="258.9" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.2</text>
+<text x="327.8" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.3</text>
+<text x="396.7" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.4</text>
+<text x="465.6" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.5</text>
+<text x="534.4" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.6</text>
+<text x="603.3" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.7</text>
+<text x="672.2" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.8</text>
+<text x="741.1" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">0.9</text>
+<text x="810.0" y="844.0" font-size="21" font-weight="600" text-anchor="middle" fill="#000000">1.0</text>
+<text x="500.0" y="964" font-size="24" font-weight="600" text-anchor="middle" fill="#000000">goal-state similarity bin</text>
+<text x="34" y="535.0" font-size="24" font-weight="600" text-anchor="middle" fill="#000000" transform="rotate(-90 34 535.0)">soft-code similarity</text>
+<polygon points="190.0,697.8 258.9,685.2 327.8,685.7 396.7,685.2 465.6,671.4 534.4,667.0 603.3,672.0 672.2,661.5 741.1,574.6 810.0,443.7 810.0,630.7 741.1,717.6 672.2,758.3 603.3,765.5 534.4,761.6 465.6,763.8 396.7,769.9 327.8,767.1 258.9,766.5 190.0,768.2" fill="#2a78d6" fill-opacity="0.20" stroke="none"/>
+<polyline points="190.0,733.0 258.9,725.8 327.8,726.4 396.7,727.5 465.6,717.6 534.4,714.3 603.3,718.7 672.2,709.9 741.1,646.1 810.0,537.2" fill="none" stroke="#2a78d6" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="190.0" cy="733.0" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="258.9" cy="725.8" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="327.8" cy="726.4" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="396.7" cy="727.5" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="465.6" cy="717.6" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="534.4" cy="714.3" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="603.3" cy="718.7" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="672.2" cy="709.9" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="741.1" cy="646.1" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<circle cx="810.0" cy="537.2" r="9" fill="#2a78d6" stroke="white" stroke-width="3.5"/>
+<text x="826.0" y="534.2" font-size="30" font-weight="bold" fill="#2a78d6">0.50</text>
 </svg>

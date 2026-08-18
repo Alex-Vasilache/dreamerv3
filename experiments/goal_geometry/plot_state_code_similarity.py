@@ -32,9 +32,18 @@ DATA2 = {  # hard-code sim bin -> state-sim
 COLOR = {'director': '#2a78d6', 'somlip': '#eb6834'}
 NAME = {'director': 'Director', 'somlip': 'SOM-line + LiP'}
 
-S = 2000  # square canvas
-PAD_L, PAD_R, PAD_T, PAD_B = 320, 260, 420, 320
+S = 1000  # viewBox units == output pixels (1000x1000, per the request)
+DPI = 300  # embedded density tag (rsvg-convert default is 90) -- print-quality
+PAD_L, PAD_R, PAD_T, PAD_B = 190, 190, 260, 190
 PLOT = S - PAD_L - PAD_R  # also used for height since square interior
+
+# High-contrast ink: pure/near-black text and darker gridlines instead of the
+# lighter secondary/muted grays used at the previous size, so the chart still
+# reads at a glance when scaled down or viewed on a dim screen.
+INK = '#000000'
+INK_2 = '#1a1a1a'
+GRID = '#b0afa8'
+BASELINE = '#5c5b56'
 
 
 def esc(s):
@@ -54,42 +63,47 @@ def build(data, title, sub, x_label, y_label, out_base, keys=('director', 'somli
          f'viewBox="0 0 {S} {S}" font-family="Helvetica,Arial,sans-serif">',
          f'<rect x="0" y="0" width="{S}" height="{S}" fill="white"/>']
 
-  svg.append(f'<text x="{PAD_L}" y="90" font-size="66" font-weight="bold" '
-             f'fill="#0b0b0b">{esc(title)}</text>')
-  svg.append(f'<text x="{PAD_L}" y="155" font-size="40" fill="#52514e">'
+  # Fit the title to the fixed 1000px canvas -- the "(Director)" suffix
+  # otherwise runs the bold title past the right edge at a flat font size.
+  title_budget = S - PAD_L - 20
+  title_size = min(42, title_budget / (0.62 * len(title)))
+  svg.append(f'<text x="{PAD_L}" y="58" font-size="{title_size:.1f}" '
+             f'font-weight="bold" fill="{INK}">{esc(title)}</text>')
+  svg.append(f'<text x="{PAD_L}" y="98" font-size="24" fill="{INK_2}">'
              f'{esc(sub)}</text>')
 
   # legend -- skipped for a single series (its color is unambiguous from the
   # title/subtitle alone, per the one-series-no-legend-box rule)
   if len(keys) > 1:
-    ly = 250
+    ly = 152
     lx = PAD_L
     for key in keys:
-      svg.append(f'<line x1="{lx}" y1="{ly - 12}" x2="{lx + 70}" y2="{ly - 12}" '
-                 f'stroke="{COLOR[key]}" stroke-width="10"/>')
-      svg.append(f'<text x="{lx + 84}" y="{ly}" font-size="40" fill="#52514e">'
-                 f'{esc(NAME[key])}</text>')
-      lx += 84 + 25 * len(NAME[key]) + 90
+      svg.append(f'<line x1="{lx}" y1="{ly - 8}" x2="{lx + 42}" y2="{ly - 8}" '
+                 f'stroke="{COLOR[key]}" stroke-width="7"/>')
+      svg.append(f'<text x="{lx + 52}" y="{ly}" font-size="24" '
+                 f'font-weight="600" fill="{INK}">{esc(NAME[key])}</text>')
+      lx += 52 + 15 * len(NAME[key]) + 54
 
   # gridlines + y ticks
   for v in (0.0, 0.25, 0.5, 0.75, 1.0):
     y = sy(v)
-    stroke = '#c3c2b7' if v == 0 else '#e1e0d9'
+    stroke = BASELINE if v == 0 else GRID
     svg.append(f'<line x1="{PAD_L}" y1="{y:.1f}" x2="{S - PAD_R}" y2="{y:.1f}" '
-               f'stroke="{stroke}" stroke-width="1.5"/>')
-    svg.append(f'<text x="{PAD_L - 26}" y="{y + 13:.1f}" font-size="34" '
-               f'text-anchor="end" fill="#898781">{v:.2f}</text>')
+               f'stroke="{stroke}" stroke-width="{1.5 if v else 2.5}"/>')
+    svg.append(f'<text x="{PAD_L - 16}" y="{y + 8:.1f}" font-size="21" '
+               f'font-weight="600" text-anchor="end" fill="{INK}">{v:.2f}</text>')
 
   # x ticks
   for i, t in enumerate(TARGETS):
     x = sx(i)
-    svg.append(f'<text x="{x:.1f}" y="{S - PAD_B + 56:.1f}" font-size="34" '
-               f'text-anchor="middle" fill="#898781">{t:.1f}</text>')
-  svg.append(f'<text x="{PAD_L + PLOT / 2:.1f}" y="{S - 60}" font-size="40" '
-             f'text-anchor="middle" fill="#52514e">{esc(x_label)}</text>')
-  svg.append(f'<text x="60" y="{PAD_T + plot_h / 2:.1f}" font-size="40" '
-             f'text-anchor="middle" fill="#52514e" '
-             f'transform="rotate(-90 60 {PAD_T + plot_h / 2:.1f})">'
+    svg.append(f'<text x="{x:.1f}" y="{S - PAD_B + 34:.1f}" font-size="21" '
+               f'font-weight="600" text-anchor="middle" fill="{INK}">{t:.1f}</text>')
+  svg.append(f'<text x="{PAD_L + PLOT / 2:.1f}" y="{S - 36}" font-size="24" '
+             f'font-weight="600" text-anchor="middle" fill="{INK}">'
+             f'{esc(x_label)}</text>')
+  svg.append(f'<text x="34" y="{PAD_T + plot_h / 2:.1f}" font-size="24" '
+             f'font-weight="600" text-anchor="middle" fill="{INK}" '
+             f'transform="rotate(-90 34 {PAD_T + plot_h / 2:.1f})">'
              f'{esc(y_label)}</text>')
 
   for key in keys:
@@ -110,30 +124,31 @@ def build(data, title, sub, x_label, y_label, out_base, keys=('director', 'somli
       bot = [(sx(i), sy(max(0.0, d['mean'][i] - d['std'][i]))) for i in reversed(seg)]
       pts = top + bot
       poly = ' '.join(f'{x:.1f},{y:.1f}' for x, y in pts)
-      svg.append(f'<polygon points="{poly}" fill="{color}" fill-opacity="0.13" '
+      svg.append(f'<polygon points="{poly}" fill="{color}" fill-opacity="0.20" '
                  f'stroke="none"/>')
       line_pts = ' '.join(f'{sx(i):.1f},{sy(d["mean"][i]):.1f}' for i in seg)
       svg.append(f'<polyline points="{line_pts}" fill="none" stroke="{color}" '
-                 f'stroke-width="7" stroke-linejoin="round" '
+                 f'stroke-width="5.5" stroke-linejoin="round" '
                  f'stroke-linecap="round"/>')
     for i, m in enumerate(d['mean']):
       if m is None:
         continue
-      svg.append(f'<circle cx="{sx(i):.1f}" cy="{sy(m):.1f}" r="13" '
-                 f'fill="{color}" stroke="white" stroke-width="5"/>')
+      svg.append(f'<circle cx="{sx(i):.1f}" cy="{sy(m):.1f}" r="9" '
+                 f'fill="{color}" stroke="white" stroke-width="3.5"/>')
     last = max(i for i, m in enumerate(d['mean']) if m is not None)
     # nudge the two end labels apart vertically so close-converging curves
     # (both arms end near 1.0 in the codes->state chart) don't overlap
-    nudge = -18 if key == 'director' else 38
-    svg.append(f'<text x="{sx(last) + 24:.1f}" '
-               f'y="{sy(d["mean"][last]) + 14 + nudge:.1f}" '
-               f'font-size="46" font-weight="bold" fill="{color}">'
+    nudge = -12 if key == 'director' else 24
+    svg.append(f'<text x="{sx(last) + 16:.1f}" '
+               f'y="{sy(d["mean"][last]) + 9 + nudge:.1f}" '
+               f'font-size="30" font-weight="bold" fill="{color}">'
                f'{d["mean"][last]:.2f}</text>')
 
   svg.append('</svg>')
   base = pathlib.Path(out_base)
   base.with_suffix('.svg').write_text('\n'.join(svg))
   subprocess.run(['rsvg-convert', '-f', 'png', '-w', str(S), '-h', str(S),
+                  '--dpi-x', str(DPI), '--dpi-y', str(DPI),
                   '-o', str(base.with_suffix('.png')), str(base.with_suffix('.svg'))],
                  check=True)
   print('wrote', base.with_suffix('.png'))
