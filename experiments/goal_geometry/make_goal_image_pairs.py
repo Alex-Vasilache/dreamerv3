@@ -213,25 +213,27 @@ def pick_pairs_binned(sim, targets, n_per_bin, rng, half_width=0.05):
 
 # ------------------------------------------------------------------ layout
 
-def build_grid(rows, cell_w, cell_h, margin_w, gap, bg=(30, 30, 30)):
-  """``rows``: list of lists of (img_i, img_j, label) tiles, one list per bin
-  row. Lays out a left label margin + one pair-block per sample, each
-  pair-block = img_i | small gap | img_j, with the similarity value stamped
-  underneath."""
-  n_cols = max((len(tiles) for _, tiles in rows), default=0)
+def build_grid(cols, cell_w, cell_h, margin_top, gap, bg=(30, 30, 30)):
+  """``cols``: list of (col_label, tiles), one entry per similarity bin, IN
+  THE ORDER THE CALLER WANTS LEFT TO RIGHT (ascending bin value). Lays out a
+  top label strip per column + one pair-block per sample stacked vertically
+  within that column, each pair-block = img_i | small gap | img_j, with the
+  OPPOSING similarity (not the one the column axis already encodes)
+  stamped underneath."""
+  n_rows = max((len(tiles) for _, tiles in cols), default=0)
   pair_w = 2 * cell_w + gap
-  row_h = cell_h + 22
-  W = margin_w + n_cols * (pair_w + gap)
-  H = len(rows) * (row_h + gap)
+  row_h = cell_h + 28
+  W = len(cols) * (pair_w + gap)
+  H = margin_top + n_rows * (row_h + gap)
   canvas = np.full((H, W, 3), bg, np.uint8)
-  for r, (row_label, tiles) in enumerate(rows):
-    y0 = r * (row_h + gap)
-    stamp_text(canvas, 4, y0 + cell_h // 2 - 5, row_label, (255, 255, 255), 2)
-    for c, (img_i, img_j, label) in enumerate(tiles):
-      x0 = margin_w + c * (pair_w + gap)
+  for c, (col_label, tiles) in enumerate(cols):
+    x0 = c * (pair_w + gap)
+    stamp_text(canvas, x0 + pair_w // 2 - 10, 4, col_label, (255, 255, 255), 2)
+    for r, (img_i, img_j, label) in enumerate(tiles):
+      y0 = margin_top + r * (row_h + gap)
       canvas[y0:y0 + cell_h, x0:x0 + cell_w] = img_i
       canvas[y0:y0 + cell_h, x0 + cell_w + gap:x0 + cell_w + gap + cell_w] = img_j
-      stamp_text(canvas, x0, y0 + cell_h + 4, label, (200, 200, 200), 1)
+      stamp_text(canvas, x0, y0 + cell_h + 5, label, (200, 200, 200), 2)
   return canvas
 
 
@@ -278,8 +280,9 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
   def upsample(imgs):
     return np.repeat(np.repeat(imgs, UPSAMPLE, 1), UPSAMPLE, 2)
 
-  # --- Panel A: hard code, full range 1.0 .. 0.2, decode through the code.
-  targets_a = [round(1.0 - 0.1 * k, 2) for k in range(9)]
+  # --- Panel A: hard code, full range 0.2 .. 1.0 left to right, decode
+  # through the code.
+  targets_a = [round(0.2 + 0.1 * k, 2) for k in range(9)]
   if som_on:
     # sim_hard is graded/continuous here (steps of 1/(L*(classes-1))); use a
     # tolerance window per target instead of snapping to a handful of levels.
@@ -291,15 +294,17 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
               pick_pairs_hard(sim_hard, targets_a, n_per_bin, rng)]
   goal_a = upsample(image(decode(onehot)))  # decode every code once, index below
   CH, CW = goal_a.shape[1:3]
-  rows_a = []
+  cols_a = []
   for t, pairs in bins_a:
     tiles = []
     for i, j in pairs:
-      tiles.append((goal_a[i], goal_a[j],
-                     f'{sim_hard[i, j]:.2f} {sim_goal[i, j]:.2f}'))
-    rows_a.append((f'{t:.1f}', tiles))
+      # Column axis is code similarity; the label is the OPPOSING number
+      # (goal-space similarity) only -- the code similarity is what the
+      # column position already says.
+      tiles.append((goal_a[i], goal_a[j], f'{sim_goal[i, j]:.2f}'))
+    cols_a.append((f'{t:.1f}', tiles))
     print(f'  [A hard] target={t:.2f} n_pairs={len(pairs)}')
-  canvas_a = build_grid(rows_a, CW, CH, MARGIN, GAP)
+  canvas_a = build_grid(cols_a, CW, CH, MARGIN, GAP)
   path_a = f'{out_prefix}_hard.png'
   write_png(path_a, canvas_a)
   print(f'wrote {path_a}  ({canvas_a.shape[1]}x{canvas_a.shape[0]})')
@@ -308,15 +313,16 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
   targets_b = [0.7, 0.8, 0.9, 1.0]
   bins_b = pick_pairs_binned(sim_goal, targets_b, n_per_bin, rng, half_width=0.05)
   goal_b = upsample(image(decode(soft)))  # soft (pre-sample) code, through goal_dec
-  rows_b = []
+  cols_b = []
   for t, pairs in bins_b:
     tiles = []
     for i, j in pairs:
-      tiles.append((goal_b[i], goal_b[j],
-                     f'{sim_soft[i, j]:.2f} {sim_goal[i, j]:.2f}'))
-    rows_b.append((f'{t:.1f}', tiles))
+      # Column axis is goal-space similarity; the label is the OPPOSING
+      # number (soft-code similarity) only.
+      tiles.append((goal_b[i], goal_b[j], f'{sim_soft[i, j]:.2f}'))
+    cols_b.append((f'{t:.1f}', tiles))
     print(f'  [B soft] goal-sim~={t:.2f} n_pairs={len(pairs)}')
-  canvas_b = build_grid(rows_b, CW, CH, MARGIN, GAP)
+  canvas_b = build_grid(cols_b, CW, CH, MARGIN, GAP)
   path_b = f'{out_prefix}_soft.png'
   write_png(path_b, canvas_b)
   print(f'wrote {path_b}  ({canvas_b.shape[1]}x{canvas_b.shape[0]})')
@@ -325,10 +331,12 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
   readme.write_text(
       f'{name}  impl={impl}  task={config.task}  hard_metric={hard_metric}\n\n'
       f'{path_a.rsplit("/", 1)[-1]} -- panel A, HARD code, full range.\n'
-      '  One row per target code-similarity (left margin: 1.0..0.2). Each\n'
-      '  pair-block is two goal IMAGES decoded from two DIFFERENT codes whose\n'
-      '  hard-code similarity falls in that row.\n'
-      '  Label under each pair: "<actual code sim> <true goal-state sim>".\n'
+      '  One column per target code-similarity, left to right 0.2..1.0. Each\n'
+      '  pair-block (stacked within its column) is two goal IMAGES decoded\n'
+      '  from two DIFFERENT codes whose hard-code similarity falls in that\n'
+      '  column. Label under each pair is the OPPOSING number only -- the\n'
+      '  true goal-state similarity (column position already says the code\n'
+      '  similarity).\n'
       + ('  Metric: graded per-block index distance on the codebook\'s own\n'
          f'  {topology} topology (see block_distance_similarity) -- a\n'
          '  1-apart neighbor counts as a near-miss, not a full miss, because\n'
@@ -336,17 +344,18 @@ def run(run_dir, out_prefix, ckpt_path=None, n_envs=8, stride=8, n_states=512,
          if som_on else
          '  Metric: plain Hamming equality (same id per block or not) -- the\n'
          '  right metric for Director\'s unordered argmax labels.\n') +
-      '  If images still look near-identical at a low row (e.g. 0.2), that is\n'
-      '  code collapse (many dissimilar codes -> one goal), not subtlety.\n\n'
+      '  If images still look near-identical in a low column (e.g. 0.2), that\n'
+      '  is code collapse (many dissimilar codes -> one goal), not subtlety.\n\n'
       f'{path_b.rsplit("/", 1)[-1]} -- panel B, SOFT code, narrow range.\n'
       '  Pairs are restricted to states whose GOAL-SPACE (deter) cosine-max\n'
-      '  similarity is already in the row\'s band (0.7/0.8/0.9/1.0), i.e.\n'
-      '  states that were already close. Each pair-block decodes the two\n'
-      '  states\' SOFT (pre-sample) codes to images. Label: "<soft code sim>\n'
-      '  <true goal-state sim>". If code sim tracks goal sim smoothly within\n'
-      '  this narrow high band and the images show correspondingly small,\n'
-      '  real visual differences, that supports "codes track subtle changes"\n'
-      '  over "codes collapse".\n')
+      '  similarity is already in the column\'s band (0.7/0.8/0.9/1.0, left to\n'
+      '  right), i.e. states that were already close. Each pair-block decodes\n'
+      '  the two states\' SOFT (pre-sample) codes to images. Label under each\n'
+      '  pair is the OPPOSING number only -- the soft-code similarity (column\n'
+      '  position already says the goal-state similarity). If code sim tracks\n'
+      '  goal sim smoothly within this narrow high band and the images show\n'
+      '  correspondingly small, real visual differences, that supports "codes\n'
+      '  track subtle changes" over "codes collapse".\n')
   print(f'wrote {readme}')
 
 
