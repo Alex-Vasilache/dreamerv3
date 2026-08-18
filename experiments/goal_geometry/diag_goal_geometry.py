@@ -147,6 +147,17 @@ def index_distance(ids, topology, classes):
   return diff.mean(-1)
 
 
+def index_sq_distance(ids, topology, classes):
+  """Per-pair mean SQUARED index distance -- the mse_code['hard'] analog on
+  the codebook's own topology, since mse_code['hard'] (pairwise_mse of the
+  one-hot vectors) is proportional to plain Hamming by construction and
+  cannot tell a 1-apart neighbor from the opposite end of the line."""
+  diff = np.abs(ids[:, None, :].astype(np.int64) - ids[None, :, :])
+  if topology == 'ring':
+    diff = np.minimum(diff, classes - diff)
+  return (diff.astype(np.float64) ** 2).mean(-1)
+
+
 def pca2(x):
   """Two leading principal components, for the lattice figure."""
   x = np.asarray(x, np.float64)
@@ -272,6 +283,7 @@ def correlations(deters, z_e, z_q, ids, soft, topology, classes):
   mse_code = {
       'soft': pairwise_mse(soft.reshape(n, -1)),
       'hard': pairwise_mse(onehot),
+      'index': index_sq_distance(ids, topology, classes),
   }
 
   out = {}

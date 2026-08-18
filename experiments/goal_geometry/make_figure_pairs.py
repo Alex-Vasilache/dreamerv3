@@ -156,17 +156,30 @@ def main():
       x0 = ai * (CELL + GAP_X)
       seeds = data.get((task, arm))
 
-      # Axis ranges. cosmax shares one range for x and y (both are the same
-      # similarity measure) so the y=x reference below is already a true
-      # diagonal. MSE code-distance and goal-distance live in unrelated units
-      # (L*C-dim one-hot vs. 1024-dim deter), so a range shared ACROSS PANELS
+      # Axis ranges. cosmax's x range (goal-space similarity) stays fixed --
+      # goal states are whatever a live rollout visits, not something this
+      # figure controls. The y range (code similarity) is rescaled per panel
+      # to the sample's own worst pair instead of a generic -0.05 floor: the
+      # theoretical floor (all L blocks maximally apart) is rarely realized
+      # by codes an actual policy emits, and for the graded/topology arms in
+      # particular the observed pairs can cluster well above 0 (see
+      # make_goal_image_pairs.py's e538 hard panel -- no pair near 0.2
+      # similarity turned up in a 512-state pool), so a fixed floor wastes
+      # most of the panel on a similarity band nothing ever reaches. MSE
+      # code-distance and goal-distance live in unrelated units (L*C-dim
+      # one-hot vs. 1024-dim deter), so a range shared ACROSS PANELS there
       # either flattens arms with small code MSE or clips the ones with large
       # goal MSE -- scale each panel to its own data instead. Deriving yhi
       # from the panel's own least-squares slope (rather than its own y
       # percentile) makes the reference line land exactly on the top-right
       # corner, so it reads as a real diagonal here too.
       if COS:
-        xlo, xhi, ylo, yhi = -0.2, 1.05, -0.05, 1.05
+        xlo, xhi, yhi = -0.2, 1.05, 1.05
+        if seeds:
+          worst = float(min(c.min() for _, c, _ in seeds))  # max dissimilarity observed
+          ylo = worst - 0.05 * (yhi - worst)
+        else:
+          ylo = -0.05
       elif seeds:
         xf = np.concatenate([g for g, _, _ in seeds])
         yf = np.concatenate([c for _, c, _ in seeds])
@@ -281,19 +294,18 @@ def main():
         svg.append(f'<text x="{sx(v):.1f}" y="{tty:.1f}" '
                    f'font-size="{F_TICK:.1f}" text-anchor="middle" '
                    f'fill="black">{fmt(v)}</text>')
-      for v in ([0.0, 1.0] if COS else ticks(yhi, ylo)):
+      for v in ticks(yhi, ylo):
         svg.append(f'<line x1="{ax0 - TICK_LEN:.1f}" y1="{sy(v):.1f}" '
                    f'x2="{ax0:.1f}" y2="{sy(v):.1f}" stroke="black" '
                    f'stroke-width="{pt(1.2):.1f}"/>')
-        # cosmax panels share one y-range across the whole row, so labeling
-        # only the leftmost column was enough; MSE panels now scale
-        # independently (each has its own yhi), so every column needs its
-        # own labels or the other three are unreadable.
-        if ai == 0 or not COS:
-          svg.append(f'<text x="{ax0 - TICK_LEN - F_TICK * 0.4:.1f}" '
-                     f'y="{sy(v) + F_TICK * 0.35:.1f}" '
-                     f'font-size="{F_TICK:.1f}" text-anchor="end" '
-                     f'fill="black">{fmt(v)}</text>')
+        # Every panel scales its own y range now (cosmax to its own worst
+        # observed pair, MSE to its own slope), so every column needs its
+        # own tick labels -- a shared range that only the leftmost column
+        # labeled no longer exists on either metric.
+        svg.append(f'<text x="{ax0 - TICK_LEN - F_TICK * 0.4:.1f}" '
+                   f'y="{sy(v) + F_TICK * 0.35:.1f}" '
+                   f'font-size="{F_TICK:.1f}" text-anchor="end" '
+                   f'fill="black">{fmt(v)}</text>')
       svg.append(f'<text x="{x0 + CELL / 2:.1f}" '
                  f'y="{tty + F_AXIS * 1.5:.1f}" font-size="{F_AXIS:.1f}" '
                  f'text-anchor="middle" fill="#333">goal-space '
