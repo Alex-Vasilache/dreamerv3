@@ -217,23 +217,26 @@ def build_grid(cols, cell_w, cell_h, margin_top, gap, bg=(30, 30, 30)):
   """``cols``: list of (col_label, tiles), one entry per similarity bin, IN
   THE ORDER THE CALLER WANTS LEFT TO RIGHT (ascending bin value). Lays out a
   top label strip per column + one pair-block per sample stacked vertically
-  within that column, each pair-block = img_i | small gap | img_j, with the
-  OPPOSING similarity (not the one the column axis already encodes)
-  stamped underneath."""
+  within that column, each pair-block = img_i ABOVE img_j (small gap between,
+  the two states of the pair read top-to-bottom), with the OPPOSING
+  similarity (not the one the column axis already encodes) stamped
+  underneath."""
+  img_gap = max(2, gap // 2)
   n_rows = max((len(tiles) for _, tiles in cols), default=0)
-  pair_w = 2 * cell_w + gap
-  row_h = cell_h + 28
+  pair_w = cell_w
+  pair_h = 2 * cell_h + img_gap
+  row_h = pair_h + 28
   W = len(cols) * (pair_w + gap)
   H = margin_top + n_rows * (row_h + gap)
   canvas = np.full((H, W, 3), bg, np.uint8)
   for c, (col_label, tiles) in enumerate(cols):
     x0 = c * (pair_w + gap)
-    stamp_text(canvas, x0 + pair_w // 2 - 10, 4, col_label, (255, 255, 255), 2)
+    stamp_text(canvas, x0 + pair_w // 2 - 12, 4, col_label, (255, 255, 255), 2)
     for r, (img_i, img_j, label) in enumerate(tiles):
       y0 = margin_top + r * (row_h + gap)
       canvas[y0:y0 + cell_h, x0:x0 + cell_w] = img_i
-      canvas[y0:y0 + cell_h, x0 + cell_w + gap:x0 + cell_w + gap + cell_w] = img_j
-      stamp_text(canvas, x0, y0 + cell_h + 5, label, (200, 200, 200), 2)
+      canvas[y0 + cell_h + img_gap:y0 + pair_h, x0:x0 + cell_w] = img_j
+      stamp_text(canvas, x0, y0 + pair_h + 5, label, (200, 200, 200), 2)
   return canvas
 
 
