@@ -106,16 +106,17 @@ def load(results_dir, code, metric):
     # metric for a codebook trained with the SOM neighborhood loss -- a
     # 1-apart neighbor decodes to a nearby goal but counts as a full miss.
     # Where the codebook has a real topology (meta['topology'] != 'none'),
-    # swap in the already-computed topology-aware graded distance instead
-    # (diag_goal_geometry.correlations' sim_code['index'] / dist_code['index']
-    # -- mean per-block |id_i - id_j|, ring-wrapped or not per the codebook's
-    # own topology, normalized to a similarity). No graded analog exists yet
-    # under mse (mse_hard is proportional to plain Hamming by construction --
-    # see its own comment in correlations() -- so mse stays as is).
-    graded = (code == 'hard' and metric == 'cosmax' and
-              meta.get('topology', 'none') != 'none')
-    ck = 'sim_index' if graded else (('sim_' if metric == 'cosmax' else 'mse_') + code)
-    rk = ('corr/cosmax/index/pearson/mean' if graded else
+    # swap in the already-computed topology-aware graded distance instead:
+    # sim_index under cosmax (mean per-block |id_i - id_j|, ring-wrapped or
+    # not per the codebook's own topology, normalized to a similarity) or
+    # mse_index under mse (the same distance, squared and averaged per block
+    # -- diag_goal_geometry.correlations' sim_code['index'] / mse_code['index']
+    # -- the mse_code['hard'] analog, since mse_hard is proportional to plain
+    # Hamming by construction and can't tell a near miss from a far one).
+    graded = code == 'hard' and meta.get('topology', 'none') != 'none'
+    ck = (('sim_index' if metric == 'cosmax' else 'mse_index') if graded
+          else (('sim_' if metric == 'cosmax' else 'mse_') + code))
+    rk = (f'corr/{metric}/index/pearson/mean' if graded else
           f'corr/{metric}/{code}/pearson/mean')
     if gk not in d or ck not in d:
       continue
