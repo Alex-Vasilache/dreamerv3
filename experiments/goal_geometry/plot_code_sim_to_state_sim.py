@@ -257,8 +257,15 @@ def build_row(data, sub):
        f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
        f'<rect width="{W}" height="{H}" fill="white"/>']
 
-  YT = (0.0, 0.25, 0.5, 0.75, 1.0)
-  XT = (0.0, 0.5, 1.0)
+  # Same five positions on both axes. Five "0.25"-style labels do not fit
+  # across a 300-unit panel at this font, so the leading zero is dropped --
+  # that buys the room and is a common convention for a 0-1 axis.
+  YT = XT = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+  def tl(v):
+    if v in (0.0, 1.0):
+      return '%g' % v
+    return ('%g' % v).lstrip('0')
   for k, (label, color, arr) in enumerate(panels):
     x0 = PL + k * (P + GAP)
     m, sd = arr.mean(0), arr.std(0)
@@ -304,14 +311,14 @@ def build_row(data, sub):
       if k == 0:
         o.append(f'<text x="{x0 - 15}" y="{sy(v) + F_TICK * 0.36:.1f}" '
                  f'font-size="{F_TICK:.1f}" fill="{INK_2}" '
-                 f'text-anchor="end">{v:g}</text>')
+                 f'text-anchor="end">{tl(v)}</text>')
     for v in XT:
       gx = sx((1.0 - v) * (nb - 1))
       o.append(f'<line x1="{gx:.1f}" y1="{PT + P}" x2="{gx:.1f}" '
                f'y2="{PT + P + 8}" stroke="{FRAME}" stroke-width="2.2"/>')
       o.append(f'<text x="{gx:.1f}" y="{PT + P + F_TICK * 1.9:.1f}" '
                f'font-size="{F_TICK:.1f}" fill="{INK_2}" '
-               f'text-anchor="middle">{v:g}</text>')
+               f'text-anchor="middle">{tl(v)}</text>')
     o.append(f'<text x="{x0 + P / 2:.1f}" y="{PT - 26:.1f}" '
              f'font-size="{F_TITLE:.1f}" fill="{INK}" '
              f'text-anchor="middle">{esc(label)}</text>')
