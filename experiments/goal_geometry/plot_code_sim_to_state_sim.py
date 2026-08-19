@@ -21,11 +21,16 @@ import numpy as np
 
 HERE = pathlib.Path(__file__).resolve().parent
 
+# Order fixes the panel order and the colours. A task measured but missing from
+# this list is silently dropped from the figure -- which is exactly what
+# happened to hopper_hop on 2026-08-20: the .npz files were there, the panels
+# were not.
 TASKS = [
     ('dmc_cartpole_swingup', 'Cartpole Swingup', '#2a78d6'),
     ('dmc_hopper_stand', 'Hopper Stand', '#eb6834'),
     ('dmc_cartpole_swingup_sparse', 'Cartpole Swingup sparse', '#1baf7a'),
     ('dmc_cheetah_run', 'Cheetah Run', '#eda100'),
+    ('dmc_hopper_hop', 'Hopper Hop', '#7b3fa0'),
 ]
 
 S = 1000
@@ -95,7 +100,8 @@ def build(data, title, sub):
   # Short labels: at ~79pt printed, a panel fits roughly 12 characters, and
   # "Cartpole Swingup sparse" overran into its neighbour.
   SHORT = {'Cartpole Swingup': 'Cartpole', 'Hopper Stand': 'Hopper Stand',
-           'Cartpole Swingup sparse': 'Cartpole sparse', 'Cheetah Run': 'Cheetah'}
+           'Cartpole Swingup sparse': 'Cartpole sparse', 'Cheetah Run': 'Cheetah',
+           'Hopper Hop': 'Hopper Hop'}
   present = [t for t, _, _ in TASKS if t in data]
   if len(present) > 1:
     per_env = np.stack([np.stack(data[t]).mean(0) for t in present])
@@ -226,8 +232,13 @@ def build_row(data, sub, xlabel=None):
   """
   n_panels = len(TASKS) + 1
   P = 300
-  GAP = 30
-  PL, PR, PT, PB = 152, 22, 104, 122
+  # GAP and PR grew when hopper_hop made this six panels rather than five:
+  # at GAP=30/PR=22 the titles of neighbouring panels touched and the last
+  # panel's title ran off the canvas.
+  GAP = 56
+  # PB carries the tick row AND the shared x label; at 122 the label's
+  # ascenders sat on top of the '.5' tick of the middle panels.
+  PL, PR, PT, PB = 152, 44, 104, 168
   W = PL + n_panels * P + (n_panels - 1) * GAP + PR
   H = PT + P + PB
   TARGET = 0.98 * 397.0
@@ -238,14 +249,15 @@ def build_row(data, sub, xlabel=None):
   # The rotated y label has to fit inside the PANEL HEIGHT, not the figure
   # width -- at f(8.4) 'goal-state similarity (cosine_max)' was half again
   # longer than the panel is tall and ran off both ends of the canvas.
-  F_TITLE, F_TICK, F_AXIS = f(9.2), f(7.4), f(8.4)
+  F_TITLE, F_TICK, F_AXIS = f(7.4), f(6.4), f(8.0)
   F_YAX = f(6.0)
   FRAME, GRIDC = '#333333', '#d5d5d2'
 
   # Short labels: a panel this wide fits about twelve characters, and
   # "Cartpole Swingup sparse" overran into its neighbour.
   SHORT = {'Cartpole Swingup': 'Cartpole', 'Hopper Stand': 'Hopper Stand',
-           'Cartpole Swingup sparse': 'Cartpole Sparse', 'Cheetah Run': 'Cheetah'}
+           'Cartpole Swingup sparse': 'Cartpole Sparse', 'Cheetah Run': 'Cheetah',
+           'Hopper Hop': 'Hopper Hop'}
   if xlabel is None:
     # 9 bins is the block count, 57 is the summed index distance; label the
     # axis for whichever measurement produced the curves rather than assuming.
@@ -258,16 +270,16 @@ def build_row(data, sub, xlabel=None):
   panels = [(SHORT.get(lab, lab), col, np.stack(data[t]))
             for t, lab, col in TASKS if t in data]
   if per_env is not None and len(present) > 1:
-    panels.append(('All Environments', INK, per_env))
+    panels.append(('All Envs', INK, per_env))
 
   o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
        f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
        f'<rect width="{W}" height="{H}" fill="white"/>']
 
-  # Same five positions on both axes. Five "0.25"-style labels do not fit
-  # across a 300-unit panel at this font, so the leading zero is dropped --
-  # that buys the room and is a common convention for a 0-1 axis.
-  YT = XT = (0.0, 0.25, 0.5, 0.75, 1.0)
+  # Same positions on both axes. Five of them fitted while this was five
+  # panels wide; at six, the '1' of one panel and the '0' of the next collided
+  # into '1 0'. Three is what a 300-unit panel holds at a legible size.
+  YT = XT = (0.0, 0.5, 1.0)
 
   def tl(v):
     if v in (0.0, 1.0):
