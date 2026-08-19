@@ -121,6 +121,9 @@ case "$ARM" in
   som_lipvq_mgr) ARM_CONFIG="goal_som_lipvq_mgr" ;;
   som_lipvq_smooth) ARM_CONFIG="goal_som_lipvq_smooth" ;;
   som_line)      ARM_CONFIG="goal_som_line" ;;
+  # SOM-line + the unimodal Poisson manager policy (Zhu et al. 2024). The only
+  # difference from som_line is the manager head's parameterization.
+  som_line_poisson) ARM_CONFIG="goal_som_line mgr_poisson" ;;
   som_lipvq_line) ARM_CONFIG="goal_som_lipvq_line" ;;
   som_lipvq_line_smooth) ARM_CONFIG="goal_som_lipvq_line_smooth" ;;
   som_lipvq_line_mgr) ARM_CONFIG="goal_som_lipvq_line_mgr" ;;
@@ -135,7 +138,7 @@ case "$ARM" in
   lipvq_prod)               ARM_CONFIG="goal_lipvq_prod" ;;
   som_lipvq_line_prod)      ARM_CONFIG="goal_som_lipvq_line_prod" ;;
   som_orig_lipvq_line_prod) ARM_CONFIG="goal_som_orig_lipvq_line_prod" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 

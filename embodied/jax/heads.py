@@ -69,11 +69,13 @@ class Head(nj.Module):
   unimix: float = 0.0
   bins: int = 255
   outscale: float = 1.0
+  tau_init: float = 1.0
+  tau_min: float = 0.02
 
   def __init__(self, space, output, **kw):
     if isinstance(space, tuple):
       space = elements.Space(np.float32, space)
-    if output == 'onehot':
+    if output in ('onehot', 'poisson'):
       if space.discrete:
         # Integer code shape (L,): append class dimension -> (L, C) logits.
         classes = np.asarray(space.classes).flatten()
@@ -94,7 +96,7 @@ class Head(nj.Module):
     output = getattr(self, self.impl)(x)
     if self.space.shape:
       dims = len(self.space.shape)
-      if self.impl in ('onehot', 'categorical'):
+      if self.impl in ('onehot', 'categorical', 'poisson'):
         dims -= 1
       if dims > 0:
         output = outs.Agg(output, dims, jnp.sum)
@@ -124,6 +126,28 @@ class Head(nj.Module):
     output = outs.OneHot(logits, self.unimix)
     classes = self.space.shape[-1]
     outer = int(np.prod(self.space.shape[:-1])) if len(self.space.shape) > 1 else 1
+    output.minent = 0.0
+    output.maxent = float(outer * np.log(classes))
+    return output
+
+  def poisson(self, x):
+    """Unimodal one-hot over ORDERED classes: one rate + one temperature each.
+
+    Same event shape and same entropy bounds as ``onehot`` -- so ``mgr_actent``,
+    the REINFORCE log-probs and the straight-through goal decode all work
+    unchanged -- but 2 scalars per categorical instead of ``C`` free logits.
+    Only meaningful when the class axis is ordered (SOM on a line).
+    """
+    assert not self.space.discrete
+    shape, classes = self.space.shape[:-1], self.space.shape[-1]
+    rate = self.sub('rate', nets.Linear, shape, **self.kw)(x)
+    logtau = self.sub('logtau', nets.Linear, shape, **self.kw)(x)
+    output = outs.PoissonOnehot(
+        rate, logtau, classes, self.unimix,
+        tau_init=self.tau_init, tau_min=self.tau_min)
+    outer = int(np.prod(shape)) if shape else 1
+    # Reachable at tau -> 0 / tau -> inf respectively, so the normalized entropy
+    # the adapter regulates still spans a true [0, 1].
     output.minent = 0.0
     output.maxent = float(outer * np.log(classes))
     return output

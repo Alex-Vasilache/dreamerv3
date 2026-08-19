@@ -2,6 +2,7 @@ import functools
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 i32 = jnp.int32
 f32 = jnp.float32
@@ -287,6 +288,86 @@ class OneHot(Output):
     probs = jax.nn.softmax(self.dist.logits, -1)
     value = sg(value) + (probs - sg(probs))
     return value
+
+
+class PoissonOnehot(OneHot):
+  """Unimodal one-hot policy parameterized by a Poisson rate (Zhu et al. 2024).
+
+  A plain ``OneHot`` head spends ``C`` free logits per categorical and treats the
+  classes as unordered labels: nothing ties class 3 to class 4. When the classes
+  ARE ordered -- a SOM trained on a line, where neighbouring indices decode to
+  neighbouring goal states -- that parameterization throws the ordering away and
+  has to rediscover it from REINFORCE samples alone.
+
+  This head instead emits ONE scalar rate ``lam`` per categorical and builds the
+  class logits from the Poisson log-pmf (paper Eqs. 8-10):
+
+      h_j = (j * log(lam) - lam - log(j!)) / tau,    j = 0 .. C-1
+      pi  = softmax_j(h_j)                           (right-truncated)
+
+  Two properties follow, and they are the reason to use it here:
+
+    * ``pi`` is unimodal in ``j`` for every ``lam`` -- probability decays away
+      from the mode on both sides, so a REINFORCE update that raises class 4
+      necessarily raises its neighbours more than distant classes. Credit
+      generalizes along the SOM line for free.
+    * the mode moves monotonically 0 -> C-1 as ``lam`` grows (for C=8 the
+      switch points are lam ~ 1.0, 2.0, 3.1, 4.1, 5.0, 6.1, 7.2), so the scalar
+      IS the position on the line. The manager picks "where", not "which".
+
+  ``tau`` is the second (also scalar) output and is what makes this compatible
+  with Director's adaptive entropy regularizer. At fixed ``tau`` the entropy
+  H(lam) is NOT monotone -- it peaks at lam ~ 3.96 and falls to 0 at both ends
+  -- so an entropy constraint would silently become a constraint on WHICH class
+  the manager may prefer. With ``tau`` free, H is monotone in ``tau`` at every
+  ``lam`` (tau -> 0 one-hot, tau -> inf uniform) and the whole [0, log C] range
+  is reachable, so ``mgr_actent`` regulates confidence alone and leaves the
+  choice of class to the return.
+
+  ONE FLOOR TO KNOW ABOUT. At exactly integer ``lam`` two adjacent classes are
+  tied, since h_j = h_{j+1} iff lam = j+1. Lowering ``tau`` there does not
+  produce a one-hot, it produces a 50/50 split, so the normalized entropy
+  cannot go below log(2)/log(C) -- 0.333 at C=8 -- however small ``tau`` gets.
+  That set has measure zero in ``lam`` and the floor is ~0 everywhere else, but
+  it does bound how sharp ``tau_min`` can usefully make the head, and it must
+  stay below ``manager_actent_target``. See the ``mgr_poisson`` config block.
+
+  NOTE ON THE PAPER'S EQ. (11). Zhu et al. additionally pass these logits
+  through an ordinal transform, h'_l = sum_{j<=l} log p_j + sum_{j>l}
+  log(1 - p_j). That step is degenerate as published: the ``p_j`` come from a
+  softmax and so are all < 0.5, which makes every increment
+  h'_l - h'_{l-1} = logit(p_l) negative, h' monotonically decreasing, and
+  ``softmax(h')`` peaked at class 0 for EVERY lam. Substituting the
+  sigmoid form of the ordinal parameterization it cites does not rescue it
+  either, because the Poisson log-pmf values are themselves negative and
+  decreasing. It is omitted; Eqs. 8-10 alone carry the unimodality claim and
+  reproduce the paper's own Fig. 2.
+  """
+
+  def __init__(self, rate, logtau, classes, unimix=0.0,
+               rate_init=None, tau_init=1.0, tau_min=0.02, rate_min=1e-4):
+    assert rate.shape == logtau.shape, (rate.shape, logtau.shape)
+    # Center the family at init: without the offset softplus(0) = 0.69 puts
+    # every categorical's mode on class 0 before a single gradient step.
+    rate_init = 0.5 * (classes - 1) if rate_init is None else rate_init
+    lam = rate_min + jax.nn.softplus(f32(rate) + _inv_softplus(rate_init))
+    tau = tau_min + jax.nn.softplus(
+        f32(logtau) + _inv_softplus(tau_init - tau_min))
+    # log(j!) as a constant: ``classes`` is static, so this never hits lgamma.
+    logfact = jnp.array(
+        np.cumsum(np.concatenate([[0.0], np.log(np.arange(1, classes))])), f32)
+    j = jnp.arange(classes, dtype=f32)
+    logits = (j * jnp.log(lam)[..., None] - lam[..., None] - logfact)
+    super().__init__(logits / tau[..., None], unimix)
+    self.rate = lam
+    self.temp = tau
+
+
+def _inv_softplus(y):
+  # softplus(x) = y  =>  x = log(exp(y) - 1), stable for large y.
+  y = float(y)
+  assert y > 0, y
+  return float(np.log(np.expm1(y))) if y < 20.0 else y
 
 
 class TwoHot(Output):

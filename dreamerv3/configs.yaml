@@ -361,7 +361,10 @@ defaults:
     goal_kl_max: 1.0
     goal_kl_vel: 0.1
     goal_kl_init: 1.0
-    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in}
+    # tau_init/tau_min are only read by `output: poisson` (see the mgr_poisson
+    # block); they are inert for the default onehot head but must exist here
+    # because elements.Config.update can only overwrite keys that already exist.
+    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in, tau_init: 1.0, tau_min: 0.02}
     manager_sample_freq: 8
     # Variable goal length (opt-in, HiPPO-style): the manager additionally emits a
     # discrete duration p in {goal_duration_min..goal_duration_max}; the emitted
@@ -840,6 +843,38 @@ goal_som_line:
     goal_struct_adapt: False
     goal_soft_reuse_adapt: False
     goal_vq: {som: True, lip: False, topology: line}
+
+# Unimodal Poisson manager policy (Zhu et al. 2024, Eqs. 8-10). Orthogonal to
+# the goal-AE arm: layer it ON TOP of an arm whose class axis is ordered, i.e.
+#   --configs director_match goal_som_line mgr_poisson
+#
+# The manager's per-block head stops emitting C free logits and emits two
+# scalars instead -- a Poisson rate (which class, monotone in the rate) and a
+# temperature (how sure). The resulting categorical is unimodal by
+# construction, so REINFORCE credit for class j automatically spreads to j-1
+# and j+1 and decays with distance. On a SOM line that is exactly the metric
+# the codebook was trained to have, so the manager inherits the ordering
+# instead of having to rediscover it.
+#
+# Only meaningful with topology: line (or ring, with the caveat that a Poisson
+# is not periodic and so cannot wrap). On an UNORDERED codebook this is a pure
+# restriction of the policy class and should be expected to hurt.
+#
+# manager_actent is unchanged and still needed -- see the PoissonOnehot
+# docstring for why the temperature output is what makes it well posed.
+#
+# tau_min is 0.02, NOT the 0.1 this was first written with, and the difference
+# is the whole run. At exactly integer lam two adjacent classes are tied
+# (h_j = h_{j+1} <=> lam = j+1), so as tau -> 0 the pmf collapses to 50/50 on
+# that pair rather than to a one-hot: the normalized entropy has a hard floor
+# of log2/log8 = 0.333 there. At tau_min=0.1 the floor over lam is 0.546 --
+# ABOVE manager_actent_target=0.5 -- so the entropy the controller is asked to
+# reach is unreachable and its multiplier rails, which is exactly how e479 was
+# lost (that time to a smoothing kernel whose floor was also 0.5). At 0.02 the
+# floor is 0.334 and the target has real headroom.
+mgr_poisson:
+  agent:
+    manager_policy: {output: poisson, tau_init: 1.0, tau_min: 0.02}
 
 goal_som_lipvq_line:
   agent:
