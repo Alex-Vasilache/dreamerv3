@@ -668,49 +668,47 @@ This is the second time the archive policy has cost a resume. `SKIP_REPLAY=1`
 is right for a *finished* run and wrong for a stopped one; check
 `metrics.jsonl` reaches the target step before archiving.
 
-### F23 — no arm has a certified Lipschitz bound, because they all keep `norm: rms`
+### F23 — Director has no Lipschitz bound; our LiP arms do
 
 Measured 2026-08-19 from the checkpoint weights (`experiments/goal_geometry/
 lipschitz_bound_from_weights.py`, CPU-only on `intel`), answering the
 motivation.tex todo "actually measure the lipschitz bound for director".
 
-**There is no finite bound, for Director or for us.** `goal_enc` and `goal_dec`
-use `norm: rms` in *every* arm — `LipMLP` takes `norm=` from the same config key
-the Director trunk uses. RMSNorm is not Lipschitz (gain `scale/rms(x)` → ∞ as
-x → 0), so no product of weight norms bounds the network. This is deliberate and
-documented in `lipschitz.py`: `strict_bound=False` by default because
-`norm='none'` NaNs within 2–16 steps at this scale (see
-[[goal-ae-trunk-needs-rms-norm]]). The penalty constrains the linear layers, not
-the network.
+**The two families use different trunks, and this is the whole finding.**
+Director's goal AE is configured by `goal_enc`/`goal_dec` (`norm: rms`,
+unconstrained). The VQ arms use `goal_vq_enc`/`goal_vq_dec` — **`norm: none`,
+`strict_bound: true`** — and in the LiP arms all five layers including the
+output projection carry the `c` bound. So:
 
-What *is* measurable is the product of per-layer weight ∞-norms — the quantity
-that would be the bound absent the norm layers, and exactly what the penalty
-shrinks:
+| arm | trunk norm | layers constrained | product enc | product dec | is it a bound? |
+|---|---|---|---|---|---|
+| director | rms | no | 1.28–2.85e7 | 0.67–2.05e7 | **NO** — RMSNorm is not Lipschitz |
+| som_line | none | no | 2.9–6.4e7 | 3.1e7 | yes, but unconstrained |
+| lipvq_prod, som_lipvq_line_prod | none | **yes** | **1.35–1.87e5** | **0.51–1.13e5** | **yes** |
 
-| arm | enc product | dec product | enc spectral | dec spectral |
-|---|---|---|---|---|
-| director | 1.28–2.85e7 | 0.67–2.05e7 | 308–375 | 3.6–9.1e3 |
-| som_line (no LiP) | 2.9–6.4e7 | 3.1e7 | 1.3e3 | 6.2–7.0e4 |
-| lipvq_prod / som_lipvq_line_prod | **1.35–1.87e5** | **0.51–1.13e5** | 1.3–4.8e3 | 1.9–7.1e4 |
+Director's number is a weight statistic, not a bound: RMSNorm's gain is
+`scale/rms(x)` → ∞ as x → 0, so no product of weight norms bounds that network.
+Among the VQ arms — which all have a valid composed bound — the LiP penalty
+reduces it by **~200–400x** against the same trunk without the penalty
+(som_line). Caveat: `act: silu` peaks at slope ~1.0998, so the true constant can
+exceed the product by that factor per activation.
 
-The penalty works on its own terms: ~100x reduction on the encoder and
-~100–400x on the decoder against Director, and som_line without LiP sits at or
-above Director, so it is the penalty and not the SOM.
+Spectral norms move the other way (Director enc 308–375 / dec 3.6–9.1e3; LiP enc
+1.3–4.8e3 / dec 1.9–7.1e4). A row-wise ∞-norm constraint does not control the
+2-norm and the network compensates where the constraint cannot see.
 
-**But the spectral norms move the other way.** The LiP arms' spectral products
-are 4–13x *larger* than Director's. The row-wise ∞-norm constraint does not
-control the 2-norm and the network compensates in the directions the constraint
-cannot see. "More Lipschitz-constrained" is true in the ∞-norm the penalty uses
-and false in the 2-norm.
-
-Two traps in doing this measurement, both of which produce confident wrong
-numbers:
+**Three traps, all of which produce confident wrong numbers:**
 * `agent.pkl` stores Adam's two moment buffers under `params/opt/state_goal/
-  {1,2}/` with the **same leaf names** as the weights. An unfiltered walk finds
-  each layer three times — 15 "layers" for a 5-layer decoder, product 1.3e18.
-  Keep `params/` and drop `/opt/`.
-* Detecting norm layers from parameter names reports the LiP arms as
-  unnormalized. They are not. Read `norm:` from the run's own `config.yaml`.
+  {1,2}/` with the **same leaf names** as the weights — an unfiltered walk finds
+  each layer three times (15 "layers" for a 5-layer decoder, product 1.3e18).
+* Detecting norm layers from parameter names is unreliable; read the config.
+* **Reading the wrong config key.** `goal_enc`/`goal_dec` exist in *every* run's
+  config as the Director-side defaults, and the checkpoint *module* is named
+  `goal_enc`/`goal_dec` for the VQ arms too. The VQ trunk is configured by
+  `goal_vq_enc`/`goal_vq_dec`. I first read the Director keys and concluded no
+  arm had a bound, which is wrong. Distinguish the arms by whether the layers
+  carry a `c` parameter, which is a fact about the checkpoint and not about
+  which config key you happened to read.
 
 ---
 ## 4. Dead ends (don't retry)
