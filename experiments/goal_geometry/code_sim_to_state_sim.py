@@ -104,8 +104,19 @@ def run(run_dir, out_path, n_codes=1024, n_partners=1024, n_envs=4, stride=8,
     per_chunk = max(1, chunk // n_partners)
     print(f'{M} base codes x {n_partners} partners x {blocks} bins = '
           f'{M * n_partners * blocks:,} decodes, {per_chunk} bases per batch')
+    # Spread WITHIN a run, at fixed code distance. The per-base mean hides it:
+    # two pairs the same number of blocks apart can land at very different goal
+    # similarities, and that variation is the manager's real uncertainty about
+    # what an edit will do. Decomposed by the law of total variance into
+    # between-base (which code you start from) and within-base (which partner
+    # you land on).
+    sim_sd = np.full((M, blocks + 1), 0.0)      # per-base std over partners
+    pair_q = np.full((blocks + 1, 5), np.nan)   # p5/p25/p50/p75/p95 over pairs
+    pair_sd = np.full(blocks + 1, 0.0)
     for m in range(1, blocks + 1):
         acc = np.zeros(M)
+        accsd = np.zeros(M)
+        allv = np.empty(M * n_partners, np.float64)
         for lo in range(0, M, per_chunk):
             hi = min(lo + per_chunk, M)
             base = np.repeat(ref_ids[lo:hi], n_partners, axis=0)
@@ -113,19 +124,33 @@ def run(run_dir, out_path, n_codes=1024, n_partners=1024, n_envs=4, stride=8,
             assert ((pids != base).sum(1) == m).all()
             goals = decode(onehot_of(pids, classes))
             ref = np.repeat(ref_goal[lo:hi], n_partners, axis=0)
-            acc[lo:hi] = cosine_max(goals, ref).reshape(hi - lo,
-                                                        n_partners).mean(-1)
+            v = cosine_max(goals, ref).reshape(hi - lo, n_partners)
+            acc[lo:hi] = v.mean(-1)
+            accsd[lo:hi] = v.std(-1)
+            allv[lo * n_partners:hi * n_partners] = v.ravel()
         sim[:, m] = acc
+        sim_sd[:, m] = accsd
+        pair_sd[m] = allv.std()
+        pair_q[m] = np.percentile(allv, [5, 25, 50, 75, 95])
+    pair_q[0] = 1.0
 
     curve = sim.mean(0)
+    between = sim.std(0)                       # across base codes
+    within = np.sqrt((sim_sd ** 2).mean(0))    # across partners, pooled
     print('  blocks different -> goal-state cosine_max')
     print('   ' + '  '.join(f'{m}:{v:.4f}' for m, v in enumerate(curve)))
+    print('  spread over all pairs (std)')
+    print('   ' + '  '.join(f'{m}:{v:.4f}' for m, v in enumerate(pair_sd)))
+    print('  decomposed: between-base / within-base')
+    print('   ' + '  '.join(f'{m}:{b:.3f}/{w:.3f}'
+                            for m, (b, w) in enumerate(zip(between, within))))
     out = pathlib.Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(str(out) + '.npz', sim=sim, curve=curve,
                         blocks=np.arange(blocks + 1), task=str(config.task),
                         run=name, n_codes=M, n_partners=n_partners,
-                        sampling=sampling)
+                        sampling=sampling, sim_sd=sim_sd, pair_sd=pair_sd,
+                        pair_q=pair_q, between=between, within=within)
     print('wrote', str(out) + '.npz')
 
 
