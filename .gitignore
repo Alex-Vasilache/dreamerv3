@@ -11,3 +11,13 @@ hrl_director_fixes_todo.md
 # (e.g. 2026-07-14-135544-local-command-caveat....txt) -- not source/data.
 [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9]*.txt
 
+
+# Claude Code session worktrees created inside the repo.
+.claude/worktrees/
+
+# Rendered mask-viz panels: ~120MB of gifs/npz/pngs regenerated from
+# checkpoints by experiments/mask_viz/render_mask_viz.py.
+experiments/mask_viz/out/
+
+# Timestamped backups taken before editing a live watchdog TSV.
+job_logs/*.bak_*
