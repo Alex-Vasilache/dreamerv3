@@ -425,6 +425,48 @@ resubmissions of the same experiment, and stops resubmitting past the deadline.
 
 ---
 
+### FIVE benchmarks, 2026-08-20 — the aggregate rests entirely on cheetah
+
+All five benchmarks now have 4 seeds of Director and 4 of SOM-line+LiP.
+
+| benchmark | Director | SOM-line+LiP | Δ | % | p (exact) |
+|---|---|---|---|---|---|
+| Cartpole Swingup | 753.6 ± 72.2 | 721.9 ± 90.5 | −31.7 | −4.2% | 0.600 |
+| Hopper Stand | 822.3 ± 3.0 | 835.6 ± 18.5 | +13.3 | +1.6% | 0.257 |
+| Cartpole sparse | 775.6 ± 16.0 | 805.1 ± 19.4 | +29.5 | +3.8% | 0.114 |
+| **Cheetah Run** | 442.6 ± 114.5 | **660.9 ± 44.6** | **+218.4** | **+49.3%** | **0.029** |
+| Hopper Hop | 220.4 ± 93.6 | 211.3 ± 57.5 | −9.1 | −4.1% | 0.943 |
+
+Aggregate (normalized = return/1000): Director 0.603, SOM-line+LiP 0.647.
+**+7.31%**, 95% CI [+0.63%, +14.76%], exact stratified permutation
+**p = 0.110** (1.68e9 assignments).
+
+**Leave-one-benchmark-out is the whole story.** Dropping any single benchmark
+leaves the gain at 0.048–0.063 — except cheetah, which leaves **+0.0005**:
+
+| dropped | remaining gain |
+|---|---|
+| Cartpole Swingup | +0.0630 |
+| Hopper Stand | +0.0518 |
+| Cartpole sparse | +0.0477 |
+| **Cheetah Run** | **+0.0005** |
+| Hopper Hop | +0.0574 |
+
+So the honest statement is **not** "our method is 7% better across five
+benchmarks". It is "our method is decisively better on cheetah (+49%, complete
+seed separation, at the 0.029 permutation floor) and indistinguishable on the
+other four". Remove cheetah and the aggregate is zero to three decimals.
+
+Adding hopper_hop moved the aggregate the wrong way (4-benchmark: +8.2%,
+p=0.056 → 5-benchmark: +7.3%, p=0.110), which is what a tie on a new benchmark
+does. It did not corroborate cheetah.
+
+Note the bootstrap CI [+0.63%, +14.76%] excludes zero while the permutation
+test does not reject at 0.05. They disagree because the CI resamples seeds
+within benchmarks while the permutation test respects the benchmark strata; the
+stratified permutation is the more conservative and the more appropriate test
+for "does the arm label matter". Read it as not significant.
+
 ## 3. Findings
 
 ### F19 — the SOM-on-a-line turns the code index into a coordinate, and the straight-through estimator is what makes it happen
@@ -735,8 +777,8 @@ Spectral norms move the other way (Director enc 308–375 / dec 3.6–9.1e3; LiP
 |---|---|---|---|---|---|---|---|
 | e558–e561 | 4693736–43 | cartpole_swingup_sparse / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | baseline is e550–e553 |
 | e562–e565 | 4693737–43 | cheetah_run / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | baseline is e554–e557 |
-| e566–e569 | 4693744–47 | hopper_hop / BIG | pure Director | 0–3 | 4M | *launched 2026-08-17* | fresh, **not** a resume of e495–e499 (see below) |
-| e570–e573 | 4693748–51 | hopper_hop / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | measured against e566–e569 |
+| e566–e569 | 4693744–47 | hopper_hop / BIG | pure Director | 0–3 | 4M | **mean 220.4, std 93.6** | complete 2026-08-20. Fresh, **not** a resume of e495–e499 (see below). |
+| e570–e573 | 4693748–51 | hopper_hop / BIG | SOM-line + LiP | 0–3 | 4M | **mean 211.3, std 57.5** | complete 2026-08-20. Δ −9.1 (−4.1%), p=0.943 — a **tie**, as the low-power warning predicted. |
 | ~~e574–e581~~ | ~~4696162–69~~ | cheetah_run + hopper_hop / BIG | SOM-line | 0–3 | 4M | **cancelled 2026-08-19, never started** | queued 2026-08-18, cancelled while still PENDING to free the lane for e582–e586. Their rows were removed from the watchdog TSV first, or it would have resubmitted them. Nothing was lost — no job ever ran. |
 | e582–e586 | 4696814–18 | all 5 benchmarks / BIG | SOM-line + **Poisson manager** | 0 | 4M | *launched 2026-08-19; all 5 healthy past 175k* | one seed per task. First test of the unimodal Poisson manager policy — see §6. Early-health prediction **confirmed**, details below. |
 | e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | 0–3 | 4M | 655.2 / 753.1 / 747.3 / 859.0 — **mean 753.7, std 83.3, spread 203.8** | unimodal; every seed over the 600 bar. Spread 204 vs "< 200" predicted, i.e. on target. |
