@@ -737,6 +737,8 @@ Spectral norms move the other way (Director enc 308–375 / dec 3.6–9.1e3; LiP
 | e562–e565 | 4693737–43 | cheetah_run / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | baseline is e554–e557 |
 | e566–e569 | 4693744–47 | hopper_hop / BIG | pure Director | 0–3 | 4M | *launched 2026-08-17* | fresh, **not** a resume of e495–e499 (see below) |
 | e570–e573 | 4693748–51 | hopper_hop / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | measured against e566–e569 |
+| ~~e574–e581~~ | ~~4696162–69~~ | cheetah_run + hopper_hop / BIG | SOM-line | 0–3 | 4M | **cancelled 2026-08-19, never started** | queued 2026-08-18, cancelled while still PENDING to free the lane for e582–e586. Their rows were removed from the watchdog TSV first, or it would have resubmitted them. Nothing was lost — no job ever ran. |
+| e582–e586 | 4696814–18 | all 5 benchmarks / BIG | SOM-line + **Poisson manager** | 0 | 4M | *launched 2026-08-19* | one seed per task. First test of the unimodal Poisson manager policy — see §6. |
 | e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | 0–3 | 4M | 655.2 / 753.1 / 747.3 / 859.0 — **mean 753.7, std 83.3, spread 203.8** | unimodal; every seed over the 600 bar. Spread 204 vs "< 200" predicted, i.e. on target. |
 | e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | 0–3 | 4M | 824.8 / 817.6 / 821.5 / 825.2 — **mean 822.3, std 3.5, spread 7.6** | unimodal and extraordinarily tight — spread 7.6 against a "< 300" prediction. |
 
@@ -792,6 +794,55 @@ be **unimodal across seeds**, unlike `hopper_hop`.
 - → If cartpole itself is bimodal, the variance is not task-specific and the
   implementation goes back under audit — that would contradict walker walk and
   would be the strongest evidence yet for a real defect.
+
+### e582–e586 — can the manager exploit the ordering the SOM built?
+
+**Question.** F19–F22 established that the SOM-on-a-line makes the code index a
+real coordinate: goal similarity falls smoothly with index distance, and the
+code "knows how far it moved". But the manager has never been able to use that.
+Its per-block head emits 8 free logits over classes it treats as unordered
+labels, so REINFORCE credit for class 4 says nothing about class 5. The
+geometry is there and the policy is blind to it. Does closing that gap help?
+
+**Mechanism.** `mgr_poisson` (Zhu et al. 2024, Eqs. 8–10). Each block's head
+emits two scalars instead of eight logits — a Poisson rate λ and a temperature
+τ — and the class distribution is `softmax_j((j log λ − λ − log j!)/τ)`. That
+distribution is unimodal by construction, so probability decays away from the
+mode on both sides and credit for class j necessarily lifts j±1 more than
+distant classes. The mode moves monotonically 0→7 with λ, so the manager is
+choosing a *position on the line*, not a label.
+
+**Hypothesis.** If the ordering is real and usable, matching the policy's
+inductive bias to it should help most where credit assignment is hardest —
+sparse reward and long-horizon tasks — and least where the task is easy enough
+that the unordered head already solves it.
+
+**Quantitative expectation (pre-registered).**
+- Trains without pathology on all five: no NaNs, `mgr_ent_norm_skill_mean`
+  stays inside (0.2, 0.95) rather than pinning, and the `mgr_actent` multiplier
+  settles instead of railing at its 1e2 cap.
+- cartpole_swingup (e582) and hopper_stand (e583) are the two tasks where
+  `som_line` already has 4 seeds (e510–e517), so they are the only honest
+  same-arm comparisons. Expect **within the seed spread** on both — cartpole's
+  baseline spread is 204, so nothing short of a huge effect can show there.
+- The interesting cells are e584 (sparse) and e585 (cheetah), where SOM+LiP
+  beat Director and cheetah carried the whole +8.2% aggregate.
+
+**Power warning, stated up front.** One seed per task. This cannot resolve
+anything on its own — hopper_hop was retired precisely because 5 seeds could
+not resolve a 15× difference there. Read e582–e586 as a screen: does it train,
+does it look broken, is any cell far enough from baseline to be worth 4 seeds.
+No claim about "better" can come out of this batch.
+
+**Branches.**
+- → If a cell lands clearly outside its baseline's seed spread, that task gets
+  4 seeds and becomes the real test.
+- → If everything lands inside the spread, the honest reading is "the ordering
+  is real but the manager was not the bottleneck", and the next question is
+  whether the worker, not the manager, is what fails to exploit it.
+- → If the entropy controller rails or the rate collapses to one class on
+  every block, the parameterization is too restrictive at C=8 and the finding
+  is about the policy class, not the geometry.
 
 ### e510–e549 — does a geometry-preserving goal code buy anything?
 
