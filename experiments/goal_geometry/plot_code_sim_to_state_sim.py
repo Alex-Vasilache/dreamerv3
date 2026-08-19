@@ -257,7 +257,7 @@ def build_row(data, sub):
        f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
        f'<rect width="{W}" height="{H}" fill="white"/>']
 
-  YT = (-1.0, -0.5, 0.0, 0.5, 1.0)
+  YT = (0.0, 0.25, 0.5, 0.75, 1.0)
   XT = (0.0, 0.5, 1.0)
   for k, (label, color, arr) in enumerate(panels):
     x0 = PL + k * (P + GAP)
@@ -268,9 +268,13 @@ def build_row(data, sub):
       return x0 + (1.0 - i / (nb - 1)) * P
 
     def sy(v):
-      # full cosine_max range: the metric reaches -1 for opposed vectors, and
-      # cropping at 0 makes an 0.84 floor look far closer to the ceiling
-      return PT + (1.0 - v) / 2.0 * P
+      # y spans [0, 1]. cosine_max itself reaches -1, and a mean over disjoint
+      # pairs really can get there, but -1 needs every partner to decode to the
+      # exact OPPOSITE goal, which is not the property being asked about. The
+      # target for maximally dissimilar codes is UNRELATED goals -- independent
+      # directions in this 1024-dim space measure 0.0002 +/- 0.031 -- so 0 is
+      # the meaningful floor and the axis ends there.
+      return PT + (1.0 - v) * P
 
     for v in YT:
       o.append(f'<line x1="{x0}" y1="{sy(v):.1f}" x2="{x0 + P}" '
@@ -281,7 +285,7 @@ def build_row(data, sub):
                f'y2="{PT + P}" stroke="{GRIDC}" stroke-width="1.7"/>')
 
     band = ([(sx(i), sy(min(m[i] + sd[i], 1.0))) for i in range(nb)] +
-            [(sx(i), sy(max(m[i] - sd[i], -1.0))) for i in range(nb)][::-1])
+            [(sx(i), sy(max(m[i] - sd[i], 0.0))) for i in range(nb)][::-1])
     o.append('<polygon points="%s" fill="%s" fill-opacity="0.28"/>' %
              (' '.join(f'{x:.1f},{y:.1f}' for x, y in band), color))
     o.append('<polyline points="%s" fill="none" stroke="%s" stroke-width="5.4" '
