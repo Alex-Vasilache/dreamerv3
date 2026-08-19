@@ -56,8 +56,24 @@ def onehot_of(ids, classes):
     return np.eye(classes, dtype=np.float32)[ids]
 
 
-def run(run_dir, out_path, n_codes=1024, n_envs=4, stride=8, seed=0,
-        sampling='uniform'):
+def partners(base_ids, m, classes, rng):
+    """For each row, move exactly m distinct blocks to a uniformly random OTHER
+    class. Vectorised: argsort of a random matrix picks m distinct blocks per
+    row, and adding (new >= old) skips the class the block already had. The
+    per-pair Python loop this replaces was fine at 1024 pairs a bin and takes
+    hours at a million."""
+    N, L = base_ids.shape
+    sel = np.argsort(rng.random((N, L)), axis=1)[:, :m]
+    old = np.take_along_axis(base_ids, sel, axis=1)
+    newc = rng.integers(0, classes - 1, size=(N, m))
+    newc += (newc >= old)
+    out = base_ids.copy()
+    np.put_along_axis(out, sel, newc, axis=1)
+    return out
+
+
+def run(run_dir, out_path, n_codes=1024, n_partners=1024, n_envs=4, stride=8,
+        seed=0, sampling='uniform', chunk=32768):
     config, agent = build(run_dir)
     impl, encode, decode = make_fns(config, agent)
     blocks, classes = [int(x) for x in config.agent.skill_shape]
@@ -82,18 +98,24 @@ def run(run_dir, out_path, n_codes=1024, n_envs=4, stride=8, seed=0,
     M = len(onehot)
     sim = np.full((M, blocks + 1), np.nan)
     sim[:, 0] = 1.0                     # self-pair, exactly 1 by construction
+    # n_partners partners for every base code at every distance. Decoding is
+    # chunked: M * n_partners is ~1e6 goals a bin, and one batch of that would
+    # be several GB of activations.
+    per_chunk = max(1, chunk // n_partners)
+    print(f'{M} base codes x {n_partners} partners x {blocks} bins = '
+          f'{M * n_partners * blocks:,} decodes, {per_chunk} bases per batch')
     for m in range(1, blocks + 1):
-        # exactly one partner per base code, at Hamming distance exactly m
-        mod = onehot.copy()
-        for i in range(M):
-            for b in rng.choice(blocks, size=m, replace=False):
-                c = int(rng.integers(classes - 1))
-                c += int(c >= ref_ids[i, b])   # uniform over the OTHER classes
-                mod[i, b, :] = 0.0
-                mod[i, b, c] = 1.0
-        assert (mod.argmax(-1) != ref_ids).sum(-1).min() == m
-        assert (mod.argmax(-1) != ref_ids).sum(-1).max() == m
-        sim[:, m] = cosine_max(decode(mod), ref_goal)
+        acc = np.zeros(M)
+        for lo in range(0, M, per_chunk):
+            hi = min(lo + per_chunk, M)
+            base = np.repeat(ref_ids[lo:hi], n_partners, axis=0)
+            pids = partners(base, m, classes, rng)
+            assert ((pids != base).sum(1) == m).all()
+            goals = decode(onehot_of(pids, classes))
+            ref = np.repeat(ref_goal[lo:hi], n_partners, axis=0)
+            acc[lo:hi] = cosine_max(goals, ref).reshape(hi - lo,
+                                                        n_partners).mean(-1)
+        sim[:, m] = acc
 
     curve = sim.mean(0)
     print('  blocks different -> goal-state cosine_max')
@@ -102,7 +124,8 @@ def run(run_dir, out_path, n_codes=1024, n_envs=4, stride=8, seed=0,
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(str(out) + '.npz', sim=sim, curve=curve,
                         blocks=np.arange(blocks + 1), task=str(config.task),
-                        run=name, n_codes=M, sampling=sampling)
+                        run=name, n_codes=M, n_partners=n_partners,
+                        sampling=sampling)
     print('wrote', str(out) + '.npz')
 
 
@@ -111,13 +134,15 @@ def main():
     p.add_argument('--run_dir', required=True)
     p.add_argument('--out', required=True)
     p.add_argument('--n_codes', type=int, default=1024)
+    p.add_argument('--n_partners', type=int, default=1024)
+    p.add_argument('--chunk', type=int, default=32768)
     p.add_argument('--sampling', choices=['uniform', 'encoded'],
                    default='uniform')
     p.add_argument('--n_envs', type=int, default=4)
     p.add_argument('--seed', type=int, default=0)
     a = p.parse_args()
-    run(a.run_dir, a.out, a.n_codes, a.n_envs, seed=a.seed,
-        sampling=a.sampling)
+    run(a.run_dir, a.out, a.n_codes, a.n_partners, a.n_envs, seed=a.seed,
+        sampling=a.sampling, chunk=a.chunk)
 
 
 if __name__ == '__main__':
