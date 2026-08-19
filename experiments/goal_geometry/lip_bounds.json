@@ -1,0 +1,1322 @@
+[
+ {
+  "run": "e502_dmc_cartpole_swingup_director_s0_BIG_j4676883",
+  "ckpt": "/work/DoyaU/vasilache/work/e502_dmc_cartpole_swingup_director_s0_BIG_j4676883/logdir/ckpt/20260810T195754F276686",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 13383856.007458085,
+   "product_spectral": 307.79914854320816,
+   "layers": [
+    {
+     "layer": "logits",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 30.20344928369741,
+     "spectral": 2.9145703277745016,
+     "constrained": false,
+     "raw_inf_norm": 30.20344928369741
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 37.022284522798145,
+     "spectral": 3.9305082463771917,
+     "constrained": false,
+     "raw_inf_norm": 37.022284522798145
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 23.177748473230167,
+     "spectral": 3.2026186590916574,
+     "constrained": false,
+     "raw_inf_norm": 23.177748473230167
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 22.577733231853927,
+     "spectral": 3.327937787150987,
+     "constrained": false,
+     "raw_inf_norm": 22.577733231853927
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 22.87230405001901,
+     "spectral": 2.5209471124271996,
+     "constrained": false,
+     "raw_inf_norm": 22.87230405001901
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 9899769.407654993,
+   "product_spectral": 7559.67636461119,
+   "layers": [
+    {
+     "layer": "pred",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 16.892851473225164,
+     "spectral": 4.95332019841537,
+     "constrained": false,
+     "raw_inf_norm": 16.892851473225164
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 12.868307709693909,
+     "spectral": 5.485207276704326,
+     "constrained": false,
+     "raw_inf_norm": 12.868307709693909
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 32.02252626615518,
+     "spectral": 5.709223047078701,
+     "constrained": false,
+     "raw_inf_norm": 32.02252626615518
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 31.672887173837807,
+     "spectral": 4.663672637672595,
+     "constrained": false,
+     "raw_inf_norm": 31.672887173837807
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 44.901146836455155,
+     "spectral": 10.449817087879747,
+     "constrained": false,
+     "raw_inf_norm": 44.901146836455155
+    }
+   ]
+  }
+ },
+ {
+  "run": "e506_dmc_hopper_stand_director_s0_BIG_j4676887",
+  "ckpt": "/work/DoyaU/vasilache/work/e506_dmc_hopper_stand_director_s0_BIG_j4676887/logdir/ckpt/20260810T192836F022810",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 14729003.34584313,
+   "product_spectral": 340.5897752228187,
+   "layers": [
+    {
+     "layer": "logits",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 28.962590603885474,
+     "spectral": 2.826350132052377,
+     "constrained": false,
+     "raw_inf_norm": 28.962590603885474
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 36.61825170609154,
+     "spectral": 5.135773182833706,
+     "constrained": false,
+     "raw_inf_norm": 36.61825170609154
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 24.38581983660697,
+     "spectral": 3.0180266428529117,
+     "constrained": false,
+     "raw_inf_norm": 24.38581983660697
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 23.908835284019005,
+     "spectral": 3.012718737111858,
+     "constrained": false,
+     "raw_inf_norm": 23.908835284019005
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 23.820044522639364,
+     "spectral": 2.580584895979978,
+     "constrained": false,
+     "raw_inf_norm": 23.820044522639364
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 6728009.288847214,
+   "product_spectral": 6489.356153336744,
+   "layers": [
+    {
+     "layer": "pred",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 19.264987734633905,
+     "spectral": 7.001305800536056,
+     "constrained": false,
+     "raw_inf_norm": 19.264987734633905
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 10.577170295000542,
+     "spectral": 4.596168891241641,
+     "constrained": false,
+     "raw_inf_norm": 10.577170295000542
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 29.10057060982217,
+     "spectral": 4.717197350374283,
+     "constrained": false,
+     "raw_inf_norm": 29.10057060982217
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 28.425564715071232,
+     "spectral": 4.949066786778029,
+     "constrained": false,
+     "raw_inf_norm": 28.425564715071232
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 39.91514789243229,
+     "spectral": 8.63811981432863,
+     "constrained": false,
+     "raw_inf_norm": 39.91514789243229
+    }
+   ]
+  }
+ },
+ {
+  "run": "e550_dmc_cartpole_swingup_sparse_director_s0_BIG_j4677820",
+  "ckpt": "/work/DoyaU/vasilache/work/e550_dmc_cartpole_swingup_sparse_director_s0_BIG_j4677820/logdir/ckpt/20260817T173412F545558",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 12776274.402439576,
+   "product_spectral": 310.2791245848207,
+   "layers": [
+    {
+     "layer": "logits",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 30.215522600050463,
+     "spectral": 2.8825349413277412,
+     "constrained": false,
+     "raw_inf_norm": 30.215522600050463
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 36.10415904220281,
+     "spectral": 4.042624742150978,
+     "constrained": false,
+     "raw_inf_norm": 36.10415904220281
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 22.680010106800182,
+     "spectral": 3.177446117754101,
+     "constrained": false,
+     "raw_inf_norm": 22.680010106800182
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 22.89875113661401,
+     "spectral": 3.253233848773648,
+     "constrained": false,
+     "raw_inf_norm": 22.89875113661401
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 22.55079443428258,
+     "spectral": 2.5758529734409827,
+     "constrained": false,
+     "raw_inf_norm": 22.55079443428258
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 10910883.429453049,
+   "product_spectral": 9056.109441993583,
+   "layers": [
+    {
+     "layer": "pred",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 18.05101627494878,
+     "spectral": 4.737394206000552,
+     "constrained": false,
+     "raw_inf_norm": 18.05101627494878
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 10.54012942314148,
+     "spectral": 6.264766412905541,
+     "constrained": false,
+     "raw_inf_norm": 10.54012942314148
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 34.389343116563396,
+     "spectral": 5.875709016136404,
+     "constrained": false,
+     "raw_inf_norm": 34.389343116563396
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 30.31967855362018,
+     "spectral": 4.887449109245005,
+     "constrained": false,
+     "raw_inf_norm": 30.31967855362018
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 55.00014589377679,
+     "spectral": 10.625630923156011,
+     "constrained": false,
+     "raw_inf_norm": 55.00014589377679
+    }
+   ]
+  }
+ },
+ {
+  "run": "e554_dmc_cheetah_run_director_s0_BIG_j4677821",
+  "ckpt": "/work/DoyaU/vasilache/work/e554_dmc_cheetah_run_director_s0_BIG_j4677821/logdir/ckpt/20260817T174915F432143",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 28501789.66326133,
+   "product_spectral": 374.7884129734994,
+   "layers": [
+    {
+     "layer": "logits",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 29.557512039925314,
+     "spectral": 3.2759187740628355,
+     "constrained": false,
+     "raw_inf_norm": 29.557512039925314
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 48.99766626264318,
+     "spectral": 4.100147089753162,
+     "constrained": false,
+     "raw_inf_norm": 48.99766626264318
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 24.531902883201838,
+     "spectral": 3.347995214871002,
+     "constrained": false,
+     "raw_inf_norm": 24.531902883201838
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 27.88985471765045,
+     "spectral": 3.1262537796427963,
+     "constrained": false,
+     "raw_inf_norm": 27.88985471765045
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 28.764138526894385,
+     "spectral": 2.665904178375931,
+     "constrained": false,
+     "raw_inf_norm": 28.764138526894385
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 20479171.802492652,
+   "product_spectral": 3641.621602601778,
+   "layers": [
+    {
+     "layer": "pred",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 11.668228377842752,
+     "spectral": 4.200668136698037,
+     "constrained": false,
+     "raw_inf_norm": 11.668228377842752
+    },
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 47.543953001499176,
+     "spectral": 7.1796681788589005,
+     "constrained": false,
+     "raw_inf_norm": 47.543953001499176
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 34.12929502554471,
+     "spectral": 4.08652047791847,
+     "constrained": false,
+     "raw_inf_norm": 34.12929502554471
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 33.226845857559965,
+     "spectral": 4.729640281574927,
+     "constrained": false,
+     "raw_inf_norm": 33.226845857559965
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 32.553354401286924,
+     "spectral": 6.247270061793472,
+     "constrained": false,
+     "raw_inf_norm": 32.553354401286924
+    }
+   ]
+  }
+ },
+ {
+  "run": "e534_dmc_cartpole_swingup_som_lipvq_line_prod_s0_BIG_j4677170",
+  "ckpt": "/work/DoyaU/vasilache/work/e534_dmc_cartpole_swingup_som_lipvq_line_prod_s0_BIG_j4677170/logdir/ckpt/20260811T231804F719935",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 135359.40646482864,
+   "product_spectral": 1653.1312925653026,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 27.64665031433204,
+     "spectral": 5.800506920722421,
+     "constrained": true,
+     "raw_inf_norm": 35.29260234985122
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.376520167311853,
+     "spectral": 5.337961336776738,
+     "constrained": true,
+     "raw_inf_norm": 22.021285178052494
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.22194482115856,
+     "spectral": 4.701166845605675,
+     "constrained": true,
+     "raw_inf_norm": 21.72251137213607
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.634143837423522,
+     "spectral": 4.6684384180091625,
+     "constrained": true,
+     "raw_inf_norm": 23.57064629071465
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 0.7846545107248978,
+     "spectral": 2.4327006696021587,
+     "constrained": true,
+     "raw_inf_norm": 9.436323436668317
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 113253.74127579815,
+   "product_spectral": 31604.869064402425,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 6.259491943802894,
+     "spectral": 9.727128035167434,
+     "constrained": true,
+     "raw_inf_norm": 8.670000636950135
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 19.433576587493963,
+     "spectral": 11.210667046627911,
+     "constrained": true,
+     "raw_inf_norm": 30.930662465456408
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 19.33181572362517,
+     "spectral": 6.766556920105253,
+     "constrained": true,
+     "raw_inf_norm": 30.5543214167119
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 19.49300003393972,
+     "spectral": 6.606651367652716,
+     "constrained": true,
+     "raw_inf_norm": 34.03468288393924
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 2.470639646827283,
+     "spectral": 6.483190448467892,
+     "constrained": true,
+     "raw_inf_norm": 24.054616109729977
+    }
+   ]
+  }
+ },
+ {
+  "run": "e538_dmc_hopper_stand_som_lipvq_line_prod_s0_BIG_j4677171",
+  "ckpt": "/work/DoyaU/vasilache/work/e538_dmc_hopper_stand_som_lipvq_line_prod_s0_BIG_j4677171/logdir/ckpt/20260812T002851F990690",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 163821.1453758224,
+   "product_spectral": 1610.2551839704186,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 27.290012359620547,
+     "spectral": 6.557660357133805,
+     "constrained": true,
+     "raw_inf_norm": 38.623551760618284
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.621362694338952,
+     "spectral": 5.842043531453269,
+     "constrained": true,
+     "raw_inf_norm": 22.40109299735923
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.73678780331032,
+     "spectral": 4.933609457774773,
+     "constrained": true,
+     "raw_inf_norm": 22.525368394599354
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.2802696343102,
+     "spectral": 4.7934967695292094,
+     "constrained": true,
+     "raw_inf_norm": 24.063205166465195
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 0.9411894077160258,
+     "spectral": 1.77731248169437,
+     "constrained": true,
+     "raw_inf_norm": 7.478951969164427
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 100925.97833011587,
+   "product_spectral": 71201.4407314671,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 6.476751130598817,
+     "spectral": 9.914437179450003,
+     "constrained": true,
+     "raw_inf_norm": 9.936132016126066
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.779068000152087,
+     "spectral": 12.912124505995177,
+     "constrained": true,
+     "raw_inf_norm": 31.12916188368399
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 19.327363971934123,
+     "spectral": 6.839339369033439,
+     "constrained": true,
+     "raw_inf_norm": 28.84955233578512
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 19.028135305129975,
+     "spectral": 6.628269964817239,
+     "constrained": true,
+     "raw_inf_norm": 29.939563927623567
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 2.2563312975282943,
+     "spectral": 12.268985930420348,
+     "constrained": true,
+     "raw_inf_norm": 21.289721644949168
+    }
+   ]
+  }
+ },
+ {
+  "run": "e526_dmc_cartpole_swingup_lipvq_prod_s0_BIG_j4677168",
+  "ckpt": "/work/DoyaU/vasilache/work/e526_dmc_cartpole_swingup_lipvq_prod_s0_BIG_j4677168/logdir/ckpt/20260815T085024F836888",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 184410.37564813576,
+   "product_spectral": 1264.1959062164135,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 27.78173828125086,
+     "spectral": 5.9524984440305895,
+     "constrained": true,
+     "raw_inf_norm": 36.25050261549768
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.6720542985488,
+     "spectral": 5.275861652452296,
+     "constrained": true,
+     "raw_inf_norm": 21.945354151400807
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.479436883819016,
+     "spectral": 5.052355279451198,
+     "constrained": true,
+     "raw_inf_norm": 22.018297666232684
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.831405646280132,
+     "spectral": 5.050996880983916,
+     "constrained": true,
+     "raw_inf_norm": 24.14351726451423
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 1.0215564343216927,
+     "spectral": 1.5774322216558396,
+     "constrained": true,
+     "raw_inf_norm": 10.051033027892117
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 61301.03260805171,
+   "product_spectral": 28317.991289971695,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 5.643804920020365,
+     "spectral": 8.280717852441184,
+     "constrained": true,
+     "raw_inf_norm": 8.140790350735188
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.707298286316583,
+     "spectral": 8.359580606706404,
+     "constrained": true,
+     "raw_inf_norm": 27.39895477241953
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.488727578922244,
+     "spectral": 6.917613056368949,
+     "constrained": true,
+     "raw_inf_norm": 27.63023148386128
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 19.071397786588786,
+     "spectral": 5.932434003085644,
+     "constrained": true,
+     "raw_inf_norm": 28.645564328704495
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 1.646626791181935,
+     "spectral": 9.96829278984758,
+     "constrained": true,
+     "raw_inf_norm": 21.85313521279022
+    }
+   ]
+  }
+ },
+ {
+  "run": "e530_dmc_hopper_stand_lipvq_prod_s0_BIG_j4677169",
+  "ckpt": "/work/DoyaU/vasilache/work/e530_dmc_hopper_stand_lipvq_prod_s0_BIG_j4677169/logdir/ckpt/20260815T113417F833009",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 186914.92381943733,
+   "product_spectral": 4820.234576044381,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 27.087799072267348,
+     "spectral": 7.6651030833748,
+     "constrained": true,
+     "raw_inf_norm": 36.06835949012884
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.68550110630625,
+     "spectral": 6.390827386161551,
+     "constrained": true,
+     "raw_inf_norm": 22.045490354910726
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.883598333931165,
+     "spectral": 5.942347810993644,
+     "constrained": true,
+     "raw_inf_norm": 22.476855286252885
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.26363373972785,
+     "spectral": 8.009011965601893,
+     "constrained": true,
+     "raw_inf_norm": 24.60198595783004
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 1.0707635186694802,
+     "spectral": 2.0675502613940626,
+     "constrained": true,
+     "raw_inf_norm": 9.955155019677477
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 50680.840947461045,
+   "product_spectral": 18680.458986125377,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 5.80094711514065,
+     "spectral": 7.795217170282247,
+     "constrained": true,
+     "raw_inf_norm": 8.36840975645464
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.19678117095672,
+     "spectral": 9.901610181725825,
+     "constrained": true,
+     "raw_inf_norm": 27.156370965240058
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.857215887810373,
+     "spectral": 8.336335621696758,
+     "constrained": true,
+     "raw_inf_norm": 29.718089404748753
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 18.736097343110277,
+     "spectral": 5.675836596684275,
+     "constrained": true,
+     "raw_inf_norm": 32.904563911026344
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 1.3589191745950986,
+     "spectral": 5.115032817277875,
+     "constrained": true,
+     "raw_inf_norm": 22.334441734245047
+    }
+   ]
+  }
+ },
+ {
+  "run": "e510_dmc_cartpole_swingup_som_line_s0_BIG_j4676965",
+  "ckpt": "/work/DoyaU/vasilache/work/e510_dmc_cartpole_swingup_som_line_s0_BIG_j4676965/logdir/ckpt/20260811T230141F106328",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 29382899.474603884,
+   "product_spectral": 1256.6867709984647,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 61.31061328868964,
+     "spectral": 6.45528615297497,
+     "constrained": false,
+     "raw_inf_norm": 61.31061328868964
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 29.290001978879445,
+     "spectral": 4.865783711873915,
+     "constrained": false,
+     "raw_inf_norm": 29.290001978879445
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 32.05260884502786,
+     "spectral": 4.473248332297784,
+     "constrained": false,
+     "raw_inf_norm": 32.05260884502786
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 37.995111459778855,
+     "spectral": 5.516586326304877,
+     "constrained": false,
+     "raw_inf_norm": 37.995111459778855
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 13.435334433015669,
+     "spectral": 1.6213072214922923,
+     "constrained": false,
+     "raw_inf_norm": 13.435334433015669
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 31692993.549968593,
+   "product_spectral": 62046.930898353676,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 13.535500012338161,
+     "spectral": 8.855653571929885,
+     "constrained": false,
+     "raw_inf_norm": 13.535500012338161
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 50.89768132957397,
+     "spectral": 12.1264493484629,
+     "constrained": false,
+     "raw_inf_norm": 50.89768132957397
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 47.794652329335804,
+     "spectral": 10.189194854223455,
+     "constrained": false,
+     "raw_inf_norm": 47.794652329335804
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 45.32980598707218,
+     "spectral": 12.16420039796365,
+     "constrained": false,
+     "raw_inf_norm": 45.32980598707218
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 21.233803465795063,
+     "spectral": 4.661681463787837,
+     "constrained": false,
+     "raw_inf_norm": 21.233803465795063
+    }
+   ]
+  }
+ },
+ {
+  "run": "e514_dmc_hopper_stand_som_line_s0_BIG_j4676966",
+  "ckpt": "/work/DoyaU/vasilache/work/e514_dmc_hopper_stand_som_line_s0_BIG_j4676966/logdir/ckpt/20260811T223211F626210",
+  "goal_enc": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 63677128.536652036,
+   "product_spectral": 1355.2299441390353,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      1024,
+      512
+     ],
+     "inf_norm": 65.66291524842018,
+     "spectral": 6.295301128873474,
+     "constrained": false,
+     "raw_inf_norm": 65.66291524842018
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 33.54539509426104,
+     "spectral": 5.101064742834422,
+     "constrained": false,
+     "raw_inf_norm": 33.54539509426104
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 48.443359885737664,
+     "spectral": 5.027764212769357,
+     "constrained": false,
+     "raw_inf_norm": 48.443359885737664
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 44.57037846345338,
+     "spectral": 4.891465130286365,
+     "constrained": false,
+     "raw_inf_norm": 44.57037846345338
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      64
+     ],
+     "inf_norm": 13.38905176766275,
+     "spectral": 1.7160177670010734,
+     "constrained": false,
+     "raw_inf_norm": 13.38905176766275
+    }
+   ]
+  },
+  "goal_dec": {
+   "n_layers": 5,
+   "has_norm_layer": true,
+   "config_norm": "rms",
+   "product_inf_norm": 30728431.30638454,
+   "product_spectral": 69570.87735898052,
+   "layers": [
+    {
+     "layer": "linear0",
+     "shape": [
+      64,
+      512
+     ],
+     "inf_norm": 16.08963481709361,
+     "spectral": 8.224836097167449,
+     "constrained": false,
+     "raw_inf_norm": 16.08963481709361
+    },
+    {
+     "layer": "linear1",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 50.40513367325184,
+     "spectral": 13.804007787750152,
+     "constrained": false,
+     "raw_inf_norm": 50.40513367325184
+    },
+    {
+     "layer": "linear2",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 48.40413046456524,
+     "spectral": 9.618343383564095,
+     "constrained": false,
+     "raw_inf_norm": 48.40413046456524
+    },
+    {
+     "layer": "linear3",
+     "shape": [
+      512,
+      512
+     ],
+     "inf_norm": 40.03098008833331,
+     "spectral": 10.98601055888569,
+     "constrained": false,
+     "raw_inf_norm": 40.03098008833331
+    },
+    {
+     "layer": "out",
+     "shape": [
+      512,
+      1024
+     ],
+     "inf_norm": 19.554233013022895,
+     "spectral": 5.799021817118995,
+     "constrained": false,
+     "raw_inf_norm": 19.554233013022895
+    }
+   ]
+  }
+ }
+]
