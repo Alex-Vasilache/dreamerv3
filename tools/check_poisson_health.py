@@ -33,6 +33,7 @@ import time
 
 WORK = os.environ.get('WORK_DIR', '/work/DoyaU/vasilache/work')
 ACTENT_MAX = 1e2  # manager_actent_max
+ENT_CHECK_STEP = 100_000  # baselines only reach ~0.55 by here
 
 
 def read_rows(path, tail_bytes=4_000_000):
@@ -95,15 +96,30 @@ def check(run_dir, min_step, stale_minutes=60):
                         'regularizer is skipping the manager head (e478)')
     else:
         info['ent'] = ent[-1][1]
-        if step >= min_step:
+        # Thresholds calibrated against the e566-e573 baselines rather than
+        # guessed. Those sit at 1.00 until ~25k, are still 0.96-0.99 at 31k,
+        # drop between 31k and 50k, and reach 0.53-0.62 by 100k. So an entropy
+        # check before 100k says nothing -- a fresh Poisson head starts at 0.92
+        # by construction (lam=3.5, tau=1) and would look "already converged"
+        # against a categorical head's 1.00 while actually being untrained.
+        if step >= max(min_step, ENT_CHECK_STEP):
             recent = [v for _, v in ent[-20:]]
             avg = sum(recent) / len(recent)
-            if avg > 0.95:
-                problems.append('ENT_PIN   normalized entropy pinned high '
-                                '(%.3f) -- head cannot commit to a class' % avg)
+            if avg > 0.85:
+                problems.append(
+                    'ENT_PIN   normalized entropy %.3f at step %s, vs 0.53-0.62 '
+                    'for the baselines -- the temperature is not moving and the '
+                    'head cannot commit' % (avg, step))
             elif avg < 0.20:
                 problems.append('ENT_PIN   normalized entropy pinned low '
                                 '(%.3f) -- collapsed onto one class' % avg)
+            # No separate "tau is frozen" check. A frozen temperature shows up
+            # as entropy stuck near its 0.92 init, which the ENT_PIN branch
+            # above already catches. Testing flatness directly is worse than
+            # redundant: read_rows only keeps the tail of the file, so ent[0]
+            # is not the run's initial entropy but whatever step the tail
+            # begins at -- and a CONVERGED run is legitimately flat, so the
+            # check reported all four healthy e570-e573 baselines as broken.
 
     mult = series(rows, 'mgr_actent_skill_scale_mean')
     if mult:
