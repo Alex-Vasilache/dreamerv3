@@ -738,7 +738,7 @@ Spectral norms move the other way (Director enc 308–375 / dec 3.6–9.1e3; LiP
 | e566–e569 | 4693744–47 | hopper_hop / BIG | pure Director | 0–3 | 4M | *launched 2026-08-17* | fresh, **not** a resume of e495–e499 (see below) |
 | e570–e573 | 4693748–51 | hopper_hop / BIG | SOM-line + LiP | 0–3 | 4M | *launched 2026-08-17* | measured against e566–e569 |
 | ~~e574–e581~~ | ~~4696162–69~~ | cheetah_run + hopper_hop / BIG | SOM-line | 0–3 | 4M | **cancelled 2026-08-19, never started** | queued 2026-08-18, cancelled while still PENDING to free the lane for e582–e586. Their rows were removed from the watchdog TSV first, or it would have resubmitted them. Nothing was lost — no job ever ran. |
-| e582–e586 | 4696814–18 | all 5 benchmarks / BIG | SOM-line + **Poisson manager** | 0 | 4M | *launched 2026-08-19* | one seed per task. First test of the unimodal Poisson manager policy — see §6. |
+| e582–e586 | 4696814–18 | all 5 benchmarks / BIG | SOM-line + **Poisson manager** | 0 | 4M | *launched 2026-08-19; all 5 healthy past 175k* | one seed per task. First test of the unimodal Poisson manager policy — see §6. Early-health prediction **confirmed**, details below. |
 | e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | 0–3 | 4M | 655.2 / 753.1 / 747.3 / 859.0 — **mean 753.7, std 83.3, spread 203.8** | unimodal; every seed over the 600 bar. Spread 204 vs "< 200" predicted, i.e. on target. |
 | e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | 0–3 | 4M | 824.8 / 817.6 / 821.5 / 825.2 — **mean 822.3, std 3.5, spread 7.6** | unimodal and extraordinarily tight — spread 7.6 against a "< 300" prediction. |
 
@@ -833,6 +833,33 @@ anything on its own — hopper_hop was retired precisely because 5 seeds could
 not resolve a 15× difference there. Read e582–e586 as a screen: does it train,
 does it look broken, is any cell far enough from baseline to be worth 4 seeds.
 No claim about "better" can come out of this batch.
+
+**Early-health result (2026-08-19, all five past 175k steps).** The first
+pre-registered expectation is met: no NaNs, no railing, no collapse.
+
+| run | task | step | ent | mult | blk/change | score |
+|---|---|---|---|---|---|---|
+| e582 | cartpole_swingup | 266k | 0.531 | 3.8e-3 | 0.358 | 251.1 |
+| e583 | hopper_stand | 263k | 0.629 | 1.8e-3 | 0.235 | 6.5 |
+| e584 | cartpole_swingup_sparse | 214k | 0.519 | 2.0e-3 | 0.367 | 23.0 |
+| e585 | cheetah_run | 176k | 0.535 | 1.4e-2 | 0.237 | 155.1 |
+| e586 | hopper_hop | 186k | 0.521 | 2.1e-3 | 0.214 | 0.29 |
+
+The one thing worth flagging beforehand was whether a **single** temperature
+scalar could sharpen as fast as C free logits. It can: entropy went 0.92 → 0.52
+on the same timescale as the baselines (which go 1.00 → ~0.55 between 31k and
+100k) and then held at the 0.5 target. Multipliers are 1e-5 to 2e-2, nowhere
+near the 1e2 cap. Block-change rates 0.21–0.37 match the baselines' 0.25–0.39,
+so the goal code is not frozen.
+
+Note the Poisson head starts at **0.92** normalized entropy, not 1.00 — that is
+the value of the family at lam=3.5, tau=1, not a sign of early convergence.
+Any entropy comparison against a categorical head before ~100k is meaningless
+for this reason; `tools/check_poisson_health.py` encodes that.
+
+On hopper_hop, the only same-task comparison available this early, e586 scores
+0.449 over 150–200k against Director's 0.64–2.20 and SOM+LiP's 0.10–4.61.
+Everything is ~0 there this early; this rules out divergence, nothing more.
 
 **Branches.**
 - → If a cell lands clearly outside its baseline's seed spread, that task gets
