@@ -29,6 +29,7 @@ import glob
 import json
 import math
 import os
+import time
 
 WORK = os.environ.get('WORK_DIR', '/work/DoyaU/vasilache/work')
 ACTENT_MAX = 1e2  # manager_actent_max
@@ -59,11 +60,19 @@ def series(rows, suffix):
     return sorted(out)
 
 
-def check(run_dir, min_step):
+def check(run_dir, min_step, stale_minutes=60):
     name = os.path.basename(run_dir.rstrip('/'))
     rows = read_rows(os.path.join(run_dir, 'logdir', 'metrics.jsonl'))
     if not rows:
-        return name, 0, ['NODATA  no metrics rows yet'], {}
+        # Not a failure *yet*. A fresh run spends the first several minutes in
+        # XLA autotuning and prefill before the first metrics flush, so
+        # treating this as a problem reports every launch as broken. It only
+        # becomes a problem once it has had long enough.
+        age_min = (time.time() - os.path.getmtime(run_dir)) / 60.0
+        if age_min > stale_minutes:
+            return name, 0, ['NODATA  no metrics after %.0f min -- not '
+                             'training' % age_min], {}
+        return name, 0, [], {'waiting_min': age_min}
     step = max(r['step'] for r in rows)
     problems, info = [], {'step': step}
 
@@ -114,6 +123,8 @@ def check(run_dir, min_step):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--glob', default='e58[2-6]_*_som_line_poisson_*')
+    p.add_argument('--stale-minutes', type=float, default=60.0,
+                   help='a started run with no metrics after this long is a failure')
     p.add_argument('--min-step', type=int, default=50_000,
                    help='below this, only hard failures (NaN) are reported')
     a = p.parse_args()
@@ -124,7 +135,7 @@ def main():
         return 0
     bad = 0
     for d in dirs:
-        name, step, problems, info = check(d, a.min_step)
+        name, step, problems, info = check(d, a.min_step, a.stale_minutes)
         tag = 'FAIL' if problems else 'ok  '
         extra = '  '.join('%s=%.4g' % (k, v) for k, v in sorted(info.items())
                           if k != 'step')
