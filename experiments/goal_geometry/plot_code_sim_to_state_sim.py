@@ -92,6 +92,10 @@ def build(data, title, sub):
   # Aggregate over environments, drawn last so it sits on top. This is the
   # plain mean of the four per-environment means -- the y axis is cosine_max,
   # so a curve rescaled to its own range could not share it.
+  # Short labels: at ~79pt printed, a panel fits roughly 12 characters, and
+  # "Cartpole Swingup sparse" overran into its neighbour.
+  SHORT = {'Cartpole Swingup': 'Cartpole', 'Hopper Stand': 'Hopper Stand',
+           'Cartpole Swingup sparse': 'Cartpole sparse', 'Cheetah Run': 'Cheetah'}
   present = [t for t, _, _ in TASKS if t in data]
   if len(present) > 1:
     per_env = np.stack([np.stack(data[t]).mean(0) for t in present])
@@ -172,6 +176,7 @@ def main():
   ap = argparse.ArgumentParser()
   ap.add_argument('--results', default=str(HERE / 'code_sim'))
   ap.add_argument('--out', default=str(HERE / 'code_sim_to_state_sim_director'))
+  ap.add_argument('--layout', choices=['single', 'row'], default='single')
   ap.add_argument('--copy-to', default=None)
   a = ap.parse_args()
   data = load(a.results)
@@ -183,10 +188,15 @@ def main():
     print('%-30s n=%d  m=0 %.3f  m=8 %.3f' % (t, len(arr), arr[:, 0].mean(),
                                               arr[:, -1].mean()))
   n = min(len(v) for v in data.values())
-  svg = build(data, 'Goal-code similarity vs goal-state similarity (Director)',
-              f'four tasks, {n} seeds each, band = +/-1 std across seeds')
+  sub = f'Director, {n} seeds per environment, band = +/-1 std across seeds'
+  if a.layout == 'row':
+    svg, W, H = build_row(data, sub)
+    print('row layout %dx%d svg units' % (W, H))
+  else:
+    svg = build(data,
+                'Goal-code similarity vs goal-state similarity (Director)', sub)
   pathlib.Path(a.out + '.svg').write_text(svg)
-  subprocess.run(['rsvg-convert', '-f', 'png', '-d', '300', '-p', '300',
+  subprocess.run(['rsvg-convert', '-f', 'png', '-d', '600', '-p', '600',
                   '-o', a.out + '.png', a.out + '.svg'], check=True)
   print('wrote', a.out + '.png')
   if a.copy_to:
@@ -195,6 +205,122 @@ def main():
                       os.path.join(a.copy_to, os.path.basename(a.out) + ext)],
                      check=True)
     print('copied to', a.copy_to)
+
+
+
+
+# --------------------------------------------------------------- row layout
+
+def build_row(data, sub):
+  """Five square panels in a row, spanning the text width.
+
+  Each panel is ~1/5 of 397pt, so about 79pt printed. Every font is therefore
+  sized as a fraction of the SVG width and the whole thing is rendered at high
+  DPI: at this size a font chosen in absolute pixels is either invisible in
+  print or enormous on screen. Ticks are cut to 0/0.5/1 and the y axis is
+  labelled once, on the left panel -- there is no room for more and repeating
+  them would leave no space for the curve.
+  """
+  import math
+  n_panels = len(TASKS) + 1
+  P = 300                      # panel side, SVG units
+  GAP = 34
+  PL, PR, PT, PB = 116, 24, 96, 108
+  W = PL + n_panels * P + (n_panels - 1) * GAP + PR
+  H = PT + P + PB
+  # print size: fonts are picked so final_pt = f * TARGET/W lands ~5-6.5pt
+  TARGET = 0.98 * 397.0
+  def f(pt_):
+    return pt_ * W / TARGET
+  F_TITLE, F_TICK, F_AXIS, F_VAL = f(6.6), f(5.4), f(6.0), f(7.2)
+
+  o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+       f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
+       f'<rect width="{W}" height="{H}" fill="white"/>']
+
+  # Short labels: at ~79pt printed, a panel fits roughly 12 characters, and
+  # "Cartpole Swingup sparse" overran into its neighbour.
+  SHORT = {'Cartpole Swingup': 'Cartpole', 'Hopper Stand': 'Hopper Stand',
+           'Cartpole Swingup sparse': 'Cartpole sparse', 'Cheetah Run': 'Cheetah'}
+  present = [t for t, _, _ in TASKS if t in data]
+  per_env = (np.stack([np.stack(data[t]).mean(0) for t in present])
+             if present else None)
+  panels = [(SHORT.get(lab, lab), col, np.stack(data[t]))
+            for t, lab, col in TASKS if t in data]
+  if per_env is not None and len(present) > 1:
+    panels.append(('All envs', INK, per_env))
+
+  for k, (label, color, arr) in enumerate(panels):
+    x0 = PL + k * (P + GAP)
+    m, sd = arr.mean(0), arr.std(0)
+    nb = len(m)
+
+    def sx(i, x0=x0):
+      return x0 + (1.0 - i / (nb - 1)) * P
+
+    # y spans the FULL cosine_max range [-1, 1], not just the positive half:
+    # the metric can reach -1 (exactly opposed vectors), and cropping at 0
+    # makes an 0.84 floor look far closer to the ceiling than it is.
+    def sy(v):
+      return PT + (1.0 - v) / 2.0 * P
+
+    for v in (-1.0, -0.5, 0.0, 0.5, 1.0):
+      y = sy(v)
+      o.append(f'<line x1="{x0}" y1="{y:.1f}" x2="{x0 + P}" y2="{y:.1f}" '
+               f'stroke="{GRID}" stroke-width="1.6"/>')
+      if k == 0:
+        o.append(f'<text x="{x0 - 10}" y="{y + F_TICK * 0.36:.1f}" '
+                 f'font-size="{F_TICK:.1f}" fill="{INK_2}" '
+                 f'text-anchor="end">{v:g}</text>')
+    # zero line, the reference the sign of the metric turns on
+    o.append(f'<line x1="{x0}" y1="{sy(0):.1f}" x2="{x0 + P}" y2="{sy(0):.1f}" '
+             f'stroke="{BASELINE}" stroke-width="1.8"/>')
+    o.append(f'<line x1="{x0}" y1="{sy(-1):.1f}" x2="{x0 + P}" '
+             f'y2="{sy(-1):.1f}" stroke="{BASELINE}" stroke-width="2"/>')
+    # perfect alignment: goal similarity == code similarity, so it runs from
+    # (0, 0) to (1, 1) and starts at mid-height now that y reaches -1
+    o.append(f'<line x1="{sx(nb - 1):.1f}" y1="{sy(0):.1f}" '
+             f'x2="{sx(0):.1f}" y2="{sy(1):.1f}" stroke="{BASELINE}" '
+             f'stroke-width="1.8" stroke-dasharray="6,5"/>')
+    for v in (0.0, 0.5, 1.0):
+      i = (1.0 - v) * (nb - 1)
+      o.append(f'<text x="{sx(i):.1f}" y="{sy(-1) + F_TICK * 1.9:.1f}" '
+               f'font-size="{F_TICK:.1f}" fill="{INK_2}" '
+               f'text-anchor="middle">{v:g}</text>')
+
+    band = ([(sx(i), sy(min(m[i] + sd[i], 1.0))) for i in range(nb)] +
+            [(sx(i), sy(max(m[i] - sd[i], -1.0))) for i in range(nb)][::-1])
+    o.append('<polygon points="%s" fill="%s" fill-opacity="0.20"/>' %
+             (' '.join(f'{x:.1f},{y:.1f}' for x, y in band), color))
+    pts = [(sx(i), sy(m[i])) for i in range(nb)]
+    o.append('<polyline points="%s" fill="none" stroke="%s" stroke-width="4.5" '
+             'stroke-linejoin="round" stroke-linecap="round"/>' %
+             (' '.join(f'{x:.1f},{y:.1f}' for x, y in pts), color))
+    for x, y in pts:
+      o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.6" fill="{color}" '
+               f'stroke="white" stroke-width="1.8"/>')
+    o.append(f'<text x="{x0 + P / 2:.1f}" y="{PT - 30:.1f}" '
+             f'font-size="{F_TITLE:.1f}" font-weight="bold" fill="{INK}" '
+             f'text-anchor="middle">{esc(label)}</text>')
+    # the floor, the one number worth reading off a panel this size
+    o.append(f'<text x="{x0 + P * 0.06:.1f}" y="{sy(m[-1]) - 16:.1f}" '
+             f'font-size="{F_VAL:.1f}" font-weight="bold" fill="{color}">'
+             f'{m[-1]:.2f}</text>')
+
+  o.append(f'<text x="{PL + (W - PL - PR) / 2:.1f}" y="{H - 24:.1f}" '
+           f'font-size="{F_AXIS:.1f}" font-weight="bold" fill="{INK}" '
+           f'text-anchor="middle">goal-code similarity '
+           f'(fraction of blocks matching)</text>')
+  cy = PT + P / 2
+  o.append(f'<text x="{F_AXIS * 1.1:.1f}" y="{cy:.1f}" '
+           f'font-size="{F_AXIS:.1f}" font-weight="bold" fill="{INK}" '
+           f'text-anchor="middle" '
+           f'transform="rotate(-90 {F_AXIS * 1.1:.1f} {cy:.1f})">'
+           f'goal-state similarity (cosine_max)</text>')
+  o.append(f'<text x="{PL}" y="{PT - 62:.1f}" font-size="{F_TICK:.1f}" '
+           f'fill="{INK_2}">{esc(sub)}</text>')
+  o.append('</svg>')
+  return '\n'.join(o), W, H
 
 
 if __name__ == '__main__':
