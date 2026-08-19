@@ -177,6 +177,7 @@ def main():
   ap.add_argument('--results', default=str(HERE / 'code_sim'))
   ap.add_argument('--out', default=str(HERE / 'code_sim_to_state_sim_director'))
   ap.add_argument('--layout', choices=['single', 'row'], default='single')
+  ap.add_argument('--xlabel', default=None)
   ap.add_argument('--copy-to', default=None)
   a = ap.parse_args()
   data = load(a.results)
@@ -190,7 +191,7 @@ def main():
   n = min(len(v) for v in data.values())
   sub = f'Director, {n} seeds per environment, band = +/-1 std across seeds'
   if a.layout == 'row':
-    svg, W, H = build_row(data, sub)
+    svg, W, H = build_row(data, sub, a.xlabel)
     print('row layout %dx%d svg units' % (W, H))
   else:
     svg = build(data,
@@ -211,7 +212,7 @@ def main():
 
 # --------------------------------------------------------------- row layout
 
-def build_row(data, sub):
+def build_row(data, sub, xlabel=None):
   """Five square panels in a row, styled after the DreamerV3/Director figures.
 
   That style is: a boxed axes frame, light gridlines on both axes, outward
@@ -245,6 +246,12 @@ def build_row(data, sub):
   # "Cartpole Swingup sparse" overran into its neighbour.
   SHORT = {'Cartpole Swingup': 'Cartpole', 'Hopper Stand': 'Hopper Stand',
            'Cartpole Swingup sparse': 'Cartpole Sparse', 'Cheetah Run': 'Cheetah'}
+  if xlabel is None:
+    # 9 bins is the block count, 57 is the summed index distance; label the
+    # axis for whichever measurement produced the curves rather than assuming.
+    nb0 = len(next(iter(data.values()))[0])
+    xlabel = ('goal-code similarity (fraction of blocks matching)' if nb0 <= 9
+              else 'goal-code similarity (1 - index distance / 56)')
   present = [t for t, _, _ in TASKS if t in data]
   per_env = (np.stack([np.stack(data[t]).mean(0) for t in present])
              if present else None)
@@ -272,6 +279,9 @@ def build_row(data, sub):
     nb = len(m)
 
     def sx(i, x0=x0):
+      # i indexes the bins in order of INCREASING distance, so the axis is
+      # code similarity 1 - i/(nb-1): works for the 9 block bins and for the
+      # 57 index-distance bins alike.
       return x0 + (1.0 - i / (nb - 1)) * P
 
     def sy(v):
@@ -325,7 +335,7 @@ def build_row(data, sub):
 
   o.append(f'<text x="{PL + (W - PL - PR) / 2:.1f}" y="{H - 22:.1f}" '
            f'font-size="{F_AXIS:.1f}" fill="{INK}" text-anchor="middle">'
-           f'goal-code similarity (fraction of blocks matching)</text>')
+           f'{esc(xlabel)}</text>')
   cy = PT + P / 2
   yx = 26.0
   o.append(f'<text x="{yx:.1f}" y="{cy:.1f}" '
