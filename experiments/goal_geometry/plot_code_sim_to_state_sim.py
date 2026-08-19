@@ -226,7 +226,7 @@ def build_row(data, sub):
   n_panels = len(TASKS) + 1
   P = 300
   GAP = 30
-  PL, PR, PT, PB = 112, 20, 92, 104
+  PL, PR, PT, PB = 152, 22, 104, 122
   W = PL + n_panels * P + (n_panels - 1) * GAP + PR
   H = PT + P + PB
   TARGET = 0.98 * 397.0
@@ -234,7 +234,11 @@ def build_row(data, sub):
   def f(pt_):
     return pt_ * W / TARGET
 
-  F_TITLE, F_TICK, F_AXIS = f(6.8), f(5.4), f(6.2)
+  # The rotated y label has to fit inside the PANEL HEIGHT, not the figure
+  # width -- at f(8.4) 'goal-state similarity (cosine_max)' was half again
+  # longer than the panel is tall and ran off both ends of the canvas.
+  F_TITLE, F_TICK, F_AXIS = f(9.2), f(7.4), f(8.4)
+  F_YAX = f(6.0)
   FRAME, GRIDC = '#333333', '#d5d5d2'
 
   # Short labels: a panel this wide fits about twelve characters, and
@@ -270,41 +274,41 @@ def build_row(data, sub):
 
     for v in YT:
       o.append(f'<line x1="{x0}" y1="{sy(v):.1f}" x2="{x0 + P}" '
-               f'y2="{sy(v):.1f}" stroke="{GRIDC}" stroke-width="1.3"/>')
+               f'y2="{sy(v):.1f}" stroke="{GRIDC}" stroke-width="1.7"/>')
     for v in XT:
       gx = sx((1.0 - v) * (nb - 1))
       o.append(f'<line x1="{gx:.1f}" y1="{PT}" x2="{gx:.1f}" '
-               f'y2="{PT + P}" stroke="{GRIDC}" stroke-width="1.3"/>')
+               f'y2="{PT + P}" stroke="{GRIDC}" stroke-width="1.7"/>')
 
     band = ([(sx(i), sy(min(m[i] + sd[i], 1.0))) for i in range(nb)] +
             [(sx(i), sy(max(m[i] - sd[i], -1.0))) for i in range(nb)][::-1])
-    o.append('<polygon points="%s" fill="%s" fill-opacity="0.25"/>' %
+    o.append('<polygon points="%s" fill="%s" fill-opacity="0.28"/>' %
              (' '.join(f'{x:.1f},{y:.1f}' for x, y in band), color))
-    o.append('<polyline points="%s" fill="none" stroke="%s" stroke-width="3.4" '
+    o.append('<polyline points="%s" fill="none" stroke="%s" stroke-width="5.4" '
              'stroke-linejoin="round" stroke-linecap="round"/>' %
              (' '.join(f'{sx(i):.1f},{sy(m[i]):.1f}' for i in range(nb)), color))
     # perfect alignment: goal similarity == code similarity, (0,0) to (1,1)
     o.append(f'<line x1="{sx(nb - 1):.1f}" y1="{sy(0):.1f}" '
              f'x2="{sx(0):.1f}" y2="{sy(1):.1f}" stroke="#8a8880" '
-             f'stroke-width="1.6" stroke-dasharray="6,5"/>')
+             f'stroke-width="2.2" stroke-dasharray="8,6"/>')
 
     o.append(f'<rect x="{x0}" y="{PT}" width="{P}" height="{P}" fill="none" '
-             f'stroke="{FRAME}" stroke-width="1.7"/>')
+             f'stroke="{FRAME}" stroke-width="2.2"/>')
     for v in YT:
-      o.append(f'<line x1="{x0 - 6}" y1="{sy(v):.1f}" x2="{x0}" '
-               f'y2="{sy(v):.1f}" stroke="{FRAME}" stroke-width="1.7"/>')
+      o.append(f'<line x1="{x0 - 8}" y1="{sy(v):.1f}" x2="{x0}" '
+               f'y2="{sy(v):.1f}" stroke="{FRAME}" stroke-width="2.2"/>')
       if k == 0:
-        o.append(f'<text x="{x0 - 12}" y="{sy(v) + F_TICK * 0.36:.1f}" '
+        o.append(f'<text x="{x0 - 15}" y="{sy(v) + F_TICK * 0.36:.1f}" '
                  f'font-size="{F_TICK:.1f}" fill="{INK_2}" '
                  f'text-anchor="end">{v:g}</text>')
     for v in XT:
       gx = sx((1.0 - v) * (nb - 1))
       o.append(f'<line x1="{gx:.1f}" y1="{PT + P}" x2="{gx:.1f}" '
-               f'y2="{PT + P + 6}" stroke="{FRAME}" stroke-width="1.7"/>')
+               f'y2="{PT + P + 8}" stroke="{FRAME}" stroke-width="2.2"/>')
       o.append(f'<text x="{gx:.1f}" y="{PT + P + F_TICK * 1.9:.1f}" '
                f'font-size="{F_TICK:.1f}" fill="{INK_2}" '
                f'text-anchor="middle">{v:g}</text>')
-    o.append(f'<text x="{x0 + P / 2:.1f}" y="{PT - 22:.1f}" '
+    o.append(f'<text x="{x0 + P / 2:.1f}" y="{PT - 26:.1f}" '
              f'font-size="{F_TITLE:.1f}" fill="{INK}" '
              f'text-anchor="middle">{esc(label)}</text>')
 
@@ -312,10 +316,11 @@ def build_row(data, sub):
            f'font-size="{F_AXIS:.1f}" fill="{INK}" text-anchor="middle">'
            f'goal-code similarity (fraction of blocks matching)</text>')
   cy = PT + P / 2
-  o.append(f'<text x="{F_AXIS * 1.0:.1f}" y="{cy:.1f}" '
-           f'font-size="{F_AXIS:.1f}" fill="{INK}" text-anchor="middle" '
-           f'transform="rotate(-90 {F_AXIS * 1.0:.1f} {cy:.1f})">'
-           f'goal-state similarity (cosine_max)</text>')
+  yx = 26.0
+  o.append(f'<text x="{yx:.1f}" y="{cy:.1f}" '
+           f'font-size="{F_YAX:.1f}" fill="{INK}" text-anchor="middle" '
+           f'transform="rotate(-90 {yx:.1f} {cy:.1f})">'
+           f'goal-state similarity</text>')
   o.append('</svg>')
   return '\n'.join(o), W, H
 
