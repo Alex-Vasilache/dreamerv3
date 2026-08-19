@@ -40,17 +40,22 @@ def read_rows(path, tail_bytes=4_000_000):
     try:
         with open(path, 'rb') as f:
             f.seek(0, 2)
-            f.seek(max(0, f.tell() - tail_bytes))
+            size = f.tell()
+            f.seek(max(0, size - tail_bytes))
             data = f.read().decode('utf8', 'ignore').splitlines()
-        for line in data[1:] if f.tell() > tail_bytes else data:
-            try:
-                r = json.loads(line)
-            except Exception:
-                continue
-            if 'step' in r:
-                rows.append(r)
     except FileNotFoundError:
-        pass
+        return rows
+    # Seeking into the middle of the file almost certainly lands mid-line, so
+    # drop the first fragment -- but only when we actually seeked.
+    if size > tail_bytes and data:
+        data = data[1:]
+    for line in data:
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if 'step' in r:
+            rows.append(r)
     return rows
 
 
