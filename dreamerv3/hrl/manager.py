@@ -15,6 +15,7 @@ import ninjax as nj
 import embodied.jax.nets as nn
 import embodied.jax.outs as outs
 
+from . import explore as mgr_explore
 from .tensors import (
     aggregate_mgr_cont,
     aggregate_mgr_extr_rew,
@@ -109,7 +110,8 @@ class ManagerMixin:
     return jnp.concatenate(parts, -1)
 
   def _emit_manager(
-      self, tensor, bdims, deterministic=False, prev_mgr_skill=None):
+      self, tensor, bdims, deterministic=False, prev_mgr_skill=None,
+      explore=False):
     """Sample a manager command from the policy head.
 
     Under ``goal_soft_reuse_adapt`` the result also carries ``skill_probs`` --
@@ -125,6 +127,15 @@ class ManagerMixin:
         inner = inner.output
       skill_probs = jax.nn.softmax(f32(inner.dist.logits), -1)
     result = (mode if deterministic else sample)(out)
+    if explore and self.mgr_explore_eps and 'skill' in result:
+      # eps-greedy index jump (hrl/explore.py). ONLY reachable from
+      # ``_manager_skill_step``, i.e. the environment rollout: the manager is
+      # trained by REINFORCE on the log-probability of its own samples, so a
+      # jump inside imagination or on the replay sequence would bias the
+      # gradient. Here it only changes which states reach the replay buffer.
+      classes = int(tuple(int(x) for x in self.skill_shape)[-1])
+      result = {**result, 'skill': mgr_explore.apply_jump(
+          nj.seed(), result['skill'], float(self.mgr_explore_eps), classes)}
     if skill_probs is not None:
       result = {**result, 'skill_probs': skill_probs}
     return result
@@ -178,7 +189,8 @@ class ManagerMixin:
     # falls back to bare feat when no conditioning is enabled.
     mgr_inp = (self._mgr_input(feat, mgr_skill) if self.mgr_cond_goalcode
                else self.feat2tensor(feat))
-    emit = self._emit_manager(mgr_inp, 1, prev_mgr_skill=mgr_skill)
+    emit = self._emit_manager(
+        mgr_inp, 1, prev_mgr_skill=mgr_skill, explore=True)
     mgr_skill = skill_switch(update, emit, mgr_skill)
     # Hold the decoded deter across non-switch steps (Z is already held in carry).
     goal = self._held_goal_deter(

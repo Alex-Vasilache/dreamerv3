@@ -50,6 +50,7 @@ for arm in $ARMS; do
     som_line_poisson) cfg="goal_som_line mgr_poisson" ;;
     som_lipvq_line_prod_poisson) cfg="goal_som_lipvq_line_prod mgr_poisson" ;;
     som_lipvq_line_relu_gaussian) cfg="goal_som_lipvq_line_prod lip_relu mgr_gaussian" ;;
+    som_lipvq_line_relu_gaussian_eps) cfg="goal_som_lipvq_line_prod lip_relu mgr_gaussian mgr_explore" ;;
     som_lipvq_line) cfg="goal_som_lipvq_line" ;;
     som_lipvq_line_smooth) cfg="goal_som_lipvq_line_smooth" ;;
     som_lipvq_line_mgr) cfg="goal_som_lipvq_line_mgr" ;;

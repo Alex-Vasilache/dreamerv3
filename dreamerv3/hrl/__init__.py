@@ -19,6 +19,9 @@ the network wiring and the forward passes:
     flat (non-HRL) agent, plus ``lambda_return``.
 ``video``
     Image/video composition helpers for report and episode panels.
+``explore``
+    Epsilon-greedy index jumps for the manager on an ordered codebook, applied
+    in the environment rollout only so the REINFORCE gradient stays on-policy.
 """
 
 from .heads import (

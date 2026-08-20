@@ -276,6 +276,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           self.manager_pol = embodied.jax.MLPHead(
               self.goal_code_space, **config.manager_policy, name='manager_pol')
       self.manager_sample_freq = config.manager_sample_freq
+      # eps-greedy index jump, environment rollout only (hrl/explore.py).
+      self.mgr_explore_eps = float(getattr(config, 'mgr_explore_eps', 0.0))
       self._mgr_smooth = float(
           _vqcfg(config, 'mgr_smooth', 0.0)) if self.goal_ae_impl == 'vq' else 0.0
       # The smoothing kernel follows the codebook's own topology: a ring kernel

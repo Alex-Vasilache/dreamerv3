@@ -441,6 +441,10 @@ defaults:
     worker_report_horizon: 32
     worker_split_traj: True
     mgr_expl_weight: 0.1
+    # Probability that a manager decision in the ENVIRONMENT rollout is
+    # replaced by a deliberate large index jump from its mode (hrl/explore.py).
+    # 0 disables. Only meaningful on an ordered codebook (SOM on a line).
+    mgr_explore_eps: 0.0
     manager_actent: 3e-4
     # Director ``actent`` adaptive scale on per-dim normalized manager entropy.
     manager_actent_impl: mult
@@ -901,6 +905,27 @@ mgr_poisson:
 mgr_gaussian:
   agent:
     manager_policy: {output: gaussian, scale_init: 2.0, scale_min: 0.3}
+
+# eps-greedy index jump in the environment rollout, 10%.
+#
+#   --configs director_match goal_som_lipvq_line_prod lip_relu mgr_gaussian mgr_explore
+#
+# The Gaussian concentrates on classes next to its mode, which is what makes
+# credit transfer and equally what limits reach: two codes drawn in the same
+# state differ by only ~5.7 of the 56 index steps and decode to goals ~0.84
+# similar. That trade-off lives on the entropy knob, so neither raising
+# manager_actent_target nor adding unimix escapes it -- at target 0.8 the
+# mode/neighbour ratio collapses from 2.9 to 1.27, and a uniform mixture is
+# cancelled by the controller shrinking sigma (measured: unimix 0.05 moves the
+# gap 5.6 -> 5.8, and unimix 0.2 pushes the entropy floor to 0.597, above the
+# 0.5 target, which rails the multiplier as in e479).
+#
+# The jump buys reach on a separate axis: p(d) = 2d/[dmax(dmax+1)] draws
+# d ~ 30, which by the measured index curve lands at ~0.49 goal similarity.
+# See hrl/explore.py.
+mgr_explore:
+  agent:
+    mgr_explore_eps: 0.1
 
 # ReLU in the goal-AE trunk, as an overlay so it composes with any LiP arm:
 #

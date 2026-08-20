@@ -18,8 +18,17 @@ import dreamerv3.hrl as hrl
 # autoencoder and were never added here, so that test had been failing on the
 # branch since those modules landed.
 SUBMODULES = [
-    'goal_ae', 'goals', 'heads', 'lipschitz', 'losses', 'manager',
-    'reporting', 'tensors', 'video', 'vq',
+    'explore',
+    'goal_ae',
+    'goals',
+    'heads',
+    'lipschitz',
+    'losses',
+    'manager',
+    'reporting',
+    'tensors',
+    'video',
+    'vq',
 ]
 
 

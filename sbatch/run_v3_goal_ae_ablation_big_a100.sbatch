@@ -147,8 +147,10 @@ case "$ARM" in
   # bound) + the discretized-Gaussian manager. Straight-through stays ON --
   # goal_som_lipvq_line_prod is the ste:'on' member of the family.
   som_lipvq_line_relu_gaussian) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_gaussian" ;;
+  # Same, plus the 10% eps-greedy index jump in the environment rollout.
+  som_lipvq_line_relu_gaussian_eps) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_gaussian mgr_explore" ;;
   som_orig_lipvq_line_prod) ARM_CONFIG="goal_som_orig_lipvq_line_prod" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_lipvq_line_prod_gaussian|som_lipvq_line_relu_gaussian|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_lipvq_line_prod_gaussian|som_lipvq_line_relu_gaussian|som_lipvq_line_relu_gaussian_eps|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 
