@@ -72,16 +72,25 @@ def esc(s):
 
 
 def build(rows_cat, rows_gau):
-    PW, GAP = 470, 88
+    """A tight L x C grid per policy, one cell per (block, class).
+
+    No gaps: the goal code IS an L x C matrix, so the figure is drawn as one.
+    Every cell is ruled, and the probability fills its cell from the bottom.
+    The fill scale is shared by every cell in BOTH panels, so cell heights are
+    comparable across rows and across the two policies rather than each row
+    being normalized to its own maximum.
+    """
+    # Square cells, so each panel is itself a square L x C grid.
+    CELL = 48
+    CW = RH = CELL
+    PW, PH = C * CW, L * RH
+    GAP = 96
     PL, PR, PT, PB = 118, 40, 76, 96
-    # Rows sit close together: a bar tops out at RH-4, so RGAP only has to keep
-    # the tallest bar clear of the baseline above it.
-    RH, RGAP = 38, 6                        # row height and spacing
-    PH = L * RH + (L - 1) * RGAP
     W = PL + 2 * PW + GAP + PR
     H = PT + PH + PB
     f = lambda pt: pt * W / (0.98 * 397.0)
     F_TITLE, F_LAB, F_AXIS = f(8.0), f(6.0), f(7.4)
+    hi = max(max(r.max() for r in rows_cat), max(r.max() for r in rows_gau))
 
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
          f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
@@ -91,33 +100,38 @@ def build(rows_cat, rows_gau):
             [(rows_cat, CAT, 'Director: a categorical per block'),
              (rows_gau, GAU, 'Ours: a discretized Gaussian per block')]):
         x0 = PL + k * (PW + GAP)
-        o.append(f'<text x="{x0 + PW / 2:.1f}" y="{PT - 34:.1f}" '
+        o.append(f'<text x="{x0 + PW / 2:.1f}" y="{PT - 30:.1f}" '
                  f'font-size="{F_TITLE:.1f}" fill="{INK}" '
                  f'text-anchor="middle">{esc(title)}</text>')
+
+        # fills first, so the rules sit on top of them
         for r, p in enumerate(rows):
-            y0 = PT + r * (RH + RGAP)
-            base = y0 + RH
-            o.append(f'<line x1="{x0}" y1="{base:.1f}" x2="{x0 + PW}" '
-                     f'y2="{base:.1f}" stroke="{GRIDC}" stroke-width="1.6"/>')
-            slot = PW / C
-            bw = slot * 0.74
-            hi = max(p.max(), 1e-9)
             for j in range(C):
-                cx = x0 + (j + 0.5) * slot
-                bh = (p[j] / hi) * (RH - 4)
-                o.append(f'<rect x="{cx - bw / 2:.1f}" y="{base - bh:.1f}" '
-                         f'width="{bw:.1f}" height="{max(bh, 0.8):.1f}" '
-                         f'fill="{col}" fill-opacity="0.85"/>')
-            if k == 0:
-                o.append(f'<text x="{x0 - 16}" y="{base - RH / 2 + F_LAB * 0.36:.1f}" '
-                         f'font-size="{F_LAB:.1f}" fill="{INK_2}" '
-                         f'text-anchor="end">block {r + 1}</text>')
-        # class indices under the last row
-        for j in range(C):
-            cx = x0 + (j + 0.5) * (PW / C)
-            o.append(f'<text x="{cx:.1f}" y="{PT + PH + F_LAB * 2.0:.1f}" '
+                cx, cy = x0 + j * CW, PT + r * RH
+                bh = (p[j] / hi) * RH
+                if bh > 0.4:
+                    o.append(f'<rect x="{cx:.1f}" y="{cy + RH - bh:.1f}" '
+                             f'width="{CW}" height="{bh:.1f}" fill="{col}" '
+                             f'fill-opacity="0.85"/>')
+            o.append(f'<text x="{x0 - 14}" y="{PT + r * RH + RH / 2 + F_LAB * 0.36:.1f}" '
                      f'font-size="{F_LAB:.1f}" fill="{INK_2}" '
-                     f'text-anchor="middle">{j}</text>')
+                     f'text-anchor="end">block {r + 1}</text>')
+
+        for r in range(L + 1):
+            y = PT + r * RH
+            o.append(f'<line x1="{x0}" y1="{y}" x2="{x0 + PW}" y2="{y}" '
+                     f'stroke="{GRIDC}" stroke-width="1.6"/>')
+        for j in range(C + 1):
+            x = x0 + j * CW
+            o.append(f'<line x1="{x}" y1="{PT}" x2="{x}" y2="{PT + PH}" '
+                     f'stroke="{GRIDC}" stroke-width="1.6"/>')
+        o.append(f'<rect x="{x0}" y="{PT}" width="{PW}" height="{PH}" '
+                 f'fill="none" stroke="{FRAME}" stroke-width="2.4"/>')
+
+        for j in range(C):
+            o.append(f'<text x="{x0 + (j + 0.5) * CW:.1f}" '
+                     f'y="{PT + PH + F_LAB * 2.0:.1f}" font-size="{F_LAB:.1f}" '
+                     f'fill="{INK_2}" text-anchor="middle">{j}</text>')
         o.append(f'<text x="{x0 + PW / 2:.1f}" y="{PT + PH + F_AXIS * 3.0:.1f}" '
                  f'font-size="{F_AXIS:.1f}" fill="{INK}" '
                  f'text-anchor="middle">class index</text>')
