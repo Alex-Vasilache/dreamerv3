@@ -41,36 +41,38 @@ PARTITION="${PARTITION:-gpu-a100}"
 WALL="${WALL:-2-00:00:00}"
 SAVE_EVERY="${SAVE_EVERY:-900}"
 GRES="${GRES:-gpu:a100:1}"
-STEPS="${STEPS:-10000000}"
+
 SEEDS="${SEEDS:-0 1}"
 NICE="${NICE:-6000}"
 DRY_RUN="${DRY_RUN:-0}"
 
-# task | label | extra config blocks | train ratio
+# task | label | extra config blocks | train ratio | steps
+# Steps are per-case: antmaze is the long-horizon one and follows the existing
+# antmaze convention of 10M, while pinpad runs 4M like the DMC benchmarks.
 CASES=(
-  "loconav_ant_maze_xl|antmazexl|loconav|256"
-  "pinpad_six|pinpadsix||64"
+  "loconav_ant_maze_xl|antmazexl|loconav|256|10000000"
+  "pinpad_six|pinpadsix||64|4000000"
 )
 ARMS=(director som_lipvq_line_relu_gaussian_eps)
 
 exp=620
 for case in "${CASES[@]}"; do
-  IFS='|' read -r task label extra tr <<< "$case"
+  IFS='|' read -r task label extra tr steps <<< "$case"
   for arm in "${ARMS[@]}"; do
     for seed in $SEEDS; do
       tag="e${exp}"; name="e${exp}_${label}_${arm}_s${seed}"
       ev="ALL,EXP_TAG=$tag,TASK=$task,ARM=$arm,SEED=$seed"
-      ev="$ev,RUN_STEPS=$STEPS,SAVE_EVERY=$SAVE_EVERY,TRAIN_RATIO=$tr"
+      ev="$ev,RUN_STEPS=$steps,SAVE_EVERY=$SAVE_EVERY,TRAIN_RATIO=$tr"
       [ -n "$extra" ] && ev="$ev,EXTRA_CONFIGS=$extra"
       if [ "$DRY_RUN" = "1" ]; then
-        printf '[dry-run] %-58s tr=%-4s cfg=%s\n' "$name" "$tr" "${extra:-<none>}"
+        printf '[dry-run] %-58s %4sM tr=%-4s cfg=%s\n' "$name" "$((steps/1000000))" "$tr" "${extra:-<none>}"
       else
         out="$(sbatch -J "$name" -p "$PARTITION" -t "$WALL" --gres="$GRES" \
               --nice="$NICE" --requeue --hold --export="$ev" "$SCRIPT")"
-        echo "$out  ($name, tr=$tr ${extra:+cfg=$extra})"
+        echo "$out  ($name, $((steps/1000000))M tr=$tr ${extra:+cfg=$extra})"
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
           "$(date -Is)" "${out##* }" "$tag" "$task" "$arm" "$seed" "$name" \
-          "$PARTITION" "$STEPS" >> "$LOG"
+          "$PARTITION" "$steps" >> "$LOG"
         sleep 2
       fi
       exp=$((exp + 1))
