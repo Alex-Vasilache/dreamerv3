@@ -18,3 +18,4 @@
 2026-08-20T11:37:36+09:00	4697666	e609	dmc_hopper_stand	som_lipvq_line_relu_gaussian	4	e609_hopperstand_som_lipvq_line_relu_gaussian_s4	gpu-a100	4000000
 2026-08-20T11:37:38+09:00	4697667	e610	dmc_cheetah_run	som_lipvq_line_relu_gaussian	4	e610_cheetah_som_lipvq_line_relu_gaussian_s4	gpu-a100	4000000
 2026-08-20T11:37:40+09:00	4697668	e611	dmc_hopper_hop	som_lipvq_line_relu_gaussian	4	e611_hopperhop_som_lipvq_line_relu_gaussian_s4	gpu-a100	4000000
+2026-08-20T14:30:44+09:00	4697757	e600	dmc_cartpole_swingup	som_lipvq_line_relu_gaussian	2	e600_cpswingup_som_lipvq_line_relu_gaussian_s2	gpu-a100	4000000
