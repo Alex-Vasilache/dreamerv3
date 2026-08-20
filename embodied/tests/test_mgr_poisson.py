@@ -338,3 +338,116 @@ def test_som_line_baseline_still_builds():
   """Guard against the config edit breaking the arm it layers on."""
   _, _, mets = trained('goal_som_line')
   assert mets
+
+
+# --------------------------------------------------------------------------
+# 4. the discretized Gaussian alternative
+# --------------------------------------------------------------------------
+
+def gdist(loc, logscale=0.0, classes=C, **kw):
+  loc = jnp.asarray(loc, jnp.float32)
+  logscale = jnp.broadcast_to(jnp.asarray(logscale, jnp.float32), loc.shape)
+  return outs.GaussianOnehot(loc, logscale, classes, **kw)
+
+
+def test_gaussian_is_unimodal_everywhere():
+  for m in np.linspace(-8.0, 8.0, 41):
+    for s in np.linspace(-4.0, 4.0, 17):
+      p = probs(gdist(np.full((1,), m), np.full((1,), s)))[0]
+      assert unimodal(p), (m, s, p)
+
+
+def test_gaussian_mode_is_monotone_and_covers_every_class():
+  locs = np.linspace(-6.0, 6.0, 400)
+  modes = [int(probs(gdist(np.full((1,), m)))[0].argmax()) for m in locs]
+  assert modes == sorted(modes), 'mode not monotone in loc'
+  assert set(modes) == set(range(C)), set(range(C)) - set(modes)
+
+
+def test_gaussian_scale_is_a_monotone_entropy_dial():
+  scales = np.linspace(-6.0, 6.0, 60)
+  for m in (-3.0, 0.0, 3.0):
+    ent = np.array([float(gdist(np.full((1,), m), np.full((1,), s)).entropy()[0])
+                    for s in scales])
+    assert np.all(np.diff(ent) > -1e-5), 'entropy not monotone in scale at %s' % m
+
+
+def test_gaussian_entropy_floor_stays_below_the_actent_target():
+  """Same tie hazard as the Poisson head: at loc exactly between two classes
+  they are tied, so the floor is log2/logC however small the scale gets."""
+  locs = np.linspace(-8.0, 8.0, 400)
+  cold = np.full_like(locs, -12.0)
+  ent = np.asarray(gdist(locs.astype(np.float32),
+                         cold.astype(np.float32)).entropy()) / np.log(C)
+  assert ent.max() < 0.45, 'entropy floor %.3f leaves no room under 0.5' % ent.max()
+  assert abs(ent.max() - np.log(2) / np.log(C)) < 0.02, ent.max()
+
+
+def test_gaussian_credit_is_symmetric_at_an_integer_class():
+  """The property the Poisson cannot provide: on an ordered code with no
+  preferred direction, both neighbours of the mode get equal credit."""
+  for c in range(1, C - 1):
+    p = probs(gdist(np.full((1,), float(c) - 0.5 * (C - 1))))[0]
+    assert int(p.argmax()) == c, (c, p.argmax())
+    assert abs(np.log(p[c + 1] / p[c - 1])) < 1e-4, (c, p[c - 1], p[c + 1])
+
+
+def test_gaussian_is_more_symmetric_than_the_poisson():
+  """The measured claim in the mgr_gaussian config block."""
+  def skew(fn):
+    worst = 0.0
+    for c in (2, 3, 4, 5):
+      best = np.inf
+      for a in np.linspace(-6, 6, 60):
+        for b in np.linspace(-4, 4, 40):
+          p = probs(fn(np.full((1,), a), np.full((1,), b)))[0]
+          if int(p.argmax()) != c:
+            continue
+          h = -(p * np.log(np.clip(p, 1e-12, 1))).sum() / np.log(C)
+          if abs(h - 0.5) > 0.03:
+            continue
+          best = min(best, abs(np.log(p[c + 1] / p[c - 1])))
+      if np.isfinite(best):
+        worst = max(worst, best)
+    return worst
+  assert skew(gdist) < skew(dist), 'gaussian should spread credit more evenly'
+
+
+def test_gaussian_head_is_a_drop_in_for_onehot():
+  p_g, o_g = build_head('gaussian')
+  p_h, o_h = build_head('onehot')
+  assert o_g.pred().shape == o_h.pred().shape
+  inner = lambda o: o.output if isinstance(o, outs.Agg) else o
+  assert inner(o_g).minent == inner(o_h).minent
+  assert inner(o_g).maxent == inner(o_h).maxent
+  keys = ' '.join(p_g)
+  assert 'loc' in keys and 'logscale' in keys
+  assert '/logits/' not in keys, keys
+
+
+GARM = ('goal_som_lipvq_line_prod', 'mgr_gaussian')
+
+
+def test_gaussian_agent_trains_and_the_regularizer_is_alive():
+  _, _, mets = trained(*GARM)
+  bad = {}
+  for k, v in mets.items():
+    v = np.asarray(v)
+    if v.dtype.kind == 'f' and not np.isfinite(v).all():
+      bad[k] = v
+  assert not bad, 'non-finite metrics: %s' % sorted(bad)
+  key = [k for k in mets if k.endswith('mgr_ent_norm_skill_mean')]
+  assert key, 'entropy regularizer skipped the head (the e478 failure)'
+  assert 0.0 < float(np.asarray(mets[key[0]])) <= 1.0
+
+
+def test_gaussian_manager_head_really_swapped_and_learns():
+  agent, before, _ = trained(*GARM)
+  head = mgr_head_params(agent.params)
+  assert any('loc' in k for k in head), sorted(head)
+  assert any('logscale' in k for k in head), sorted(head)
+  assert not any('/logits/' in k for k in head), sorted(head)
+  moved = [k for k, v in head.items()
+           if not np.allclose(before[k], np.asarray(v))]
+  assert any('loc' in k for k in moved), 'loc never updated'
+  assert any('logscale' in k for k in moved), 'logscale never updated'

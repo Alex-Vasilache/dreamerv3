@@ -364,7 +364,7 @@ defaults:
     # tau_init/tau_min are only read by `output: poisson` (see the mgr_poisson
     # block); they are inert for the default onehot head but must exist here
     # because elements.Config.update can only overwrite keys that already exist.
-    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in, tau_init: 1.0, tau_min: 0.02}
+    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in, tau_init: 1.0, tau_min: 0.02, scale_init: 2.0, scale_min: 0.3}
     manager_sample_freq: 8
     # Variable goal length (opt-in, HiPPO-style): the manager additionally emits a
     # discrete duration p in {goal_duration_min..goal_duration_max}; the emitted
@@ -875,6 +875,50 @@ goal_som_line:
 mgr_poisson:
   agent:
     manager_policy: {output: poisson, tau_init: 1.0, tau_min: 0.02}
+
+# Unimodal DISCRETIZED GAUSSIAN manager policy. Same contract as mgr_poisson --
+# two scalars per block, unimodal, mode monotone in the first -- but the two
+# scalars are orthogonal: loc is which class, scale is how sure.
+#
+#   --configs director_match goal_som_lipvq_line_prod mgr_gaussian
+#
+# Preferred over mgr_poisson at THIS scale. Zhu et al. choose the Poisson
+# because it needs M output units where a categorical needs M*K, which matters
+# at their Humanoid scale (17 dims x 11 bins). At L=8, C=8 that saving is
+# 32768 -> 8192 parameters in one Linear layer, and the temperature already
+# costs a second scalar, so both heads emit 16 numbers. With the parameter
+# argument gone, two measured Poisson defects remain (both from its variance
+# being tied to its mean): it cannot be equally confident about every class
+# (min normalized entropy 0.025/0.055/0.098 on classes 4/5/6, versus 0
+# everywhere here), and its credit is always skewed (best achievable
+# |log p(mode+1)/p(mode-1)| at entropy 0.5 is 0.15-0.37 versus 0.01-0.06 here).
+#
+# scale_min is 0.3 for the same reason tau_min is 0.02: at loc exactly halfway
+# between two classes they tie, so the normalized entropy floors at
+# log2/log8 = 0.333 however small the scale gets. At 0.3 the floor over loc is
+# 0.334, safely under manager_actent_target = 0.5; at 0.6 it is 0.442, which
+# leaves the entropy controller almost no headroom.
+mgr_gaussian:
+  agent:
+    manager_policy: {output: gaussian, scale_init: 2.0, scale_min: 0.3}
+
+# ReLU in the goal-AE trunk, as an overlay so it composes with any LiP arm:
+#
+#   --configs director_match goal_som_lipvq_line_prod lip_relu mgr_gaussian
+#
+# This is what makes the Lipschitz claim exact. `prod_l softplus(c_l)` bounds
+# the network's inf-norm Lipschitz constant only when the activations are
+# 1-Lipschitz. relu is; silu's slope peaks at ~1.0998, so on the 4-layer trunk
+# these runs use, the silu arms' composed bound understates the true constant
+# by up to 1.0998^4 = 1.46. With relu the reported product IS the bound.
+#
+# The e510-e549 family deliberately kept silu so that every LiP-vs-no-LiP
+# contrast was a single-factor change; this block is for the case where a
+# correct bound matters more than that contrast.
+lip_relu:
+  agent:
+    goal_vq_enc: {act: relu}
+    goal_vq_dec: {act: relu}
 
 goal_som_lipvq_line:
   agent:

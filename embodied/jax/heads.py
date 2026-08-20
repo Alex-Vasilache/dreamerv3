@@ -71,11 +71,13 @@ class Head(nj.Module):
   outscale: float = 1.0
   tau_init: float = 1.0
   tau_min: float = 0.02
+  scale_init: float = 2.0
+  scale_min: float = 0.3
 
   def __init__(self, space, output, **kw):
     if isinstance(space, tuple):
       space = elements.Space(np.float32, space)
-    if output in ('onehot', 'poisson'):
+    if output in ('onehot', 'poisson', 'gaussian'):
       if space.discrete:
         # Integer code shape (L,): append class dimension -> (L, C) logits.
         classes = np.asarray(space.classes).flatten()
@@ -96,7 +98,7 @@ class Head(nj.Module):
     output = getattr(self, self.impl)(x)
     if self.space.shape:
       dims = len(self.space.shape)
-      if self.impl in ('onehot', 'categorical', 'poisson'):
+      if self.impl in ('onehot', 'categorical', 'poisson', 'gaussian'):
         dims -= 1
       if dims > 0:
         output = outs.Agg(output, dims, jnp.sum)
@@ -148,6 +150,25 @@ class Head(nj.Module):
     outer = int(np.prod(shape)) if shape else 1
     # Reachable at tau -> 0 / tau -> inf respectively, so the normalized entropy
     # the adapter regulates still spans a true [0, 1].
+    output.minent = 0.0
+    output.maxent = float(outer * np.log(classes))
+    return output
+
+  def gaussian(self, x):
+    """Unimodal one-hot from a discretized Gaussian: one location, one scale.
+
+    Same event shape and entropy bounds as ``onehot``/``poisson``, so it is a
+    drop-in for either. Unlike ``poisson`` the two scalars are orthogonal --
+    location is which class, scale is how sure -- see ``outs.GaussianOnehot``.
+    """
+    assert not self.space.discrete
+    shape, classes = self.space.shape[:-1], self.space.shape[-1]
+    loc = self.sub('loc', nets.Linear, shape, **self.kw)(x)
+    logscale = self.sub('logscale', nets.Linear, shape, **self.kw)(x)
+    output = outs.GaussianOnehot(
+        loc, logscale, classes, self.unimix,
+        scale_init=self.scale_init, scale_min=self.scale_min)
+    outer = int(np.prod(shape)) if shape else 1
     output.minent = 0.0
     output.maxent = float(outer * np.log(classes))
     return output

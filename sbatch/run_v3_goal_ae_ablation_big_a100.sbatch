@@ -141,8 +141,14 @@ case "$ARM" in
   # som_lipvq_line_prod by the manager head alone, so it is a direct
   # comparison against e534-e573.
   som_lipvq_line_prod_poisson) ARM_CONFIG="goal_som_lipvq_line_prod mgr_poisson" ;;
+  # Same, with the discretized-Gaussian manager instead of the Poisson one.
+  som_lipvq_line_prod_gaussian) ARM_CONFIG="goal_som_lipvq_line_prod mgr_gaussian" ;;
+  # SOM-line + LiP with RELU (so prod_l softplus(c_l) is an exact Lipschitz
+  # bound) + the discretized-Gaussian manager. Straight-through stays ON --
+  # goal_som_lipvq_line_prod is the ste:'on' member of the family.
+  som_lipvq_line_relu_gaussian) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_gaussian" ;;
   som_orig_lipvq_line_prod) ARM_CONFIG="goal_som_orig_lipvq_line_prod" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_lipvq_line_prod_gaussian|som_lipvq_line_relu_gaussian|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 

@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2276" height="604" viewBox="0 0 2276 604" font-family="Helvetica,Arial,sans-serif">
+<rect width="2276" height="604" fill="white"/>
+<line x1="152" y1="404.0" x2="452" y2="404.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="152.0" y1="104" x2="152.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="152" y1="254.0" x2="452" y2="254.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="302.0" y1="104" x2="302.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="152" y1="104.0" x2="452" y2="104.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="452.0" y1="104" x2="452.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="152.0" y1="404.0" x2="452.0" y2="104.0" stroke="#8a8880" stroke-width="2.2" stroke-dasharray="8,6"/>
+<polyline points="452.0,104.0 414.5,188.9 377.0,236.2 339.5,266.8 302.0,288.5 264.5,303.9 227.0,315.6 189.5,324.4 152.0,331.2" fill="none" stroke="#bcd4ef" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="452.0,104.0 414.5,169.6 377.0,209.2 339.5,237.1 302.0,258.6 264.5,275.6 227.0,289.5 189.5,301.5 152.0,311.6" fill="none" stroke="#7aa9dd" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="452.0,104.0 414.5,151.9 377.0,182.0 339.5,204.3 302.0,222.1 264.5,236.6 227.0,249.0 189.5,259.9 152.0,269.6" fill="none" stroke="#3c7dc4" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="452.0,104.0 414.5,146.8 377.0,173.2 339.5,192.3 302.0,207.7 264.5,220.1 227.0,230.5 189.5,239.8 152.0,247.8" fill="none" stroke="#12457e" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="152" y="104" width="300" height="300" fill="none" stroke="#333333" stroke-width="2.2"/>
+<line x1="144" y1="404.0" x2="152" y2="404.0" stroke="#333333" stroke-width="2.2"/>
+<text x="137" y="417.5" font-size="37.4" fill="#1a1a1a" text-anchor="end">0</text>
+<line x1="152.0" y1="404" x2="152.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="152.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">0</text>
+<line x1="144" y1="254.0" x2="152" y2="254.0" stroke="#333333" stroke-width="2.2"/>
+<text x="137" y="267.5" font-size="37.4" fill="#1a1a1a" text-anchor="end">.5</text>
+<line x1="302.0" y1="404" x2="302.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="302.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">.5</text>
+<line x1="144" y1="104.0" x2="152" y2="104.0" stroke="#333333" stroke-width="2.2"/>
+<text x="137" y="117.5" font-size="37.4" fill="#1a1a1a" text-anchor="end">1</text>
+<line x1="452.0" y1="404" x2="452.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="452.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">1</text>
+<text x="302.0" y="78.0" font-size="43.3" fill="#000000" text-anchor="middle">Cartpole</text>
+<line x1="508" y1="404.0" x2="808" y2="404.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="508.0" y1="104" x2="508.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="508" y1="254.0" x2="808" y2="254.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="658.0" y1="104" x2="658.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="508" y1="104.0" x2="808" y2="104.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="808.0" y1="104" x2="808.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="508.0" y1="404.0" x2="808.0" y2="104.0" stroke="#8a8880" stroke-width="2.2" stroke-dasharray="8,6"/>
+<polyline points="808.0,104.0 770.5,176.9 733.0,222.9 695.5,255.9 658.0,280.9 620.5,299.9 583.0,315.5 545.5,328.1 508.0,338.2" fill="none" stroke="#bcd4ef" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="808.0,104.0 770.5,133.5 733.0,152.0 695.5,165.8 658.0,176.9 620.5,186.2 583.0,194.4 545.5,201.4 508.0,207.6" fill="none" stroke="#7aa9dd" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="808.0,104.0 770.5,130.8 733.0,147.8 695.5,160.8 658.0,171.2 620.5,179.9 583.0,187.5 545.5,194.0 508.0,199.8" fill="none" stroke="#3c7dc4" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="808.0,104.0 770.5,132.0 733.0,150.0 695.5,163.9 658.0,175.1 620.5,184.7 583.0,193.1 545.5,200.3 508.0,206.9" fill="none" stroke="#12457e" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="508" y="104" width="300" height="300" fill="none" stroke="#333333" stroke-width="2.2"/>
+<line x1="500" y1="404.0" x2="508" y2="404.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="508.0" y1="404" x2="508.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="508.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">0</text>
+<line x1="500" y1="254.0" x2="508" y2="254.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="658.0" y1="404" x2="658.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="658.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">.5</text>
+<line x1="500" y1="104.0" x2="508" y2="104.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="808.0" y1="404" x2="808.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="808.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">1</text>
+<text x="658.0" y="78.0" font-size="43.3" fill="#000000" text-anchor="middle">Hopper Stand</text>
+<line x1="864" y1="404.0" x2="1164" y2="404.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="864.0" y1="104" x2="864.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="864" y1="254.0" x2="1164" y2="254.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1014.0" y1="104" x2="1014.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="864" y1="104.0" x2="1164" y2="104.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1164.0" y1="104" x2="1164.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="864.0" y1="404.0" x2="1164.0" y2="104.0" stroke="#8a8880" stroke-width="2.2" stroke-dasharray="8,6"/>
+<polyline points="1164.0,104.0 1126.5,191.2 1089.0,238.8 1051.5,270.2 1014.0,292.1 976.5,308.2 939.0,320.2 901.5,329.7 864.0,337.1" fill="none" stroke="#bcd4ef" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1164.0,104.0 1126.5,171.1 1089.0,211.4 1051.5,240.1 1014.0,261.8 976.5,278.7 939.0,292.4 901.5,303.8 864.0,313.4" fill="none" stroke="#7aa9dd" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1164.0,104.0 1126.5,156.4 1089.0,188.6 1051.5,211.9 1014.0,230.3 976.5,245.1 939.0,257.8 901.5,268.6 864.0,278.1" fill="none" stroke="#3c7dc4" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1164.0,104.0 1126.5,150.1 1089.0,179.2 1051.5,201.1 1014.0,218.8 976.5,233.5 939.0,246.5 901.5,257.9 864.0,268.1" fill="none" stroke="#12457e" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="864" y="104" width="300" height="300" fill="none" stroke="#333333" stroke-width="2.2"/>
+<line x1="856" y1="404.0" x2="864" y2="404.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="864.0" y1="404" x2="864.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="864.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">0</text>
+<line x1="856" y1="254.0" x2="864" y2="254.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1014.0" y1="404" x2="1014.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1014.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">.5</text>
+<line x1="856" y1="104.0" x2="864" y2="104.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1164.0" y1="404" x2="1164.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1164.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">1</text>
+<text x="1014.0" y="78.0" font-size="43.3" fill="#000000" text-anchor="middle">Cartpole Sparse</text>
+<line x1="1220" y1="404.0" x2="1520" y2="404.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1220.0" y1="104" x2="1220.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1220" y1="254.0" x2="1520" y2="254.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1370.0" y1="104" x2="1370.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1220" y1="104.0" x2="1520" y2="104.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1520.0" y1="104" x2="1520.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1220.0" y1="404.0" x2="1520.0" y2="104.0" stroke="#8a8880" stroke-width="2.2" stroke-dasharray="8,6"/>
+<polyline points="1520.0,104.0 1482.5,160.4 1445.0,199.5 1407.5,229.7 1370.0,253.9 1332.5,274.4 1295.0,291.3 1257.5,306.3 1220.0,319.4" fill="none" stroke="#bcd4ef" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1520.0,104.0 1482.5,138.8 1445.0,163.1 1407.5,182.8 1370.0,199.3 1332.5,213.4 1295.0,225.7 1257.5,236.7 1220.0,246.4" fill="none" stroke="#7aa9dd" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1520.0,104.0 1482.5,135.7 1445.0,158.2 1407.5,176.4 1370.0,191.6 1332.5,204.7 1295.0,216.0 1257.5,226.1 1220.0,235.0" fill="none" stroke="#3c7dc4" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1520.0,104.0 1482.5,134.9 1445.0,156.8 1407.5,174.3 1370.0,189.0 1332.5,201.6 1295.0,212.5 1257.5,222.3 1220.0,231.0" fill="none" stroke="#12457e" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="1220" y="104" width="300" height="300" fill="none" stroke="#333333" stroke-width="2.2"/>
+<line x1="1212" y1="404.0" x2="1220" y2="404.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1220.0" y1="404" x2="1220.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1220.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">0</text>
+<line x1="1212" y1="254.0" x2="1220" y2="254.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1370.0" y1="404" x2="1370.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1370.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">.5</text>
+<line x1="1212" y1="104.0" x2="1220" y2="104.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1520.0" y1="404" x2="1520.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1520.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">1</text>
+<text x="1370.0" y="78.0" font-size="43.3" fill="#000000" text-anchor="middle">Cheetah</text>
+<line x1="1576" y1="404.0" x2="1876" y2="404.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1576.0" y1="104" x2="1576.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1576" y1="254.0" x2="1876" y2="254.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1726.0" y1="104" x2="1726.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1576" y1="104.0" x2="1876" y2="104.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1876.0" y1="104" x2="1876.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1576.0" y1="404.0" x2="1876.0" y2="104.0" stroke="#8a8880" stroke-width="2.2" stroke-dasharray="8,6"/>
+<polyline points="1876.0,104.0 1838.5,181.2 1801.0,230.9 1763.5,266.5 1726.0,293.2 1688.5,313.6 1651.0,329.8 1613.5,342.9 1576.0,353.5" fill="none" stroke="#bcd4ef" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1876.0,104.0 1838.5,169.2 1801.0,211.3 1763.5,241.3 1726.0,263.1 1688.5,280.2 1651.0,293.5 1613.5,304.2 1576.0,312.7" fill="none" stroke="#7aa9dd" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1876.0,104.0 1838.5,145.1 1801.0,170.9 1763.5,188.7 1726.0,201.5 1688.5,211.3 1651.0,218.7 1613.5,224.6 1576.0,229.4" fill="none" stroke="#3c7dc4" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="1876.0,104.0 1838.5,149.9 1801.0,179.2 1763.5,199.8 1726.0,214.8 1688.5,226.4 1651.0,235.2 1613.5,242.4 1576.0,248.1" fill="none" stroke="#12457e" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="1576" y="104" width="300" height="300" fill="none" stroke="#333333" stroke-width="2.2"/>
+<line x1="1568" y1="404.0" x2="1576" y2="404.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1576.0" y1="404" x2="1576.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1576.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">0</text>
+<line x1="1568" y1="254.0" x2="1576" y2="254.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1726.0" y1="404" x2="1726.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1726.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">.5</text>
+<line x1="1568" y1="104.0" x2="1576" y2="104.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1876.0" y1="404" x2="1876.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1876.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">1</text>
+<text x="1726.0" y="78.0" font-size="43.3" fill="#000000" text-anchor="middle">Hopper Hop</text>
+<line x1="1932" y1="404.0" x2="2232" y2="404.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1932.0" y1="104" x2="1932.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1932" y1="254.0" x2="2232" y2="254.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="2082.0" y1="104" x2="2082.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1932" y1="104.0" x2="2232" y2="104.0" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="2232.0" y1="104" x2="2232.0" y2="404" stroke="#d5d5d2" stroke-width="1.7"/>
+<line x1="1932.0" y1="404.0" x2="2232.0" y2="104.0" stroke="#8a8880" stroke-width="2.2" stroke-dasharray="8,6"/>
+<polyline points="2232.0,104.0 2194.5,179.7 2157.0,225.7 2119.5,257.8 2082.0,281.7 2044.5,300.0 2007.0,314.5 1969.5,326.3 1932.0,335.9" fill="none" stroke="#bcd4ef" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="2232.0,104.0 2194.5,156.5 2157.0,189.4 2119.5,213.4 2082.0,231.9 2044.5,246.8 2007.0,259.1 1969.5,269.5 1932.0,278.3" fill="none" stroke="#7aa9dd" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="2232.0,104.0 2194.5,144.0 2157.0,169.5 2119.5,188.4 2082.0,203.3 2044.5,215.5 2007.0,225.8 1969.5,234.6 1932.0,242.4" fill="none" stroke="#3c7dc4" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="2232.0,104.0 2194.5,142.7 2157.0,167.7 2119.5,186.3 2082.0,201.1 2044.5,213.2 2007.0,223.6 1969.5,232.5 1932.0,240.4" fill="none" stroke="#12457e" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="1932" y="104" width="300" height="300" fill="none" stroke="#333333" stroke-width="2.2"/>
+<line x1="1924" y1="404.0" x2="1932" y2="404.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="1932.0" y1="404" x2="1932.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="1932.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">0</text>
+<line x1="1924" y1="254.0" x2="1932" y2="254.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="2082.0" y1="404" x2="2082.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="2082.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">.5</text>
+<line x1="1924" y1="104.0" x2="1932" y2="104.0" stroke="#333333" stroke-width="2.2"/>
+<line x1="2232.0" y1="404" x2="2232.0" y2="412" stroke="#333333" stroke-width="2.2"/>
+<text x="2232.0" y="475.1" font-size="37.4" fill="#1a1a1a" text-anchor="middle">1</text>
+<text x="2082.0" y="78.0" font-size="43.3" fill="#000000" text-anchor="middle">All Envs</text>
+<text x="1192.0" y="508.0" font-size="46.8" fill="#000000" text-anchor="middle">goal-code similarity (fraction of blocks matching)</text>
+<text x="26" y="254.0" font-size="35.1" fill="#000000" text-anchor="middle" transform="rotate(-90 26 254.0)">goal-state similarity</text>
+<line x1="282.0" y1="566.0" x2="334.0" y2="566.0" stroke="#bcd4ef" stroke-width="6"/>
+<text x="346.0" y="574.0" font-size="39.8" fill="#1a1a1a">1M steps</text>
+<line x1="802.0" y1="566.0" x2="854.0" y2="566.0" stroke="#7aa9dd" stroke-width="6"/>
+<text x="866.0" y="574.0" font-size="39.8" fill="#1a1a1a">2M steps</text>
+<line x1="1322.0" y1="566.0" x2="1374.0" y2="566.0" stroke="#3c7dc4" stroke-width="6"/>
+<text x="1386.0" y="574.0" font-size="39.8" fill="#1a1a1a">3M steps</text>
+<line x1="1842.0" y1="566.0" x2="1894.0" y2="566.0" stroke="#12457e" stroke-width="6"/>
+<text x="1906.0" y="574.0" font-size="39.8" fill="#1a1a1a">4M steps</text>
+</svg>

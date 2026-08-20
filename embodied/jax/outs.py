@@ -363,6 +363,60 @@ class PoissonOnehot(OneHot):
     self.temp = tau
 
 
+class GaussianOnehot(OneHot):
+  """Unimodal one-hot policy from a discretized Gaussian over ordered classes.
+
+  Same contract as ``PoissonOnehot`` -- two scalars per categorical, unimodal by
+  construction, mode monotone in the first scalar -- but the two scalars are
+  ORTHOGONAL: ``loc`` is where on the line, ``scale`` is how sure.
+
+      logits_j = -(j - loc)^2 / (2 * scale^2),   pi = softmax_j(logits_j)
+
+  Why this rather than the Poisson of Zhu et al. (2024) at our scale. Their
+  reason for the Poisson is that it needs M output units where a categorical
+  needs M*K, which matters at their Humanoid scale (17 dims x 11 bins). Here
+  L=8 blocks and C=8 classes, so the saving is 32768 -> 8192 parameters in one
+  Linear layer of a multi-million-parameter agent, and we already spend a
+  second scalar on the temperature -- 16 outputs either way. With the
+  parameter-count argument gone, two measured defects of the Poisson remain,
+  both consequences of a Poisson tying its variance to its mean:
+
+    * it cannot be equally confident about every class. Minimum reachable
+      normalized entropy is 0 on classes 0, 1 and 7 but 0.025 / 0.055 / 0.098
+      on classes 4 / 5 / 6. A Gaussian reaches 0 everywhere.
+    * its credit is always skewed. At matched entropy 0.5 the best achievable
+      |log p(mode+1)/p(mode-1)| is 0.15-0.37 for the Poisson against 0.01-0.06
+      here, so a REINFORCE update on an ordered code with no preferred
+      direction nonetheless pushes one neighbour harder than the other.
+
+  Coverage of the (class, confidence) plane is otherwise the same (160 vs 158
+  of 176 cells), so nothing is given up for it.
+
+  The tie floor of ``PoissonOnehot`` applies here too, for the same reason: at
+  ``loc`` exactly halfway between two classes they are exactly tied, so
+  shrinking ``scale`` yields a 50/50 split rather than a one-hot and the
+  normalized entropy floors at log(2)/log(C) = 0.333. ``scale_min`` is 0.3,
+  where the floor over ``loc`` is 0.334 -- comfortably under
+  ``manager_actent_target`` (0.5). At ``scale_min=0.6`` the floor is 0.442,
+  which leaves the entropy controller almost no headroom.
+  """
+
+  def __init__(self, loc, logscale, classes, unimix=0.0,
+               loc_init=None, scale_init=2.0, scale_min=0.3):
+    assert loc.shape == logscale.shape, (loc.shape, logscale.shape)
+    # Centre the family at init, so a fresh head starts near max entropy with
+    # its mode in the middle of the line rather than pinned to class 0.
+    loc_init = 0.5 * (classes - 1) if loc_init is None else loc_init
+    mu = f32(loc) + f32(loc_init)
+    sigma = scale_min + jax.nn.softplus(
+        f32(logscale) + _inv_softplus(scale_init - scale_min))
+    j = jnp.arange(classes, dtype=f32)
+    z = (j - mu[..., None]) / sigma[..., None]
+    super().__init__(-0.5 * jnp.square(z), unimix)
+    self.loc = mu
+    self.scale = sigma
+
+
 def _inv_softplus(y):
   # softplus(x) = y  =>  x = log(exp(y) - 1), stable for large y.
   y = float(y)

@@ -265,7 +265,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           # ``manager_policy`` only because elements.Config cannot introduce a
           # key that the defaults do not already declare.
           mgr_cfg = {k: v for k, v in dict(config.manager_policy).items()
-                     if k not in ('output', 'tau_init', 'tau_min')}
+                     if k not in ('output', 'tau_init', 'tau_min',
+                                  'scale_init', 'scale_min')}
           self.manager_pol = goal_ae.ManagerRingHead(
               self.goal_dec.codebook, int(skill_shape_t[0]),
               int(config.goal_vq.dim),

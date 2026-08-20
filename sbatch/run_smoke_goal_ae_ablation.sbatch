@@ -48,6 +48,8 @@ for arm in $ARMS; do
     som_lipvq_smooth) cfg="goal_som_lipvq_smooth" ;;
     som_line) cfg="goal_som_line" ;;
     som_line_poisson) cfg="goal_som_line mgr_poisson" ;;
+    som_lipvq_line_prod_poisson) cfg="goal_som_lipvq_line_prod mgr_poisson" ;;
+    som_lipvq_line_relu_gaussian) cfg="goal_som_lipvq_line_prod lip_relu mgr_gaussian" ;;
     som_lipvq_line) cfg="goal_som_lipvq_line" ;;
     som_lipvq_line_smooth) cfg="goal_som_lipvq_line_smooth" ;;
     som_lipvq_line_mgr) cfg="goal_som_lipvq_line_mgr" ;;
@@ -92,7 +94,7 @@ want = [] if arm == 'director' else [
     'train/goal/quant_err', 'train/goal/used_frac', 'train/goal/perplexity']
 missing = [k for k in want if not any(k in r for r in rows)]
 assert not missing, f'{arm}: missing metrics {missing}'
-if 'poisson' in arm:
+if 'poisson' in arm or 'gaussian' in arm:
     # The manager head is reparameterized, so re-check the two things that go
     # silently wrong when a head stops looking like OneHot: the adaptive
     # entropy regularizer skipping it (e478 -- mgr_ent_loss identically 0),
