@@ -14,8 +14,8 @@
 2026-08-17T13:12:18+09:00	4693749	e571	dmc_hopper_hop	som_lipvq_line_prod	1	e571_hopperhop_som_lipvq_line_prod_s1	gpu-a100	4000000
 2026-08-17T13:12:21+09:00	4693750	e572	dmc_hopper_hop	som_lipvq_line_prod	2	e572_hopperhop_som_lipvq_line_prod_s2	gpu-a100	4000000
 2026-08-17T13:12:23+09:00	4693751	e573	dmc_hopper_hop	som_lipvq_line_prod	3	e573_hopperhop_som_lipvq_line_prod_s3	gpu-a100	4000000
-2026-08-19T17:48:35+09:00	4696814	e582	dmc_cartpole_swingup	som_line_poisson	0	e582_cpswingup_som_line_poisson_s0	gpu-a100	4000000
-2026-08-19T17:48:38+09:00	4696815	e583	dmc_hopper_stand	som_line_poisson	0	e583_hopperstand_som_line_poisson_s0	gpu-a100	4000000
-2026-08-19T17:48:40+09:00	4696816	e584	dmc_cartpole_swingup_sparse	som_line_poisson	0	e584_cpsparse_som_line_poisson_s0	gpu-a100	4000000
-2026-08-19T17:48:42+09:00	4696817	e585	dmc_cheetah_run	som_line_poisson	0	e585_cheetah_som_line_poisson_s0	gpu-a100	4000000
-2026-08-19T17:48:44+09:00	4696818	e586	dmc_hopper_hop	som_line_poisson	0	e586_hopperhop_som_line_poisson_s0	gpu-a100	4000000
+2026-08-20T11:08:33+09:00	4697638	e587	dmc_cartpole_swingup	som_lipvq_line_prod_poisson	0	e587_cpswingup_som_lipvq_line_prod_poisson_s0	gpu-a100	4000000
+2026-08-20T11:08:35+09:00	4697639	e588	dmc_hopper_stand	som_lipvq_line_prod_poisson	0	e588_hopperstand_som_lipvq_line_prod_poisson_s0	gpu-a100	4000000
+2026-08-20T11:08:37+09:00	4697640	e589	dmc_cartpole_swingup_sparse	som_lipvq_line_prod_poisson	0	e589_cpsparse_som_lipvq_line_prod_poisson_s0	gpu-a100	4000000
+2026-08-20T11:08:39+09:00	4697641	e590	dmc_cheetah_run	som_lipvq_line_prod_poisson	0	e590_cheetah_som_lipvq_line_prod_poisson_s0	gpu-a100	4000000
+2026-08-20T11:08:42+09:00	4697642	e591	dmc_hopper_hop	som_lipvq_line_prod_poisson	0	e591_hopperhop_som_lipvq_line_prod_poisson_s0	gpu-a100	4000000

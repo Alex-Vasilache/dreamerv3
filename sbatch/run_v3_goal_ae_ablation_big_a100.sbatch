@@ -137,8 +137,12 @@ case "$ARM" in
   # change from its neighbours. See configs.yaml.
   lipvq_prod)               ARM_CONFIG="goal_lipvq_prod" ;;
   som_lipvq_line_prod)      ARM_CONFIG="goal_som_lipvq_line_prod" ;;
+  # SOM-line+LiP with the unimodal Poisson manager. Differs from
+  # som_lipvq_line_prod by the manager head alone, so it is a direct
+  # comparison against e534-e573.
+  som_lipvq_line_prod_poisson) ARM_CONFIG="goal_som_lipvq_line_prod mgr_poisson" ;;
   som_orig_lipvq_line_prod) ARM_CONFIG="goal_som_orig_lipvq_line_prod" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
 esac
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
 

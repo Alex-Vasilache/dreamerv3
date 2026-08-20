@@ -1,0 +1,5 @@
+2026-08-19T17:48:35+09:00	4696814	e582	dmc_cartpole_swingup	som_line_poisson	0	e582_cpswingup_som_line_poisson_s0	gpu-a100	4000000	/work/DoyaU/vasilache/work/e582_dmc_cartpole_swingup_som_line_poisson_s0_BIG_j4696814
+2026-08-19T17:48:38+09:00	4696815	e583	dmc_hopper_stand	som_line_poisson	0	e583_hopperstand_som_line_poisson_s0	gpu-a100	4000000	/work/DoyaU/vasilache/work/e583_dmc_hopper_stand_som_line_poisson_s0_BIG_j4696815
+2026-08-19T17:48:40+09:00	4696816	e584	dmc_cartpole_swingup_sparse	som_line_poisson	0	e584_cpsparse_som_line_poisson_s0	gpu-a100	4000000	/work/DoyaU/vasilache/work/e584_dmc_cartpole_swingup_sparse_som_line_poisson_s0_BIG_j4696816
+2026-08-19T17:48:42+09:00	4696817	e585	dmc_cheetah_run	som_line_poisson	0	e585_cheetah_som_line_poisson_s0	gpu-a100	4000000	/work/DoyaU/vasilache/work/e585_dmc_cheetah_run_som_line_poisson_s0_BIG_j4696817
+2026-08-19T17:48:44+09:00	4696818	e586	dmc_hopper_hop	som_line_poisson	0	e586_hopperhop_som_line_poisson_s0	gpu-a100	4000000	/work/DoyaU/vasilache/work/e586_dmc_hopper_hop_som_line_poisson_s0_BIG_j4696818
