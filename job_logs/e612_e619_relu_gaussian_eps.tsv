@@ -1,0 +1,8 @@
+2026-08-21T08:37:39+09:00	4697887	e612	dmc_cartpole_swingup	som_lipvq_line_relu_gaussian_eps	0	e612_cpswingup_som_lipvq_line_relu_gaussian_eps_s0	gpu-a100	4000000
+2026-08-21T08:37:41+09:00	4697888	e613	dmc_hopper_stand	som_lipvq_line_relu_gaussian_eps	0	e613_hopperstand_som_lipvq_line_relu_gaussian_eps_s0	gpu-a100	4000000
+2026-08-21T08:37:43+09:00	4697889	e614	dmc_cheetah_run	som_lipvq_line_relu_gaussian_eps	0	e614_cheetah_som_lipvq_line_relu_gaussian_eps_s0	gpu-a100	4000000
+2026-08-21T08:37:45+09:00	4697890	e615	dmc_hopper_hop	som_lipvq_line_relu_gaussian_eps	0	e615_hopperhop_som_lipvq_line_relu_gaussian_eps_s0	gpu-a100	4000000
+2026-08-21T08:37:47+09:00	4697891	e616	dmc_cartpole_swingup	som_lipvq_line_relu_gaussian_eps	1	e616_cpswingup_som_lipvq_line_relu_gaussian_eps_s1	gpu-a100	4000000
+2026-08-21T08:37:49+09:00	4697892	e617	dmc_hopper_stand	som_lipvq_line_relu_gaussian_eps	1	e617_hopperstand_som_lipvq_line_relu_gaussian_eps_s1	gpu-a100	4000000
+2026-08-21T08:37:51+09:00	4697893	e618	dmc_cheetah_run	som_lipvq_line_relu_gaussian_eps	1	e618_cheetah_som_lipvq_line_relu_gaussian_eps_s1	gpu-a100	4000000
+2026-08-21T08:37:53+09:00	4697894	e619	dmc_hopper_hop	som_lipvq_line_relu_gaussian_eps	1	e619_hopperhop_som_lipvq_line_relu_gaussian_eps_s1	gpu-a100	4000000
