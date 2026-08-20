@@ -1,0 +1,8 @@
+2026-08-21T08:47:31+09:00	4697896	e620	loconav_ant_maze_xl	director	0	e620_antmazexl_director_s0	gpu-a100	10000000
+2026-08-21T08:47:33+09:00	4697897	e621	loconav_ant_maze_xl	director	1	e621_antmazexl_director_s1	gpu-a100	10000000
+2026-08-21T08:47:35+09:00	4697898	e622	loconav_ant_maze_xl	som_lipvq_line_relu_gaussian_eps	0	e622_antmazexl_som_lipvq_line_relu_gaussian_eps_s0	gpu-a100	10000000
+2026-08-21T08:47:37+09:00	4697899	e623	loconav_ant_maze_xl	som_lipvq_line_relu_gaussian_eps	1	e623_antmazexl_som_lipvq_line_relu_gaussian_eps_s1	gpu-a100	10000000
+2026-08-21T08:47:39+09:00	4697900	e624	pinpad_six	director	0	e624_pinpadsix_director_s0	gpu-a100	10000000
+2026-08-21T08:47:41+09:00	4697901	e625	pinpad_six	director	1	e625_pinpadsix_director_s1	gpu-a100	10000000
+2026-08-21T08:47:43+09:00	4697902	e626	pinpad_six	som_lipvq_line_relu_gaussian_eps	0	e626_pinpadsix_som_lipvq_line_relu_gaussian_eps_s0	gpu-a100	10000000
+2026-08-21T08:47:45+09:00	4697903	e627	pinpad_six	som_lipvq_line_relu_gaussian_eps	1	e627_pinpadsix_som_lipvq_line_relu_gaussian_eps_s1	gpu-a100	10000000

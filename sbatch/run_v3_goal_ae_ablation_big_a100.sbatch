@@ -62,6 +62,9 @@ MGR_REWARD_AGG="${MGR_REWARD_AGG:-mean}"
 MGR_EXPL_W="${MGR_EXPL_W:-0.1}"
 IMAG_LENGTH="${IMAG_LENGTH:-16}"
 RUN_ENVS="${RUN_ENVS:-8}"
+# A CLI flag beats a config block, so this has to be a variable: leaving it
+# hardcoded at 64 would silently override loconav's train_ratio 256.
+TRAIN_RATIO="${TRAIN_RATIO:-64}"
 RUN_STEPS="${RUN_STEPS:-4000000}"
 # Track goal-code/goal-space geometry across training. Costs an
 # O((batch_size*batch_length)^2 = 1024^2) similarity matrix per train step --
@@ -152,7 +155,10 @@ case "$ARM" in
   som_orig_lipvq_line_prod) ARM_CONFIG="goal_som_orig_lipvq_line_prod" ;;
   *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_lipvq_line_prod_gaussian|som_lipvq_line_relu_gaussian|som_lipvq_line_relu_gaussian_eps|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
 esac
-CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}"
+# EXTRA_CONFIGS is appended last so it wins over the arm block. Needed for
+# loconav/antmaze, which carries its own env repeat and train ratio; without it
+# an antmaze task would silently run with the DMC settings.
+CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}${EXTRA_CONFIGS:+ $EXTRA_CONFIGS}"
 
 RUN_SUFFIX="${EXP_TAG}_${TASK}_${ARM}_s${SEED}_BIG"
 # Requeue-safe RUN_DIR: a requeue keeps the same SLURM_JOB_ID, so the job
@@ -167,7 +173,7 @@ EXP_TAG=$EXP_TAG
 CONFIGS=$CONFIGS
 TASK=$TASK
 ARM=$ARM SEED=$SEED
-SIZE=BIG IMAGE=64x64 IMAG=$IMAG_LENGTH BATCH=16x64 TRAIN_RATIO=64 CONV=native
+SIZE=BIG IMAGE=64x64 IMAG=$IMAG_LENGTH BATCH=16x64 TRAIN_RATIO=$TRAIN_RATIO CONV=native
 REPLAY_SIZE=$REPLAY_SIZE
 COMMIT_SCALE=${COMMIT_SCALE:-default} SOM_SCALE=${SOM_SCALE:-default}
 RECIPE=director MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W
@@ -245,7 +251,7 @@ run_training() {
     --run.envs "$RUN_ENVS" \
     --run.steps "$RUN_STEPS" \
     --run.save_every "$SAVE_EVERY" \
-    --run.train_ratio 64 \
+    --run.train_ratio "$TRAIN_RATIO" \
     --run.log_video "$LOG_VIDEO" \
     --run.debug "$RUN_DEBUG" \
     --replay.size "$REPLAY_SIZE" \
