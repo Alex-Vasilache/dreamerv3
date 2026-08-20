@@ -72,9 +72,11 @@ def esc(s):
 
 
 def build(rows_cat, rows_gau):
-    PW, GAP = 470, 150
-    PL, PR, PT, PB = 118, 40, 96, 118
-    RH, RGAP = 46, 15                       # row height and spacing
+    PW, GAP = 470, 88
+    PL, PR, PT, PB = 118, 40, 76, 96
+    # Rows sit close together: a bar tops out at RH-4, so RGAP only has to keep
+    # the tallest bar clear of the baseline above it.
+    RH, RGAP = 38, 6                        # row height and spacing
     PH = L * RH + (L - 1) * RGAP
     W = PL + 2 * PW + GAP + PR
     H = PT + PH + PB
@@ -98,7 +100,7 @@ def build(rows_cat, rows_gau):
             o.append(f'<line x1="{x0}" y1="{base:.1f}" x2="{x0 + PW}" '
                      f'y2="{base:.1f}" stroke="{GRIDC}" stroke-width="1.6"/>')
             slot = PW / C
-            bw = slot * 0.6
+            bw = slot * 0.74
             hi = max(p.max(), 1e-9)
             for j in range(C):
                 cx = x0 + (j + 0.5) * slot
