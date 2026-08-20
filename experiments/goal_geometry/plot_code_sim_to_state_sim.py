@@ -51,6 +51,23 @@ def load(results_dir):
   return out
 
 
+def load_q(results_dir):
+  """Per-bin percentile spread over PAIRS, averaged over seeds.
+
+  Distinct from the seed band: ``pair_q`` is the p5/p25/p50/p75/p95 of the
+  100k individual code pairs inside one bin of one run, i.e. how much the goal
+  similarity VARIES at a fixed code distance. That spread is the thing the
+  manager actually faces -- the mean says a maximally different code lands
+  ~0.67 away, but individual pairs run from 0.31 to 0.88.
+  """
+  out = {}
+  for f in sorted(glob.glob(os.path.join(results_dir, '*.npz'))):
+    d = np.load(f, allow_pickle=True)
+    if 'pair_q' in d.files:
+      out.setdefault(str(d['task']), []).append(np.asarray(d['pair_q'], float))
+  return {k: np.mean(v, 0) for k, v in out.items()}
+
+
 def build(data, title, sub):
   plot_h = S - PAD_T - PAD_B
   nb = 9
@@ -185,6 +202,10 @@ def main():
   ap.add_argument('--layout', choices=['single', 'row'], default='single')
   ap.add_argument('--xlabel', default=None)
   ap.add_argument('--copy-to', default=None)
+  ap.add_argument('--spread', choices=['pairs', 'seeds'], default='pairs',
+                  help='pairs: p5-p95/p25-p75 of the individual code pairs at '
+                       'each bin (the diversity at a fixed code distance). '
+                       'seeds: +/-1 std across runs (agreement between seeds).')
   a = ap.parse_args()
   data = load(a.results)
   if not data:
@@ -195,9 +216,16 @@ def main():
     print('%-30s n=%d  m=0 %.3f  m=8 %.3f' % (t, len(arr), arr[:, 0].mean(),
                                               arr[:, -1].mean()))
   n = min(len(v) for v in data.values())
-  sub = f'Director, {n} seeds per environment, band = +/-1 std across seeds'
+  q = load_q(a.results) if a.spread == 'pairs' else {}
+  sub = (f'Director, {n} seeds per environment, bands = p5-p95 and p25-p75 '
+         f'over code pairs' if q else
+         f'Director, {n} seeds per environment, band = +/-1 std across seeds')
+  if q:
+    for t in sorted(q):
+      print('   %-30s bin8 spread p5-p95  %.3f - %.3f' %
+            (t, q[t][-1, 0], q[t][-1, 4]))
   if a.layout == 'row':
-    svg, W, H = build_row(data, sub, a.xlabel)
+    svg, W, H = build_row(data, sub, a.xlabel, q)
     print('row layout %dx%d svg units' % (W, H))
   else:
     svg = build(data,
@@ -218,7 +246,7 @@ def main():
 
 # --------------------------------------------------------------- row layout
 
-def build_row(data, sub, xlabel=None):
+def build_row(data, sub, xlabel=None, quant=None):
   """Five square panels in a row, styled after the DreamerV3/Director figures.
 
   That style is: a boxed axes frame, light gridlines on both axes, outward
@@ -267,10 +295,13 @@ def build_row(data, sub, xlabel=None):
   present = [t for t, _, _ in TASKS if t in data]
   per_env = (np.stack([np.stack(data[t]).mean(0) for t in present])
              if present else None)
-  panels = [(SHORT.get(lab, lab), col, np.stack(data[t]))
+  quant = quant or {}
+  panels = [(SHORT.get(lab, lab), col, np.stack(data[t]), quant.get(t))
             for t, lab, col in TASKS if t in data]
   if per_env is not None and len(present) > 1:
-    panels.append(('All Envs', INK, per_env))
+    qs = [quant[t] for t in present if t in quant]
+    panels.append(('All Envs', INK, per_env,
+                   np.mean(qs, 0) if qs else None))
 
   o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
        f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
@@ -285,7 +316,7 @@ def build_row(data, sub, xlabel=None):
     if v in (0.0, 1.0):
       return '%g' % v
     return ('%g' % v).lstrip('0')
-  for k, (label, color, arr) in enumerate(panels):
+  for k, (label, color, arr, q) in enumerate(panels):
     x0 = PL + k * (P + GAP)
     m, sd = arr.mean(0), arr.std(0)
     nb = len(m)
@@ -313,10 +344,20 @@ def build_row(data, sub, xlabel=None):
       o.append(f'<line x1="{gx:.1f}" y1="{PT}" x2="{gx:.1f}" '
                f'y2="{PT + P}" stroke="{GRIDC}" stroke-width="1.7"/>')
 
-    band = ([(sx(i), sy(min(m[i] + sd[i], 1.0))) for i in range(nb)] +
-            [(sx(i), sy(max(m[i] - sd[i], 0.0))) for i in range(nb)][::-1])
-    o.append('<polygon points="%s" fill="%s" fill-opacity="0.28"/>' %
-             (' '.join(f'{x:.1f},{y:.1f}' for x, y in band), color))
+    # Two nested bands from the PAIR percentiles: p5-p95 is the full range of
+    # goal similarity a fixed code distance produces, p25-p75 the middle half.
+    # Falls back to the +/-1 std across seeds when no percentiles were stored.
+    if q is not None:
+      for lo_i, hi_i, op in ((0, 4, 0.16), (1, 3, 0.30)):
+        poly = ([(sx(i), sy(min(q[i, hi_i], 1.0))) for i in range(nb)] +
+                [(sx(i), sy(max(q[i, lo_i], 0.0))) for i in range(nb)][::-1])
+        o.append('<polygon points="%s" fill="%s" fill-opacity="%s"/>' %
+                 (' '.join(f'{x:.1f},{y:.1f}' for x, y in poly), color, op))
+    else:
+      band = ([(sx(i), sy(min(m[i] + sd[i], 1.0))) for i in range(nb)] +
+              [(sx(i), sy(max(m[i] - sd[i], 0.0))) for i in range(nb)][::-1])
+      o.append('<polygon points="%s" fill="%s" fill-opacity="0.28"/>' %
+               (' '.join(f'{x:.1f},{y:.1f}' for x, y in band), color))
     o.append('<polyline points="%s" fill="none" stroke="%s" stroke-width="5.4" '
              'stroke-linejoin="round" stroke-linecap="round"/>' %
              (' '.join(f'{sx(i):.1f},{sy(m[i]):.1f}' for i in range(nb)), color))

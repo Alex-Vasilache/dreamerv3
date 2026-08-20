@@ -73,8 +73,10 @@ def partners(base_ids, m, classes, rng):
 
 
 def run(run_dir, out_path, n_codes=1024, n_partners=1024, n_envs=4, stride=8,
-        seed=0, sampling='uniform', chunk=32768):
-    config, agent = build(run_dir)
+        seed=0, sampling='uniform', chunk=32768, ckpt=None):
+    # ckpt points at a logdir/ckpt_milestones/<step>/ directory, so the same
+    # measurement can be taken at 1M/2M/3M/4M rather than only at the end.
+    config, agent = build(run_dir, ckpt)
     impl, encode, decode = make_fns(config, agent)
     blocks, classes = [int(x) for x in config.agent.skill_shape]
     name = pathlib.Path(str(run_dir).rstrip('/')).name
@@ -146,11 +148,13 @@ def run(run_dir, out_path, n_codes=1024, n_partners=1024, n_envs=4, stride=8,
                             for m, (b, w) in enumerate(zip(between, within))))
     out = pathlib.Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
+    step_tag = pathlib.Path(str(ckpt).rstrip('/')).name if ckpt else 'final'
     np.savez_compressed(str(out) + '.npz', sim=sim, curve=curve,
                         blocks=np.arange(blocks + 1), task=str(config.task),
                         run=name, n_codes=M, n_partners=n_partners,
                         sampling=sampling, sim_sd=sim_sd, pair_sd=pair_sd,
-                        pair_q=pair_q, between=between, within=within)
+                        pair_q=pair_q, between=between, within=within,
+                        ckpt_step=step_tag)
     print('wrote', str(out) + '.npz')
 
 
@@ -165,9 +169,11 @@ def main():
                    default='uniform')
     p.add_argument('--n_envs', type=int, default=4)
     p.add_argument('--seed', type=int, default=0)
+    p.add_argument('--ckpt', default=None,
+                   help='a ckpt_milestones/<step>/ dir; omit for the final ckpt')
     a = p.parse_args()
     run(a.run_dir, a.out, a.n_codes, a.n_partners, a.n_envs, seed=a.seed,
-        sampling=a.sampling, chunk=a.chunk)
+        sampling=a.sampling, chunk=a.chunk, ckpt=a.ckpt)
 
 
 if __name__ == '__main__':
