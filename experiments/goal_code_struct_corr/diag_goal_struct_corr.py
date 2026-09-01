@@ -103,6 +103,24 @@ def pairwise_cosmax(x):
   return dot / (nm * nm)
 
 
+def pairwise_mse(x):
+  """Mean squared error between every pair of rows.
+
+  The companion metric to ``pairwise_cosmax``. ``cosine_max`` is the worker's
+  reward, so it is the right axis for "will the worker chase this goal", but it
+  is scale-free: two goals pointing the same way at different magnitudes score
+  as identical. MSE is the metric the autoencoder's own reconstruction loss is
+  written in and it does see magnitude, so it is the honest axis for "did the
+  goal move". Reported alongside, never instead.
+  """
+  # float64: the ||a||^2 + ||b||^2 - 2ab expansion cancels badly for near-equal
+  # rows, which is exactly the regime the small-MSE end of the axis lives in.
+  x = np.asarray(x, np.float64)
+  sq = (x * x).sum(-1)
+  d2 = sq[:, None] + sq[None, :] - 2.0 * (x @ x.T)
+  return np.maximum(d2, 0.0) / x.shape[-1]
+
+
 def pearson_offdiag(a, b):
   n = a.shape[0]
   offdiag = ~np.eye(n, dtype=bool)
@@ -130,16 +148,32 @@ def fixed_bin_trend(sd, sh, xmin=TREND_XMIN, xmax=TREND_XMAX, nbins=TREND_NBINS)
 
 
 def batch_corr(deters, probs, L, C):
-  """Both correlations for one batch of (deter, soft-code) pairs."""
+  """Every correlation for one batch of (deter, soft-code) pairs.
+
+  Under both geometries: ``cosine_max`` similarity (the worker's reward) and
+  MSE (the reconstruction loss's own metric). Under MSE the axes run the other
+  way -- distance, not similarity -- so a structure-preserving code gives a
+  POSITIVE correlation there too: goals that are far apart get codes that are
+  far apart.
+  """
   n = deters.shape[0]
-  sd = pairwise_cosmax(deters)
-  sz = pairwise_cosmax(probs)
-  corr_soft = pearson_offdiag(sd, sz)
   ids = probs.reshape(n, L, C).argmax(-1)
   hamming = (ids[:, None, :] != ids[None, :, :]).mean(-1)
+  # One-hot blocks: ||z_i - z_j||^2 = 2 x (blocks that differ), so the hard
+  # code's MSE is Hamming distance in different units. Written out rather than
+  # scaled by hand so the figure axis means what it says.
+  onehot = np.eye(C, dtype=np.float32)[ids].reshape(n, L * C)
+  sd = pairwise_cosmax(deters)
+  sz = pairwise_cosmax(probs)
   sh = 1.0 - hamming
-  corr_hard = pearson_offdiag(sd, sh)
-  return corr_soft, corr_hard, sd, sz, sh
+  md = pairwise_mse(deters)
+  mz = pairwise_mse(probs.reshape(n, -1))
+  mh = pairwise_mse(onehot)
+  return dict(
+      corr_soft=pearson_offdiag(sd, sz), corr_hard=pearson_offdiag(sd, sh),
+      corr_soft_mse=pearson_offdiag(md, mz),
+      corr_hard_mse=pearson_offdiag(md, mh),
+      sd=sd, sz=sz, sh=sh, md=md, mz=mz, mh=mh)
 
 
 def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
@@ -223,23 +257,26 @@ def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
   perm = rng.permutation(N)[:n_batches_actual * n_states]
   batch_idx = perm.reshape(n_batches_actual, n_states)
 
-  corr_soft_list, corr_hard_list = [], []
-  sd_plot = sz_plot = sh_plot = None
+  keys = ('corr_soft', 'corr_hard', 'corr_soft_mse', 'corr_hard_mse')
+  per_batch = {k: [] for k in keys}
+  plot = None
   for b in range(n_batches_actual):
-    idx = batch_idx[b]
-    cs, ch, sd, sz, sh = batch_corr(deters[idx], probs[idx], L, C)
-    corr_soft_list.append(cs)
-    corr_hard_list.append(ch)
-    if b == 0:
-      sd_plot, sz_plot, sh_plot = sd, sz, sh  # first batch only, for the scatter figure
+    out = batch_corr(deters[batch_idx[b]], probs[batch_idx[b]], L, C)
+    for k in keys:
+      per_batch[k].append(out[k])
+    if b == 0:  # first batch only, for the scatter figures
+      plot = {k: out[k] for k in ('sd', 'sz', 'sh', 'md', 'mz', 'mh')}
 
-  corr_soft_arr = np.array(corr_soft_list)
-  corr_hard_arr = np.array(corr_hard_list)
+  arr = {k: np.array(v) for k, v in per_batch.items()}
+  corr_soft_arr, corr_hard_arr = arr['corr_soft'], arr['corr_hard']
   print(f'\n=== {config.task}: {n_batches_actual} batches of N={n_states} ===')
-  print(f'Pearson r(deter, SOFT code): mean={corr_soft_arr.mean():.4f} '
-        f'std={corr_soft_arr.std():.4f}  [{", ".join(f"{v:.3f}" for v in corr_soft_arr)}]')
-  print(f'Pearson r(deter, HARD code): mean={corr_hard_arr.mean():.4f} '
-        f'std={corr_hard_arr.std():.4f}  [{", ".join(f"{v:.3f}" for v in corr_hard_arr)}]')
+  for k, label in (('corr_soft', 'cosmax r(deter, SOFT code)'),
+                   ('corr_hard', 'cosmax r(deter, HARD code)'),
+                   ('corr_soft_mse', '   MSE r(deter, SOFT code)'),
+                   ('corr_hard_mse', '   MSE r(deter, HARD code)')):
+    v = arr[k]
+    print(f'{label}: mean={v.mean():.4f} std={v.std():.4f}  '
+          f'[{", ".join(f"{x:.3f}" for x in v)}]')
 
   # Fixed-bin trend curve (goal-code sim vs goal-space sim), on a pooled
   # subsample bigger than one batch for a smoother per-seed curve, using
@@ -248,8 +285,8 @@ def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
   # -- same seed, same subsample cap -- applied identically to every seed).
   trend_n = min(N, TREND_MAX_N)
   trend_idx = rng.permutation(N)[:trend_n]
-  _, _, sd_trend, _, sh_trend = batch_corr(deters[trend_idx], probs[trend_idx], L, C)
-  trend_x, trend_y, trend_counts = fixed_bin_trend(sd_trend, sh_trend)
+  tr = batch_corr(deters[trend_idx], probs[trend_idx], L, C)
+  trend_x, trend_y, trend_counts = fixed_bin_trend(tr['sd'], tr['sh'])
 
   if out_path:
     iu = np.triu_indices(n_states, k=1)
@@ -265,15 +302,27 @@ def run(run_dir, stride, out_path, seed, n_states=None, n_batches=10,
         corr_soft_per_batch=corr_soft_arr, corr_hard_per_batch=corr_hard_arr,
         # Backward-compatible single-batch fields, for the plotting script.
         corr_soft=float(corr_soft_arr.mean()), corr_hard=float(corr_hard_arr.mean()),
-        sd_pairs=sd_plot[iu].astype(np.float32),
-        sz_pairs=sz_plot[iu].astype(np.float32),
-        sh_pairs=sh_plot[iu].astype(np.float32),
+        sd_pairs=plot['sd'][iu].astype(np.float32),
+        sz_pairs=plot['sz'][iu].astype(np.float32),
+        sh_pairs=plot['sh'][iu].astype(np.float32),
+        # The same three pair pools under MSE, plus their correlations.
+        corr_soft_mse_mean=float(arr['corr_soft_mse'].mean()),
+        corr_soft_mse_std=float(arr['corr_soft_mse'].std()),
+        corr_hard_mse_mean=float(arr['corr_hard_mse'].mean()),
+        corr_hard_mse_std=float(arr['corr_hard_mse'].std()),
+        corr_soft_mse_per_batch=arr['corr_soft_mse'],
+        corr_hard_mse_per_batch=arr['corr_hard_mse'],
+        md_pairs=plot['md'][iu].astype(np.float32),
+        mz_pairs=plot['mz'][iu].astype(np.float32),
+        mh_pairs=plot['mh'][iu].astype(np.float32),
         trend_x=trend_x.astype(np.float32), trend_y=trend_y.astype(np.float32),
         trend_counts=trend_counts)
     print('Saved to', out_path)
   return dict(task=str(config.task), n_batches=n_batches_actual,
               corr_soft_mean=float(corr_soft_arr.mean()), corr_soft_std=float(corr_soft_arr.std()),
-              corr_hard_mean=float(corr_hard_arr.mean()), corr_hard_std=float(corr_hard_arr.std()))
+              corr_hard_mean=float(corr_hard_arr.mean()), corr_hard_std=float(corr_hard_arr.std()),
+              corr_soft_mse_mean=float(arr['corr_soft_mse'].mean()),
+              corr_hard_mse_mean=float(arr['corr_hard_mse'].mean()))
 
 
 def main():
