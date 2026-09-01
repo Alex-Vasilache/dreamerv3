@@ -1,0 +1,9 @@
+exp	jobid	task	arm	seed	configs	note
+e722	4704341	pinpad_five	director	0	director_match director_stable	1 seed, 4M, new defaults
+e723	4704342	pinpad_six	director	0	director_match director_stable	1 seed, 4M, new defaults
+e724	4704343	dmc_cartpole_swingup	director	0	director_match director_stable	1 seed, 4M, new defaults
+e725	4704344	dmc_cheetah_run	director	0	director_match director_stable	1 seed, 4M, new defaults
+e726	4704345	dmc_hopper_hop	director	0	director_match director_stable	1 seed, 4M, new defaults
+e727	4704346	pinpad_five	som_lipvq_line_relu	0	director_match goal_som_lipvq_line_prod lip_relu director_stable	1 seed, 4M, matched to director, no UCB
+e728	4704347	pinpad_six	som_lipvq_line_relu	0	director_match goal_som_lipvq_line_prod lip_relu director_stable	1 seed, 4M, matched to director, no UCB
+e729	4704348	dmc_cheetah_run	som_lipvq_line_relu	0	director_match goal_som_lipvq_line_prod lip_relu director_stable	1 seed, 4M, matched to director, no UCB

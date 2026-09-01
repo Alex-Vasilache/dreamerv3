@@ -79,8 +79,45 @@ metrics reference.
 
 ## 2. Live board
 
-**Nothing is running.** The queue was cleared on 2026-09-01: e718–e721 were
-cancelled at ~3.47M/4M and e706–e712 (the UCB tilt batch) were cancelled before
+**e722–e729 launched 2026-09-01** (job ids 4704341–4704348, log
+`job_logs/e722_e729_director_vs_somlip.tsv`). Eight runs, one seed each, 4M
+steps, all on `gpu-a100` at 1 GPU apiece — exactly the 8-GPU cap, so they run as
+one wave. **First batch under the new defaults**, so nothing in the archive is a
+valid comparator.
+
+| exp | job | task | arm |
+|---|---|---|---|
+| e722 | 4704341 | pinpad_five | director |
+| e723 | 4704342 | pinpad_six | director |
+| e724 | 4704343 | dmc_cartpole_swingup | director |
+| e725 | 4704344 | dmc_cheetah_run | director |
+| e726 | 4704345 | dmc_hopper_hop | director |
+| e727 | 4704346 | pinpad_five | som_lipvq_line_relu |
+| e728 | 4704347 | pinpad_six | som_lipvq_line_relu |
+| e729 | 4704348 | dmc_cheetah_run | som_lipvq_line_relu |
+
+Director is `director_match director_stable`; SOM/LiP is
+`director_match goal_som_lipvq_line_prod lip_relu director_stable` — the ReLU
+Lipschitz-SOM variant **without** `mgr_ucb`. **Both arms carry `director_stable`,
+so the goal autoencoder is the only difference between them** — this is the
+matched comparison the e718–e721 batch could not support (there the Director arm
+had slowtar/advnorm/retnorm and the SOM arm did not).
+
+**Hypothesis:** with the arms matched and the goal AE isolated, the SOM-line +
+Lipschitz codebook should hold its pinpad score later into training than the
+Director codebook, whose curve peaks near 1M and decays. **Caveat, stated up
+front:** one seed per cell resolves nothing on its own, and `dmc_hopper_hop` is
+retired as a comparison substrate (5 seeds there have ~1% power). e726 is a
+smoke/sanity cell, not evidence.
+
+**Prerequisite fixes that landed with this batch** (`9ae4ee0`): ten sbatch
+scripts hardcoded the removed `dreamerv3_somvae` worktree path, and both
+launchers pinned `goal_opt.lr` 4e-5, `goal_opt.wd` 0.0 and
+`goal_autoencoder_beta` 0.25 **on the command line**, where a flag beats any
+config block — so the 2026-09-01 defaults would never have reached a run. All
+three are now variables defaulting to the config values.
+
+**Cancelled earlier the same day:** e718–e721 at ~3.47M/4M and e706–e712 before
 starting. Their run dirs are still under `/work/DoyaU/vasilache/work/` and are
 not yet archived to the bucket.
 
