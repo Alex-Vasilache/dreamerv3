@@ -15,6 +15,7 @@ from .heads import (
     head_entropy_perdim_time,
     head_entropy_time,
     head_logp_time,
+    head_rao_perdim_time,
     smooth_skill_event,
     manager_reinforce_policy,
     policy_time_slice,
@@ -146,6 +147,20 @@ def imag_loss_wkr(
   outs['wkr_goal_ret'] = wkr_goal_ret
   return losses, outs, metrics
 
+
+def resolve_novel_weight(mgr_expl_weight, mgr_novel_weight):
+  """Weight on the count-novelty channel, defaulting to the reconstruction one.
+
+  ``None`` or a negative value means "same as ``mgr_expl_weight``". The sentinel
+  exists because ``elements.Config`` needs a typed scalar and cannot carry
+  ``None``, and because the equal-weight case has to stay bit-identical for runs
+  launched before the knob existed.
+  """
+  if mgr_novel_weight is None or mgr_novel_weight < 0.0:
+    return mgr_expl_weight
+  return mgr_novel_weight
+
+
 def imag_loss_mgr(
     skills,
     mgr_extr_rew,
@@ -169,8 +184,21 @@ def imag_loss_mgr(
     actent=3e-4,
     slowreg=1.0,
     mgr_expl_weight=0.1,
+    # Weight on the novelty advantage. ``None`` (or a negative sentinel from the
+    # config) means "same as mgr_expl_weight", which is the original behaviour.
+    mgr_novel_weight=None,
+    # Third reward channel (count-based novelty) and its critic. All optional:
+    # with mgr_novel_value=None every novelty expression below is skipped and
+    # the two-critic path is unchanged.
+    mgr_novel_rew=None,
+    mgr_novel_value=None,
+    mgr_novel_slowvalue=None,
+    mgr_novel_retnorm=None,
+    mgr_novel_valnorm=None,
     mgr_actent_adapter=None,
     mgr_actent_perdim=True,
+    mgr_rao_adapter=None,
+    mgr_rao_perdim=True,
     mgr_dur_actent_adapter=None,
     mgr_dur_lagrange_adapter=None,
     duration_fixed=False,
@@ -216,6 +244,17 @@ def imag_loss_mgr(
   mgr_expl_slowval = mgr_expl_slowvalue.pred() * vscale_expl_prev + voff_expl_prev
   mgr_expl_tarval = mgr_expl_slowval if slowtar else mgr_expl_val
 
+  # Third channel: count-based novelty, its own critic. Present only when the
+  # arm enables it; every expression below is guarded so the two-critic path is
+  # bit-identical to before.
+  use_novel = mgr_novel_value is not None
+  if use_novel:
+    voff_novel_prev, vscale_novel_prev = mgr_novel_valnorm.stats()
+    mgr_novel_val = mgr_novel_value.pred() * vscale_novel_prev + voff_novel_prev
+    mgr_novel_slowval = (
+        mgr_novel_slowvalue.pred() * vscale_novel_prev + voff_novel_prev)
+    mgr_novel_tarval = mgr_novel_slowval if slowtar else mgr_novel_val
+
   # Discount per step: either γ or finite-horizon (1 - 1/horizon) when not contdisc.
   disc = 1 if contdisc else 1 - 1 / horizon
   # Discounted continuation weights from predicted continue probs ``con``.
@@ -250,7 +289,22 @@ def imag_loss_mgr(
   mgr_expl_ret = lambda_return(
       last, term, mgr_expl_rew, mgr_expl_tarval, mgr_expl_tarval, disc, lam)
 
+  mgr_novel_ret = None
+  if use_novel:
+    mgr_novel_ret = lambda_return(
+        last, term, mgr_novel_rew, mgr_novel_tarval, mgr_novel_tarval, disc, lam)
+
+  # Novelty gets its own weight. Measured on pinpad_five at 2000-step episodes:
+  # before the first task reward exists, exploration is the manager's ONLY
+  # signal, and at equal weights the count bonus takes ~50% of it -- halving the
+  # reconstruction term's share exactly during the phase that has to find the
+  # first pad sequence. Director (reconstruction only) found reward in all 4
+  # seeds by 224k while the equal-weight arm managed 1 of 2 by 800k.
+  novel_weight = resolve_novel_weight(mgr_expl_weight, mgr_novel_weight)
+
   mgr_total_ret = mgr_extr_ret + mgr_expl_weight * mgr_expl_ret
+  if use_novel:
+    mgr_total_ret = mgr_total_ret + novel_weight * mgr_novel_ret
 
   # Advantage: per critic ``(ret - tarval) / rscale`` with ``rscale`` the
   # percentile return range (retnorm = perc), exactly as flat v3. Combine the two
@@ -262,6 +316,11 @@ def imag_loss_mgr(
   mgr_extr_adv = (mgr_extr_ret - mgr_extr_tarval[:, :-1]) / rscale_extr
   mgr_expl_adv = (mgr_expl_ret - mgr_expl_tarval[:, :-1]) / rscale_expl
   mgr_adv = mgr_extr_adv + mgr_expl_weight * mgr_expl_adv
+  if use_novel:
+    roff_novel, rscale_novel = mgr_novel_retnorm(
+        mgr_novel_ret, update, weights=dec_mask)
+    mgr_novel_adv = (mgr_novel_ret - mgr_novel_tarval[:, :-1]) / rscale_novel
+    mgr_adv = mgr_adv + novel_weight * mgr_novel_adv
   mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update, weights=dec_mask)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 
@@ -349,6 +408,43 @@ def imag_loss_mgr(
     if ent_loss_terms:
       mgr_ent_loss_bt = sum(ent_loss_terms)
 
+  # Rao's quadratic entropy regularizer (``manager_rao``). The entropy adapter
+  # above fixes HOW MUCH mass is spread; this fixes HOW FAR APART, along the
+  # ordered SOM codebook, the classes carrying it are. Same AutoAdapt form and
+  # sign as the entropy term (``inverse=True``: push up while below target), on
+  # the SKILL head only -- the duration head's classes are hold lengths, whose
+  # ordering is real but is already regulated by the duration prior, and mixing
+  # a second ordering pressure in there would fight it.
+  #
+  # Measured on the e534-e573 checkpoints (experiments/manager_rao): the arm
+  # sits at normalized Rao 0.125 while 0.925 is attainable at the entropy it
+  # already holds, i.e. 13.6% of the available spread. A label-shuffling control
+  # puts Director at ratio 1.06 (its indices are arbitrary, so its Rao is
+  # whatever random labels give) against 0.43 for SOM-line+LiP -- the manager's
+  # mass really does sit on ADJACENT classes, which is the ordering working, and
+  # is exactly what this term trades away for distance.
+  mgr_rao_loss_bt = jnp.zeros_like(mgr_logpi)
+  mgr_rao_mets = {}
+  if mgr_rao_adapter is not None and 'skill' in manager_policy:
+    rao_perdim = head_rao_perdim_time(manager_policy['skill'])
+    # Every manager head in the tree (OneHot, Gaussian/StudentT/Poisson-Onehot)
+    # exposes class logits, so this cannot fire today. Assert rather than fall
+    # through: silently skipping the term would train a 27-hour run that looks
+    # like the Rao arm, logs no Rao metric, and is actually the control.
+    assert rao_perdim is not None, (
+        'manager_rao is enabled but the skill head exposes no class logits; '
+        'Rao needs a categorical over the ordered codebook')
+    if mgr_rao_perdim and rao_perdim.ndim > 2:
+      rao_w = None if dec_mask is None else dec_mask[..., None]
+      rao_loss, mets = mgr_rao_adapter(rao_perdim, update=update, weights=rao_w)
+      mgr_rao_loss_bt = rao_loss.sum(-1)
+    else:
+      rao_scalar = rao_perdim.mean(-1) if rao_perdim.ndim > 2 else rao_perdim
+      mgr_rao_loss_bt, mets = mgr_rao_adapter(
+          rao_scalar, update=update, weights=dec_mask)
+    mgr_rao_mets.update({f'mgr_rao_{mk}': mv for mk, mv in mets.items()})
+    mgr_rao_mets['mgr_rao_norm_mean'] = dec_mean(rao_perdim)
+
   w = sg(weight[:, :-1])
   vw = sg(weight[:, :-1])
   if switch_mask is not None:
@@ -397,6 +493,10 @@ def imag_loss_mgr(
   else:
     losses['mgr_policy'] = w * -(
         mgr_reinforce + actent * sum(mgr_ents.values()))
+  # Rao rides on the same decision weighting ``w`` as the entropy term, so it
+  # is masked and rescaled to real decisions identically under variable K.
+  # Exactly zero when ``manager_rao`` is off.
+  losses['mgr_policy'] = losses['mgr_policy'] + w * mgr_rao_loss_bt
 
   # Soft duration prior: pull the manager's expected goal duration toward
   # ``dur_reg_target`` directly through the duration logits (not via REINFORCE),
@@ -450,6 +550,8 @@ def imag_loss_mgr(
   metrics['mgr_policy_loss'] = losses['mgr_policy'].mean()
   metrics['mgr_ent_loss'] = dec_mean(mgr_ent_loss_bt)
   metrics.update(mgr_actent_mets)
+  metrics['mgr_rao_loss'] = dec_mean(mgr_rao_loss_bt)
+  metrics.update(mgr_rao_mets)
   # ``mgr_*_rew[:, i + 1]`` is the pooled reward credited to decision ``i``, so
   # the decision mask lines up with the reward tensor after dropping slot 0.
   metrics['mgr_extr_rew'] = dec_mean(mgr_extr_rew[:, 1:])
@@ -476,6 +578,20 @@ def imag_loss_mgr(
   losses['mgr_expl_value'] = vw * (
       mgr_expl_value.loss(sg(mgr_expl_tar_padded)) +
       slowreg * mgr_expl_value.loss(sg(mgr_expl_slowvalue.pred())))[:, :-1]
+
+  if use_novel:
+    voff_novel, vscale_novel = mgr_novel_valnorm(
+        mgr_novel_ret, update, weights=dec_mask)
+    mgr_novel_ret_normed = (mgr_novel_ret - voff_novel) / vscale_novel
+    mgr_novel_tar_padded = jnp.concatenate(
+        [mgr_novel_ret_normed, 0 * mgr_novel_ret_normed[:, -1:]], 1)
+    losses['mgr_novel_value'] = vw * (
+        mgr_novel_value.loss(sg(mgr_novel_tar_padded)) +
+        slowreg * mgr_novel_value.loss(sg(mgr_novel_slowvalue.pred())))[:, :-1]
+    metrics['mgr_novel_rew'] = dec_mean(mgr_novel_rew[:, 1:])
+    metrics['mgr_novel_adv'] = dec_mean(mgr_novel_adv)
+    metrics['mgr_novel_ret'] = dec_mean(mgr_novel_ret)
+    metrics['mgr_novel_val'] = dec_mean(mgr_novel_val[:, :-1])
 
   # Decision-weighted (see ``dec_mean``): identical to ``.mean()`` under fixed K,
   # but on a packed variable-K axis an unweighted mean reports mostly padding.
@@ -509,6 +625,8 @@ def imag_loss_mgr(
 
   outs = {}
   outs['ret'] = mgr_total_ret
+  if use_novel:
+    outs['mgr_novel_ret'] = mgr_novel_ret
   outs['mgr_extr_ret'] = mgr_extr_ret
   outs['mgr_expl_ret'] = mgr_expl_ret
   return losses, outs, metrics

@@ -229,6 +229,10 @@ def make_agent(config):
       jax=config.jax,
       batch_size=config.batch_size,
       batch_length=config.batch_length,
+      # The code-count memory derives its decay and insertion weight from the
+      # replay window rather than hardcoding them, so it needs these two.
+      train_ratio=config.run.train_ratio,
+      replay_size=config.replay.size,
       replay_context=config.replay_context,
       report_length=config.report_length,
       replica=config.replica,

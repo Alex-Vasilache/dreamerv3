@@ -782,11 +782,502 @@ Spectral norms move the other way (Director enc 308–375 / dec 3.6–9.1e3; LiP
 | ~~e574–e581~~ | ~~4696162–69~~ | cheetah_run + hopper_hop / BIG | SOM-line | 0–3 | 4M | **cancelled 2026-08-19, never started** | queued 2026-08-18, cancelled while still PENDING to free the lane for e582–e586. Their rows were removed from the watchdog TSV first, or it would have resubmitted them. Nothing was lost — no job ever ran. |
 | e582–e586 | 4696814–18 | all 5 benchmarks / BIG | SOM-line + **Poisson manager** | 0 | 4M | **PAUSED 2026-08-20 at ~1.9M** | one seed per task. Cancelled (not archived) to free the lane for e587–e591; checkpoint + 4–7GB replay intact, resume with `sbatch/resume_e582_e586_som_line_poisson.sh`. Rows pulled from the watchdog TSV at pause time and recorded in `job_logs/e582_e586_paused.tsv`. Early-health prediction confirmed, details below. |
 | ~~e587–e591~~ | ~~4697638–42~~ | all 5 benchmarks / BIG | SOM-line+LiP + Poisson manager | 0 | 4M | **cancelled 2026-08-20 at ~45min** | superseded by e592–e611 before producing anything usable; the Gaussian head was preferred at this scale (see §6). Watchdog rows removed before the scancel. |
-| e592–e599 | 4697649–56 | cartpole_swingup, hopper_stand, cheetah_run, hopper_hop / BIG | SOM-line+LiP (**ReLU**) + **Gaussian manager** | 0–1 | 4M | *running, ~21h in* | 4 tasks × 2 seeds. ReLU makes `prod_l softplus(c_l)` an exact Lipschitz bound; straight-through stays on; one scalar bound per layer. Not a single-factor change from e534–e573 — activation and manager head move together. |
+| e592–e599 | 4697649–56 | cartpole_swingup, hopper_stand, cheetah_run, hopper_hop / BIG | SOM-line+LiP (**ReLU**) + **Gaussian manager** | 0–1 | 4M | **done** — last-15 mean at 4M: cartpole **776.4**, hopper stand **830.2**, cheetah **439.1**, hopper hop **224.0**; aggregate normalized **0.567** vs Director 0.560 (p 0.83) and SOM-line+LiP 0.607 (p 0.29) | 4 tasks × 2 seeds. ReLU makes `prod_l softplus(c_l)` an exact Lipschitz bound; straight-through stays on; one scalar bound per layer. Not a single-factor change from e534–e573 — activation and manager head move together. **Level with Director overall, 6.6% under SOM-line+LiP, and the whole gap is cheetah: −221.8 (−33.6%), p at the 1/15 floor with no seed overlap — exactly the benchmark where SOM-line+LiP had beaten Director.** Numbers from `experiments/manager_head/gaussian_scores.py`; in the paper as Table 2 + Figure 13 of §motivation. |
 | ~~e600–e611~~ | ~~4697657–68~~ | same | same | 2–4 | 4M | **cancelled 2026-08-21, never ran** | seeds 2–4 dropped to free the lane for the eps comparison. e600 alone had 26 min before being cancelled. |
 | e612–e619 | 4697887–94 | cartpole_swingup, hopper_stand, cheetah_run, hopper_hop / BIG | same **+ 10% ε-greedy index jump** | 0–1 | 4M | *launched 2026-08-21* | differs from e592–e599 by `mgr_explore_eps` **alone** (0 → 0.1), so it is a clean single-factor test on the same seeds. Jump is actor-only, so the manager's REINFORCE gradient stays on-policy — see §6. |
 | e620–e623 | 4697896–99 | **antmaze XL** / BIG | Director (2) vs SOM-line+LiP/ReLU/Gaussian/**eps** (2) | 0–1 | **10M** | *queued held 2026-08-21* | first exploration-limited benchmark. `EXTRA_CONFIGS=loconav`, `TRAIN_RATIO=256`. ~10× the compute of a 4M DMC run; will requeue across several 48h slices. |
-| e624–e627 | 4697904–07 | **pinpad six** / BIG | Director (2) vs SOM-line+LiP/ReLU/Gaussian/**eps** (2) | 0–1 | **4M** | *queued held 2026-08-21* | no config block, launcher defaults (train_ratio 64). Cheap image env. |
+| e624–e627 | 4697904–07 | **pinpad six** / BIG | Director (2) vs SOM-line+LiP/ReLU/Gaussian/**eps** (2) | 0–1 | **4M** | **first 4M done 2026-08-23** — mean score over 3M–4M: Director 1.6 / 0.0, arm **282.8** / 0.2 | no config block, launcher defaults (train_ratio 64). Cheap image env. Both Director seeds are essentially at zero at 4M and one arm seed is too, so 4M is too short to rank the arms here. |
+| e620–e623 (paused) | 4699098–4699101 | **antmaze XL** / BIG | Director (2) vs SOM-line+LiP/ReLU/Gaussian/eps (2) | 0–1 | 10M → **6M** | **PAUSED 2026-08-24 at ~1.8M** | target cut 10M→6M on 08-24, then cancelled (**not archived**) to free the lane for e628–e635. Checkpoints + 6.6–7.6GB replay all intact in `/work`; state in `job_logs/e620_e623_paused.tsv`, resume with `sbatch/resume_e620_e623_antmazexl.sh`. No watchdog tracked them, so nothing needed removing. |
+| e628–e629 | 4699190–91 | **pinpad six** / BIG | SOM-line+LiP/ReLU + **Student-t (Cauchy ν=1)** manager, no eps | 0–1 | 4M | *launched 2026-08-24* | new `mgr_studentt` head: polynomial tails, so the far half of the ordered codebook is reachable **and still ordered**, which lets the manager walk `μ` there instead of needing the eps jump. Runs at `manager_actent_target` **0.7** — ν=1's tie floor is 0.601, so 0.5 is unreachable. Differs from e626/e627 by head + target + eps (three factors); a Gaussian-at-0.7 arm would separate them. |
+| e630–e631 | 4699192–93 | cheetah_run / BIG | same Cauchy arm | 0–1 | 4M | *launched 2026-08-24* | dense-control control for the Cauchy head against e614/e618 (Gaussian+eps, mean at 4M). |
+| e632–e633 | 4699180–81 | **pinpad five** / BIG | pure Director | 0–1 | 4M | **done 2026-08-25** — last-15 mean **0.0 (s0) / 158.0 (s1)**, peaks 1270 / 1350 | baseline for e634–e635. **Both seeds find reward** (peaks >1200) but s0 ends at 0.0 while s1 ends at 158.0 — the arm is not failing to explore, it is failing to *hold* the behaviour. That spread across two seeds is larger than any effect we would be trying to measure, so **2-seed comparisons on pinpad five are uninformative**; this is the case for the 5-seed target in `DIRECTOR_BASELINES.md`, and it applies directly to e636–e637 (count-novelty on the same task). Shorter pad sequence than pinpad six, so less exploration-bound. |
+| e634–e635 | 4699194–95 | **pinpad five** / BIG | same Cauchy arm | 0–1 | 4M | *launched 2026-08-24* | vs e632–e633, a clean single-factor comparison: both new, both 4M, differing only in the manager head (and its required target). |
+| ~~e628–e635 (first try)~~ | ~~4699176–83~~ | as above | as above | 0–1 | 4M | **cancelled 2026-08-24 after ~1 min** | launched with `manager_actent_target` **0.5**: `run_v3_goal_ae_ablation_big_a100.sbatch` passed the target on the CLI, which beats the `mgr_studentt` block that sets 0.7 — the same "a CLI flag beats a config block" trap the script already documented for `TRAIN_RATIO`. At 0.5 a ν=1 Cauchy cannot reach target and the adapter rails (e479). Fixed with an `ARM_ACTENT_TARGET`/`MGR_ACTENT_TARGET` variable; the two Director rows (e632/e633) were correct at 0.5 and were left running. |
+> **PINPAD EPISODE LENGTH CORRECTED 2026-08-26.** The Director paper (Sec. 3.1) states *"Episodes last for 2000 steps"*, but both our `pinpad.py` and the released Director repo default the constructor to `length=10000` and neither ships an env override — so **every pinpad run before this date used a 5x-too-long episode** (measured `episode/length` = 10,001). Reward is +10 per completed pad sequence with the position reset after, so score scales roughly linearly with episode length and those numbers are not comparable to the paper's Figure 5. Fixed by adding `env.pinpad: {length: 2000}` to the defaults. **Invalidated as pinpad results:** e624–e625, e626–e629, e632–e635 (finished) and e636–e639, e644–e647 (cancelled mid-flight). Relaunched as e648–e651 (novelty) and e652–e655 (Director). Non-pinpad cells are unaffected.
+
+| e636–e643 | 4700173–80 | **pinpad five, pinpad six, cheetah_run, cartpole_swingup** / BIG | SOM-line+LiP/**ReLU**/categorical + **count-based novelty as a THIRD manager reward and critic** | 0–1 | 4M | *launched 2026-08-25* | New `mgr_novel`: the manager now carries one task reward and TWO exploration rewards, each with its own critic — the existing goal-AE reconstruction error (`mgr_expl_val`) and decaying visit counts over the joint goal code (`mgr_novel_val`). Both enter at `mgr_expl_weight` 0.1, so total exploration pull is **0.2, double** the usual. Counts live on two grids over the JOINT code (4 bins/block fine = 65,536 cells, 2 bins/block coarse = 256); per-block counting was measured to miss real structure (shuffling blocks independently, which preserves every marginal, spreads the codes over 3–4× more regions). Decay `exp(−batch·len/(train_ratio·replay.size))` = 0.999984 and weight 1/`train_ratio`, both derived, so the memory forgets exactly as fast as replay and a count reads as "env steps spent near this code in the replay window" (table settles at `replay.size`). **Hypothesis:** reconstruction error is coupled to autoencoder quality — a better AE explores less by construction and the bonus fades just as the manager becomes able to use it; a visitation count is independent of that and does not fade. **Expected:** clearest gain on the exploration-bound pinpads. **Caveat:** ReLU+categorical has never been run alone (`lip_relu` only ever shipped with `mgr_gaussian`/`mgr_studentt`), so there is no matched baseline and these cells measure the combination, not the exploration change in isolation — control arm `som_lipvq_line_relu` deliberately not run per instruction. | **INTERIM 2026-08-26, step-matched, mid-run:** cheetah @1.56M — novelty **561.7** [478–646] n=2 vs SOM-line+LiP silu 507.0 [403–596] n=4 vs Director 444.2 [235–553] n=4. cartpole @0.93M — novelty **713.4** [643–784] vs silu 632.0 [565–691] vs Director 517.5 [209–743]. Same ordering on both tasks, both novelty seeds above the silu mean in each. **Not conclusive:** n=2 against n=4, ranges overlap, and arms can still cross before 4M. **Not single-factor** either — the novelty arm differs from the silu arm by ReLU *and* the count channel. Note the two arms that previously carried ReLU both underperformed (ReLU+Gaussian aggregate 0.567 vs silu 0.607, losing 33.6% on cheetah specifically), so if ReLU is neutral-to-harmful the count channel is doing more work than the raw gap shows — but that inference needs the `som_lipvq_line_relu` control, which was deliberately not run. Both pinpad cells remain unresolvable: pinpad five novelty 482.7/48.0 against Director 932.7/2.7, one high and one dead seed in each arm.
+| e644–e647 | 4700195–96, 4700201–02 | **pinpad five** (s2,s3,s4), **pinpad six** (s2) / BIG | pure Director, seed fill | 2–4 | 4M | *launched 2026-08-25* | Not a new arm — filling toward **5 seeds per environment**, tracked in `DIRECTOR_BASELINES.md` (12 of 65 seeds done at launch). Training-identical to the A100 Director seeds via `run_v3_director_baseline_multigpu.sbatch`, only device placement differs: BIG needs **4 GPUs** on a 16 GB card (batch 16×64 is ~59 GB on A100, ~12 GB/device split 4 ways), so v100 and p100 give 2 concurrent jobs each. Measured **26.3 env fps on V100** (~43 h/seed), **18.2 on P100** (~61 h). e644–e646 complete pinpad five at 5/5. **First attempt (4700184/85, 4700186) died within a minute**: the A100 scripts `unset DREAMERV3_CONV_IMPL` for native cuDNN conv, which fails on V100/P100 in the stock env (`All algorithms tried for __cudnn$convForward failed`). Fixed by branching the env on partition — Route-A clone + `--xla_gpu_strict_conv_algorithm_picker=false` + explicit `WANDB_API_KEY`. Reference conv is **not** a fallback on 16 GB: forcing it (4700192) OOM'd at 13.4 GB/device because it costs more memory than cuDNN. |
+| e640–e641 FINAL | 4700177–78 | cheetah_run / BIG | count novelty, equal weight | 0–1 | 4M | **3,999,984 / 3,995,992 — late collapse** | Both finished 2026-08-26 and are archived. **The count arm does not hold what it learns.** Over the final 400k all four Director seeds are flat (−1%, −1%, −2%, −8%) while both count seeds fall: e640 764→548 (**−28%**), e641 430→183 (**−57%**). Peaks are higher than any Director seed (832 / 461), so the arm climbs further and then gives it back. The earlier "count 541 vs Director 454" reading of the 3.5–4.0M bin is measured *during* that collapse and should not be quoted as a win. Consistent with the mechanism: the recon bonus fades to 3% of the manager's advantage so Director consolidates on task reward alone, while counts hold 20–25% to 4M and keep pulling the policy off learned behaviour. With the pinpad start-delay this makes the count weight wrong at **both** ends and motivates a decaying schedule on `mgr_novel_weight`. |
+| e642–e643 FINAL | 4700179–80 | cartpole_swingup / BIG | count novelty, equal weight | 0–1 | 4M | **857 / 835 — flat, no collapse** | Finished 2026-08-27. **This retracts the generalisation drawn from cheetah.** Both cartpole count seeds are flat over the final 400k (−0%, +0%) and finish at the top of the Director range (602/749/755/856), so the late collapse is *not* a property of the count arm. Collapse severity tracks fine-grid saturation monotonically across all four equal-weight runs: e641 98.7% occupied / 2.06× spread → −57%; e640 92.0% / 2.87× → −28%; e643 81.6% / 3.83× → +0%; e642 78.9% / 3.58× → −0%. Mechanism: once the grid fills, the bonus stops discriminating (spread → uniform) but keeps its 20–25% share of the manager's advantage, so the policy is pushed by what has become noise. Fixes: decay `mgr_novel_weight`, tie it to measured spread, or raise `fine_bins`. |
+| e648–e651 | 4700537–40 | **pinpad five, pinpad six** / BIG | SOM-line+LiP/ReLU/categorical + count novelty | 0–1 | 4M | *launched 2026-08-26* | Relaunch of e636–e639 at the paper's **2000-step episode**. Identical in every other respect. |
+| e652–e655 | 4700541–44 | **pinpad five** / BIG | pure Director, seed fill | 0–3 | 4M | **ALL FOUR FINAL** (2026-08-28, archived + removed from `/work`): 3,997,904 / 3,997,632 / 3,997,824 / 3,998,656 steps — final last-15 **35.3 / 32.0 / 20.0 / 107.3** | Relaunch of the pinpad five baseline at **2000-step episodes**; e632/e633 and e644–e646 are void. Paper reports Director solving Pin Pad Five reliably over 5 seeds within ~6M steps (Fig. 5, y-axis to ~240), so a seed at 0.0 would be a genuine failure rather than an early read. **e652/e653 finished 2026-08-28 and are archived** (bucket, `SKIP_REPLAY=1`, deleted from `/work`). **The four final last-15 values are 35.3 / 32.0 / 20.0 / 107.3 — a 5.4× spread across seeds of the SAME algorithm on the SAME task.** e655 alone read 181 an hour before it finished and ended at 107.3. End-of-run snapshots are therefore a poor summary of pinpad five for any arm, and the sustained-50 crossing step remains the metric to compare on; quoting a final score here without the spread would misrepresent every comparison built on it. |
+> **PINPAD FIVE LADDER, INTERIM 2026-08-28 — the selection form fixes what the reward form broke.** All at the corrected 2000-step episode. Metric: step at which the last-15 episode mean first clears 50 (first-reward is useless here, it fires on one fluke episode). **Director** (n=5, updated 2026-08-28): 144k / 160k / 176k / 256k / **496k**, scoring on 77–90% of episodes for the first four. **The fifth seed (e676) lands at 496k — 3.4× the fastest seed — and it alone widens the baseline band from 144–256k to 144–496k.** That weakens the "3–12×" delay claim below: read against n=5, the w=0.03 seed at 304k falls *inside* Director's own spread, and the w=0.1 seed at 608k is only 1.2× Director's slowest rather than 2.4×. Only 928k and 1953k remain clearly outside. Caveat in both directions: e676's crossing is marginal (last-15 = 55.3, barely over the bar, 8% of episodes scoring at 511k) and may not hold. **UCB c=20** (n=2, at ~2.55M): **176k / 208k**, scoring 71/86% — inside Director's band. **Count as a REWARD**: w=0.1 → 608k and **1953k** (50% / 19% scoring); w=0.03 → 304k / 928k (60% / 63%). **No-count control** (n=2, at 2.24M): 240k and never (81% / 0%). So counts *as a reward* delay sustained scoring versus Director — but **by how much depends on how many Director seeds you have**, and at n=5 the honest range is ~1.2–3.9× on the slowest seeds rather than 3–12×; the same counts *as a selection-time tilt* do not delay it at all. This is the bootstrapping argument confirmed on the task where it matters: `mgr_novel_val` learns discounted FUTURE novelty and permanently distorts what the manager wants, while a selection bonus never enters a return. **Do not over-read:** n=2, UCB runs unfinished, and pinpad five oscillates violently for every arm including Director (e652 runs 224→226→95→30→154 across its 4M), so final ordering can still change. |
+
+| e668–e675 | 4701772–79 | **cheetah_run, cartpole_swingup, pinpad_five, pinpad_six** / BIG | UCB arm, selection counts from policy **SAMPLES** | 0–1 | 4M | *launched 2026-08-27* | Replaces e660–e667, killed at ~100k. Identical config (`mgr_ucb_c` 20, 8 candidates, `mgr_expl_weight` 0.15); the only change is that `_mgr_select_update` draws samples instead of the mode. |
+| ~~e660–e667~~ | 4701727–34 | as below | UCB arm, selection counts from the **mode** — **VOID, killed at ~100k** | 0–1 | 4M | **no annealing: flip rate pinned at 76%** | **The table and the candidates were on different distributions.** UCB candidates are policy *samples*, but `_mgr_select_update` counted the manager's *mode* (`deterministic=True`), and with a 74%-dominant class per block the mode collapses to nearly one code per state. Measured live at 100k: `select_eff_cells` **21–59** of 65,536, i.e. mass in ~30 cells, so **99.95% of the grid sat at bonus 1.0 permanently**. Candidates almost never landed in a counted cell, so their bonus never decayed — simulated candidate bonus 0.73 and flip rate **76.3% at both 12.5k and 500k decisions**, i.e. the manager overridden three times in four for the whole run with zero fade. That is precisely the pathology the cumulative table was introduced to avoid (cf. the cheetah late collapse). Counting samples instead puts the table on the candidates' own distribution: bonus 0.31→0.08 and flip 93%→32% across a 4M run. Caught by the standing instruction to stop and requeue *all* runs together if the constants stop making sense. |
+ **cheetah_run, cartpole_swingup, pinpad_five, pinpad_six** / BIG | SOM-line+LiP/ReLU/categorical + **counts as selection-time UCB, no reward, no third critic** (`mgr_ucb_c` 20, 8 candidates), `mgr_expl_weight` **0.15** | 0–1 | 4M | *launched 2026-08-27* | **Counts move from the return to the decision.** A count reward is bootstrapped by its critic into "prefer goals that LEAD to novelty later" — a permanent change to the manager's objective, and the reason an uninformative bonus could still drag cheetah down 28–57% late. Here the bonus is added to the score when picking a goal in the environment rollout only, never to a return, so the learned objective stays pure task reward. **Two tables now:** selections (cumulative, never decays) drive the UCB bonus so it fades as 1/sqrt(n) like textbook UCB; visits (decaying replay window) become coverage metrics plus a measured `reach_ratio` that replaces the saturating coarse-grid frontier test. Counting *proposals* rather than arrivals is what makes it self-limiting — a goal the worker can never reach still gets counted, so the manager cannot fixate on it. **`mgr_ucb_c`=20 is derived, not guessed:** at the 50% entropy target the manager sits at 8.7 of 16.6 nats, so a code's log-prob has std 3.7 nats and among 8 candidates the best beats the second by ~1.6 nats, while the bonus differs by only ~0.05–0.10 between candidates from the same concentrated policy — c must be ~15–30 to change any decision. The initial guess of 3.0 would have shifted scores by 10–20% of the gap and made this arm indistinguishable from the no-count control. **Grid stays at 4 bins** (65,536 cells): 500k decisions per 4M run gives 7.6/cell (22–49 per *effective* cell at the measured 2.9–6.4× concentration), inside the range where 1/sqrt(n+1) actually moves — and matching the visit grid is required for `reach_ratio` to mean anything. **Known approximation:** the selection table counts the manager's untilted mode on replay states, not the tilted choice made during collection, because running the tilt inside the training scan would break the env-rollout-only scoping that keeps REINFORCE unbiased. e656–e659 paused (requeued+held) to free the partition. |
+| e656–e657 | 4700585–86 | **pinpad five** / BIG | SOM-line+LiP/ReLU/categorical + count novelty at **`mgr_novel_weight` 0.03** | 0–1 | 4M | *queued 2026-08-26* | Single-factor test against e648/e649: identical arm, only the count bonus weight changes (0.1 → 0.03). **Why:** step-matched at the corrected 2000-step episode, **all 4** Director seeds (e652–e655) find reward by 224k — three by 80k — and hold 50–200 through 200–400k, while the equal-weight count arm managed **1 of 2** by 800k, and that seed spiked to 183 then collapsed to 7. **Mechanism, measured:** before any task reward exists exploration is the manager's *only* signal, and at equal weights the count term takes ~50% of it (`mgr_expl_adv` 0.056 vs `mgr_novel_adv` 0.058) — halving the reconstruction term's share in exactly the phase that has to find the first pad sequence. Director's exploration is 100% reconstruction. At 0.03 the count term takes 23% of early exploration. **Expected:** first reward inside ~250k like Director; if it stays slow, the delay is the goal AE rather than the count channel, which the equal-weight comparison cannot separate (no matched no-count arm exists at length 2000). **Note the opposite sign late:** on cheetah to 2.9M the reconstruction bonus fades 12%→3% of the manager's advantage while counts hold 20–25%, and that run (e640) reaches **800** at 3M against Director's best 589 over 4 seeds — so counts look harmful at the start and useful later, which would favour ramping the weight rather than a flat cut. New knob `agent.mgr_novel_weight`, negative = "same as `mgr_expl_weight`" so all earlier runs stay bit-identical (`hrl/losses.py:resolve_novel_weight`, `TestNovelWeightKnob`). | **INTERIM 2026-08-26, e656 at 0.32M (n=1, e657 still held):** on **sustained scoring** — the step where the last-15 episode mean first clears 50, which is the metric that matters because first-reward fires on a single fluke episode — e656 reaches it at **304k**. Director: 144k / 160k / 176k / 256k. Equal weight: 608k (e648) and **1953k** (e649 — it was at one scoring episode in 912 as late as 1.82M, then took off; the arm is very slow, not dead). So 0.03 is **2× faster than the only equal-weight seed that got there** and within reach of Director's slowest, but still ~2× behind Director's median (~168k). The residual gap is consistent with the goal autoencoder rather than the count weight, which this arm cannot separate — that needs the `som_lipvq_line_relu` no-count control, still unrun. **Do not over-read:** n=1 at 8% of the run, and pinpad five seed variance is large (Director e655 first-scored at 32k yet sits at a last-15 of 74.7). |
+| e658–e659 | 4700786–87 | **pinpad five** / BIG | SOM-line+LiP/ReLU/categorical, **no count reward** (`som_lipvq_line_relu`) | 0–1 | 4M | *queued held 2026-08-26* | **The missing control.** Every count-novelty cell so far differs from Director by *two* things — the goal autoencoder (SOM-line+LiP/ReLU/categorical) and the count channel — so no result among e636–e657 can attribute a difference to either. This arm is the count arm with `mgr_novel` off, making e648/e649 (w=0.1), e656/e657 (w=0.03) and e658/e659 (no counts) a single-factor ladder on one task. **Reads:** if e658/e659 sustain at Director's 144–256k, the ~2× residual gap at w=0.03 is the count channel and the weight should go lower still; if they sustain near e656's 304k, the residual is the autoencoder and the count weight is already about right. Submitted **held** — a fresh submission outranks a requeued one here (e657 at priority 10377 vs preempted e648 at 10126), so these release only after e648 and e657 are running. |
+| e676–e681 | 4701951–56, **e678/e679 resubmitted as 4702072–73** | **pinpad five** (e676), **pinpad six** (e677–e681) / BIG | pure Director, seed fill to 5/env | 0–4 | 4M | *running / queued 2026-08-28* | Completes the 2000-step-episode baselines. **e676 (pinpad five seed 4) crossed sustained-50 at 496k**, versus 144k/160k/176k/256k for the first four seeds — a 3.4× spread that widens the pinpad-five band to 144–496k and moderates the "counts as a reward delay learning 3–12×" claim in the ladder note above. **e676 FINAL: 3,996,944 steps, last-15 60.0** (finished 2026-08-30, archived + removed from `/work`). **Pinpad five Director baseline is now COMPLETE at 5 seeds** — crossings 144k/160k/176k/256k/496k, final last-15 **35.3 / 32.0 / 20.0 / 107.3 / 60.0**. **Pinpad six Director band, n=4: 640k (e677) / 848k (e679) / 864k (e678) / 1217k (e680)**
+— exact sustained-50 crossings, so roughly **4–7× later than pinpad five's 176k median**,
+which is the expected cost of the sixth pad. e680 first scored at 1,009k; **e681 has still
+never scored at 1.2M**, so the band may widen further. First-nonzero across seeds:
+400k / 688k / 704k / 1009k. Caveat: e678/e679 had scored on only **4–5%** of
+episodes at the moment they crossed (last-15 of 52.0 and 74.0 carried by a handful of
+recent episodes), exactly the marginal pattern e676 showed on pinpad five — treat both as
+provisional until they hold it. e677 is unambiguous: 74% of episodes scoring, and it **FINISHED at 3,999,776 steps with a
+final last-15 of 154.7** (2026-08-30, archived + removed from `/work`). Director
+first-nonzero-score on pinpad six: **400k / 688k / 704k**. **All five pinpad six seeds are
+now accounted for**: e677 done, e678–e681 running (e680/e681 started on the v100 slots
+e676/e677 freed, with no idle gap).
+
+> **e678 FINISHED — AND ITS "last-15 = 0.0" IS A TRAP (2026-08-31).** COMPLETED at
+> 3,996,528 steps, 13 h 16 m on p100. The headline number is **last-15 0.0**, which read
+> alone says the seed died. It did not: last-50 is **21.4**, last-100 **58.3**, and the
+> final 500k bin averages **89 with 90% of episodes scoring** — the best bin of the run.
+> Binned in 25s, the run holds 24–25/25 scoring with means of 40–157 all the way to ~3.95M
+> and then collapses in the **final 25 episodes** (1/25 scoring, mean 1.2, ~48k steps). So
+> it is a real collapse, but one confined to the last 1% of the run, and quoting 0.0 as this
+> seed's result would misrepresent it completely. This is the third time end-of-run last-15
+> has misled on a pinpad run (cf. e655 reading 181 an hour before finishing at 107.3, and
+> e632/e633) — **for pinpad, report the crossing step plus a late-window mean, never the
+> final last-15 alone.** Sustained-50 crossing confirmed at **864k**, matching the band above.
+> **This seed is also a third independent case for the `director_stable` hypothesis
+> (e718–e721) — and it refines it.** `mgr_extr_val` by 500k bin: 0.000 0.182 0.756 0.635
+> **27.802** **−11.852** 1.440 3.238 (final row 0.851), on a task whose reward is 0 or +10
+> and can never be negative — the same runaway seen in e654 (−23) and e655 (−210), now
+> reproduced on **pinpad six** rather than pinpad five, so the pathology is not
+> pinpad-five-specific. `goal/rec_mean` grows **6.68 → 36.9** (5.5×), matching the "the
+> manager's exploration reward grows in absolute scale all run" observation (they measured
+> 6.4 → 52). **The refinement:** the e718–e721 note says the negative excursion is "what
+> blocks recovery, not what starts the fall", with both never-negative seeds recovering.
+> e678 went to −11.85 — and **recovered anyway**, from a 0-scoring 2.5–3.0M bin to 90%
+> scoring at the end. So going negative does not always block recovery; magnitude plausibly
+> matters (−11.9 here against −23 and −210 in the seeds that stayed down). Worth checking
+> against e719–e721 when they land.
+>
+> **e679 FINISHED THE SAME DAY and completes the picture (2026-08-31).** COMPLETED at
+> 3,992,032 steps, 13 h 21 m on p100. Crossing **848k** (matches the band). Final last-15
+> **33.3**, but again read the window: last-100 **67.5**, final 500k bin **79 with 96% of
+> episodes scoring**. Its curve is the classic Director shape this project keeps hitting —
+> bins **0 38 77 172 145 73 56 79**, peaking at 1.5–2.0M and settling ~55% below the peak.
+> **`mgr_extr_val` never goes negative here** (0.000 0.716 2.836 5.038 4.964 3.618 2.414
+> 3.054) and the seed holds. With e678 the four-seed picture across pinpad five and six is
+> now: **large negative (−23 e654, −210 e655) → stays down; small negative (−11.9 e678) →
+> recovers; never negative (e679, plus the two pinpad-five seeds) → recovers.** Magnitude,
+> not sign, is what tracks the outcome — sharper than the original "negative blocks
+> recovery" statement. `goal/rec_mean` grows on both seeds regardless (e678 6.7 → 36.9,
+> e679 7.9 → 38.5, both ~5×), so the wd=0 parameter-norm diagnosis is independent of whether
+> the value diverges. **e679 also left in `/work` unarchived**, same 4M → 6M reasoning as
+> e678. Pinpad six Director is now **3 of 5 finished** (e677 154.7, e678, e679); e680/e681
+> still running on v100.
+> **NOT archived, deliberately:** pinpad six Director runs have precedent for being extended
+> 4M → 6M (e624/e625 were, 2026-08-24), and archiving with `SKIP_REPLAY=1` would destroy
+> resumability ([[dreamerv3-archiving-destroys-resumability]]). Left in `/work` pending a
+> decision on whether the pinpad six baseline goes to 6M. `/work` is at 26%, so there is no
+> space pressure forcing it.
+
+> **PINPAD SIX, TILT vs DIRECTOR (interim, 2026-08-29, e710/e711 at ~0.5M of 4M).**
+> **e710 crossed sustained-50 at 336k — before *any* Director seed had scored even once**
+> (earliest Director first-reward is 400k), and holds 42% of episodes scoring with last-15
+> 128.7. Against Director's crossings of 640k / 848k / 864k that is roughly **2× faster
+> than the best baseline seed**. **e711 has not scored at all at 512k — and that is
+> normal, not a failure:** every Director seed was also at 0% by 512k, and two of the three
+> did not score once until ~690–700k. So the pair is one clearly-fast seed and one that is
+> simply too early to read, which at n=2 supports no mean and no ordering. Worth flagging
+> as the most promising signal so far, and worth *not* over-reading: pinpad six variance is
+> exactly what makes n=2 useless here (see the n=2 resolution problem above). **e678/e679 moved v100 → p100 on 2026-08-28**: they were blocked behind `AssocGrpGRES` on v100 until e676/e677 finish (~2 days), while p100 nodes saion-gpu[13-14] sat idle and our p100 quota freed as soon as e654/e655 completed. Same script, same config, only the GPU type differs — the script documents the p100 path (`-p gpu-p100 --gres=gpu:p100:4 --nodelist=saion-gpu[11-14]`, Route-A env for both v100 and p100). **P100 is 1.4× SLOWER, and the move is still right — the justification is queue position, not throughput.** Measured `fps/policy` from the logs: **v100 26.30, p100 18.75** (matching the long-standing 26.3/18.2 note; an earlier claim here that p100 ran at ~35 steps/s was wrong — it came from reading heartbeat step-deltas as 1-hour intervals when the readout fires every 2 h). The arithmetic that actually decides it: on p100 starting now, 4M at 18.75 fps ≈ **59 h**. Waiting for a v100 slot means 2.82M left on e676/e677 at 26.30 fps ≈ 30 h, *then* 4M at 26.30 ≈ 42 h ≈ **72 h**. So starting ~30 h earlier more than pays for the 1.4× slowdown. e680/e681 stay on v100 (p100 is at its 8-GPU cap). |
+| e706–e717 | 4702043–54 | **antmaze L, pinpad five, pinpad six, cartpole_swingup, cheetah_run, hopper_hop** / BIG | UCB arm with **tilted sampling**, `mgr_ucb_c` **10**, smeared selection grid `select_bins` 4 / `select_h` 1.0 | 0–1 | 4M | **ALL FIVE DENSE-TASK RUNS COMPLETE at 4M** (2026-08-31, archived + removed from `/work`): cartpole s1 **659.1**, cheetah **795.4 / 584.4** (*both above every Director seed*), hopper **161.1 / 172.5**. **The annealing claim is falsified** — gain rises in all five, 4 of 5 peak in the last bin, all at 7.6 counts/cell. e708–e712 eligible, e706/e707 (antmaze L) still held | **Replaces e668–e705, all void for the sharpening bug.** The old rule picked `argmax(log π + c·bonus)` over 8 policy samples, which double-counts the policy: it is a best-of-K likelihood filter, so it *sharpened* the manager rather than exploring it — measured `E[log π]` **−9.46 → −6.70**, discarding ~25% of the manager's entropy, and a directly sampled goal is the best of its own eight only **12%** of the time. New rule is `P(k) ∝ exp(c·bonus_k)` by Gumbel-max, **with no logp term**; `c=10` derived from the manager's real per-state probabilities (chosen goal 1.3–1.5× rarer than the candidate average for ~1.4 nats of 9.5). Also fixes a half-class offset in the cell centres (`(j+0.5)·C/b` → `(j+0.5)·C/b − 0.5`) that put 3 of 8 classes in the wrong cell. **Pre-launch validation (CPU, 2026-08-28):** `_ucb_diag` runs inside a real train step; `ucb_logp_shift` mean **−0.0021 ± 0.0175** (indistinguishable from 0, i.e. not sharpening); smearing live, `select_eff_cells` 748 → 10,171 where a hard deposit would sit at ~1. **Reading the diagnostics:** an empty table and a saturated one give *identical* readings (gain exactly 1.0, shift noise ±0.05), so gate on mean count = `select_mass`/65,536 — sharpening if shift > 0.25 with mean count > 0.5; saturated if mean count > 2 with >85% of cells carrying mass and gain < 1.02. |
+| e718–e721 | 4703164–67 | **pinpad_five** / BIG, a100 | Director baseline + `director_stable`: `manager_slowtar` **True**, `advnorm.impl` **meanstd** (was `none`), `mgr_retnorm.limit` **1e-2** (was 1e-8), `opt/ac_opt/goal_opt.wd` **2.5e-2** (was 0) | 0–3 | 4M | launched 2026-08-31 | **Hypothesis: the four DreamerV3 defaults `director_match` never matched are what make our pinpad Director curve peak early and decay, where the paper's rises late and holds.** The e652–e655/e676 five-seed baseline peaks at mean **214** by 1M and falls to **83** by 3.75M; Hafner et al. Fig. 5 is flat 0 until ~1.8M then climbs steadily to ~130 at 6M. Diagnosis from those runs' metrics: (1) the manager's task critic bootstraps off ITSELF (`slowtar` False → live critic is its own target, `hrl/losses.py:241`), and in 2 of 5 seeds it ran away to `mgr_extr_val` **−23** (e654) and **−210** (e655) on a task whose reward is 0 or +10 and can never be negative — the score collapse came FIRST (e654: 75.9 → 0.1 between 3.0M and 3.25M, value flipped at 3.287M), so this is what blocks recovery, not what starts the fall; both seeds that never went negative recovered. (2) TF Director normalizes TWICE — per stream by running std, then the weighted SUM by running mean+std (`agent.py:329-337`) — and our second stage was `impl: none`, so manager `mgr_adv_std` ran a median 0.3 with peaks 10.3/10.5/14.7, i.e. policy updates 30–50× normal size. (3) our per-stream std floor was 1e-8 against Director's 1e-2 (`retnorm.max: 1e2`). (4) with wd 0 nothing bounds parameter norm: AC param RMS 0.046 → 0.109 (2.4×, still linear at 4M), world model 0.0293 → 0.0386; the goal AE reconstructs `deter` with a summed MSE so `goal/rec_mean` grew 6.4 → 52, and that error IS the manager's exploration reward (`mgr_expl_rew` 0.0069 → 0.0559, the same 8×) — its second objective grew in absolute scale all run instead of converging. wd **2.5e-2** not 1e-2 because both decays are decoupled (shrinkage = wd·lr) and our lr is 4e-5 vs Director's 1e-4: 2.5e-2·4e-5 = 1e-2·1e-4. **Expected:** no negative `mgr_extr_val`, `mgr_adv_std` pinned near 1, `goal/rec_mean` and the parameter RMS flat rather than climbing, and the peak held to 4M instead of decaying. Four-factor change on purpose — if it works, split it. Still unmatched: `mgr_retnorm.rate` 0.01 vs Director's decay 0.999, `mgr_retnorm.debias` False vs their always-on correction, and the manager discount (ours 0.997⁸ ≈ 0.976 per decision ≈ 330 env steps, Director's 0.99 ≈ 800). Baseline to beat: e652–e655/e676. Job log `job_logs/e718_e721_director_stable.tsv`. |
+> **e718–e721 INTERIM AT 3.4M/4M: ALL FOUR FIXES LANDED, THE CURVE DID NOT MOVE
+> (2026-09-01).** Each of the four `director_stable` factors hit its stated mechanical
+> target, and the seed-averaged score curve is indistinguishable from the e652–e655/e676
+> baseline. Binned 500k means, ours (4 seeds, live) vs plain Director (5 seeds, done):
+> **43/155/191/73/51/88/67** vs **69/144/202/130/109/86/75**. Same peak height, same peak
+> location (1.0M), same decay; the stable arm is *worse* through 1.5–2.0M (73/51 vs
+> 130/109) and equal by 2.5M. **The four factors, scored individually at 3.35M:**
+> (1) `manager_slowtar` **WORKED** — `mgr_extr_val` min is exactly 0.000 in all four seeds
+> against the baseline's −22.98 (e654) and −209.64 (e655); the runaway is gone.
+> (2) `advnorm meanstd` **WORKED, AND ALSO SILENTLY CHANGED THE WORKER** — `mgr_adv_mag`
+> median 0.67–0.70, max ≤1.01 everywhere, against baseline median 0.21–0.27 with maxima
+> 1.00/1.41/2.62/1.81/0.77. Note the *typical* manager update is now ~3x larger, not
+> smaller: the fix compresses the range from roughly [0.1, 14] into [0.6, 1.0].
+> **`director_stable` IS A FIVE-FACTOR CHANGE, NOT FOUR (found 2026-09-01).**
+> `agent.py:384-385` builds `mgr_advnorm` and `wkr_goal_advnorm` from the *same*
+> `config.advnorm` key (separate instances, separate running stats, but one `impl`), so
+> `advnorm: {impl: meanstd}` normalized the **worker's** advantage as well. Measured
+> `wkr_goal_adv_mag`: **0.037–0.043 (plain baseline) → 0.699–0.700 (stable)**, a **~17x
+> increase in the worker's policy update**, while `wkr_goal_adv_std` is unchanged at
+> 0.055–0.061 in both arms — so this is purely the normalization, not a change in the
+> underlying advantage. The unlogged fifth factor is **larger than the manager effect the
+> arm was designed around** (17x vs ~3x).
+> **Direction is Director-matching:** TF Director builds worker and manager both as
+> `ImagActorCritic`, whose `__init__` does `self.advnorm = Normalize(**config.advnorm)`,
+> and the manager's `mconfig` overrides only `actor_grad_cont` and `actent.target` — so
+> Director normalizes *both* actors with `mean_std`. Our plain baseline (`impl: none` on
+> both) was the deviation. Parameters are effectively equivalent: our `rate: 0.01` is their
+> `decay: 0.99`, and their `max: 1e8` / our `limit: 1e-8` are both effectively inert.
+> **What it explains:** not the collapse — the baseline collapses just as hard with no
+> worker advnorm — but it is the leading candidate for why the stable arm is *worse than
+> baseline* exactly through 1.5–2.0M (73/51 vs 130/109), the window it was meant to help.
+> It is also a concrete mechanism for the worker-converges-harder reading of the collapse
+> signature below. **To separate the manager and worker arms, `advnorm` has to be split
+> into two config keys first; today it cannot be done from config.**
+> (3) `mgr_retnorm.limit 1e-2` **WORKED** — `mgr_adv_std` max 0.76–0.95 against baseline
+> 0.86/1.68/4.79/6.35/10.48.
+> (4) `wd 2.5e-2` **FAILED ON ITS OWN TARGET** — `goal/rec_mean` still grows 5–6x
+> (6.5→28–41) against the baseline's 4–5x (8.9–11.9→32–57), and `opt/ac_param_rms` lands at
+> 0.094–0.099, *inside* the baseline's 0.088–0.116 range. wd lowered the starting point,
+> not the growth rate.
+> **Why the curve did not move.** The original note said the value runaway is "what blocks
+> recovery, not what starts the fall". That reading was right, and it is the reason the arm
+> is a null: only 2 of 5 baseline seeds ever had the runaway, the other 3 decayed just as
+> hard and recovered unaided, so removing the recovery-blocker could only ever rescue a
+> minority of seeds and the mean curve was never driven by them. The decay is present in
+> every seed, including the healthy baseline ones, so its trigger is untouched by all four
+> factors. **Consistent with that, the fix did do the one thing it should:** no seed is
+> permanently dead. Final 250k bins read 37/4/114/122 (e718/e719/e720/e721) with e720 and
+> e721 mid-recovery, against the baseline's e654 at 8.5 and e676 at 32.0. The runs
+> oscillate with a ~500k–1M period and >200 amplitude, so any single endpoint is
+> uninformative — cf. [[pinpad-final-last15-is-a-trap]].
+> **Collapse signature (four seeds, 50k bins through each crash).** `wkr_goal_rew`
+> roughly doubles across every collapse and does not come back: e718 0.19→0.52,
+> e721 0.25→0.53, e720 0.34→0.53. The worker gets *better* at reaching goals while the
+> score falls ~90%, which points at the manager proposing easy, worthless goals rather than
+> at any execution failure. Not airtight: e720 recovered to 177 with `wkr_goal_rew` at its
+> run maximum. `mgr_extr_val` correlates +0.89 with binned score — a mirror of the
+> collapse, not a cause. **The entropy story is ruled out:** normalized manager entropy
+> holds **0.503–0.545** against its 0.5 target through every crash, so the raw
+> `mgr_ent/skill` moving 8.35→8.88 (pooled corr −0.61 with score) is a ~6% wobble on a
+> tightly-held controller, not drift.
+>
+> **TWO NEW UNMATCHED DIRECTOR DIFFERENCES, FOUND AUDITING THE GOAL VAE AGAINST
+> `code/director/` (2026-09-01).** Prompted by the e718–e721 null. Full audit and the
+> matching items are in `docs/VERIFICATION.md` (new *Goal autoencoder* section — the
+> component had **no row at all**, not even TODO, before today).
+>
+> **(1) `goal_autoencoder_beta: 0.25` — ours, not Director's, and it is binding.** Our goal
+> AE loss is `rec + 0.25 * kl_adapted`. Director's `train_vae_replay`/`train_vae_imag` are
+> `loss = (rec + kl).mean()` with no coefficient. Verified exhaustively: `0.25` does not
+> appear anywhere in Director's `configs.yaml`; `encdec_kl` occurs exactly once in the
+> whole codebase (the `AutoAdapt` construction) and `goal_kl` only as an on/off boolean; no
+> task preset overrides either (only `dmc_proprio` touches the goal AE, shrinking the nets
+> to 3x64); their `Optimizer.__call__` has one multiplier, the fp16 grad scale, divided
+> back out. **It is active, not nominal:** `goal/kl_adapt_scale_mean` is pinned at its 1.0
+> ceiling from 1M onward with `goal/kl_raw_mean` at 11.9 against target 10 — the controller
+> is saturated asking for more pressure — and we then apply a quarter of what it asks.
+> Director in the same state applies 4x ours. **Provenance:** introduced at **1.0** on
+> 2026-05-15 (`e1ab1ed`, "Add initial goal autoencoder (rec + KL vs uniform prior)"),
+> changed to 0.25 on 2026-06-02 in `713d15b`, whose message says "tune related
+> hyperparameters: goal_autoencoder_beta 1.0→0.25". A tuning choice, never a match.
+> **Correction to the record:** `EXPERIMENTS_ARCHIVE_20260713.md` line 722 lists
+> `goal_autoencoder_beta 0.25` under "Everything else passed in both scripts ... identical
+> or an inert default in both". That was e118-vs-e123 — two of *our* runs, checked for
+> internal consistency so the masked-goals comparison would be clean. It was never a
+> Director comparison, and it reads like one.
+>
+> **(2) RETRACTED — there is no missing manager discount.** This slot briefly claimed our
+> manager was undiscounted because `hrl/losses.py` sets `disc = 1` under `contdisc: True`.
+> That is wrong: `agent.py:1289` folds the discount into the **continue head's training
+> target** (`con = f32(~is_terminal); if contdisc: con *= 1 - 1/horizon`), so the 0.997 per
+> env step is already inside `con` and `cumprod(con)` carries it. `disc = 1` is correct
+> *because* the discount lives in `con`; `horizon: 333` is read, just not in the return
+> computation. **The `VERIFICATION.md` `discount` row was right as written** ("0.99 vs
+> horizon 333 (~0.997), DIFF, 4.5% effect") and has been restored. The real difference
+> remains the one already recorded — ours ≈ 0.997^8 = 0.976 per manager decision against
+> Director's 0.99, i.e. an effective manager horizon of ~42 decisions against ~100 — a
+> genuine 2.4x gap, but a known one and small per decision, **not** a missing contraction
+> and not a leading candidate for the oscillation.
+>
+> **Two corrections to earlier claims in this investigation**, both from reading the live
+> run's `logdir/config.yaml` rather than the base defaults: the goal AE architecture is
+> **not** a difference (`director_match` overrides the 3x1024 default, so these runs use
+> `goal_enc`/`goal_dec` at **4 layers x 512**, exactly Director's shape; only act/norm
+> differ, silu+rms vs elu+layer), and **both sides use `deter: 1024`**, so the summed-MSE
+> reconstruction is over the same number of dimensions and the rec:KL balance is directly
+> comparable — which is what makes the beta a clean 4x difference rather than a
+> compensation for a scale mismatch elsewhere.
+>
+> **Next, in order.** (a) **`goal_autoencoder_beta: 1.0`** — the only *active* VAE
+> difference found, run it before anything more elaborate; shipped as the
+> **`director_vaebeta`** config block. (b) **Split `advnorm` into worker and manager
+> keys** so the 17x worker step-size change above can be ablated apart from the manager
+> normalization it was bundled with; needs an `agent.py` edit, which must NOT be made in
+> this tree while e718–e721 are live (they run from it and re-read it on requeue).
+> (c) **Instrumentation, because we cannot currently test the "worker arrives early and
+> idles" hypothesis at all:** Director logs `success_manager` (fraction of rollouts whose
+> final goal reward > 0.7) and we log no equivalent; adding that plus a time-to-reach
+> within the K-block would show whether the worker is arriving early and idling for the
+> remainder, which is the mechanism the collapse signature above points at but does not
+> establish.
+>
+> **Config blocks added 2026-09-01** (composable, so the factors can be split later —
+> the e718–e721 lesson): **`director_optmatch`** sets `opt`/`ac_opt`/`goal_opt` to
+> Director's **lr 1e-4, wd 1e-2**. Layer it *after* `director_stable`, which set
+> wd 2.5e-2 against our lr of 4e-5: both decays are decoupled, so shrinkage = `wd*lr`
+> and `2.5e-2*4e-5 == 1e-2*1e-4 == 1e-6`. The block therefore **holds the shrinkage
+> `director_stable` already had and raises the lr 2.5x**, rather than moving both — worth
+> stating plainly, because "increase the weight decay to Director's 1e-2" reads like more
+> decay and is in fact the same decay. Still unmatched in the optimizer: `eps` 1e-20 vs
+> 1e-6, and our `agc: 0.3` vs their global-norm `clip: 100`.
+> **`director_vaebeta`** sets `goal_autoencoder_beta: 1.0`.
+> Composed as `director_match director_stable director_optmatch director_vaebeta`, the
+> resolved config verifies as: lr 1e-4 / wd 1e-2 on all three optimizers (shrinkage 1e-6),
+> beta 1.0, `manager_slowtar` True, `advnorm` meanstd, `mgr_retnorm.limit` 1e-2, goal
+> enc/dec 4x512.
+>
+
+
+> **e706/e707 (antmaze L) HAVE NO BASELINE TO COMPARE AGAINST (2026-08-30).** Every
+> archived antmaze Director run is antmaze **M** — `e475–e477` (clean) and `e410–e414`
+> (contaminated, see [[director-baseline-contamination]]). The only antmaze **XL** runs,
+> e620–e623, were paused at ~1.8M and never finished. **Nothing exists at antmaze L**, so
+> these two runs currently have no matched comparator at any budget, and at 4M they may not
+> score at all (0.0 at 500k; the Director paper uses ~9M for its maze results and our own
+> earlier antmaze target was 6M). Options for resolving it: run antmaze L Director seeds,
+> re-point the arm at antmaze **M** where clean baselines already exist, or treat these two
+> as a demonstration rather than a comparison. **Combined with hopper_hop below, 4 of our 7
+> usable a100 slots are on runs that cannot produce a comparison**, while e708–e711 — which
+> do have complete baselines and carry 0.5–1.2M of banked progress — sit queued behind them.
+>
+> **e716/e717 (hopper_hop) CANNOT SUPPORT A COMPARISON — flagged, deliberately NOT
+> cancelled (2026-08-30).** `dmc_hopper_hop` was retired as a comparison task on
+> 2026-08-09: its seed distribution is bimodal and heavy-tailed, and bootstrap power to
+> detect a difference at p<0.05 is **0.01 at five seeds** (0.24 at ten, 0.60 at twenty) —
+> a 15× median difference at 1M gave a permutation p of 0.38. This matrix runs **two**
+> seeds, so these two runs have even less power than that and cannot order the arms.
+> They were kept because the task list was specified explicitly by the user, and dropping
+> a task is a scope decision rather than a fault to be fixed autonomously; the runs also
+> still surface a *gross* failure even though they cannot resolve an ordering. The cost is
+> real though: 2 of our 8 a100 slots, while e708–e711 (0.5–1.2M of banked progress, and the
+> runs that answer the annealing question) sit queued behind them. If slots are needed,
+> these are the two to cancel first.
+
+> **e706–e717 ARE BLOCKED, AND IT IS NOT FIXABLE FROM OUR SIDE (2026-08-29).** All 12
+> sit `PD` on `gpu-a100` with an estimated start of **2026-09-01** — three days out. Two
+> of them (e706/e707) did run for 40 minutes on 08-28 before being preempted, so
+> opportunistic capacity does appear and the estimate is a pessimistic bound, not a
+> promise. What was checked and ruled out: **(1) walltime/backfill** — `sbatch
+> --test-only` returns the *same* start estimate for 2 h, 4 h, 12 h and 2 d requests, so
+> the job's shape is not the constraint and shortening it buys nothing; **(2)
+> `short-a100`** — same physical nodes saion-gpu[23-26], and `PriorityTier=1` against
+> `gpu-a100`'s 10, so it is strictly *more* preemptible and cannot preempt the tier-10
+> work occupying the nodes; **(3) v100/p100** — no v100 variant of
+> `run_v3_goal_ae_ablation_big_a100.sbatch` exists (v100/p100 need the 4-GPU Route-A
+> native-conv setup, and a naive port of an A100 script dies in under a minute), and both
+> partitions are at our 8-GPU cap running the Director baselines anyway. Nothing of ours
+> is idle: every GPU we are entitled to is in use.
+>
+> **The v100 fallback was suspected of a correctness risk; it was TESTED and is CLEAN.**
+> The worry: on a100 a tilt run uses 1 GPU and nothing is sharded, but on v100 it needs 4,
+> and `partition_rules` is unset so params default to `P()` (replicated) while the batch is
+> sharded. The count tables are `nj.Variable`s updated by **accumulation, not gradients**
+> (`add = deposit(ids).sum(0) * weight`), so `.sum(0)` reduces over the sharded axis into a
+> replicated result and XLA *must* insert a cross-device all-reduce. Local partial sums
+> would make `select_mass` 1/4 of the truth, a per-device full sum 4× — silently, in the
+> quantity the arm is studying, and `select_mass` has already caught two real accounting
+> bugs. **Measured on 4 simulated CPU devices: single-device 16.0, 4-way sharded 16.0,
+> expected 16.0 — exact.** The gap that made this worth checking was real: all 34 tests in
+> `test_mgr_novel.py` had **zero** device/shard/mesh coverage. Now covered permanently by
+> **`embodied/tests/test_mgr_novel_sharded.py`** (4 tests: sharded-vs-single mass at two
+> batch sizes, the `1/train_ratio` env-step weighting, and `ucb_bonus` agreeing across
+> shards). Run it alone — JAX fixes the device count at first use:
+> `XLA_FLAGS=--xla_force_host_platform_device_count=4 python -m pytest
+> embodied/tests/test_mgr_novel_sharded.py`; it skips rather than passing vacuously in a
+> full-suite run (verified: 34 passed, 4 skipped). **So the v100 move is a genuine
+> priority trade after all** — 2 tilt seeds displacing e680/e681 — with the caveat that
+> this validates the count-table accounting under sharding, not the whole 4-GPU training
+> loop. **Moot in the event: a100 freed within hours and e708/e709 started, so no seeds
+> were displaced.** |
+
+> **TILTED SAMPLING, FIRST RESULT (interim, 2026-08-29, e708/e709 at ~500k of 4M).**
+> Sustained-50 crossing on pinpad five: **224k and 256k**, against Director (n=5) at
+> 144k / 160k / 176k / 256k / 496k. Both sit **inside** Director's band and e709 lands
+> exactly on its 4th seed, so **the corrected rule does not delay learning** — reproducing
+> the earlier interim claim (176k/208k) that had been measured under the *buggy* sharpening
+> rule. Last-15 at 500k: **158.7 / 218.7**, scoring on 61%/57% of episodes.
+> **How much this is worth: not much yet.** n=2 against a baseline whose own seeds span
+> 3.4× (144–496k), so "inside the band" is a weak statement — the band swallows almost any
+> arm. This is the n=2 resolution problem noted above, not a result that settles it.
+>
+> **The mechanism diagnostics are the more interesting part.** Trajectory of
+> `ucb_novelty_gain` (chosen candidate's bonus over the 8-candidate mean):
+> e708 1.002 → 1.021 → 1.038 → 1.034 → **1.056**; e709 1.002 → 1.019 → 1.067 → 1.130 →
+> **1.097**, while `select_bonus_mean` falls 0.584 → 0.546 → **0.527** and `eff_frac`
+> falls 0.53 → 0.088 → **0.047**. So the bonus **level** anneals as designed while mass
+> **concentrates**, and the spread — which is what actually tilts the choice — is still
+> drifting up. That is the failure mode the old notes predicted for a 4-bin grid: with
+> 65,536 cells and only ~500k decisions a never-visited candidate always exists, so the
+> tilt can sharpen over training instead of fading. Smearing (`select_h` 1.0) was the
+> countermeasure and it is doing something (eff_cells in the tens of thousands, not ~1).
+>
+> **UPDATE at 1M — BIN THE SERIES, do not compare single samples.** Per-row `gain` is
+> noisy enough (±0.02–0.05) that single readings suggested first a clean rise, then a
+> turnover, then neither; spread comparisons at one step were also misleading because they
+> mixed pinpad five and six. Binned at 100k (~20 samples/bin) the answer is unambiguous and
+> **all four seeds rise monotonically on two tasks**:
+> `e708 (pp5) 1.010 1.032 1.022 1.032 1.051 1.059 1.071 1.077 1.080 1.114 1.111`;
+> `e709 (pp5) 1.008 1.042 1.075 1.104 1.123 1.107 1.152 1.146 1.148 1.156 1.170`;
+> `e710 (pp6) 1.008 1.071 1.158 1.232`; `e711 (pp6) 1.002 1.036 1.066 1.088`.
+> Rises of +0.09 to +0.22 over their ranges, far above bin-to-bin wobble. **Method note for
+> anyone re-deriving this: bin before concluding.**
+>
+> **CONFIRMED ACROSS FOUR TASKS (2026-08-30, 200k bins, ~40 samples/point).** Net change in
+> binned gain from first to last bin: **e708 pp5 +0.106, e709 pp5 +0.117, e716 hopper
+> +0.089, e717 hopper +0.088, e713 cartpole +0.048, e714 cheetah +0.048, e715 cheetah
+> −0.011**. **Six of seven rise, one is flat** (e715's −0.011 is an absence of rise, not a
+> fall, and its first bin is its noisiest); mean **+0.069**. So the sharpening is **not
+> pinpad-specific** — it holds on dense-reward tasks too, though the two sparse pinpad five
+> seeds show the largest rises. **`select_bonus_mean` falls on every run over the same
+> span** (e713 → 0.512, e715 → 0.496), so level-anneals-while-spread-grows is the general
+> behaviour of this grid, not a property of one task.
+>
+> **NO TURNOVER THROUGH 3M (2026-08-31, 500k bins, ~100 samples/point).** The stated test
+> was whether gain turns over by ~2M; it does not, and it still does not by 3M. Binned
+> series, first bin → last: **e714 cheetah 1.039→1.196 (+0.157)**, **e713 cartpole
+> 1.034→1.181 (+0.147)**, **e716 hopper 1.046→1.175 (+0.129)**, **e717 hopper
+> 1.074→1.170 (+0.096)**, **e715 cheetah 1.057→1.109 (+0.052)**. All five rise and four of
+> five are still rising in the final bin, at mean count ~4.8/cell against the ~7.6 projected
+> at 4M. Only the last 1M remains for the predicted fade, which would make it an
+> end-of-training effect rather than the annealing the design claims. **Do not read the
+> heartbeat for this**: a single interval showed 4-of-5 falling and the next showed 3-of-5
+> rising, both pure noise against the binned trend.
+>
+> **NO TURNOVER AT 4M EITHER — e713 IS THE FIRST RUN OF THE BATCH TO FINISH
+> (2026-08-31).** `e713_..._j4702050` COMPLETED cleanly at 3,995,992 steps, 27 h 26 m on
+> one A100, exit 0. It answers the pre-registered question for one seed, and answers it in
+> the strongest direction: **the final 500k bin is the highest of the whole run.** Full
+> 500k-binned `ucb_novelty_gain`: **1.034 1.057 1.137 1.173 1.147 1.119 1.153 1.221**,
+> trailing-20 mean at the end **1.214**. **The series is not monotonic and the wobble is
+> real, not noise:** per-bin SE is 0.001–0.009 (n≈102/bin), so the 1.173 → 1.119 dip across
+> 2.0–3.0M is ~10 SE and genuine — it simply was not the start of the fade, since the next
+> two bins recover and overshoot. Within-bin sd also grows 0.016 → 0.088, so the tilt gets
+> **more variable** as well as stronger.
+> **The "n is still small" defence is now spent:** mean count landed at **7.61 cells⁻¹**,
+> exactly the ~7.6 the 4-bin grid was budgeted for, so the tilt reached its designed sample
+> count without fading. What *did* anneal is the **level** — `select_bonus_mean` falls
+> monotonically 0.513 → **0.458** — while the **spread**, the part that actually moves the
+> choice, ended at its maximum. Level-anneals-while-spread-grows is now confirmed over a
+> complete run, not extrapolated from a partial one.
+> **Still not sharpening, though.** `ucb_logp_shift` is **negative for the entire run**
+> (final bin −0.158, final row −0.195) — the tilt keeps picking goals the manager rated
+> *less* likely, which is the intended direction. The alarm was set at > +0.25; nothing
+> approached it. `select_eff_cells` runs 12,785 (first bin, when the table is near-empty and
+> smearing dominates) → ~6,100, so about 9% of the 65,536 cells carry the mass.
+> **Score: no signal, as expected.** last-15 **659.1** (last-50 699.2, last-100 648.5),
+> against Director cartpole BIG (e502–e505) 655.2 / 753.1 / 747.3 / 859.0, mean 753.7. That
+> is just above the weakest baseline seed and below the mean — but **n=1** (e712, the seed-0
+> partner, is still held), and cartpole was already ruled unresolvable at a baseline spread
+> of 204. Read this as a mechanism result, not a performance one. The learning curve is
+> healthy and flat at the end: 500k bins **227.6 479.3 601.2 663.3 701.2 708.4 735.5
+> 707.3**. e714–e717 reach 4M within ~a day and will say whether the no-turnover finding is
+> general or a cartpole seed.
+>
+> **CONFIRMED ON TWO MORE TASKS — e715 AND e716 ALSO FINISHED (2026-08-31, both COMPLETED
+> clean, ~27.5 h each).** Both land at the designed budget (7.62 and 7.61 counts/cell) and
+> **neither fades**; both peak in the *second*-to-last bin and hold there, so the last bin
+> is at the maximum rather than past it. 500k-binned `ucb_novelty_gain`:
+> **e715 cheetah s1** 1.057 1.073 1.077 1.092 1.089 1.124 **1.152** 1.138 (+0.081,
+> trailing-20 1.197); **e716 hopper s0** 1.046 1.077 1.096 1.152 1.163 1.200 **1.241**
+> 1.233 (+0.187, trailing-20 1.262). With e713 that is **three tasks, three runs, no
+> turnover at the count budget the grid was sized for** — the annealing claim is now
+> falsified on the arm's own terms, not merely unconfirmed. The **level** anneals in all
+> three (`select_bonus_mean` e715 0.524 → 0.439, e716 0.522 → 0.449, both monotonic), so
+> the level/spread split is the general behaviour.
+> **`ucb_logp_shift` stays negative everywhere — and on hopper it *grows*.** e715 wobbles
+> near zero (−0.159 → +0.042 by bin, final row −0.161); e716 goes steadily more negative,
+> −0.041 → **−0.280** by bin, final row **−0.338**, i.e. more than twice e713's. The tilt is
+> pushing *harder* against the manager's preference as training goes on. Still the safe
+> direction (the +0.25 sharpening alarm is for the opposite sign), but it is the same
+> "spread grows" story read through the log-prob rather than the bonus.
+> **Mass concentration is task-dependent, which is new.** `select_eff_cells` first → last
+> bin: e713 cartpole **12,785 → 6,100** (concentrating), e715 cheetah **5,972 → 9,638** and
+> e716 hopper **13,319 → 14,261** (both spreading). So cartpole funnels its goal
+> distribution while cheetah and hopper broaden it, on identical settings — worth a look
+> when interpreting the per-task gain differences.
+> **Scores.** **e715 cheetah last-15 584.4** (last-50 612.4, last-100 610.4) against
+> Director cheetah BIG (e554–e557) 244.6 / 517.1 / 510.9 / 497.7, mean 442.6 — **above
+> every baseline seed on the same metric** (last-15 is the convention for this whole family,
+> §"score (last-15)" table — and the claim does not depend on the window, since last-50 and
+> last-100 are both *higher* than last-15 here, which is the volatility caveat at line 277
+> cutting the safe way for once). Treat it as promising and nothing more: n=1, the
+> baseline spread is 272.5, and the run's own 500k score bins peak mid-run and come back
+> down (275 506 522 580 653 748 744 **615**), so the last bin is ~18% off its own peak.
+> **e716 hopper_hop last-15 161.1** (bins 14 89 163 188 190 112 163 163) — hopper_hop was
+> retired as a comparison task (bimodal, ~1% power at 5 seeds) so this orders nothing, but
+> it is worth recording that it is **not** the dead floor the masked/var-K arms gave here
+> (0.0 in every run, see [[hrl-hopper-goal-locality]]); it just cannot be compared.
+>
+> **ALL FIVE DENSE-TASK RUNS ARE IN — FINAL VERDICT ON THE ANNEALING CLAIM (2026-08-31).**
+> e713–e717 all COMPLETED clean (exit 0, ~27.5 h each, all archived + removed from `/work`),
+> all landing at the designed budget of **7.61–7.62 counts/cell**. 500k-binned
+> `ucb_novelty_gain`, first bin → last bin, with the peak bin marked:
+>
+> | run | task | first → last | Δ | peak at | final score (last-15) |
+> |---|---|---|---|---|---|
+> | e714 | cheetah s0 | 1.039 → **1.294** | **+0.255** | last bin | **795.4** |
+> | e716 | hopper s0 | 1.046 → 1.233 | +0.187 | bin 7/8 | 161.1 |
+> | e713 | cartpole s1 | 1.034 → **1.221** | +0.147 | last bin | 659.1 |
+> | e717 | hopper s1 | 1.074 → 1.162 | +0.088 | **bin 5/8** | 172.5 |
+> | e715 | cheetah s1 | 1.057 → 1.138 | +0.081 | bin 7/8 | 584.4 |
+>
+> **Every run ends well above where it started; not one returns toward 1.0.** The `level`
+> anneals in all five (`select_bonus_mean` ≈ 0.52 → 0.43 everywhere, monotone), so the
+> level/spread split is now the confirmed general behaviour of this grid.
+> **e717 is the single genuine turnover, and it is small.** Its peak is 1.205 at 2.0–2.5M
+> falling to 1.162 — a 0.043 drop, **7.9 SE**, so real and not the per-row noise the earlier
+> false alarms came from. But it is −3.6% off its own peak and still **+0.088 above its first
+> bin**: a slight rounding-over, not annealing. Four of five never turn over at all, and
+> e714 is still climbing steeply in its final bin.
+> **`ucb_logp_shift` binned, first → last:** e714 −0.085 → **−0.294** (final row −0.308),
+> e716 −0.041 → −0.280, e713 −0.072 → −0.158, e717 −0.169 → −0.139, e715 −0.159 → +0.042.
+> Negative everywhere it matters — the tilt keeps selecting goals the manager rated *less*
+> likely, and on cheetah s0 and hopper s0 it pushes ~4× harder at the end than at the start.
+> Nothing anywhere approached the +0.25 sharpening alarm. **Read these binned:** e717's
+> *final row* is +0.026, which alone would look like a sign flip, while its final bin is
+> −0.139.
+>
+> **THE CHEETAH RESULT IS THE ONE TO LOOK AT. Both seeds beat every Director seed.**
+> Arm: **795.4 (e714) / 584.4 (e715)**, mean 689.9. Director cheetah BIG (e554–e557):
+> 244.6 / 517.1 / 510.9 / 497.7, mean 442.6. Both arm seeds are above all four baseline
+> seeds, i.e. **complete separation with no overlap at n=2 vs n=4** — which under the
+> project's own convention is the **1/15 permutation floor (p ≈ 0.067)**, the same "p at the
+> 1/15 floor with no seed overlap" language used for e592–e599. Not significant at 0.05, and
+> it cannot be with these seed counts; it is the strongest cheetah signal the project has.
+> **Robustness:** e714 is flat at the top (last-15 795.4, last-50 791.6, last-100 787.5) and
+> its score bins *end at their maximum* (220 400 535 620 520 608 654 **728**), so it is not
+> an end-of-run spike. e715 is the weaker case — its bins peak at 748 mid-run and end at 615.
+> **Next step if this is worth pursuing: two more cheetah seeds**, which would take a
+> no-overlap result to p ≈ 0.014 (1/70) and out of the floor.
+> **A correlation worth noting and not yet believing:** on cheetah the stronger tilt is also
+> the better score (e714 gain 1.294 / 795.4 vs e715 1.138 / 584.4), but on hopper it inverts
+> (e716 1.233 / 161.1 vs e717 1.162 / 172.5). n=2 per task, and a "gain tracks performance"
+> hypothesis already dissolved once on this arm — do not build on it.
+> **Concentration is task-dependent** (`select_eff_cells` first → last bin): cartpole
+> **12,785 → 6,100** is the only one that funnels; cheetah **6,716 → 8,931** (e714) and
+> **5,972 → 9,638** (e715), hopper **13,319 → 14,261** (e716) and **10,839 → 14,944** (e717)
+> all broaden, on identical settings.
+>
+> **Two measurement lessons, both learned the hard way here.** (1) Per-row `gain` carries
+> ±0.02–0.05 noise; three separate "trends" read off single samples (a clean rise, a
+> turnover, a task ordering, and a "gain is high where the agent fails" hypothesis) all
+> dissolved on the next reading. Only binned or trailing-mean series are worth
+> interpreting. (2) The watcher's "inert" alarm was set at gain < 1.02, *inside* that noise
+> band, and duly fired a false positive on e714 at 1.0164 when its trailing mean was 1.0359
+> — the same error already fixed once for `logp_shift`. Both now use a trailing 20-row mean.
+>
+> **Older single-sample framing (kept because the level/spread split is the mechanism):**
+> Measuring at *matched* steps — which needed a fix, since the milestone label fires on the
+> first poll after the threshold and e708's "@50k" line was really taken at ~80k — four
+> seeds at ~200k give gain **1.038 / 1.067 / 1.099 / 1.049**, i.e. a between-seed spread of
+> about **±0.03**. From 200k to 1M, e708 goes **1.038 → 1.108** and e709 **1.067 → 1.174**:
+> rises of +0.07 and +0.11, **2–3× that spread**, in the same direction on both seeds.
+> `select_bonus_mean` over the same interval falls 0.546 → **0.504**. So the level anneals
+> as designed while the spread — the part that actually tilts the choice — grows. This is
+> the 4-bin-grid failure the old notes predicted, now with evidence above the noise floor.
+> **Not yet fatal:** mean count is 1.92/cell heading for ~7.6, and `1/sqrt(n+1)` flattens
+> as n grows, so a turnover in the second half is still possible — that is what the 2M and
+> 3M milestones are for. **The tilt also remains weak in absolute terms** (gain 1.11–1.17 =
+> the chosen goal's bonus 11–17% above the candidate average, against the 1.3–1.5× rarity
+> the `c=10` calibration targeted). Scores at 1M are strong: last-15 **274.7 / 274.0**,
+> versus Director's *final* pinpad-five last-15 of 20–107 — but pinpad oscillates hugely,
+> so that comparison is indicative only.
+>
+> **Mass accounting checks out.** `select_mass * K / step` read 0.905 at 43k and ~0.98 by
+> 357k — the signature of a fixed ~4,064-step replay warmup decaying away (the table only
+> accrues in train steps), not a proportional loss, which would have held 0.905 flat. The
+> watcher alarms if it is still under 0.97 past 500k. |
+| e624–e625 (cont.) | 4698962–63 | **pinpad six** / BIG | Director | 0–1 | **4M → 6M** | *resumed 2026-08-24* | not new experiments — same run dirs (`…_j4697904` / `…_j4697905`), same commit `6494119`, same config with `RUN_STEPS=6000000`; resumes from the 4M checkpoint and the intact 1M-step replay, and appends to the same wandb runs (id = md5 of logdir). ~2M steps ≈ 12–13h on one A100, fits one 48h slice. **The arm seeds e626–e627 are still capped at 4M** — extend them the same way before comparing at 6M. |
 | e502–e505 | 4676883–6 | cartpole_swingup / BIG | pure Director | 0–3 | 4M | 655.2 / 753.1 / 747.3 / 859.0 — **mean 753.7, std 83.3, spread 203.8** | unimodal; every seed over the 600 bar. Spread 204 vs "< 200" predicted, i.e. on target. |
 | e506–e509 | 4676887–90 | hopper_stand / BIG | pure Director | 0–3 | 4M | 824.8 / 817.6 / 821.5 / 825.2 — **mean 822.3, std 3.5, spread 7.6** | unimodal and extraordinarily tight — spread 7.6 against a "< 300" prediction. |
 

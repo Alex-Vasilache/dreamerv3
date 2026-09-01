@@ -73,11 +73,16 @@ class Head(nj.Module):
   tau_min: float = 0.02
   scale_init: float = 2.0
   scale_min: float = 0.3
+  # Student-t tail weight. At C=8 the tie-state entropy floor is 0.601 for
+  # nu=1, so nu=1 requires manager_actent_target > 0.6 (the mgr_studentt block
+  # ships 0.7); at the default target of 0.5 it would need nu > 1.558. See
+  # outs.StudentTOnehot.
+  nu: float = 1.0
 
   def __init__(self, space, output, **kw):
     if isinstance(space, tuple):
       space = elements.Space(np.float32, space)
-    if output in ('onehot', 'poisson', 'gaussian'):
+    if output in ('onehot', 'poisson', 'gaussian', 'studentt'):
       if space.discrete:
         # Integer code shape (L,): append class dimension -> (L, C) logits.
         classes = np.asarray(space.classes).flatten()
@@ -98,7 +103,8 @@ class Head(nj.Module):
     output = getattr(self, self.impl)(x)
     if self.space.shape:
       dims = len(self.space.shape)
-      if self.impl in ('onehot', 'categorical', 'poisson', 'gaussian'):
+      if self.impl in (
+          'onehot', 'categorical', 'poisson', 'gaussian', 'studentt'):
         dims -= 1
       if dims > 0:
         output = outs.Agg(output, dims, jnp.sum)
@@ -167,6 +173,27 @@ class Head(nj.Module):
     logscale = self.sub('logscale', nets.Linear, shape, **self.kw)(x)
     output = outs.GaussianOnehot(
         loc, logscale, classes, self.unimix,
+        scale_init=self.scale_init, scale_min=self.scale_min)
+    outer = int(np.prod(shape)) if shape else 1
+    output.minent = 0.0
+    output.maxent = float(outer * np.log(classes))
+    return output
+
+  def studentt(self, x):
+    """``gaussian`` with polynomial tails: one location, one scale, fixed nu.
+
+    Drop-in for ``gaussian``/``poisson`` -- same event shape, same entropy
+    bounds, same two Linear outputs. ``nu`` is a config scalar rather than a
+    third network output: it sets the tail weight, which is a property of the
+    codebook geometry, not of the state. ``nu -> inf`` IS ``gaussian``, so a
+    large value is the way to A/B this head against that one.
+    """
+    assert not self.space.discrete
+    shape, classes = self.space.shape[:-1], self.space.shape[-1]
+    loc = self.sub('loc', nets.Linear, shape, **self.kw)(x)
+    logscale = self.sub('logscale', nets.Linear, shape, **self.kw)(x)
+    output = outs.StudentTOnehot(
+        loc, logscale, classes, self.unimix, nu=self.nu,
         scale_init=self.scale_init, scale_min=self.scale_min)
     outer = int(np.prod(shape)) if shape else 1
     output.minent = 0.0

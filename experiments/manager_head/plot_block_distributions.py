@@ -7,12 +7,18 @@ classes of each block. This draws all L of them for both policy classes:
   Director   an independent categorical per block, i.e. C free logits. Nothing
              ties one class to the next, so the row is jagged and the classes
              it favours are scattered along the block.
-  Ours       a discretized Gaussian per block, i.e. one location and one scale.
+  Gaussian   a discretized Gaussian per block, i.e. one location and one scale.
              The row is a single bump, and where it sits is the choice.
+  Cauchy     the same two numbers with a polynomial tail. Still one bump, but
+             every cell in the row keeps visible mass, so the far end of the
+             block stays reachable while the ordering is preserved.
 
-Both are drawn at the SAME entropy, so the comparison is about the shape of the
-distributions and not about how confident the two heads happen to be. Without
-that control a jagged row could simply be a sharper one.
+The first two are drawn at the SAME entropy, so that comparison is about the
+shape of the distributions and not about how confident the two heads happen to
+be -- without that control a jagged row could simply be a sharper one. The
+Cauchy is drawn at the higher entropy it actually runs at (0.7): its tie-state
+floor is 0.60, so it cannot be regulated at 0.5 at all, and the extra spread is
+part of the design rather than an artefact. Each panel states its own entropy.
 
   python3 plot_block_distributions.py --out block_distributions
 """
@@ -26,8 +32,12 @@ HERE = pathlib.Path(__file__).resolve().parent
 
 L, C = 8, 8
 TARGET_H = 0.5                     # normalized entropy, = manager_actent_target
+# The Cauchy cannot be regulated at 0.5: at a tie its entropy floors at 0.60,
+# above the target, so it runs at 0.7 where it has 0.10 of headroom.
+TARGET_H_CAUCHY = 0.7
+NU = 1.0                           # Student-t tail weight; 1 = Cauchy
 INK, INK_2, FRAME, GRIDC = '#000000', '#1a1a1a', '#333333', '#d5d5d2'
-CAT, GAU = '#5c5b56', '#2a78d6'
+CAT, GAU, CAU = '#5c5b56', '#2a78d6', '#c8471f'
 
 
 def norm_ent(p):
@@ -45,7 +55,15 @@ def gaussian(mu, sigma):
     return e / e.sum()
 
 
-def solve(fn, lo, hi, iters=80):
+def cauchy(mu, sigma, nu=NU):
+    """Student-t over the class index; nu -> inf is exactly ``gaussian``."""
+    z = (np.arange(C) - mu) / sigma
+    lg = -0.5 * (nu + 1.0) * np.log1p(z * z / nu)
+    e = np.exp(lg - lg.max())
+    return e / e.sum()
+
+
+def solve(fn, lo, hi, iters=80, target=None):
     """Bisect for fn(x) == TARGET_H. Direction-agnostic.
 
     A categorical's entropy falls as its logit scale grows while a Gaussian's
@@ -54,13 +72,14 @@ def solve(fn, lo, hi, iters=80):
     direction, which made the comparison against a positive target always false
     and silently returned the bracket edge.)
     """
+    tgt = TARGET_H if target is None else target
     flo, fhi = fn(lo), fn(hi)
-    assert (flo - TARGET_H) * (fhi - TARGET_H) < 0, (
-        'target %.3f not bracketed by [%.3f, %.3f]' % (TARGET_H, flo, fhi))
+    assert (flo - tgt) * (fhi - tgt) < 0, (
+        'target %.3f not bracketed by [%.3f, %.3f]' % (tgt, flo, fhi))
     for _ in range(iters):
         mid = 0.5 * (lo + hi)
         fm = fn(mid)
-        if (fm - TARGET_H) * (flo - TARGET_H) > 0:
+        if (fm - tgt) * (flo - tgt) > 0:
             lo, flo = mid, fm
         else:
             hi, fhi = mid, fm
@@ -71,7 +90,7 @@ def esc(s):
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-def build(rows_cat, rows_gau):
+def build(panels):
     """A tight L x C grid per policy, one cell per (block, class).
 
     No gaps: the goal code IS an L x C matrix, so the figure is drawn as one.
@@ -85,24 +104,26 @@ def build(rows_cat, rows_gau):
     CW = RH = CELL
     PW, PH = C * CW, L * RH
     GAP = 96
-    PL, PR, PT, PB = 118, 40, 76, 96
-    W = PL + 2 * PW + GAP + PR
+    PL, PR, PT, PB = 118, 40, 92, 96
+    n = len(panels)
+    W = PL + n * PW + (n - 1) * GAP + PR
     H = PT + PH + PB
     f = lambda pt: pt * W / (0.98 * 397.0)
     F_TITLE, F_LAB, F_AXIS = f(8.0), f(6.0), f(7.4)
-    hi = max(max(r.max() for r in rows_cat), max(r.max() for r in rows_gau))
+    hi = max(r.max() for rows, _, _, _ in panels for r in rows)
 
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
          f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
          f'<rect width="{W}" height="{H}" fill="white"/>']
 
-    for k, (rows, col, title) in enumerate(
-            [(rows_cat, CAT, 'Director: a categorical per block'),
-             (rows_gau, GAU, 'Ours: a discretized Gaussian per block')]):
+    for k, (rows, col, title, ent) in enumerate(panels):
         x0 = PL + k * (PW + GAP)
-        o.append(f'<text x="{x0 + PW / 2:.1f}" y="{PT - 30:.1f}" '
+        o.append(f'<text x="{x0 + PW / 2:.1f}" y="{PT - 46:.1f}" '
                  f'font-size="{F_TITLE:.1f}" fill="{INK}" '
                  f'text-anchor="middle">{esc(title)}</text>')
+        o.append(f'<text x="{x0 + PW / 2:.1f}" y="{PT - 22:.1f}" '
+                 f'font-size="{F_LAB:.1f}" fill="{INK_2}" '
+                 f'text-anchor="middle">entropy {ent:.2f} of maximum</text>')
 
         # fills first, so the rules sit on top of them
         for r, p in enumerate(rows):
@@ -155,16 +176,28 @@ def main():
     sigma = solve(lambda g: float(np.mean([norm_ent(gaussian(m, g)) for m in mus])),
                   0.05, 8.0)
 
+    # Same locations for both bump heads, so the panels differ only by tail.
+    sigma_c = solve(lambda g: float(np.mean([norm_ent(cauchy(m, g)) for m in mus])),
+                    0.02, 12.0, target=TARGET_H_CAUCHY)
+
     rows_cat = [categorical(rng, scale) for _ in range(L)]
     rows_gau = [gaussian(m, sigma) for m in mus]
-    print('matched at normalized entropy %.2f' % TARGET_H)
-    print('  categorical logit scale %.3f -> mean entropy %.3f'
-          % (scale, np.mean([norm_ent(p) for p in rows_cat])))
-    print('  gaussian sigma          %.3f -> mean entropy %.3f'
-          % (sigma, np.mean([norm_ent(p) for p in rows_gau])))
-    print('  gaussian locations:', ' '.join('%.2f' % m for m in mus))
+    rows_cau = [cauchy(m, sigma_c) for m in mus]
+    e = lambda rows: float(np.mean([norm_ent(p) for p in rows]))
+    print('categorical + gaussian matched at normalized entropy %.2f' % TARGET_H)
+    print('  categorical logit scale %.3f -> mean entropy %.3f' % (scale, e(rows_cat)))
+    print('  gaussian sigma          %.3f -> mean entropy %.3f' % (sigma, e(rows_gau)))
+    print('cauchy (nu=%g) at its own target %.2f' % (NU, TARGET_H_CAUCHY))
+    print('  cauchy sigma            %.3f -> mean entropy %.3f' % (sigma_c, e(rows_cau)))
+    print('  smallest cell, gaussian %.2e   cauchy %.2e'
+          % (min(r.min() for r in rows_gau), min(r.min() for r in rows_cau)))
+    print('  locations:', ' '.join('%.2f' % m for m in mus))
 
-    svg, W, H = build(rows_cat, rows_gau)
+    svg, W, H = build([
+        (rows_cat, CAT, 'Director: a categorical per block', e(rows_cat)),
+        (rows_gau, GAU, 'Gaussian: one bump per block', e(rows_gau)),
+        (rows_cau, CAU, 'Cauchy: one bump, heavy tails', e(rows_cau)),
+    ])
     pathlib.Path(a.out + '.svg').write_text(svg)
     subprocess.run(['rsvg-convert', '-f', 'png', '-d', '600', '-p', '600',
                     '-o', a.out + '.png', a.out + '.svg'], check=True)

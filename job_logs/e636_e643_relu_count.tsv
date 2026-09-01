@@ -1,0 +1,8 @@
+2026-08-25T16:16:35+09:00	4700173	e636	pinpad_five	som_lipvq_line_relu_count	0	e636_pinpadfive_som_lipvq_line_relu_count_s0	gpu-a100	4000000
+2026-08-25T16:16:37+09:00	4700174	e637	pinpad_five	som_lipvq_line_relu_count	1	e637_pinpadfive_som_lipvq_line_relu_count_s1	gpu-a100	4000000
+2026-08-25T16:16:39+09:00	4700175	e638	pinpad_six	som_lipvq_line_relu_count	0	e638_pinpadsix_som_lipvq_line_relu_count_s0	gpu-a100	4000000
+2026-08-25T16:16:41+09:00	4700176	e639	pinpad_six	som_lipvq_line_relu_count	1	e639_pinpadsix_som_lipvq_line_relu_count_s1	gpu-a100	4000000
+2026-08-25T16:16:43+09:00	4700177	e640	dmc_cheetah_run	som_lipvq_line_relu_count	0	e640_cheetah_som_lipvq_line_relu_count_s0	gpu-a100	4000000
+2026-08-25T16:16:45+09:00	4700178	e641	dmc_cheetah_run	som_lipvq_line_relu_count	1	e641_cheetah_som_lipvq_line_relu_count_s1	gpu-a100	4000000
+2026-08-25T16:16:47+09:00	4700179	e642	dmc_cartpole_swingup	som_lipvq_line_relu_count	0	e642_cpswingup_som_lipvq_line_relu_count_s0	gpu-a100	4000000
+2026-08-25T16:16:49+09:00	4700180	e643	dmc_cartpole_swingup	som_lipvq_line_relu_count	1	e643_cpswingup_som_lipvq_line_relu_count_s1	gpu-a100	4000000

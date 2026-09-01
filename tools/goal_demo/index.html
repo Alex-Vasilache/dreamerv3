@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goal code explorer</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1c1f25;
+    --line: #2c313a;
+    --ink: #e6e9ef;
+    --dim: #8b94a3;
+    --accent: #6aa9ff;
+    --accent2: #ffb454;
+    --warn: #d98b6a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--bg); z-index: 5;
+  }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  .sub { color: var(--dim); font-size: 12px; }
+  select, button {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover, select:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  label.check {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--dim); font-size: 13px; cursor: pointer; user-select: none;
+  }
+  #status { margin-left: auto; color: var(--dim); font-size: 12px; }
+  #status.busy { color: var(--accent2); }
+
+  main {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px; padding: 16px 20px 8px;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px 16px 16px;
+    min-width: 0;
+    --arm: var(--accent);
+  }
+  /* One colour per arm, matching Figure 10 of the paper (block_distributions):
+     Director grey, ours blue. */
+  .panel[data-arm="director"] { --arm: #74736f; }
+  .panel[data-arm="ours"]     { --arm: #498cdc; }
+  .panel h2 {
+    font-size: 14px; margin: 0 0 2px; font-weight: 600;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .panel h2::before {
+    content: ''; width: 10px; height: 10px; border-radius: 3px;
+    background: var(--arm); flex: 0 0 auto; align-self: center;
+  }
+  .panel h2 .tag {
+    font-weight: 400; color: var(--dim); font-size: 12px;
+  }
+  .geom { color: var(--dim); font-size: 12px; margin-bottom: 12px; }
+  .geom b { color: var(--ink); font-weight: 600; }
+
+  /* ---- code grid ---- */
+  .grid { display: grid; gap: 3px; margin: 4px 0 6px; touch-action: none; }
+  .grid .rowlabel {
+    color: var(--dim); font-size: 11px; text-align: right;
+    padding-right: 6px; align-self: center; font-variant-numeric: tabular-nums;
+  }
+  .grid .colhead {
+    color: var(--dim); font-size: 10px; text-align: center;
+    font-variant-numeric: tabular-nums; padding-bottom: 3px;
+  }
+  /* A rule under 0..7 brackets the range the model was actually trained on. */
+  .grid .colhead:not(.out) { border-bottom: 2px solid #4c5566; }
+  .grid .colhead.out { color: #5d6473; }
+  .cell {
+    aspect-ratio: 1; border-radius: 4px; cursor: pointer;
+    background: #262b33; border: 1px solid transparent;
+    transition: background .08s, border-color .08s;
+  }
+  .cell.out { background: #181b21; border: 1px dashed #2f3540; }
+  .cell:hover { border-color: var(--arm); }
+  .cell.on { background: var(--arm); border-color: var(--arm); }
+  /* Selected but outside the trained range: keep the arm's colour so the two
+     grids stay distinguishable, and ring it so the extrapolation still shows. */
+  .cell.on.out { background: var(--arm); border: 1px solid var(--warn); }
+  .grid.dragging .cell:hover { border-color: transparent; }
+
+  /* ---- frames ---- */
+  /* The current frame, centred, with the saved one beside it once there is one.
+     The row of per-class thumbnails that used to sit to the right is gone; the
+     grid above already says which class each block is on, and the sweep is read
+     by dragging the row. */
+  .frames { display: flex; justify-content: center; flex-wrap: wrap;
+            gap: 14px; margin-top: 12px; }
+  canvas { image-rendering: pixelated; background: #0d0f12; border-radius: 6px;
+           display: block; }
+  canvas.main { width: 240px; height: 240px; border: 2px solid var(--arm); }
+  /* The saved frame is a frozen copy, so it does not wear the live border. */
+  canvas.main.past { border-color: var(--line); }
+  .framebox { text-align: center; }
+  .framebox[hidden] { display: none; }
+  .framebox .cap { color: var(--dim); font-size: 11px; margin-top: 5px; }
+  .framebox .cap b { color: var(--ink); font-weight: 600; }
+
+  /* ---- critic readout ---- */
+  /* Labelled numbers, not a chart: five current values with nothing to plot
+     them against. Proportional figures here, tabular ones in the table below,
+     where the columns have to line up. */
+  .vals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .vals[hidden] { display: none; }
+  .tile {
+    flex: 1 1 92px; min-width: 0; padding: 6px 9px 7px;
+    background: #21252c; border: 1px solid var(--line); border-radius: 7px;
+  }
+  .tile .k {
+    color: var(--dim); font-size: 10.5px; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tile .v { font-size: 15px; font-weight: 600; margin-top: 1px; }
+  .tile .v.wait { color: var(--dim); font-weight: 400; }
+
+  /* ---- saved-vs-current comparison ---- */
+  .cmp { margin-top: 12px; }
+  .cmp[hidden] { display: none; }
+  .cmp table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .cmp caption {
+    caption-side: top; text-align: left; color: var(--ink);
+    font-size: 12px; font-weight: 600; padding: 8px 0 4px;
+  }
+  .cmp th {
+    color: var(--dim); font-weight: 400; text-align: right;
+    padding: 3px 0 3px 12px; border-bottom: 1px solid var(--line);
+  }
+  .cmp td { text-align: right; padding: 3px 0 3px 12px; }
+  .cmp th.lbl, .cmp td.lbl {
+    text-align: left; padding-left: 0; color: var(--dim); font-weight: 400;
+  }
+  .cmp td.lbl { white-space: nowrap; }
+
+  .codeline {
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--dim); margin-top: 10px; word-break: break-all;
+  }
+  .codeline b { color: var(--ink); font-weight: 600; }
+  .codeline .ex { color: var(--warn); }
+  .panel .tools {
+    display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px;
+    align-items: center;
+  }
+  .panel .tools button { padding: 4px 9px; font-size: 12px; }
+  .panel .tools button.jump { border-color: var(--arm); }
+  /* The two saved-state buttons do nothing until there is one to act on. */
+  .panel .tools button:disabled { opacity: .4; cursor: default; }
+  .panel .tools button:disabled:hover { border-color: var(--line); }
+  .panel .tools .lbl { color: var(--dim); font-size: 12px; }
+  .panel .tools input[type="number"] {
+    width: 66px; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px;
+    font: inherit; font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .panel .tools select { padding: 4px 6px; font-size: 12px; }
+  .panel .tools .hint {
+    color: var(--dim); font-size: 11px; flex-basis: 100%;
+  }
+  .panel .note {
+    color: var(--dim); font-size: 11.5px; margin-top: 8px; min-height: 1.4em;
+  }
+  .panel .note b { color: var(--ink); font-weight: 600; }
+
+  footer {
+    padding: 4px 20px 28px; color: var(--dim); font-size: 12.5px;
+    max-width: 1100px;
+  }
+  footer p { margin: 10px 0; }
+  footer b { color: var(--ink); font-weight: 600; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+            vertical-align: -1px; margin-right: 2px; }
+  .err { color: #ff8f7a; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Goal code explorer</h1>
+  <select id="task"></select>
+  <label class="check"><input type="checkbox" id="link"> link both grids</label>
+  <label class="check"><input type="checkbox" id="fine"> fine drag (¼ class)</label>
+  <span class="sub" id="ckpt"></span>
+  <span id="status">starting…</span>
+</header>
+
+<main id="panels"></main>
+
+<footer>
+  <p><b>How to read this.</b> Each row is one of the 8 blocks of the goal code;
+  each column is a class for that block. Click a cell to set a block, or drag
+  along a row to sweep it. Hover any cell to preview it without committing. The
+  frame below each grid is what the world model decodes that goal into —
+  <code>code → goal_dec → deter → dyn prior → image decoder</code>, the same
+  path the agent renders its goals with.</p>
+
+  <p><b>Colours.</b> Each grid is filled in its arm's colour, the same two as
+  Figure 10 of the paper: <span class="swatch" style="background:#74736f"></span>
+  grey for Director's independent categorical per block,
+  <span class="swatch" style="background:#498cdc"></span> blue for our
+  discretized Gaussian. A selected cell outside the trained range keeps that
+  colour and gains an orange ring.</p>
+
+  <p><b><span class="swatch" style="background:#ffb454"></span>Extrapolation.</b>
+  Columns outside 0–7 are class indices the model never saw, and the two arms
+  reach them differently, because only one of them has a geometry to extend.</p>
+
+  <p><b>Ours</b> works in the codebook. Inside the range the block walks the
+  path through its 8 embeddings, so every integer still lands exactly on a
+  trained entry. Outside, it leaves the end entry along the block's
+  <b>fitted line</b> — the principal direction of all 8 entries — moving one
+  <b>average segment length</b> per class:
+  <code>z(t) = e₀ + t·s·d</code> below 0 and
+  <code>z(t) = e₇ + (t−7)·s·d</code> above 7. Anchoring on the real end entries
+  keeps the path unbroken at 0 and 7. Using the average step and the overall
+  direction, rather than repeating whichever end segment happens to be there,
+  matters: the two end gaps are the shortest in the block in all four
+  environments, so repeating them made extrapolation crawl.</p>
+
+  <p><b>Director</b> has no embedding, and its 8 one-hots are all the same
+  distance apart, so there is no line to fit. It extends the one-hot family
+  instead — <code>i = clip(⌊t⌋, 0, 6), u = t − i, w[i] = 1−u, w[i+1] = u</code>,
+  giving <code>[2, −1, …]</code> at <i>t</i> = −1 — and those 64 numbers go
+  straight into the decoder MLP as input activations. Defined, but with no
+  learned metric behind it.</p>
+
+  <p><b>Distant jump.</b> The paper's ε-greedy exploration move, on a button
+  instead of firing with probability ε. From the current code <i>c</i>, a block
+  at class <i>c<sub>l</sub></i> can shift by at most
+  <code>max(c_l, C−1−c_l)</code>, so the furthest reachable code is
+  <code>d_max(c) = Σ_l max(c_l, C−1−c_l)</code>. A target distance is drawn with
+  <code>p(d) = 2d / (d_max(d_max+1))</code>, which favours the big jumps and
+  gives <code>E[d] = ⅔(d_max + ½)</code>, then spread over the blocks within
+  each one's capacity. <code>d_max</code> is a property of the code, not a
+  constant — over uniform codes it averages 44, and only a code with every block
+  already at 0 or 7 reaches 56 — so the rule draws <i>d</i> ≈ 30 in practice.</p>
+
+  <p>Try it on both sides. It is only worth doing because our index is ordered:
+  on Director's code a large index gap does not imply a distant goal, so the
+  same jump buys nothing there. That is the comparison the button is for.</p>
+
+  <p><b>What the agent thinks of the state.</b> The five numbers under each
+  frame are the agent's own heads, read at the same <code>feat</code> the image
+  came from. <b>manager · task</b> (<code>mgr_extr_val</code>) is the discounted
+  task return it expects from here. <b>manager · explore</b>
+  (<code>mgr_expl_val</code>) is the exploration return, whose reward is the goal
+  autoencoder's own reconstruction error — it scores how <i>unfamiliar</i> a
+  state is, not how good it is, so a high value there and a low one next to it
+  is the normal shape, not a contradiction. <b>worker · on its goal</b>
+  (<code>wkr_goal_val</code>) is the only critic that needs a goal as well as a
+  state; on its own it is read with the state as its own goal, the worker's best
+  case. <b>reward here</b> and <b>keeps going</b> are the two heads the manager's
+  critic is built out of. Same caveat as the frame: these were trained on
+  features of real states, and a hand-edited code is only as real as the goal
+  decoder makes it.</p>
+
+  <p><b>New state at a distance.</b> Two distances, and they are not
+  interchangeable. <b>Class steps</b> is the index distance the jump uses,
+  <code>Σ|Δc_l|</code>, and is exact by counting — the same split rule as the
+  jump with <i>d</i> handed in instead of drawn, so it starts from the current
+  code rounded to whole classes. <b>Goal space</b> is the distance between the
+  decoded goals, which no amount of counting gets you. It is reachable anyway
+  because the class indices here are real-valued: the goal moves continuously
+  along a ray in code space, so the page draws a random direction and walks out
+  along it until the goal is the requested distance away. If the ray leaves the
+  grid first, it says so and stops there. Watching how many class steps it takes
+  to cover a fixed goal distance, on one arm against the other, is the same
+  ordered-index question the jump asks from the other end.</p>
+
+  <p><b>Save and compare.</b> <b>save this state</b> freezes the frame beside the
+  live one and turns the panel into a two-state comparison: how far apart the
+  codes are, how far apart the goals are and in what direction, how different
+  the two pictures actually look, and every critic for both states with the
+  change between them. The last two rows are the pair reading only the worker
+  critic can give — what it makes of the saved state while aiming at the current
+  goal, and the reverse. A large index gap with a small goal distance, or a big
+  goal distance the pictures barely reflect, is the interesting case.</p>
+
+  <p>Both panels load the <b>3M-step milestone checkpoint</b> of the
+  better-scoring seed we ran for that environment. Rendering runs in float32
+  rather than the bfloat16 the runs trained in; the two differ by at most 4/255
+  per pixel (<code>check_render.py</code>).</p>
+</footer>
+
+<script>
+const SIZE = 64, BYTES = SIZE * SIZE * 3;
+
+/* What the agent's own heads say about the state the code decodes to. The three
+   critics are kept apart because they answer different questions -- task return,
+   how unfamiliar the state is, and how the worker scores it against a goal --
+   and averaging them would hide exactly the disagreement worth looking at.
+   ``head`` is the name of the module in the checkpoint. */
+const VALUE_KEYS = [
+  {key: 'mgr_extr', head: 'mgr_extr_val', label: 'manager · task'},
+  {key: 'mgr_expl', head: 'mgr_expl_val', label: 'manager · explore'},
+  {key: 'wkr_goal', head: 'wkr_goal_val', label: 'worker · on its goal'},
+  {key: 'reward', head: 'rew', label: 'reward here'},
+  {key: 'cont', head: 'con', label: 'keeps going', pct: true},
+];
+
+const state = {
+  meta: null, task: null, extra: 4, classes: 8, blocks: 8,
+  arms: {}, link: false, fine: false, gen: 0,
+};
+const els = {
+  task: document.getElementById('task'),
+  link: document.getElementById('link'),
+  fine: document.getElementById('fine'),
+  ckpt: document.getElementById('ckpt'),
+  status: document.getElementById('status'),
+  panels: document.getElementById('panels'),
+};
+
+/* ---------- helpers ---------- */
+const keyOf = code => code.map(v => v.toFixed(3)).join(',');
+const range = (a, b) => Array.from({length: b - a}, (_, i) => a + i);
+const columns = () => range(-state.extra, state.classes + state.extra);
+const fmt = v => Number.isInteger(v) ? String(v) : v.toFixed(2);
+/* Critic outputs run from ~0.4 (the exploration head) to ~800 (a task return),
+   so the number of decimals follows the magnitude rather than being fixed. */
+const num = v => {
+  const a = Math.abs(v);
+  return v.toFixed(a >= 100 ? 1 : a >= 10 ? 2 : 3);
+};
+const signed = v => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v));
+
+function setStatus(text, busy) {
+  els.status.textContent = text;
+  els.status.className = busy ? 'busy' : '';
+}
+
+function toImageData(bytes, offset) {
+  const out = new ImageData(SIZE, SIZE);
+  for (let i = 0, j = offset; i < SIZE * SIZE; i++, j += 3) {
+    out.data[i * 4] = bytes[j];
+    out.data[i * 4 + 1] = bytes[j + 1];
+    out.data[i * 4 + 2] = bytes[j + 2];
+    out.data[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+/* Requests are serialized per arm so a 100-frame prefetch cannot get in front
+   of the single frame the user is waiting to see. */
+async function post(arm, codes, signal) {
+  const res = await fetch('/api/render', {
+    method: 'POST', signal,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({task: state.task, arm, codes}),
+  });
+  if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return codes.map((_, i) => toImageData(bytes, i * BYTES));
+}
+
+async function postJSON(path, body) {
+  const res = await fetch(path, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({task: state.task, ...body}),
+  });
+  const out = await res.json();
+  if (!res.ok) throw new Error(out.error || res.statusText);
+  return out;
+}
+
+/* One reading per code: the five heads, plus -- when ``ref`` is given -- how far
+   that code's goal sits from the reference goal. The distance is computed on
+   the server because the goal vectors it is computed from are 1024 numbers each
+   and nothing here needs them. ``goals`` is what the worker critic aims at. */
+function postValues(arm, codes, goals, ref) {
+  return postJSON('/api/values', {arm, codes, goals, ref})
+      .then(out => out.values);
+}
+
+/* ---------- per-arm controller ---------- */
+function makeArm(arm, info, model) {
+  const cache = new Map();
+  const dom = buildPanel(arm, info, model);
+  const self = {
+    arm, code: new Array(state.blocks).fill(3), cache, dom,
+    active: 0, preview: null, dragging: false, chain: Promise.resolve(),
+    token: 0, timer: 0,
+    // Critic readings, keyed the same way as the frame cache; ``saved`` is the
+    // frozen state to compare against, and ``pair`` / ``cross`` are the two
+    // things that depend on both codes and so cannot be cached per code.
+    values: new Map(), scale: model.scale, hasValues: model.values !== false,
+    saved: null, pair: null, cross: null, pairKey: null,
+    vtoken: 0, vtimer: 0,
+  };
+  state.arms[arm] = self;
+  wireGrid(self);
+  wireTools(self);
+  return self;
+}
+
+function buildPanel(arm, info, model) {
+  const panel = document.createElement('section');
+  panel.className = 'panel';
+  panel.dataset.arm = arm;       // selects the arm colour, see the CSS
+  const cb = model.codebook;
+  const geom = cb
+    ? `codebook: 8 entries per block in ℝ<sup>${cb.dim}</sup>. One axis holds ` +
+      `<b>${(cb.pc1_mean * 100).toFixed(0)}%</b> of their spread on average, ` +
+      `<b>${(cb.pc1_min * 100).toFixed(0)}%</b> for the worst block ` +
+      `(8 random points would give ${(cb.pc1_random_mean * 100).toFixed(0)}%, ` +
+      `p95 ${(cb.pc1_random_p95 * 100).toFixed(0)}%)`
+    : 'no embedding: the 8×8 code goes straight into the decoder MLP as 64 inputs';
+  panel.innerHTML = `
+    <h2>${info.label}
+      <span class="tag">${info.exp} · seed ${info.seed} · ${info.score} @3M</span>
+    </h2>
+    <div class="geom">${geom}</div>
+    <div class="grid"></div>
+    <div class="frames">
+      <div class="framebox now">
+        <canvas class="main" width="64" height="64"></canvas>
+        <div class="cap"></div>
+      </div>
+      <div class="framebox past" hidden>
+        <canvas class="main past" width="64" height="64"></canvas>
+        <div class="cap"></div>
+      </div>
+    </div>
+    <div class="vals">${VALUE_KEYS.map(v => `
+      <div class="tile" data-key="${v.key}" title="${v.head}">
+        <div class="k">${v.label}</div><div class="v wait">…</div>
+      </div>`).join('')}
+    </div>
+    <div class="codeline"></div>
+    <div class="tools">
+      <button data-act="reset">reset</button>
+      <button data-act="random">random</button>
+      <button class="jump" data-act="jump">distant jump</button>
+      <button data-act="copy">copy to other side</button>
+    </div>
+    <div class="tools">
+      <span class="lbl">new state at distance</span>
+      <input class="target" type="number" step="1" min="0" value="8">
+      <select class="metric">
+        <option value="code">class steps</option>
+        <option value="goal">goal space</option>
+      </select>
+      <button data-act="atdist">generate</button>
+      <span class="hint"></span>
+    </div>
+    <div class="tools">
+      <button data-act="save">save this state</button>
+      <button data-act="restore" disabled>go back to saved</button>
+      <button data-act="unsave" disabled>clear saved</button>
+    </div>
+    <div class="cmp" hidden></div>
+    <div class="note"></div>`;
+  els.panels.appendChild(panel);
+  return {
+    panel,
+    grid: panel.querySelector('.grid'),
+    main: panel.querySelector('.framebox.now canvas'),
+    cap: panel.querySelector('.framebox.now .cap'),
+    pastbox: panel.querySelector('.framebox.past'),
+    past: panel.querySelector('.framebox.past canvas'),
+    pastcap: panel.querySelector('.framebox.past .cap'),
+    vals: panel.querySelector('.vals'),
+    codeline: panel.querySelector('.codeline'),
+    target: panel.querySelector('input.target'),
+    metric: panel.querySelector('select.metric'),
+    hint: panel.querySelector('.hint'),
+    restore: panel.querySelector('[data-act="restore"]'),
+    unsave: panel.querySelector('[data-act="unsave"]'),
+    cmp: panel.querySelector('.cmp'),
+    note: panel.querySelector('.note'),
+  };
+}
+
+/* ---------- grid ---------- */
+function wireGrid(self) {
+  const cols = columns();
+  const grid = self.dom.grid;
+  grid.style.gridTemplateColumns = `auto repeat(${cols.length}, 1fr)`;
+  grid.innerHTML = '';
+  grid.appendChild(document.createElement('div'));
+  for (const c of cols) {
+    const h = document.createElement('div');
+    h.className = 'colhead' + (inRange(c) ? '' : ' out');
+    h.textContent = c;
+    grid.appendChild(h);
+  }
+  self.cells = [];
+  for (let b = 0; b < state.blocks; b++) {
+    const label = document.createElement('div');
+    label.className = 'rowlabel';
+    label.textContent = b;
+    grid.appendChild(label);
+    const row = [];
+    for (const c of cols) {
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (inRange(c) ? '' : ' out');
+      cell.dataset.block = b;
+      cell.dataset.value = c;
+      grid.appendChild(cell);
+      row.push(cell);
+    }
+    self.cells.push(row);
+  }
+
+  const valueAt = (block, clientX) => {
+    const row = self.cells[block];
+    return valueFromX(cols, row[0].getBoundingClientRect(),
+                      row[row.length - 1].getBoundingClientRect(),
+                      clientX, state.fine ? 0.25 : 1);
+  };
+
+  grid.addEventListener('pointerdown', ev => {
+    const cell = ev.target.closest('.cell');
+    if (!cell) return;
+    const block = +cell.dataset.block;
+    self.dragging = block;
+    self.preview = null;
+    grid.classList.add('dragging');
+    grid.setPointerCapture(ev.pointerId);
+    setBlock(self, block, valueAt(block, ev.clientX));
+    prefetchRow(self, block);
+  });
+  grid.addEventListener('pointermove', ev => {
+    if (self.dragging === false) {
+      const cell = ev.target.closest('.cell');
+      if (cell) showPreview(self, +cell.dataset.block, +cell.dataset.value);
+      return;
+    }
+    setBlock(self, self.dragging, valueAt(self.dragging, ev.clientX));
+  });
+  const end = () => {
+    if (self.dragging === false) return;
+    self.dragging = false;
+    grid.classList.remove('dragging');
+    schedulePrefetch(self);
+  };
+  grid.addEventListener('pointerup', end);
+  grid.addEventListener('pointercancel', end);
+  grid.addEventListener('pointerleave', () => {
+    if (self.dragging === false) clearPreview(self);
+  });
+  self.dragging = false;
+
+}
+
+/* ---------- buttons ---------- */
+function wireTools(self) {
+  self.dom.panel.addEventListener('click', ev => {
+    const act = ev.target.dataset.act;
+    if (!act) return;
+    if (act === 'reset') { setCode(self, new Array(state.blocks).fill(3));
+                           setNote(self, ''); }
+    if (act === 'random') { setCode(self, self.code.map(
+        () => Math.floor(Math.random() * state.classes)));
+                            setNote(self, ''); }
+    if (act === 'jump') {
+      const from = self.code.slice();
+      const {code, d, dmax} = jumpCode(from, state.classes);
+      setCode(self, code);
+      const mean = (2 / 3) * (dmax + 0.5);
+      setNote(self, `jumped <b>d = ${d}</b> of d<sub>max</sub> ${dmax} ` +
+          `(mean ${mean.toFixed(1)}) — summed index gap from ` +
+          from.map(v => fmt(Math.round(v))).join(' '));
+    }
+    if (act === 'copy') {
+      const other = state.arms[self.arm === 'ours' ? 'director' : 'ours'];
+      if (other) { setCode(other, self.code.slice()); setNote(other, ''); }
+    }
+    if (act === 'atdist') generateAt(self).catch(reportError);
+    if (act === 'save') saveState(self);
+    if (act === 'restore' && self.saved) {
+      setCode(self, self.saved.code.slice());
+      setNote(self, 'back on the saved state');
+    }
+    if (act === 'unsave') clearSaved(self);
+  });
+  self.dom.metric.addEventListener('change', () => setMetric(self));
+  setMetric(self);
+}
+
+/* The two distances are not interchangeable, so the input follows the one that
+   is selected: whole class steps for the index metric, and for goal space a
+   default and a hint taken from what that checkpoint's goals actually measure
+   (``goal_scale``), since the scale is arbitrary and differs per run. */
+function setMetric(self) {
+  const goal = self.dom.metric.value === 'goal';
+  const s = self.scale || {step: 1, span: 8};
+  self.dom.target.step = goal ? 0.1 : 1;
+  self.dom.target.value = goal ? s.span.toFixed(1) : 8;
+  self.dom.hint.innerHTML = goal
+    ? `distance between the decoded goals. One block moved by one class is ` +
+      `about <b>${num(s.step)}</b>; two unrelated codes about ` +
+      `<b>${num(s.span)}</b>.`
+    : `summed class gap |Δc| over the 8 blocks, so a whole number from 0 to ` +
+      `d<sub>max</sub>. Starts from the current code rounded to whole classes.`;
+}
+
+async function generateAt(self) {
+  const target = parseFloat(self.dom.target.value);
+  if (!(target >= 0)) return setNote(self, 'type a distance first');
+  if (self.dom.metric.value === 'code') {
+    const {code, d, dmax} = codeAtDistance(self.code, state.classes, target);
+    setCode(self, code);
+    setNote(self, d === Math.round(target)
+      ? `new code exactly <b>${d}</b> class steps away`
+      : `asked for ${fmt(target)}, but from here the code can move at most ` +
+        `<b>${dmax}</b> — went that far instead`);
+    return;
+  }
+  setNote(self, 'walking out to that distance…');
+  const span = [-state.extra, state.classes - 1 + state.extra];
+  const res = await postJSON('/api/at_goal_distance',
+      {arm: self.arm, code: self.code, target, span});
+  setCode(self, res.code);
+  setNote(self, res.capped
+    ? `asked for ${num(target)}, but this direction leaves the grid at ` +
+      `<b>${num(res.dist)}</b> — went that far instead`
+    : `new state at goal distance <b>${num(res.dist)}</b>`);
+}
+
+const inRange = v => v >= 0 && v <= state.classes - 1;
+
+/* ---------- the epsilon-greedy distant jump ----------
+   The paper's exploration rule, run on demand instead of with probability
+   epsilon. From the current code c, a block at class c_l can move at most
+   max(c_l, C-1-c_l), so the furthest reachable code is d_max = sum_l of that.
+   A target distance d is drawn with p(d) = 2d / (d_max (d_max+1)), which
+   favours the big jumps and gives E[d] = (2/3)(d_max + 1/2). Then d is spread
+   over the blocks within each one's capacity, and each moved block goes up or
+   down -- whichever stays on the line, or a coin flip when both do.
+
+   d_max is a property of the code, not a constant: only a code with every
+   block already at 0 or C-1 can reach L*(C-1). */
+
+function jumpCapacities(code, classes) {
+  return code.map(v => {
+    const c = Math.min(classes - 1, Math.max(0, Math.round(v)));
+    return Math.max(c, classes - 1 - c);
+  });
+}
+
+function drawDistance(dmax, rand = Math.random) {
+  // Inverse CDF of p(d) ∝ d. The weights sum to dmax(dmax+1)/2.
+  let target = rand() * dmax * (dmax + 1) / 2;
+  let acc = 0;
+  for (let d = 1; d <= dmax; d++) {
+    acc += d;
+    if (target <= acc) return d;
+  }
+  return dmax;
+}
+
+/* Split d over the blocks, uniformly over the assignments that respect every
+   block's capacity. ways[l][r] counts the ways to make r using blocks l..L-1,
+   so each block can be drawn in proportion to how many completions it leaves. */
+function splitDistance(caps, d, rand = Math.random) {
+  const L = caps.length;
+  const ways = Array.from({length: L + 1}, () => new Float64Array(d + 1));
+  ways[L][0] = 1;
+  for (let l = L - 1; l >= 0; l--) {
+    for (let r = 0; r <= d; r++) {
+      let total = 0;
+      for (let k = 0; k <= Math.min(caps[l], r); k++) total += ways[l + 1][r - k];
+      ways[l][r] = total;
+    }
+  }
+  const out = new Array(L).fill(0);
+  let rem = d;
+  for (let l = 0; l < L; l++) {
+    const limit = Math.min(caps[l], rem);
+    let target = rand() * ways[l][rem];
+    let acc = 0, k = 0;
+    for (; k < limit; k++) {
+      acc += ways[l + 1][rem - k];
+      if (target <= acc) break;
+    }
+    out[l] = k;
+    rem -= k;
+  }
+  return out;
+}
+
+/* A code at exactly index distance ``d``, or as close as the capacities allow.
+   This is the second half of the jump with the distance handed in rather than
+   drawn, which is also what the "new state at distance" button uses; the jump
+   is then just this with p(d) in front of it. A fractional current code is
+   rounded first -- index distance only counts whole class steps. */
+function codeAtDistance(code, classes, d, rand = Math.random) {
+  const base = code.map(
+      v => Math.min(classes - 1, Math.max(0, Math.round(v))));
+  const caps = jumpCapacities(base, classes);
+  const dmax = caps.reduce((a, b) => a + b, 0);
+  const want = Math.max(0, Math.min(Math.round(d), dmax));
+  if (!want) return {code: base, d: 0, dmax};
+  const steps = splitDistance(caps, want, rand);
+  const next = base.map((v, l) => {
+    const k = steps[l];
+    if (!k) return v;
+    const both = [v - k, v + k].filter(x => x >= 0 && x <= classes - 1);
+    return both[Math.min(both.length - 1, Math.floor(rand() * both.length))];
+  });
+  return {code: next, d: want, dmax};
+}
+
+function jumpCode(code, classes, rand = Math.random) {
+  const caps = jumpCapacities(
+      code.map(v => Math.min(classes - 1, Math.max(0, Math.round(v)))), classes);
+  const dmax = caps.reduce((a, b) => a + b, 0);
+  if (!dmax) return codeAtDistance(code, classes, 0, rand);
+  return codeAtDistance(code, classes, drawDistance(dmax, rand), rand);
+}
+
+/* Pointer x -> class index, from the first and last cell of the row. The cell
+   centres sit half a cell in from each end, hence the -0.5. */
+function valueFromX(cols, first, last, clientX, step) {
+  const span = last.right - first.left;
+  const raw = cols[0] + (clientX - first.left) / span * cols.length - 0.5;
+  const snapped = Math.round(raw / step) * step;
+  return Math.min(cols[cols.length - 1], Math.max(cols[0], snapped));
+}
+
+function setBlock(self, block, value) {
+  if (self.code[block] === value && self.active === block) return;
+  self.active = block;
+  const next = self.code.slice();
+  next[block] = value;
+  setCode(self, next, block);
+}
+
+function setCode(self, code, activeBlock) {
+  self.code = code;
+  if (activeBlock !== undefined) self.active = activeBlock;
+  self.preview = null;
+  paintGrid(self);
+  drawCurrent(self);
+  if (state.link) {
+    const other = state.arms[self.arm === 'ours' ? 'director' : 'ours'];
+    if (other && keyOf(other.code) !== keyOf(code)) {
+      other.code = code.slice();
+      other.active = self.active;
+      paintGrid(other); drawCurrent(other);
+      schedulePrefetch(other);
+    }
+  }
+  // ``dragging`` holds a block index, and block 0 is falsy.
+  if (self.dragging === false) schedulePrefetch(self);
+}
+
+function paintGrid(self) {
+  const cols = columns();
+  const shown = self.preview || self.code;
+  for (let b = 0; b < state.blocks; b++) {
+    for (let i = 0; i < cols.length; i++) {
+      // A fractional value lights the nearest column so the row still reads.
+      const on = Math.round(shown[b]) === cols[i];
+      self.cells[b][i].classList.toggle('on', on);
+    }
+  }
+}
+
+/* Hover preview is served from the prefetch cache only. Firing a request per
+   pointermove would queue dozens of them while a sweep is still loading, and a
+   preview is not worth waiting for -- if it is not cached yet, leave the frame
+   showing the committed code rather than half-updating. */
+function showPreview(self, block, value) {
+  if (self.code[block] === value) return clearPreview(self);
+  const next = self.code.slice();
+  next[block] = value;
+  if (!self.cache.has(keyOf(next))) return;
+  self.preview = next;
+  paintGrid(self);
+  drawCode(self, next, true);
+}
+
+function setNote(self, html) {
+  self.dom.note.innerHTML = html;
+}
+
+function clearPreview(self) {
+  if (!self.preview) return;
+  self.preview = null;
+  paintGrid(self);
+  drawCurrent(self);
+}
+
+/* ---------- drawing ---------- */
+function blit(canvas, img) {
+  canvas.getContext('2d').putImageData(img, 0, 0);
+}
+
+function drawCurrent(self) { drawCode(self, self.code, false); }
+
+function drawCode(self, code, isPreview) {
+  const key = keyOf(code);
+  self.dom.codeline.innerHTML = 'code &nbsp;' + code.map((v, i) => {
+    const text = i === self.active ? `<b>${fmt(v)}</b>` : fmt(v);
+    return `<span class="${inRange(v) ? '' : 'ex'}">${text}</span>`;
+  }).join(' ');
+  self.dom.cap.innerHTML = (isPreview ? 'preview · ' : self.saved ? 'now · ' : '') +
+      `block <b>${self.active}</b> = ${fmt(code[self.active])}`;
+  refreshValues(self);
+  const hit = self.cache.get(key);
+  if (hit) return blit(self.dom.main, hit);
+  // Deliberately not on the prefetch chain: the frame the user is waiting for
+  // must not queue behind a sweep. The server serializes renders anyway, so
+  // the worst case is one in-flight chunk.
+  post(self.arm, [code]).then(imgs => {
+    self.cache.set(key, imgs[0]);
+    if (keyOf(self.preview || self.code) === key) {
+      blit(self.dom.main, imgs[0]);
+      paintCompare(self);        // the picture difference needs this frame
+    }
+  }).catch(reportError);
+}
+
+/* ---------- critic readings ---------- */
+/* The five heads for whichever code is on screen. Cheap next to a frame (five
+   small MLPs against a convolutional decoder), but still a request, so it is
+   debounced and cached per code the same way frames are. When a state is saved,
+   the same request also carries the two readings that depend on *both* codes:
+   the goal distance to the saved state, and what the worker critic makes of
+   each state while aiming at the other. */
+function refreshValues(self) {
+  if (!self.hasValues) return;
+  const code = self.preview || self.code;
+  const key = keyOf(code);
+  paintValues(self);
+  clearTimeout(self.vtimer);
+  self.vtimer = setTimeout(() => {
+    const saved = self.saved;
+    if (self.values.has(key) && (!saved || self.pairKey === key)) return;
+    const codes = [code], goals = [code];
+    if (saved) {
+      codes.push(saved.code, code);
+      goals.push(code, saved.code);
+    }
+    const token = ++self.vtoken;
+    postValues(self.arm, codes, goals, saved && saved.code).then(rows => {
+      if (token !== self.vtoken || !rows) return;
+      self.values.set(key, rows[0]);
+      if (saved) {
+        self.pairKey = key;
+        self.pair = {dist: rows[0].dist, cos: rows[0].cos};
+        self.cross = {fromSaved: rows[1].wkr_goal, fromNow: rows[2].wkr_goal};
+      }
+      if (keyOf(self.preview || self.code) !== key) return;
+      paintValues(self);
+      paintCompare(self);
+    }).catch(reportError);
+  }, 90);
+}
+
+function valueText(spec, v) {
+  if (v === undefined || v === null) return '…';
+  return spec.pct ? (100 * v).toFixed(1) + '%' : num(v);
+}
+
+function paintValues(self) {
+  if (!self.hasValues) return self.dom.vals.setAttribute('hidden', '');
+  const row = self.values.get(keyOf(self.preview || self.code));
+  for (const spec of VALUE_KEYS) {
+    const cell = self.dom.vals.querySelector(
+        `.tile[data-key="${spec.key}"] .v`);
+    cell.textContent = valueText(spec, row && row[spec.key]);
+    cell.classList.toggle('wait', !row);
+  }
+}
+
+/* ---------- saved state ---------- */
+function saveState(self) {
+  const code = self.code.slice();
+  self.saved = {code, key: keyOf(code), img: self.cache.get(keyOf(code)) || null,
+                vals: self.values.get(keyOf(code)) || null};
+  self.pair = self.cross = self.pairKey = null;
+  self.dom.pastbox.hidden = false;
+  self.dom.restore.disabled = self.dom.unsave.disabled = false;
+  self.dom.pastcap.innerHTML = 'saved · ' + code.map(fmt).join(' ');
+  setNote(self, 'saved — the panel now compares whatever you do next to it');
+  // Both are normally already cached (this is the code that was just on
+  // screen), but a save on the very first frame can beat them there.
+  if (!self.saved.img) {
+    post(self.arm, [code]).then(imgs => {
+      self.cache.set(self.saved.key, imgs[0]);
+      if (self.saved && self.saved.key === keyOf(code)) self.saved.img = imgs[0];
+      paintSaved(self);
+    }).catch(reportError);
+  }
+  if (!self.saved.vals && self.hasValues) {
+    postValues(self.arm, [code], [code], null).then(rows => {
+      if (!rows) return;
+      self.values.set(keyOf(code), rows[0]);
+      if (self.saved && self.saved.key === keyOf(code)) self.saved.vals = rows[0];
+      paintCompare(self);
+    }).catch(reportError);
+  }
+  paintSaved(self);
+  refreshValues(self);
+  paintCompare(self);
+  drawCurrent(self);             // the caption gains its "now ·" prefix
+}
+
+function clearSaved(self) {
+  self.saved = self.pair = self.cross = self.pairKey = null;
+  self.dom.pastbox.hidden = true;
+  self.dom.cmp.hidden = true;
+  self.dom.restore.disabled = self.dom.unsave.disabled = true;
+  setNote(self, '');
+  drawCurrent(self);
+}
+
+function paintSaved(self) {
+  if (self.saved && self.saved.img) blit(self.dom.past, self.saved.img);
+}
+
+/* Mean absolute channel difference between two frames, 0-255. The one thing in
+   the comparison the page can work out for itself: both frames are already
+   here as pixels, and it is the only number that says the two states *look*
+   different rather than that they are far apart in some latent space. */
+function pixelDiff(a, b) {
+  let total = 0;
+  for (let i = 0; i < SIZE * SIZE; i++) {
+    for (let c = 0; c < 3; c++) {
+      total += Math.abs(a.data[i * 4 + c] - b.data[i * 4 + c]);
+    }
+  }
+  return total / (SIZE * SIZE * 3);
+}
+
+function paintCompare(self) {
+  const saved = self.saved;
+  if (!saved) { self.dom.cmp.hidden = true; return; }
+  const now = self.preview || self.code;
+  const gaps = now.map((v, i) => v - saved.code[i]);
+  const rows = [
+    ['class steps apart', fmt(gaps.reduce((s, g) => s + Math.abs(g), 0))],
+    ['blocks changed', String(gaps.filter(g => Math.abs(g) > 1e-6).length)],
+  ];
+  if (self.pair && self.pairKey === keyOf(now)) {
+    rows.push(['goal distance', num(self.pair.dist)],
+              ['goal direction (cosine)', num(self.pair.cos)]);
+  }
+  const nowimg = self.cache.get(keyOf(now));
+  if (saved.img && nowimg) {
+    rows.push(['picture difference (0–255)', num(pixelDiff(saved.img, nowimg))]);
+  }
+  if (self.cross && self.pairKey === keyOf(now)) {
+    rows.push(['worker value, saved state aiming at now',
+               num(self.cross.fromSaved)],
+              ['worker value, now aiming back at saved',
+               num(self.cross.fromNow)]);
+  }
+  const before = saved.vals, after = self.values.get(keyOf(now));
+  const cell = (spec, v) => `<td>${valueText(spec, v)}</td>`;
+  const change = spec => {
+    if (!before || !after) return '<td>…</td>';
+    const d = after[spec.key] - before[spec.key];
+    return `<td>${spec.pct ? (d >= 0 ? '+' : '−') +
+        Math.abs(100 * d).toFixed(1) + '%' : signed(d)}</td>`;
+  };
+  self.dom.cmp.innerHTML = `
+    <table>
+      <caption>saved state vs. now</caption>
+      <tbody>${rows.map(([k, v]) =>
+        `<tr><td class="lbl">${k}</td><td>${v}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    ${self.hasValues ? `<table>
+      <tbody>
+        <tr><th class="lbl">critic</th><th>saved</th><th>now</th>
+            <th>change</th></tr>
+        ${VALUE_KEYS.map(spec => `<tr>
+          <td class="lbl" title="${spec.head}">${spec.label}</td>
+          ${cell(spec, before && before[spec.key])}
+          ${cell(spec, after && after[spec.key])}
+          ${change(spec)}</tr>`).join('')}
+      </tbody>
+    </table>` : ''}`;
+  self.dom.cmp.hidden = false;
+}
+
+/* ---------- prefetch ----------
+   After every edit, fetch every single-block variation of the current code, in
+   chunks small enough that an interactive frame is never stuck behind a whole
+   sweep. The active row goes first, which is what a drag will ask for next.
+   Nothing displays these any more, but they are still what makes dragging a
+   row and hovering a cell land instantly instead of waiting on a render. */
+function queue(self, fn) {
+  // A failed chunk must not take the rest of the queue down with it.
+  self.chain = self.chain.catch(() => {}).then(fn);
+  return self.chain;
+}
+
+function missing(self, codes) {
+  const seen = new Set();
+  return codes.filter(c => {
+    const k = keyOf(c);
+    if (self.cache.has(k) || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function rowCodes(self, block, step) {
+  const out = [];
+  const lo = -state.extra, hi = state.classes - 1 + state.extra;
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    const code = self.code.slice();
+    code[block] = Math.round(v * 100) / 100;
+    out.push(code);
+  }
+  return out;
+}
+
+function prefetchRow(self, block) {
+  const step = state.fine ? 0.25 : 1;
+  return prefetch(self, missing(self, rowCodes(self, block, step)));
+}
+
+function schedulePrefetch(self) {
+  clearTimeout(self.timer);
+  self.timer = setTimeout(() => {
+    // Snapped: every single-block variation, 8 x 16 = 128 frames, active row
+    // first. Fine: the active row alone -- 8 x 61 would be several seconds of
+    // rendering for values a drag mostly passes straight through.
+    const step = state.fine ? 0.25 : 1;
+    const order = state.fine ? [self.active]
+        : [self.active, ...range(0, state.blocks).filter(b => b !== self.active)];
+    let codes = [];
+    for (const b of order) codes = codes.concat(rowCodes(self, b, step));
+    prefetch(self, missing(self, codes));
+  }, 120);
+}
+
+function prefetch(self, codes) {
+  if (!codes.length) return Promise.resolve();
+  const CHUNK = 24;
+  const token = ++self.token;
+  let done = Promise.resolve();
+  for (let i = 0; i < codes.length; i += CHUNK) {
+    const part = codes.slice(i, i + CHUNK);
+    done = queue(self, async () => {
+      if (token !== self.token) return;          // superseded by a newer edit
+      const imgs = await post(self.arm, part);
+      part.forEach((c, j) => self.cache.set(keyOf(c), imgs[j]));
+    });
+  }
+  return done.catch(reportError);
+}
+
+function reportError(err) {
+  if (err.name === 'AbortError') return;
+  console.error(err);
+  setStatus('error: ' + err.message, false);
+}
+
+/* ---------- boot ---------- */
+async function waitReady(task) {
+  for (;;) {
+    const st = await (await fetch(`/api/prepare?task=${task}`)).json();
+    const keys = ['director', 'ours'].map(a => `${task}/${a}`);
+    if (keys.every(k => st[k] === 'ready')) return;
+    if (keys.some(k => st[k] === 'error')) throw new Error(
+        'a checkpoint failed to load; see the server log');
+    const n = keys.filter(k => st[k] === 'ready').length;
+    setStatus(`loading checkpoints (${n}/2) — about 15s each…`, true);
+    await new Promise(r => setTimeout(r, 1200));
+  }
+}
+
+async function loadTask(task) {
+  state.task = task;
+  els.panels.innerHTML = '';
+  state.arms = {};
+  const info = state.meta.runs[task];
+  els.ckpt.textContent =
+      `3M-step checkpoint · ${info.director.exp} vs ${info.ours.exp}`;
+  await waitReady(task);
+  setStatus('ready', false);
+  for (const arm of ['director', 'ours']) {
+    const model = await (await fetch(
+        `/api/model?task=${task}&arm=${arm}`)).json();
+    state.blocks = model.blocks;
+    state.classes = model.classes;
+    const self = makeArm(arm, info[arm], model);
+    setCode(self, new Array(state.blocks).fill(3), 0);
+  }
+}
+
+async function boot() {
+  state.meta = await (await fetch('/api/meta')).json();
+  state.extra = state.meta.extra;
+  els.task.innerHTML = state.meta.tasks
+      .map(t => `<option value="${t.id}">${t.label}</option>`).join('');
+  els.task.addEventListener('change', () => loadTask(els.task.value)
+      .catch(reportError));
+  els.link.addEventListener('change', () => { state.link = els.link.checked; });
+  els.fine.addEventListener('change', () => {
+    state.fine = els.fine.checked;
+    Object.values(state.arms).forEach(schedulePrefetch);
+  });
+  await loadTask(state.meta.tasks[0].id);
+}
+
+boot().catch(reportError);
+</script>
+</body>
+</html>

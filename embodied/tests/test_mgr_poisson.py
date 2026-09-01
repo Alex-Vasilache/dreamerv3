@@ -451,3 +451,258 @@ def test_gaussian_manager_head_really_swapped_and_learns():
            if not np.allclose(before[k], np.asarray(v))]
   assert any('loc' in k for k in moved), 'loc never updated'
   assert any('logscale' in k for k in moved), 'logscale never updated'
+
+
+# --------------------------------------------------------------------------
+# 5. the Student-t / Cauchy alternative
+# --------------------------------------------------------------------------
+
+def tdist(loc, logscale=0.0, classes=C, nu=1.0, **kw):
+  loc = jnp.asarray(loc, jnp.float32)
+  logscale = jnp.broadcast_to(jnp.asarray(logscale, jnp.float32), loc.shape)
+  return outs.StudentTOnehot(loc, logscale, classes, nu=nu, **kw)
+
+
+# loc defaults to -0.5 because loc_init shifts by (C-1)/2 = 3.5, so -0.5 puts
+# the mode ON class 3 rather than at 3.5, where two classes tie exactly.
+def _scale_for_entropy(fn, target=0.5, lo=-8.0, hi=8.0, loc=-0.5):
+  """Bisect logscale until normalized entropy hits target (entropy is monotone
+  in the scale, which is what test_studentt_scale_is_a_monotone_entropy_dial
+  independently asserts)."""
+  ent = lambda s: float(fn(np.full((1,), loc, np.float32),
+                          np.full((1,), s, np.float32)).entropy()[0]) / np.log(C)
+  for _ in range(80):
+    mid = 0.5 * (lo + hi)
+    if ent(mid) < target:
+      lo = mid
+    else:
+      hi = mid
+  return 0.5 * (lo + hi)
+
+
+def test_studentt_is_unimodal_everywhere():
+  for nu in (0.5, 1.0, 3.0, 30.0):
+    for m in np.linspace(-8.0, 8.0, 21):
+      for s in np.linspace(-4.0, 4.0, 9):
+        p = probs(tdist(np.full((1,), m), np.full((1,), s), nu=nu))[0]
+        assert unimodal(p), (nu, m, s, p)
+
+
+def test_studentt_mode_is_monotone_and_covers_every_class():
+  locs = np.linspace(-6.0, 6.0, 400)
+  modes = [int(probs(tdist(np.full((1,), m)))[0].argmax()) for m in locs]
+  assert modes == sorted(modes), 'mode not monotone in loc'
+  assert set(modes) == set(range(C)), set(range(C)) - set(modes)
+
+
+def test_studentt_scale_is_a_monotone_entropy_dial():
+  scales = np.linspace(-6.0, 6.0, 60)
+  for m in (-3.0, 0.0, 3.0):
+    ent = np.array([float(tdist(np.full((1,), m), np.full((1,), s)).entropy()[0])
+                    for s in scales])
+    assert np.all(np.diff(ent) > -1e-5), 'entropy not monotone in scale at %s' % m
+
+
+def test_studentt_credit_is_symmetric_at_an_integer_class():
+  for c in range(1, C - 1):
+    p = probs(tdist(np.full((1,), float(c) - 0.5 * (C - 1))))[0]
+    assert int(p.argmax()) == c, (c, p.argmax())
+    assert abs(np.log(p[c + 1] / p[c - 1])) < 1e-4, (c, p[c - 1], p[c + 1])
+
+
+def test_large_nu_reproduces_the_gaussian():
+  """nu -> inf IS GaussianOnehot, so mgr_studentt with a large nu is the
+  control arm for mgr_gaussian. Anything else means the two heads are not on
+  the same parameterization and an A/B between them would not be single-factor.
+  """
+  for m in np.linspace(-5.0, 5.0, 21):
+    for s in (-2.0, 0.0, 2.0):
+      loc, ls = np.full((1,), m, np.float32), np.full((1,), s, np.float32)
+      pt = probs(tdist(loc, ls, nu=1e7))[0]
+      pg = probs(gdist(loc, ls))[0]
+      assert np.allclose(pt, pg, atol=2e-4), (m, s, pt, pg)
+
+
+def test_studentt_tail_keeps_decaying_where_the_gaussian_underflows():
+  """The property the whole head exists for: mass in the far region that is
+  still ORDERED, so a distant draw says which direction is better.
+
+  A uniform mixture also puts mass out there but flattens it -- that is the
+  contrast asserted at the end.
+  """
+  at = lambda fn: probs(fn(np.full((1,), -0.5, np.float32),
+                           np.full((1,), _scale_for_entropy(fn), np.float32)))[0]
+  p = at(tdist)
+  tail = p[int(p.argmax()):]
+  assert np.all(np.diff(tail) < 0), 'tail is not strictly decreasing: %s' % tail
+  # Reach: the far class is sampled at a rate that is actually observable,
+  # unlike the Gaussian's ~2e-08 (~0.01 draws in a 4M-step run).
+  assert p[-1] > 1e-3, p[-1]
+  assert at(gdist)[-1] < 1e-5, at(gdist)[-1]
+  # And with a uniform floor the far classes go FLAT, which is what makes them
+  # directionless: consecutive far classes sit at the same u/C. Measured at the
+  # same entropy, the student-t still falls by ~1.8x per step out there.
+  pm = at(functools.partial(gdist, unimix=0.075))
+  assert pm[-2] / pm[-1] < 1.1, 'unimix far tail should be flat: %s' % pm[-3:]
+  assert p[-2] / p[-1] > 1.3, 'student-t far tail should stay ordered: %s' % p[-3:]
+
+
+def test_studentt_far_class_actually_moves_the_mean():
+  """d p_j / d loc at the far class -- the quantity that decides whether a
+  distant sample can steer the policy, since the REINFORCE gradient on loc is
+  sum_j A_j * d p_j / d loc.
+
+  Gaussian: ~2e-07. Gaussian + unimix: ~0 (the draw is attributed to the
+  uniform component, which does not depend on loc). Student-t: ~3e-03.
+  """
+  def dp_far(fn):
+    ls = _scale_for_entropy(fn)
+    e, m = 1e-3, -0.5   # mode on class 3, as everywhere else here
+    hi = probs(fn(np.full((1,), m + e, np.float32), np.full((1,), ls, np.float32)))[0]
+    lo = probs(fn(np.full((1,), m - e, np.float32), np.full((1,), ls, np.float32)))[0]
+    return abs(float((hi[-1] - lo[-1]) / (2 * e)))
+  t = dp_far(tdist)
+  g = dp_far(gdist)
+  u = dp_far(functools.partial(gdist, unimix=0.075))
+  assert t > 100 * g, 'student-t should give the far class real leverage (%g vs %g)' % (t, g)
+  assert t > 100 * u, 'unimix far mass should be directionless (%g vs %g)' % (t, u)
+
+
+def test_studentt_entropy_floor_stays_below_its_actent_target():
+  """THE constraint that ties nu to the entropy target.
+
+  At a tie -- loc exactly between two classes -- shrinking the scale does not
+  give a one-hot. For this family the limit is p_j/p_mode -> (d_mode/d_j)^(nu+1)
+  and it does NOT depend on scale_min, so it is a bound on nu alone. It has to
+  sit under manager_actent_target or the adapter rails (e479). The shipped arm
+  is nu=1 at target 0.7. Scanned over the CLASS RANGE, since outside it the
+  mode is clamped to an edge class.
+  """
+  target = 0.7                       # mgr_studentt raises it from the default
+  locs = np.linspace(0.0, C - 1.0, 801) - 0.5 * (C - 1)   # mode over classes 0..7
+  cold = np.full_like(locs, -12.0)
+  ent = np.asarray(tdist(locs.astype(np.float32), cold.astype(np.float32),
+                         scale_min=0.1).entropy()) / np.log(C)
+  assert ent.max() < target, (
+      'tie floor %.3f is at or above the %.2f target -- the adapter will rail'
+      % (ent.max(), target))
+  assert ent.max() < 0.65, 'floor %.3f leaves too little headroom' % ent.max()
+  # A confident state on an integer class can still commit, at scale_min 0.1.
+  assert ent.min() < 0.10, ent.min()
+
+
+def test_nu1_needs_the_raised_target_and_the_bounds_are_where_we_think():
+  """Guards the two numbers the mgr_studentt block depends on: nu=1 floors at
+  0.601, so it needs a target above 0.6, and at the DEFAULT target of 0.5 it
+  would instead need nu > 1.558.
+
+  This is not hypothetical -- nu=1 at target 0.5 was the first thing tried, and
+  22.7% of the loc range sits above target there.
+  """
+  def tie_floor(nu, scale_min=0.1):
+    # loc 0 -> mode at 3.5, a tie. scale_min is what the head can actually
+    # reach, so this is the real floor rather than the s -> 0 limit (0.595).
+    return float(np.asarray(tdist(
+        np.zeros((1,), np.float32), np.full((1,), -12.0, np.float32),
+        nu=nu, scale_min=scale_min).entropy())[0]) / np.log(C)
+  # nu=1 clears 0.7 but not 0.5, and not 0.6 either -- 0.6 lands just under it.
+  assert abs(tie_floor(1.0) - 0.601) < 0.01, tie_floor(1.0)
+  assert 0.6 < tie_floor(1.0) < 0.7, tie_floor(1.0)
+  # The alternative route: keep target 0.5 and raise nu past ~1.558.
+  assert tie_floor(1.5) > 0.5 > tie_floor(1.6), (tie_floor(1.5), tie_floor(1.6))
+  # Monotone in nu, so a single bound is meaningful.
+  fl = [tie_floor(n) for n in (1.0, 1.5, 2.0, 2.5, 3.0, 5.0)]
+  assert all(a > b for a, b in zip(fl, fl[1:])), fl
+
+
+def test_cauchy_beats_the_gaussian_at_a_matched_entropy():
+  """The claim the arm rests on, and the reason for the raised target: at the
+  SAME entropy the Cauchy is more decisive, keeps more ordering, AND reaches
+  further. If this ever inverts, the design argument is gone."""
+  gs = _scale_for_entropy(gdist, target=0.7)
+  ts = _scale_for_entropy(tdist, target=0.7)
+  at = lambda fn, s: probs(fn(np.full((1,), -0.5, np.float32),
+                              np.full((1,), s, np.float32)))[0]
+  g, t = at(gdist, gs), at(tdist, ts)
+  mode = int(g.argmax())
+  assert t[mode] > g[mode], ('cauchy should be more decisive', t[mode], g[mode])
+  assert (t[mode] / t[mode + 1]) > 2 * (g[mode] / g[mode + 1]), (
+      'cauchy should keep more ordering', t[mode] / t[mode + 1],
+      g[mode] / g[mode + 1])
+  assert t[-1] > 20 * g[-1], ('cauchy should reach further', t[-1], g[-1])
+
+
+def test_studentt_scale_min_must_be_lower_than_the_gaussians():
+  """A separate floor from the tie bound: the heavy tail leaks mass, so at the
+  Gaussian's scale_min=0.3 a CONFIDENT state cannot commit. This one scale_min
+  does fix, which is why the config block ships 0.1."""
+  cold = np.full((1,), -12.0, np.float32)
+  on_class = np.full((1,), -0.5, np.float32)     # mode exactly on class 3
+  ent = lambda sm: float(np.asarray(
+      tdist(on_class, cold, scale_min=sm).entropy())[0]) / np.log(C)
+  assert ent(0.3) > 0.15, 'expected a hard floor at scale_min 0.3: %.3f' % ent(0.3)
+  # What matters is headroom under the arm's own target (0.7), not parity with
+  # the Gaussian: a heavier tail always leaks more, and at nu=1 this floor is
+  # 0.079 against the Gaussian's 0.012. Both leave the adapter plenty of room.
+  assert ent(0.1) < 0.15, ent(0.1)
+  assert ent(0.1) < 0.5 * ent(0.3), (ent(0.1), ent(0.3))
+
+
+def test_studentt_head_is_a_drop_in_for_onehot():
+  p_t, o_t = build_head('studentt')
+  p_h, o_h = build_head('onehot')
+  assert o_t.pred().shape == o_h.pred().shape
+  inner = lambda o: o.output if isinstance(o, outs.Agg) else o
+  assert inner(o_t).minent == inner(o_h).minent
+  assert inner(o_t).maxent == inner(o_h).maxent
+  keys = ' '.join(p_t)
+  assert 'loc' in keys and 'logscale' in keys
+  assert '/logits/' not in keys, keys
+
+
+TARM = ('goal_som_lipvq_line_prod', 'mgr_studentt')
+
+
+def test_studentt_agent_trains_and_the_regularizer_is_alive():
+  _, _, mets = trained(*TARM)
+  bad = {}
+  for k, v in mets.items():
+    v = np.asarray(v)
+    if v.dtype.kind == 'f' and not np.isfinite(v).all():
+      bad[k] = v
+  assert not bad, 'non-finite metrics: %s' % sorted(bad)
+  key = [k for k in mets if k.endswith('mgr_ent_norm_skill_mean')]
+  assert key, 'entropy regularizer skipped the head (the e478 failure)'
+  assert 0.0 < float(np.asarray(mets[key[0]])) <= 1.0
+
+
+def test_studentt_manager_head_really_swapped_and_learns():
+  agent, before, _ = trained(*TARM)
+  head = mgr_head_params(agent.params)
+  assert any('loc' in k for k in head), sorted(head)
+  assert any('logscale' in k for k in head), sorted(head)
+  assert not any('/logits/' in k for k in head), sorted(head)
+  moved = [k for k, v in head.items()
+           if not np.allclose(before[k], np.asarray(v))]
+  assert any('loc' in k for k in moved), 'loc never updated'
+  assert any('logscale' in k for k in moved), 'logscale never updated'
+
+
+def test_studentt_config_block_sets_scale_min_low():
+  """The block must not silently inherit the Gaussian's scale_min."""
+  configs = yaml.YAML(typ='safe').load(CONFIGS.read())
+  mp = configs['mgr_studentt']['agent']['manager_policy']
+  assert mp['output'] == 'studentt', mp
+  assert mp['scale_min'] <= 0.15, mp
+  # nu and the entropy target are one choice: nu=1's tie floor is 0.601, so the
+  # block MUST raise manager_actent_target above it or the adapter rails. The
+  # only other admissible combination is nu > 1.558 at the default 0.5.
+  tgt = configs['mgr_studentt']['agent'].get(
+      'manager_actent_target',
+      configs['defaults']['agent']['manager_actent_target'])
+  if mp['nu'] <= 1.558:
+    assert tgt > 0.61, (mp['nu'], tgt)
+  else:
+    assert tgt >= 0.5, (mp['nu'], tgt)
+  assert 'nu' in configs['defaults']['agent']['manager_policy'], (
+      'nu must exist in defaults; elements.Config cannot introduce new keys')

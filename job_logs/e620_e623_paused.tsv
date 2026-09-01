@@ -1,0 +1,7 @@
+# paused 2026-08-24T13:44:52+09:00 -- antmaze XL e620-e623, cancelled NOT archived.
+# replay + ckpt left intact in /work; resume with sbatch/resume_e620_e623_antmazexl.sh
+#exp	paused_job	arm	seed	step_at_pause	run_dir
+e620	4699098	director	0	1837904	/work/DoyaU/vasilache/work/e620_loconav_ant_maze_xl_director_s0_BIG_j4697896
+e621	4699099	director	1	1817152	/work/DoyaU/vasilache/work/e621_loconav_ant_maze_xl_director_s1_BIG_j4697897
+e622	4699100	som_lipvq_line_relu_gaussian_eps	0	1799840	/work/DoyaU/vasilache/work/e622_loconav_ant_maze_xl_som_lipvq_line_relu_gaussian_eps_s0_BIG_j4697898
+e623	4699101	som_lipvq_line_relu_gaussian_eps	1	1817392	/work/DoyaU/vasilache/work/e623_loconav_ant_maze_xl_som_lipvq_line_relu_gaussian_eps_s1_BIG_j4697899

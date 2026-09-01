@@ -187,8 +187,84 @@ def load_scores(run):
     return steps, smoothed
 
 
+# --------------------------------------------------------------------------
+# Manager-head shape figure. Analytic, not from run logs: it plots the class
+# distribution each head produces at a fixed entropy, which is a property of
+# the parameterization alone. C=8 is skill_shape[-1] on every task we run.
+# --------------------------------------------------------------------------
+
+MGR_C = 8
+
+
+def _mgr_probs(mu, scale, nu):
+    """Class distribution for the Student-t family. nu=None is the Gaussian."""
+    import math
+    logits = []
+    for j in range(MGR_C):
+        z = (j - mu) / scale
+        if nu is None:
+            logits.append(-0.5 * z * z)
+        else:
+            logits.append(-0.5 * (nu + 1.0) * math.log1p(z * z / nu))
+    top = max(logits)
+    w = [math.exp(v - top) for v in logits]
+    tot = sum(w)
+    return [v / tot for v in w]
+
+
+def _mgr_nent(p):
+    import math
+    h = -sum(v * math.log(max(v, 1e-30)) for v in p)
+    return h / math.log(MGR_C)
+
+
+def _mgr_scale_for(nu, target, mu=3.0):
+    """Entropy is monotone in the scale, so bisect for the regulated point."""
+    lo, hi = 1e-4, 200.0
+    for _ in range(400):
+        mid = 0.5 * (lo + hi)
+        if _mgr_nent(_mgr_probs(mu, mid, nu)) < target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def make_mgr_heads():
+    """Two panels: the shape at the regulated entropy, and the same on a log
+    axis where the reachability difference lives."""
+    mu = 3.0
+    arms = [
+        (None, 0.5, 'Gaussian, target $0.5$ (current)', OI_BLUE, 'o'),
+        (None, 0.7, 'Gaussian, target $0.7$', OI_ORANGE, 's'),
+        (1.0, 0.7, 'Cauchy ($\\nu{=}1$), target $0.7$', OI_GREEN, 'D'),
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.7))
+    xs = list(range(MGR_C))
+    for nu, target, label, color, marker in arms:
+        s = _mgr_scale_for(nu, target, mu)
+        p = _mgr_probs(mu, s, nu)
+        for ax in axes:
+            ax.plot(xs, p, color=color, marker=marker, ms=3.5, lw=1.3,
+                    label='%s, $\\sigma{=}%.3f$' % (label, s))
+    for ax, ttl in zip(axes, ['linear', 'log (the tail)']):
+        ax.set_xlabel('goal-code class $j$')
+        ax.set_title(ttl, fontsize=9)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+    axes[0].set_ylabel('$\\pi(j)$')
+    axes[1].set_yscale('log')
+    axes[1].set_ylim(1e-9, 1.5)
+    axes[0].legend(fontsize=6.0, frameon=False)
+    fig.tight_layout()
+    out = os.path.join(OUT, 'mgr_heads.pdf')
+    fig.savefig(out)
+    print('wrote', out)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+    make_mgr_heads()
     for name, spec in FIGS.items():
         fig, ax = plt.subplots(figsize=(4.2, 2.8))
         for run, label, color, ls in spec['runs']:

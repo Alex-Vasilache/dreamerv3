@@ -21,3 +21,10 @@ experiments/mask_viz/out/
 
 # Timestamped backups taken before editing a live watchdog TSV.
 job_logs/*.bak_*
+
+# Large intermediate artifacts under experiments/: extracted policy dumps
+# (.npz, ~13MB each) and rendered videos (.mp4). Regenerated from the scripts
+# beside them; archived at
+# /bucket/DoyaU/vasilache/bucket/results/dreamerv3_experiments_artifacts/
+experiments/**/*.npz
+experiments/**/*.mp4

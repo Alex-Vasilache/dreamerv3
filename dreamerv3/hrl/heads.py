@@ -133,6 +133,81 @@ def _head_inner(head):
   return head.output if isinstance(head, outs.Agg) else head
 
 
+def class_distance_matrix(classes):
+  """``(C, C)`` squared distance between class indices along the codebook line.
+
+  The manager's per-block categorical has ORDERED classes once the goal
+  autoencoder is a SOM line: class ``a`` and class ``a+1`` decode to nearby
+  goals. Entropy is blind to that order -- permuting the classes leaves it
+  unchanged -- so it cannot tell "spread over three adjacent codes" from "split
+  between the two ends". This matrix is what supplies the order to
+  ``head_rao_perdim_time``.
+
+  Class ``a`` sits at ``x_a = a / (C - 1)`` on the unit interval and
+  ``d(a, b) = (x_a - x_b)^2``, so the endpoints are the two most distant codes.
+
+  Line only, deliberately. A ring has no endpoints, and there the normalized
+  Rao reduces to ``1 - R^2`` in the resultant length: it is maximized by ANY
+  distribution with zero resultant, so a uniform and a two-atom antipodal split
+  score identically and the measure cannot rank them. Ring topology is not used
+  in this project.
+  """
+  x = jnp.arange(classes, dtype=f32) / jnp.maximum(f32(classes - 1), 1.0)
+  return jnp.square(x[:, None] - x[None, :])
+
+
+def rao_quadratic_entropy(probs, dist, other=None):
+  """``sum_{a,b} p_a q_b d(a,b)`` over the last axis, normalized to ``[0, 1]``.
+
+  Rao's quadratic entropy is the expected distance between two classes drawn
+  independently from the distribution. Unlike entropy, which only counts how
+  many classes carry mass, this is large only when that mass sits on classes
+  that are FAR APART. ``other`` defaults to ``probs`` (the spread within one
+  decision); pass a second distribution for the cross form (how far apart two
+  decisions are).
+
+  Normalizer: a self-Rao is maximized by half the mass on each of the two most
+  distant classes, giving ``max(d) / 2``, so dividing by that puts the self
+  form on ``[0, 1]``. The cross form is divided by the SAME constant so the two
+  are directly comparable; it can legitimately reach 2 when two distributions
+  sit at opposite ends.
+
+  Whole-code vs per-block. The manager emits ``L`` independent categoricals, so
+  ``p(z) = prod_l p_l(z_l)``, and for a distance that is additive over blocks
+  ``Q(p) = sum_l Q(p_l)`` EXACTLY. Whole-code Rao is the sum of the per-block
+  Raos, so the ``C^L`` (8^8 = 16.7M) squared pair sum is never formed; this
+  works per block, at ``C x C`` = 64 pairs.
+  """
+  other = probs if other is None else other
+  q = jnp.einsum('...a,ab,...b->...', probs, dist, other)
+  return q / jnp.maximum(dist.max() / 2.0, 1e-8)
+
+
+def head_probs(head):
+  """Class probabilities of a categorical policy head, or None if it has none."""
+  dist = getattr(_head_inner(head), 'dist', None)
+  logits = getattr(dist, 'logits', None)
+  return None if logits is None else jax.nn.softmax(f32(logits), -1)
+
+
+def head_rao_perdim_time(head):
+  """Normalized per-categorical Rao sliced to ``(batch, time - 1, ...)``.
+
+  Same convention as ``head_entropy_perdim_time`` -- one value per block, the
+  trailing time step dropped -- so one AutoAdapt can regulate it per block.
+  The class count comes from the head's own logits, so callers never have to
+  dig it out of a head wrapper. Returns None for heads with no class logits
+  (nothing to regularize).
+  """
+  probs = head_probs(head)
+  if probs is None:
+    return None
+  rao = rao_quadratic_entropy(probs, class_distance_matrix(probs.shape[-1]))
+  if rao.ndim < 2:
+    rao = rao[None, :]
+  return rao[:, :-1]
+
+
 def head_logp_time(head, event):
   """Policy log-prob with leading axes ``(batch, time)``."""
   lp = _head_inner(head).logp(sg(event))

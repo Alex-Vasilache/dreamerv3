@@ -108,6 +108,15 @@ class ReportMixin:
     metrics.update(mets)
     if self.use_hrl and bool(getattr(self.config, 'report_code_diag', False)):
       metrics.update(self._code_diag(outs['repfeat']))
+    if self.use_hrl and self.mgr_novel:
+      # Coverage pictures of the two count tables. Built here, in report, and
+      # never in the train step: report runs on ``report_every``, so this costs
+      # nothing per gradient step. The flat cell index is lexicographic over
+      # blocks, so reshaping the fine table to 256x256 splits it into the low
+      # four blocks along one axis and the high four along the other -- a
+      # space-filling view of the whole 8^8 code space.
+      metrics.update({f'novel/{k}': v
+                      for k, v in self.code_counts.coverage_images().items()})
     rep = jax.tree.map(lambda x: x[:RB, :T], outs['repfeat'])
     reset_s = obs['is_first'][:RB, :T]
     dec_carry = jax.tree.map(lambda x: x[:RB], dec_carry)

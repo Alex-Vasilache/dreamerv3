@@ -42,7 +42,7 @@ import dreamerv3.main as m
 from diag_goal_struct_corr import load_config
 
 
-def build(run_dir, ckpt_path=None):
+def build(run_dir, ckpt_path=None, platform=None):
   config = load_config(run_dir)
   # load_config turns the diagnostics off for the geometry tool; this one wants
   # the mask-viz panel on and the goal image rendered.
@@ -52,6 +52,14 @@ def build(run_dir, ckpt_path=None):
       'agent.policy_goal_image': True,
       'agent.policy_struct_diag': False,
   })
+  if platform:
+    # CPU rollouts are viable and often faster to obtain than a GPU slot: this
+    # is a single-env, few-hundred-step rollout, not training. pinpad is a pure
+    # numpy gridworld with no MuJoCo at all; DMC needs MUJOCO_GL=osmesa for
+    # software rendering instead of egl.
+    flat.update({'jax.platform': platform,
+                 'jax.policy_devices': [0], 'jax.train_devices': [0]})
+    config = elements.Config(flat)
   config = elements.Config(flat)
   agent = m.make_agent(config)
   cp = elements.Checkpoint(directory=elements.Path(config.logdir) / 'ckpt')
@@ -99,16 +107,52 @@ def contact_sheet(frames, n=12, cols=4):
   return sheet
 
 
+def write_mp4(arr, out, fps):
+  """H.264 via the ffmpeg binary imageio_ffmpeg vendors -- there is no system
+  ffmpeg on these nodes. yuv420p needs even dimensions; the panel is 768x256 so
+  it already is, but pad rather than let the encoder fail on a future layout."""
+  import imageio.v2 as imageio
+  frames = arr[..., :3]
+  h, w = frames.shape[1:3]
+  if h % 2 or w % 2:
+    pad = ((0, 0), (0, h % 2), (0, w % 2), (0, 0))
+    frames = np.pad(frames, pad, mode='edge')
+  path = str(out) + '.mp4'
+  writer = imageio.get_writer(
+      path, fps=fps, codec='libx264', quality=8,
+      macro_block_size=None, ffmpeg_params=['-pix_fmt', 'yuv420p'])
+  try:
+    for f in frames:
+      writer.append_data(np.ascontiguousarray(f))
+  finally:
+    writer.close()
+  return path
+
+
 def main():
   ap = argparse.ArgumentParser()
   ap.add_argument('--run_dir', required=True)
   ap.add_argument('--out', required=True)
   ap.add_argument('--ckpt_path', default=None)
+  ap.add_argument('--platform', default=None,
+                  help='override jax.platform, e.g. cpu (no GPU slot needed)')
   ap.add_argument('--steps', type=int, default=520)
   ap.add_argument('--fps', type=int, default=20)
+  ap.add_argument('--gif', action='store_true',
+                  help='also write the (much larger) GIF')
+  ap.add_argument('--from_npz', default=None,
+                  help='re-encode an existing <out>.npz instead of rolling out '
+                       'again; needs no GPU and no checkpoint')
   a = ap.parse_args()
 
-  config, agent = build(a.run_dir, a.ckpt_path)
+  if a.from_npz:
+    arr = np.load(a.from_npz)['frames']
+    out = pathlib.Path(a.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    print('re-encoded', write_mp4(arr, out, a.fps), '<-', a.from_npz)
+    return
+
+  config, agent = build(a.run_dir, a.ckpt_path, a.platform)
   name = pathlib.Path(a.run_dir.rstrip('/')).name
   print(f'=== {name} | task={config.task}')
   frames, scores, seen = rollout(config, agent, a.steps)
@@ -128,14 +172,21 @@ def main():
                       task=str(config.task), run=name,
                       scores=np.array(scores, np.float32))
 
+  try:
+    print('wrote', write_mp4(arr, out, a.fps))
+  except Exception as exc:
+    print('mp4 encode failed (%r); .npz still written' % (exc,))
+
   sheet = contact_sheet(list(arr))
   try:
     from PIL import Image
     Image.fromarray(sheet).save(str(out) + '_sheet.png')
-    imgs = [Image.fromarray(f[..., :3]) for f in arr]
-    imgs[0].save(str(out) + '.gif', save_all=True, append_images=imgs[1:],
-                 duration=int(1000 / a.fps), loop=0, optimize=True)
-    print('wrote', out.with_suffix('.gif'), 'and', str(out) + '_sheet.png')
+    print('wrote', str(out) + '_sheet.png')
+    if a.gif:
+      imgs = [Image.fromarray(f[..., :3]) for f in arr]
+      imgs[0].save(str(out) + '.gif', save_all=True, append_images=imgs[1:],
+                   duration=int(1000 / a.fps), loop=0, optimize=True)
+      print('wrote', str(out) + '.gif')
   except Exception as exc:
     print('PIL unavailable or failed (%r); .npz still written' % (exc,))
 

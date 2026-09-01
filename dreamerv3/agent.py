@@ -41,6 +41,7 @@ from .hrl import (
     variable_block_director_tensors,
     worker_split_window,
 )
+from .hrl import explore as explore_mod
 from .hrl import goal_ae
 
 
@@ -295,6 +296,69 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.mgr_expl_slowval = embodied.jax.SlowModel(
           embodied.jax.MLPHead(scalar, **config.value, name='mgr_expl_slowval'),
           source=self.mgr_expl_val, **config.slowvalue)
+      # Third manager critic: count-based novelty (``mgr_novel``), carried
+      # separately from the reconstruction-error bonus above rather than
+      # replacing it, so the manager sees one task reward and TWO exploration
+      # rewards. Both exploration advantages enter at the same
+      # ``mgr_expl_weight``, which doubles the total exploration pull against
+      # the task reward -- the first thing to turn down if the arm over-explores.
+      self.mgr_novel = bool(getattr(config, 'mgr_novel', False))
+      # Selection-time UCB over the goal code. Uses the SAME count table but no
+      # reward and no critic: the bonus is added to the score when picking a
+      # goal in the environment rollout and never reaches a return. That is the
+      # whole difference -- `mgr_novel` changes what the manager learns to want,
+      # `mgr_ucb_c` only changes what it tries. They are independent; enabling
+      # both gives a reward-shaped arm with an extra selection tilt.
+      self.mgr_ucb_c = float(getattr(config, 'mgr_ucb_c', 0.0))
+      self.mgr_ucb_candidates = int(getattr(config, 'mgr_ucb_candidates', 8))
+      self._use_code_counts = self.mgr_novel or self.mgr_ucb_c > 0.0
+      if self._use_code_counts:
+        # Decay and insertion weight are DERIVED, never hardcoded, so they stay
+        # correct if replay.size or the batch shape changes.
+        #
+        #   env steps consumed per train step = batch_size*batch_length/train_ratio
+        #   decay  = exp(-env_steps_per_train / replay.size)   -- forget exactly as
+        #            fast as replay forgets, so the memory and the world model
+        #            agree on what counts as the past
+        #   weight = 1/train_ratio                             -- replay resamples
+        #            each env step train_ratio times while it is resident, so this
+        #            makes every env step contribute exactly 1.0 in total
+        #
+        # Together the table settles at a total mass of replay.size, and a count
+        # reads directly as "env steps spent near this code in the replay window".
+        _bt = float(config.batch_size) * float(config.batch_length)
+        _ratio = float(config.train_ratio)
+        _rsize = float(config.replay_size)
+        _env_per_train = _bt / _ratio
+        _cfg = config.mgr_novel_count
+        self.mgr_novel_log_images = bool(
+            getattr(_cfg, 'log_images', False))
+        self.code_counts = explore_mod.CodeCounts(
+            decay=float(np.exp(-_env_per_train / max(_rsize, 1.0))),
+            weight=1.0 / _ratio,
+            frontier=bool(_cfg.frontier),
+            eps=float(_cfg.eps),
+            fine=int(_cfg.fine_bins),
+            coarse=int(_cfg.coarse_bins),
+            select=int(getattr(_cfg, 'select_bins', 4)),
+            select_h=float(getattr(_cfg, 'select_h', 1.0)),
+            occ_thresh=float(_cfg.occ_thresh),
+            classes=int(skill_shape_t[-1]),
+            blocks=int(skill_shape_t[0]),
+            name='code_counts')
+        # Selections are counted once per DECISION on the replay batch, and
+        # replay resamples each env step train_ratio times, so this makes one
+        # real decision contribute exactly 1.0 -- the same accounting as visits.
+        # The table itself never decays; see CodeCounts.select_tab for why.
+        self._select_weight = 1.0 / _ratio
+      # Reward channel and its critic: only for the reward-shaped arm. The UCB
+      # arm shares the table above but must NOT create these -- an unused critic
+      # would still be built, checkpointed and optimized.
+      if self.mgr_novel:
+        self.mgr_novel_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_novel_val')
+        self.mgr_novel_slowval = embodied.jax.SlowModel(
+            embodied.jax.MLPHead(scalar, **config.value, name='mgr_novel_slowval'),
+            source=self.mgr_novel_val, **config.slowvalue)
 
       self.wkr_goal_val = embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_val')
       self.wkr_goal_slowval = embodied.jax.SlowModel(
@@ -309,16 +373,21 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # (no-op under ``none`` but kept so the unnorm/norm path mirrors flat v3).
       self.mgr_extr_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_extr_retnorm')
       self.mgr_expl_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_expl_retnorm')
+      self.mgr_novel_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_novel_retnorm')
       self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
 
       self.mgr_extr_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_extr_valnorm')
       self.mgr_expl_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_expl_valnorm')
+      self.mgr_novel_valnorm = embodied.jax.Normalize(**config.valnorm, name='mgr_novel_valnorm')
       self.wkr_goal_valnorm = embodied.jax.Normalize(**config.valnorm, name='wkr_goal_valnorm')
 
       self.mgr_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_advnorm')
       self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
 
       self.mgr_expl_weight = config.mgr_expl_weight
+      # Negative = "same as mgr_expl_weight" (the original equal-weight
+      # behaviour). Set >= 0 to weight the count bonus independently.
+      self.mgr_novel_weight = float(getattr(config, 'mgr_novel_weight', -1.0))
 
       # Director-style adaptive Lagrange multipliers (``tfutils.AutoAdapt``).
       self.manager_actent_perdim = bool(config.manager_actent_perdim)
@@ -333,6 +402,27 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           inverse=True,
           init=float(config.manager_actent_init),
           name='mgr_actent')
+      # Rao's quadratic entropy on the skill head (``manager_rao``). Regulates
+      # WHERE on the ordered SOM codebook the manager's probability mass sits,
+      # which ``mgr_actent`` cannot see: entropy is invariant to permuting the
+      # classes, so "spread over three adjacent codes" and "split between the
+      # two ends of the line" have identical entropy and very different Rao.
+      # Same adapter form and sign as the entropy term (``inverse=True``, push
+      # up while below target). Off by default; see ``manager_rao_target``.
+      self.manager_rao_perdim = bool(getattr(config, 'manager_rao_perdim', True))
+      self.mgr_rao = None
+      if bool(getattr(config, 'manager_rao', False)):
+        mgr_rao_shape = (skill_shape_t[0],) if self.manager_rao_perdim else ()
+        self.mgr_rao = embodied.jax.AutoAdapt(
+            shape=mgr_rao_shape,
+            impl=str(getattr(config, 'manager_rao_impl', 'mult')),
+            target=float(getattr(config, 'manager_rao_target', 0.5)),
+            min=float(getattr(config, 'manager_rao_min', 1e-5)),
+            max=float(getattr(config, 'manager_rao_max', 100.0)),
+            vel=float(getattr(config, 'manager_rao_vel', 0.1)),
+            inverse=True,
+            init=float(getattr(config, 'manager_rao_init', 1.0)),
+            name='mgr_rao')
       if self.variable_goal_length:
         # Dedicated SCALAR entropy adapter for the duration head (the per-dim
         # ``mgr_actent`` is shaped for the L skill blocks and cannot also regulate
@@ -457,6 +547,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           self.manager_pol, self.pol,
           self.mgr_extr_val, self.mgr_expl_val, self.wkr_goal_val,
       ]
+      if self.mgr_novel:
+        ac_modules.append(self.mgr_novel_val)
       groups = {
           'model': (model_modules, self._make_opt(**config.opt)),
           'goal': (goal_modules, self._make_opt(**config.goal_opt)),
@@ -483,6 +575,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       scales['wkr_policy'] = policy_scale
       scales['mgr_extr_value'] = value_scale
       scales['mgr_expl_value'] = value_scale
+      if self.mgr_novel:
+        scales['mgr_novel_value'] = value_scale
       scales['wkr_goal_value'] = value_scale
       if self.config.repval_loss and 'repval' in scales:
         # ``train`` only emits the replay-value losses when ``repval_loss`` is on, so
@@ -491,6 +585,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         repval_scale = scales.pop('repval')
         scales['repmgr_extr_value'] = repval_scale
         scales['repmgr_expl_value'] = repval_scale
+        if self.mgr_novel:
+          scales['repmgr_novel_value'] = repval_scale
         scales['repwkr_goal_value'] = repval_scale
       else:
         scales.pop('repval', None)
@@ -531,9 +627,21 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # the manager's sampled code via goal_dec); policy_struct_diag additionally
       # *encodes* the current state for offline diagnostics, so it needs
       # goal_enc's params included in the policy-side param group too.
+      groups = ['enc', 'dyn', 'dec', 'pol', 'manager_pol', 'goal_dec']
       if bool(getattr(self.config, 'policy_struct_diag', False)):
-        return '^(enc|dyn|dec|pol|manager_pol|goal_dec|goal_enc)/'
-      return '^(enc|dyn|dec|pol|manager_pol|goal_dec)/'
+        groups.append('goal_enc')
+      if float(getattr(self, 'mgr_ucb_c', 0.0)) > 0.0:
+        # Selection-time UCB reads the count table INSIDE the policy, so the
+        # table must travel to the actor with the other policy params. Under
+        # ``mgr_novel`` alone it is train-only and deliberately stays out --
+        # leaving it out here makes the policy raise on first use, because a
+        # ninjax Variable cannot be created inside a non-creating pure call.
+        # Consequence to keep in mind: in online/parallel mode the actor sees a
+        # SNAPSHOT of the table, so the bonus lags the learner by one param
+        # sync. That is acceptable for a slowly-decaying count, but it does mean
+        # the actor's counts are not exactly the learner's.
+        groups.append('code_counts')
+      return '^(' + '|'.join(groups) + ')/'
     return '^(enc|dyn|dec|pol)/'
 
   @property
@@ -645,6 +753,21 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # sticky ``last_change_mask`` (see ``_manager_skill_step``).
       mask_viz_on = (bool(self.dec.imgkeys) and
                      bool(getattr(self.config, 'report_mask_viz', True)))
+      # Offline diagnostic (``policy_mgr_diag``): the MANAGER POLICY's own
+      # per-block distribution at this state, evaluated on the same input the
+      # real decision uses -- taken BEFORE ``_manager_skill_step`` switches the
+      # carry, so ``mgr_skill`` here is still the pre-edit running code the
+      # manager conditions on. A second, read-only forward pass through
+      # ``manager_pol``: no sampling, no RNG, no effect on the acted policy.
+      # Needed because ``_manager_skill_step`` returns only the SAMPLED skill,
+      # while the entropy/Rao diagnostics are properties of the distribution.
+      mgr_diag_probs = None
+      if bool(getattr(self.config, 'policy_mgr_diag', False)):
+        mgr_diag_inp = (self._mgr_input(feat, mgr_skill) if self.mgr_cond_goalcode
+                        else self.feat2tensor(feat))
+        mgr_diag_out = mgr_as_dict(self.manager_pol(mgr_diag_inp, 1))
+        mgr_diag_probs = jax.nn.softmax(
+            f32(_head_inner(mgr_diag_out['skill']).dist.logits), -1)  # (B, L, C)
       mgr_skill, goal, mgr_step, goal_refresh = self._manager_skill_step(
           feat, mgr_skill, mgr_step, reset)
       # Countdown for THIS step from the post-step counter: var-K decrements
@@ -676,6 +799,20 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       diag_probs = jax.nn.softmax(_head_inner(diag_dist).dist.logits, -1)  # (B, L, C)
       out['log/struct_diag_deter'] = diag_deter
       out['log/struct_diag_probs'] = diag_probs.reshape(diag_probs.shape[:-2] + (-1,))
+    if self.use_hrl and mgr_diag_probs is not None:
+      # (B, L*C) manager distribution, plus the switch flag so the driver can
+      # keep only the steps where a decision was actually taken, and the class
+      # index of the code now in force (the sampled goal, for marginal stats).
+      out['log/mgr_diag_probs'] = mgr_diag_probs.reshape(
+          mgr_diag_probs.shape[:-2] + (-1,))
+      out['log/mgr_diag_switch'] = f32(goal_refresh)
+      out['log/mgr_diag_ids'] = f32(
+          jnp.argmax(self._running_goal_code(mgr_skill), -1))
+      # The DECODED goal (``goal_dec`` output, the deter vector the worker is
+      # actually conditioned on). Lets the driver check offline whether code
+      # index distance predicts goal distance -- the property SOM-line + LiP
+      # is supposed to buy. Already computed for the worker; no extra pass.
+      out['log/mgr_diag_goal'] = goal
     # Episode policy_image_with_goal: stack obs image with decoded goal image vertically.
     # Stored under log/ prefix so replay filters it out (avoids doubling replay memory).
     # Enabled by default only when image decoder keys exist; adds one decoder forward pass.
@@ -751,6 +888,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     if self.use_hrl:
       self.mgr_extr_slowval.update()
       self.mgr_expl_slowval.update()
+      if self.mgr_novel:
+        self.mgr_novel_slowval.update()
       self.wkr_goal_slowval.update()
     else:
       self.slowval.update()
@@ -1094,6 +1233,37 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     })
     metrics.update({f'goal/kl_adapt_{k}': v for k, v in goal_kl_mets.items()})
 
+    # Fold the REAL replay batch into the code-count memory, and log its state.
+    # Hooked here, not on the replay-reward path, because that one sits behind
+    # ``repval_loss``: if that were ever turned off the memory would silently
+    # stop updating and the novelty bonus would freeze at its initial value.
+    # Training only -- report/eval passes must not move the counts.
+    if self._use_code_counts:
+      if training:
+        self._mgr_novel_update(repfeat)
+        if self.mgr_ucb_c > 0.0:
+          self._mgr_select_update(repfeat, self._select_weight)
+      if self.mgr_ucb_c > 0.0:
+        # Measured in-run, because every offline estimate of this needed an
+        # assumption that turned out to drive the answer.
+        metrics.update({f'novel/{k}': v
+                        for k, v in self._ucb_diag(repfeat).items()})
+      # Reductions over 65,536 + 256 floats per train step: negligible next to
+      # a 75M-parameter model, and no per-sample work.
+      metrics.update({f'novel/{k}': v
+                      for k, v in self.code_counts.metrics().items()})
+      # Coverage images. They live here rather than only in report() because
+      # the production sbatch sets `--agent.report False`, which makes report()
+      # return immediately -- so anything logged only from there never appears
+      # in a real run. Off by default: the metrics dict inside jit has a static
+      # key set, so this cannot be strided and emits a 256x256 + 16x16 uint8
+      # every train step when enabled (the logger throttles the write, not the
+      # device transfer). The scalars above already quantify coverage; turn this
+      # on only when the picture is wanted.
+      if self.mgr_novel_log_images:
+        metrics.update({f'novel/{k}': v
+                        for k, v in self.code_counts.coverage_images().items()})
+
   def loss(self, carry, obs, prevact, training):
     """Full objective: world-model ELBO + imagined actor-critic (+ optional replay value)."""
     enc_carry, dyn_carry, dec_carry = carry
@@ -1222,6 +1392,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         pre_probs = jnp.concatenate([seed_probs[:, None], post_probs[:, :-1]], 1)
     rew_step = sg(self.rew(inp, 2).pred())
     expl_step = sg(self._mgr_expl_reward(imgfeat))
+    # Queried on imagined states, but never USED to update the memory -- see
+    # ``_mgr_novel_update``. sg for the same reason as expl_step: a reward is
+    # not a differentiable path into the goal encoder.
+    novel_step = sg(self._mgr_novel_reward(imgfeat)) if self.mgr_novel else None
     if self.variable_goal_length:
       # Block-pooled manager credit (Director ``abstract_traj`` on adaptive
       # boundaries): pool rewards/continuation over each realized duration segment
@@ -1251,6 +1425,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           variable_block_director_tensors(
               rew_step, con, expl_step, switch_mask, n_mgr,
               agg_mode=self.mgr_reward_agg))
+      mgr_novel_rew = None
+      if self.mgr_novel:
+        # Same pooling as the other two rewards; only the reward channel differs.
+        _, mgr_novel_rew, _, _ = variable_block_director_tensors(
+            rew_step, con, novel_step, switch_mask, n_mgr,
+            agg_mode=self.mgr_reward_agg)
       if self.mgr_cond_goalcode:
         preedit_eff = {'goal_code': downsample_at_switch_mask(
             {'goal_code': pre_code}, switch_mask)['goal_code']}
@@ -1312,6 +1492,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           self._mgr_extr_rew(rew_step, con, without_zeros=True))
       mgr_expl_rew = imag_reward_pad(
           self._mgr_extr_rew(expl_step, con, without_zeros=True))
+      mgr_novel_rew = imag_reward_pad(
+          self._mgr_extr_rew(novel_step, con, without_zeros=True)
+          ) if self.mgr_novel else None
     mgr_policy = mgr_as_dict(self.manager_pol(mgr_pol_inp, 2))
     if self.goal_soft_reuse_adapt:
       # Direct (non-REINFORCE) implicit sparsity: overlap between this
@@ -1350,6 +1533,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
         mgr_expl_weight=self.mgr_expl_weight,
+        mgr_novel_weight=self.mgr_novel_weight,
         actent=self.config.manager_actent,
         slowtar=self.config.manager_slowtar)
 
@@ -1368,8 +1552,16 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         self.mgr_extr_valnorm,
         self.mgr_expl_valnorm,
         self.mgr_advnorm,
+        mgr_novel_rew=mgr_novel_rew,
+        mgr_novel_value=self.mgr_novel_val(inp_eff, 2) if self.mgr_novel else None,
+        mgr_novel_slowvalue=(
+            self.mgr_novel_slowval(inp_eff, 2) if self.mgr_novel else None),
+        mgr_novel_retnorm=self.mgr_novel_retnorm if self.mgr_novel else None,
+        mgr_novel_valnorm=self.mgr_novel_valnorm if self.mgr_novel else None,
         mgr_actent_adapter=self.mgr_actent,
         mgr_actent_perdim=self.manager_actent_perdim,
+        mgr_rao_adapter=self.mgr_rao,
+        mgr_rao_perdim=self.manager_rao_perdim,
         mgr_dur_actent_adapter=(
             self.mgr_dur_actent if self.variable_goal_length else None),
         mgr_dur_lagrange_adapter=(
@@ -1461,11 +1653,15 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       last, term = [obs[k] for k in ('is_last', 'is_terminal')]
       boot_extr = imgloss_mgr_out['mgr_extr_ret'][:, 0].reshape(B, K_imag)
       boot_expl = imgloss_mgr_out['mgr_expl_ret'][:, 0].reshape(B, K_imag)
+      boot_novel = (imgloss_mgr_out['mgr_novel_ret'][:, 0].reshape(B, K_imag)
+                    if self.mgr_novel else None)
       boot_total = imgloss_mgr_out['ret'][:, 0].reshape(B, K_imag)
       boot_goal = boot_goal_full
       if K_repl != K_imag:
         boot_extr = jnp.broadcast_to(boot_extr[:, -1:], (B, K_repl))
         boot_expl = jnp.broadcast_to(boot_expl[:, -1:], (B, K_repl))
+        if self.mgr_novel:
+          boot_novel = jnp.broadcast_to(boot_novel[:, -1:], (B, K_repl))
         boot_total = jnp.broadcast_to(boot_total[:, -1:], (B, K_repl))
         boot_goal = jnp.broadcast_to(boot_goal[:, -1:], (B, K_repl))
 
@@ -1473,6 +1669,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       repl_con_full = self.con(self.feat2tensor(feat), 2).prob(1)
       repl_rew_full = self.rew(self.feat2tensor(feat), 2).pred()
       repl_expl_full = self._mgr_expl_reward(feat)
+      repl_novel_full = self._mgr_novel_reward(feat) if self.mgr_novel else None
 
       if self.variable_goal_length:
         # Block-pooled manager credit on the realized switch boundaries, mirroring
@@ -1497,6 +1694,11 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             variable_block_director_tensors(
                 repl_rew_full, repl_con_full, repl_expl_full,
                 repl_switch, n_mgr, agg_mode=self.mgr_reward_agg))
+        repl_mgr_novel_rew = None
+        if self.mgr_novel:
+          _, repl_mgr_novel_rew, _, _ = variable_block_director_tensors(
+              repl_rew_full, repl_con_full, repl_novel_full,
+              repl_switch, n_mgr, agg_mode=self.mgr_reward_agg)
         last_down = downsample_at_switch_mask(
             {'last': last.astype(f32)}, repl_switch)['last']
         last_down = patch_trailing_replay_state(
@@ -1539,6 +1741,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             repl_rew_full, repl_con_full, without_zeros=True))
         repl_mgr_expl_rew = imag_reward_pad(self._mgr_extr_rew(
             repl_expl_full, repl_con_full, without_zeros=True))
+        repl_mgr_novel_rew = imag_reward_pad(self._mgr_extr_rew(
+            repl_novel_full, repl_con_full, without_zeros=True)
+            ) if self.mgr_novel else None
 
       # --- 2. Dense Replay sequence for Worker ---
       feat_wkr, last_wkr, term_wkr, boot_goal_wkr = jax.tree.map(
@@ -1605,6 +1810,25 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       losses['repmgr_extr_value'] = weight_down[:, :-1] * (
           self.mgr_extr_val(inp_down, 2).loss(sg(ret_extr_padded)) +
           1.0 * self.mgr_extr_val(inp_down, 2).loss(sg(self.mgr_extr_slowval(inp_down, 2).pred())))[:, :-1]
+      if self.mgr_novel:
+        boot_novel_down = jnp.broadcast_to(
+            boot_novel[:, -1:], repl_mgr_novel_rew.shape)
+        voff_novel_prev, vscale_novel_prev = self.mgr_novel_valnorm.stats()
+        tarval_novel = (
+            self.mgr_novel_val(inp_down, 2).pred() * vscale_novel_prev
+            + voff_novel_prev)
+        ret_novel = lambda_return(
+            last_down, term_down, repl_mgr_novel_rew, tarval_novel,
+            boot_novel_down, disc, lam)
+        voff_novel, vscale_novel = self.mgr_novel_valnorm(
+            ret_novel, update=training, weights=rep_dec_mask)
+        ret_novel_normed = (ret_novel - voff_novel) / vscale_novel
+        ret_novel_padded = jnp.concatenate(
+            [ret_novel_normed, jnp.zeros_like(ret_novel_normed[:, -1:])], 1)
+        losses['repmgr_novel_value'] = weight_down[:, :-1] * (
+            self.mgr_novel_val(inp_down, 2).loss(sg(ret_novel_padded)) +
+            1.0 * self.mgr_novel_val(inp_down, 2).loss(
+                sg(self.mgr_novel_slowval(inp_down, 2).pred())))[:, :-1]
       ret_expl_normed = (ret_expl - voff_expl) / vscale_expl
       ret_expl_padded = jnp.concatenate([ret_expl_normed, jnp.zeros_like(ret_expl_normed[:, -1:])], 1)
       losses['repmgr_expl_value'] = weight_down[:, :-1] * (

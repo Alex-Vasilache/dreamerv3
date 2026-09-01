@@ -206,6 +206,12 @@ def main():
                   help='pairs: p5-p95/p25-p75 of the individual code pairs at '
                        'each bin (the diversity at a fixed code distance). '
                        'seeds: +/-1 std across runs (agreement between seeds).')
+  ap.add_argument('--only-all', action='store_true',
+                  help='row layout: draw only the All Envs panel. One panel is '
+                       'wide enough for ticks every 0.25 rather than every 0.5.')
+  ap.add_argument('--target-pt', type=float, default=0.98 * 397.0,
+                  help='printed width in points the fonts are sized for; '
+                       'match the \\includegraphics width (textwidth=397pt).')
   a = ap.parse_args()
   data = load(a.results)
   if not data:
@@ -225,14 +231,21 @@ def main():
       print('   %-30s bin8 spread p5-p95  %.3f - %.3f' %
             (t, q[t][-1, 0], q[t][-1, 4]))
   if a.layout == 'row':
-    svg, W, H = build_row(data, sub, a.xlabel, q)
+    svg, W, H = build_row(data, sub, a.xlabel, q, a.only_all, a.target_pt)
     print('row layout %dx%d svg units' % (W, H))
   else:
     svg = build(data,
                 'Goal-code similarity vs goal-state similarity (Director)', sub)
   pathlib.Path(a.out + '.svg').write_text(svg)
-  subprocess.run(['rsvg-convert', '-f', 'png', '-d', '600', '-p', '600',
-                  '-o', a.out + '.png', a.out + '.svg'], check=True)
+  # rsvg-convert 2.42 ignores -d/-p for an SVG with a pixel width, so the PNG
+  # comes out at 1:1 with the SVG units. The six-panel row is 2276 units wide
+  # and so lands at ~420 dpi by accident; one panel is 378 units and would
+  # print at 70 dpi. Ask for the pixel width that gives 600 dpi at the size the
+  # figure is actually included at.
+  cmd = ['rsvg-convert', '-f', 'png', '-d', '600', '-p', '600']
+  if a.layout == 'row' and a.only_all:
+    cmd += ['-w', str(int(round(a.target_pt / 72.0 * 600)))]
+  subprocess.run(cmd + ['-o', a.out + '.png', a.out + '.svg'], check=True)
   print('wrote', a.out + '.png')
   if a.copy_to:
     for ext in ('.png', '.svg'):
@@ -246,7 +259,8 @@ def main():
 
 # --------------------------------------------------------------- row layout
 
-def build_row(data, sub, xlabel=None, quant=None):
+def build_row(data, sub, xlabel=None, quant=None, only_all=False,
+              target_pt=0.98 * 397.0):
   """Five square panels in a row, styled after the DreamerV3/Director figures.
 
   That style is: a boxed axes frame, light gridlines on both axes, outward
@@ -258,7 +272,7 @@ def build_row(data, sub, xlabel=None, quant=None):
   is either invisible in print or enormous on screen. Ticks are cut to 0/0.5/1
   on x and labelled once on y, which is what fits.
   """
-  n_panels = len(TASKS) + 1
+  n_panels = 1 if only_all else len(TASKS) + 1
   P = 300
   # GAP and PR grew when hopper_hop made this six panels rather than five:
   # at GAP=30/PR=22 the titles of neighbouring panels touched and the last
@@ -267,9 +281,19 @@ def build_row(data, sub, xlabel=None, quant=None):
   # PB carries the tick row AND the shared x label; at 122 the label's
   # ascenders sat on top of the '.5' tick of the middle panels.
   PL, PR, PT, PB = 152, 44, 104, 168
+  # Those paddings are a small fraction of a six-panel canvas and half of a
+  # one-panel one: reusing them for --only-all left the x label floating a
+  # panel-width below the axes. Every font is a fraction of W, so shrinking the
+  # margins also shrinks the type; these are the smallest that still clear the
+  # tick labels at the resulting size.
+  if only_all:
+    PL, PR, PT, PB = 58, 20, 40, 56
   W = PL + n_panels * P + (n_panels - 1) * GAP + PR
   H = PT + P + PB
-  TARGET = 0.98 * 397.0
+  # Printed width the fonts are sized for. Every font below is a fraction of
+  # the SVG width, so f(pt) prints at pt points only if the figure is included
+  # at TARGET. Pass --target-pt when including at less than \textwidth.
+  TARGET = target_pt
 
   def f(pt_):
     return pt_ * W / TARGET
@@ -296,12 +320,13 @@ def build_row(data, sub, xlabel=None, quant=None):
   per_env = (np.stack([np.stack(data[t]).mean(0) for t in present])
              if present else None)
   quant = quant or {}
-  panels = [(SHORT.get(lab, lab), col, np.stack(data[t]), quant.get(t))
-            for t, lab, col in TASKS if t in data]
+  panels = [] if only_all else [
+      (SHORT.get(lab, lab), col, np.stack(data[t]), quant.get(t))
+      for t, lab, col in TASKS if t in data]
   if per_env is not None and len(present) > 1:
     qs = [quant[t] for t in present if t in quant]
-    panels.append(('All Envs', INK, per_env,
-                   np.mean(qs, 0) if qs else None))
+    panels.append(('All Environments' if only_all else 'All Envs', INK,
+                   per_env, np.mean(qs, 0) if qs else None))
 
   o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
        f'viewBox="0 0 {W} {H}" font-family="Helvetica,Arial,sans-serif">',
@@ -309,8 +334,9 @@ def build_row(data, sub, xlabel=None, quant=None):
 
   # Same positions on both axes. Five of them fitted while this was five
   # panels wide; at six, the '1' of one panel and the '0' of the next collided
-  # into '1 0'. Three is what a 300-unit panel holds at a legible size.
-  YT = XT = (0.0, 0.5, 1.0)
+  # into '1 0', so three is what a 300-unit panel holds side by side. With a
+  # single panel there is no neighbour to collide with and five fit again.
+  YT = XT = (0.0, 0.25, 0.5, 0.75, 1.0) if only_all else (0.0, 0.5, 1.0)
 
   def tl(v):
     if v in (0.0, 1.0):

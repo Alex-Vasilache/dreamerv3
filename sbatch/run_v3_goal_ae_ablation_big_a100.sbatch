@@ -54,6 +54,12 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 unset DREAMERV3_CONV_IMPL   # native cuDNN conv (A100 sm_80 ~2x faster)
 
 EXP_TAG="${EXP_TAG:?set EXP_TAG}"
+# Goal-AE optimizer weight decay. A variable, not the hardcoded 0.0 it used to
+# be: AGENT_FLAGS puts it on the command line and a CLI flag beats a config
+# block, so EXTRA_CONFIGS=director_stable could not turn weight decay on for
+# the goal AE while this was pinned. Default 0.0 keeps earlier submissions
+# byte-identical.
+GOAL_OPT_WD="${GOAL_OPT_WD:-0.0}"
 TASK="${TASK:-dmc_hopper_hop}"
 ARM="${ARM:?set ARM (director|vq|som|lipvq|som_lipvq)}"
 SEED="${SEED:-0}"
@@ -152,13 +158,55 @@ case "$ARM" in
   som_lipvq_line_relu_gaussian) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_gaussian" ;;
   # Same, plus the 10% eps-greedy index jump in the environment rollout.
   som_lipvq_line_relu_gaussian_eps) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_gaussian mgr_explore" ;;
+  # Student-t (nu=2.5) manager instead of the Gaussian: polynomial tails so the
+  # far half of the ordered codebook is both reachable AND still carries
+  # direction, which lets the manager WALK the mean there instead of needing
+  # the eps-greedy jump to find it. Differs from som_lipvq_line_relu_gaussian
+  # by the manager head alone. nu=1 (a true Cauchy) is NOT usable -- its
+  # tie-state entropy floor is 0.595, above manager_actent_target. See the
+  # mgr_studentt config block.
+  som_lipvq_line_relu_studentt)
+    ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_studentt"
+    # nu=1's tie-state entropy floor is 0.601, so this arm CANNOT be regulated
+    # at the default 0.5 -- the adapter rails as in e479. The mgr_studentt
+    # config block sets 0.7, but AGENT_FLAGS below passes the target on the CLI
+    # and a CLI flag beats a config block (same trap as TRAIN_RATIO above), so
+    # the arm has to state it here too or the block is silently overridden.
+    ARM_ACTENT_TARGET=0.7 ;;
+  # SOM-line + LiP + ReLU with the plain CATEGORICAL manager. This combination
+  # had never been run: ReLU only ever shipped bundled with a different manager
+  # head (mgr_gaussian in e592-e619, mgr_studentt in e628-e635), so activation
+  # and head always moved together. It is both a single-factor ReLU-vs-silu
+  # contrast against e534-e573 and the control for som_lipvq_line_relu_rao.
+  som_lipvq_line_relu)      ARM_CONFIG="goal_som_lipvq_line_prod lip_relu" ;;
+  # The same, plus Rao's quadratic entropy on the skill head held at normalized
+  # 0.5 while manager_actent_target stays at 0.5. Differs from
+  # som_lipvq_line_relu by that one regularizer, so the pair isolates it.
+  som_lipvq_line_relu_rao)  ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_rao" ;;
+  # SOM-line + LiP + ReLU + categorical manager, with count-based novelty as a
+  # THIRD manager reward and critic alongside the reconstruction-error bonus.
+  # Differs from som_lipvq_line_relu by that channel alone.
+  som_lipvq_line_relu_count) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_novel" ;;
+  # The same, with the frontier (reachability) gate on the novelty bonus.
+  som_lipvq_line_relu_countf) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_novel_frontier" ;;
+  # Count bonus at 0.03 instead of matching mgr_expl_weight, so it stops
+  # diluting the reconstruction bonus before the first task reward exists.
+  som_lipvq_line_relu_count003) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_novel_lowweight" ;;
+  # Counts as selection-time UCB instead of a reward: no third critic, no
+  # weight to tune, and nothing bootstraps the bonus into long-run behaviour.
+  som_lipvq_line_relu_ucb) ARM_CONFIG="goal_som_lipvq_line_prod lip_relu mgr_ucb" ;;
   som_orig_lipvq_line_prod) ARM_CONFIG="goal_som_orig_lipvq_line_prod" ;;
-  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_lipvq_line_prod_gaussian|som_lipvq_line_relu_gaussian|som_lipvq_line_relu_gaussian_eps|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
+  *) echo "unknown ARM=$ARM (director|vq|som|lipvq|som_lipvq|som_lipvq_mgr|som_lipvq_smooth|som_line|som_line_poisson|som_lipvq_line|som_lipvq_line_smooth|som_lipvq_line_mgr|som_orig_line|som_orig_lipvq_line|som_orig_line_adapt|som_orig_lipvq_line_paper|lipvq_prod|som_lipvq_line_prod|som_lipvq_line_prod_poisson|som_lipvq_line_prod_gaussian|som_lipvq_line_relu_gaussian|som_lipvq_line_relu_gaussian_eps|som_lipvq_line_relu_studentt|som_lipvq_line_relu|som_lipvq_line_relu_rao|som_lipvq_line_relu_count|som_lipvq_line_relu_countf|som_lipvq_line_relu_count003|som_lipvq_line_relu_ucb|som_orig_lipvq_line_prod)" >&2; exit 1 ;;
 esac
 # EXTRA_CONFIGS is appended last so it wins over the arm block. Needed for
 # loconav/antmaze, which carries its own env repeat and train ratio; without it
 # an antmaze task would silently run with the DMC settings.
 CONFIGS="director_match${ARM_CONFIG:+ $ARM_CONFIG}${EXTRA_CONFIGS:+ $EXTRA_CONFIGS}"
+# Manager entropy setpoint. Defaults to whatever the ARM needs (0.5 for every
+# arm whose head can reach it), overridable from the environment. It has to be
+# a variable for the same reason TRAIN_RATIO does: AGENT_FLAGS puts it on the
+# command line, which beats any config block that tries to set it.
+MGR_ACTENT_TARGET="${MGR_ACTENT_TARGET:-${ARM_ACTENT_TARGET:-0.5}}"
 
 RUN_SUFFIX="${EXP_TAG}_${TASK}_${ARM}_s${SEED}_BIG"
 # Requeue-safe RUN_DIR: a requeue keeps the same SLURM_JOB_ID, so the job
@@ -177,6 +225,7 @@ SIZE=BIG IMAGE=64x64 IMAG=$IMAG_LENGTH BATCH=16x64 TRAIN_RATIO=$TRAIN_RATIO CONV
 REPLAY_SIZE=$REPLAY_SIZE
 COMMIT_SCALE=${COMMIT_SCALE:-default} SOM_SCALE=${SOM_SCALE:-default}
 RECIPE=director MGR_FREQ=$MGR_FREQ MGR_REWARD_AGG=$MGR_REWARD_AGG MGR_EXPL_W=$MGR_EXPL_W
+MGR_ACTENT_TARGET=$MGR_ACTENT_TARGET
 STRUCT_W=0.0 STRUCT_ADAPT=False GOAL_SOFT_REUSE_ADAPT=False GOAL_STRUCT_DIAG=$GOAL_STRUCT_DIAG
 PREALLOC=$PREALLOC LOG_OUTPUTS=$LOG_OUTPUTS LOG_VIDEO=$LOG_VIDEO RUN_DEBUG=$RUN_DEBUG
 CODE=$REPO GIT_COMMIT=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -187,10 +236,10 @@ AGENT_FLAGS=(
   --agent.goal_autoencoder_beta 0.25
   --agent.goal_rec_loss_agg sum
   --agent.goal_opt.lr 4e-5
-  --agent.goal_opt.wd 0.0
+  --agent.goal_opt.wd "$GOAL_OPT_WD"
   --agent.goal_opt.eps 1e-20
   --agent.manager_actent_impl mult
-  --agent.manager_actent_target 0.5
+  --agent.manager_actent_target "$MGR_ACTENT_TARGET"
   # Explicitly off: the e390-e409 baselines set these False, and the struct
   # term in particular optimizes the very geometry this architecture is meant
   # to provide -- leaving it on would confound the comparison. (The antmaze
@@ -218,6 +267,13 @@ if [ -n "${COMMIT_SCALE:-}" ]; then
 fi
 if [ -n "${SOM_SCALE:-}" ]; then
   AGENT_FLAGS+=(--agent.goal_vq.som_scale "$SOM_SCALE")
+fi
+# Rao setpoint override for the *_rao arms. Only appended when set, so the
+# mgr_rao config block's 0.5 stands by default -- appending it unconditionally
+# would put it on the command line, where it would silently beat the block for
+# every arm including the ones that do not enable manager_rao at all.
+if [ -n "${MGR_RAO_TARGET:-}" ]; then
+  AGENT_FLAGS+=(--agent.manager_rao_target "$MGR_RAO_TARGET")
 fi
 
 # Self-requeue near walltime (USR1 arrives 600s before the limit): requeue keeps

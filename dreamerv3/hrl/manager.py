@@ -127,6 +127,23 @@ class ManagerMixin:
         inner = inner.output
       skill_probs = jax.nn.softmax(f32(inner.dist.logits), -1)
     result = (mode if deterministic else sample)(out)
+    if explore and self.mgr_ucb_c and 'skill' in result and not deterministic:
+      # UCB at selection time. Same scoping rule as the jump below and for the
+      # same reason: the manager is trained by REINFORCE on its own samples, so
+      # tilting the draw anywhere but the environment rollout biases the
+      # gradient. Unlike the jump, the tilt stays inside the policy's support --
+      # candidates ARE policy samples -- so the log-probabilities do not
+      # underflow and the shift is a reweighting rather than a replacement.
+      dist = out['skill']
+      cands = jnp.stack(
+          [dist.sample(nj.seed()) for _ in range(self.mgr_ucb_candidates)], 0)
+      # PROPOSAL counts, not visit counts: picking a goal must make it less
+      # attractive next time even when the worker never reaches it, or an
+      # unreachable goal stays maximally novel forever.
+      bonus = self.code_counts.ucb_bonus(jnp.argmax(cands, -1))
+      picked, _ = mgr_explore.ucb_pick(
+          nj.seed(), cands, f32(bonus), float(self.mgr_ucb_c))
+      result = {**result, 'skill': picked}
     if explore and self.mgr_explore_eps and 'skill' in result:
       # eps-greedy index jump (hrl/explore.py). ONLY reachable from
       # ``_manager_skill_step``, i.e. the environment rollout: the manager is
@@ -139,6 +156,44 @@ class ManagerMixin:
     if skill_probs is not None:
       result = {**result, 'skill_probs': skill_probs}
     return result
+
+  def _ucb_diag(self, repfeat):
+    """What the novelty tilt actually does to the manager's choice.
+
+    Two numbers, both measured in-run on the policy's own candidates at real
+    states. Every offline estimate of this needed an assumption about where
+    candidates land, and each one I tried was wrong in a different direction.
+
+      novelty_gain: bonus of the chosen candidate over the mean bonus of the
+        eight. 1.0 means the tilt is inert; higher means it is finding rarer
+        goals. Fades on its own as counts even out.
+      logp_shift: log-probability of the chosen goal minus the mean over the
+        candidates. MUST be <= 0. A positive value means the rule is sharpening
+        the policy rather than exploring -- the failure the old
+        ``argmax(log pi + c * bonus)`` rule had, which discarded about a quarter
+        of the manager's entropy by acting as a best-of-K likelihood filter.
+    """
+    feat0 = jax.tree.map(lambda x: x[:, 0], repfeat)
+    if self.mgr_cond_goalcode:
+      seed_code = self._encode_goal_code(self.feat2deter(feat0), 1)
+      tensor = self._mgr_input(feat0, {'goal_code': seed_code})
+    else:
+      tensor = self.feat2tensor(feat0)
+    out = mgr_as_dict(self.manager_pol(tensor, 1))
+    if 'skill' not in out:
+      return {}
+    dist = out['skill']
+    cands = jnp.stack(
+        [dist.sample(nj.seed()) for _ in range(self.mgr_ucb_candidates)], 0)
+    logps = f32(jnp.stack([dist.logp(c) for c in cands], 0))
+    bonus = f32(self.code_counts.ucb_bonus(jnp.argmax(cands, -1)))
+    _, idx = mgr_explore.ucb_pick(
+        nj.seed(), cands, bonus, float(self.mgr_ucb_c))
+    take = lambda x: jnp.take_along_axis(x, idx[None], 0)[0]
+    return {
+        'ucb_novelty_gain': take(bonus).mean() / jnp.maximum(bonus.mean(), 1e-8),
+        'ucb_logp_shift': (take(logps) - logps.mean(0)).mean(),
+    }
 
   def _advance_mgr_skill(self, mgr_skill, emit, update, base_code=None):
     """Switch in the freshly emitted manager skill (Director window switch)."""

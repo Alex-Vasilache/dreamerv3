@@ -85,6 +85,79 @@ class GoalCodeMixin:
     sq = ((pred - deter) ** 2).mean(-1)
     return sq
 
+  def _code_ids(self, feat):
+    """Deterministic goal-code index per state, ``(..., L)``.
+
+    ARGMAX, not a sample. ``_mgr_expl_reward`` samples because it wants the
+    reconstruction of a drawn code; counting wants the opposite -- the same
+    state must always land in the same cell, or the counts measure sampling
+    noise instead of visitation. This is also why a badly-reconstructing
+    encoder is still usable here: a count needs a consistent LABEL, not an
+    accurate description of the state.
+    """
+    enc = self.goal_enc(sg(self.feat2deter(feat)), 2)
+    dist = enc['skill'] if isinstance(enc, dict) else enc
+    return jnp.argmax(dist.pred(), -1)
+
+  def _mgr_novel_reward(self, feat):
+    """Manager novelty reward: ``1/sqrt(n+eps)`` on the decaying code counts.
+
+    Independent of ``_mgr_expl_reward`` and carried by its own critic. The two
+    measure different things -- reconstruction error says the goal autoencoder
+    cannot represent this state, the count says the agent has not been here
+    lately -- and a state can be either one without being the other. Returns
+    dense rewards of shape (B, T).
+    """
+    return self.code_counts.novelty(self._code_ids(feat))
+
+  def _mgr_novel_update(self, repfeat):
+    """Fold the real replay batch into the count memory. Training only.
+
+    Only REAL states update the memory. The reward is queried on the imagined
+    rollout too, but imagined states are the world model's guesses -- if those
+    counted as visits the manager could suppress its own bonus by imagining its
+    way through a region it has never actually reached.
+    """
+    self.code_counts.update(self._code_ids(repfeat))
+
+  def _mgr_select_update(self, repfeat, weight):
+    """Fold the manager's PROPOSED goals into the selection table (UCB only).
+
+    ``downsample=True`` returns one skill per K steps, i.e. one entry per
+    manager DECISION rather than one per env step, which is the unit a UCB count
+    has to be in. The draws must be SAMPLES for the counts to be on the same
+    distribution the candidates come from -- see the comment at the call.
+
+    NOTE these are the manager's untilted SAMPLES, not the UCB-tilted choice
+    made during collection: ``_manager_skills_on_sequence`` calls ``_emit_manager``
+    without ``explore``, and deliberately so -- running the tilt inside the
+    training scan would break the env-rollout-only scoping that keeps the
+    REINFORCE gradient unbiased, and would read the selection table in the same
+    step that writes it. The consequence is that the table tracks what the
+    policy favours rather than what the tilt chose. The main trap still closes
+    (the policy's own favourite gets counted, so the manager cannot fixate on
+    it), and because the policy is trained on tilted data the loop closes with
+    one update of delay.
+
+    These are the goals the current manager would choose at these replay states,
+    not the goals actually chosen when the data was collected -- the behaviour
+    policy's choices live in the agent carry and never reach replay. For
+    discouraging what the manager keeps proposing *now*, the recomputed version
+    is arguably the better signal anyway.
+    """
+    # SAMPLE, not mode. This is not cosmetic: the UCB candidates are policy
+    # samples, so the table has to be built from the same distribution or the
+    # counts never land where the candidates look. Measured with mode counting
+    # (e660-e667, abandoned at ~100k): the table collapsed to ~20 effective
+    # cells, candidate bonus sat at 0.72 and the flip rate was pinned at 76%
+    # from 12.5k decisions to 500k -- no annealing whatsoever, which is the very
+    # pathology the cumulative table exists to avoid. With sampling the bonus
+    # falls 0.31 -> 0.08 and the flip rate 93% -> 32% over a 4M run.
+    skills = self._manager_skills_on_sequence(
+        repfeat, downsample=True, deterministic=False)
+    onehot = skills['skill'] if isinstance(skills, dict) else skills
+    self.code_counts.update_selected(jnp.argmax(onehot, -1), weight)
+
   def _code_diag(self, repfeat):
     """Offline diagnostics on the goal-code structure (report_code_diag).
 

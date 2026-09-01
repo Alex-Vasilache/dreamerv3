@@ -1,0 +1,5 @@
+exp	jobid	task	arm	seed	configs	note
+e718	4703164	pinpad_five	director	0	director_match director_stable	slowtar+advnorm+retnorm floor+wd2.5e-2
+e719	4703165	pinpad_five	director	1	director_match director_stable	slowtar+advnorm+retnorm floor+wd2.5e-2
+e720	4703166	pinpad_five	director	2	director_match director_stable	slowtar+advnorm+retnorm floor+wd2.5e-2
+e721	4703167	pinpad_five	director	3	director_match director_stable	slowtar+advnorm+retnorm floor+wd2.5e-2

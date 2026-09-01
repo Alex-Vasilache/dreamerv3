@@ -417,6 +417,101 @@ class GaussianOnehot(OneHot):
     self.scale = sigma
 
 
+class StudentTOnehot(OneHot):
+  """``GaussianOnehot`` with polynomial instead of Gaussian tails.
+
+      logits_j = -((nu + 1) / 2) * log(1 + ((j - loc) / scale)^2 / nu)
+
+  ``nu -> inf`` recovers ``GaussianOnehot`` exactly, so this is a strict
+  generalization of it and not a replacement: the same ``loc`` / ``scale``
+  contract, the same unimodality, the same entropy bounds. ``nu = 1`` is a
+  Cauchy.
+
+  WHY A HEAVIER TAIL. Under the Gaussian, at the entropy the regularizer holds
+  (normalized 0.5, sigma 0.685 at C=8), a class 4 steps from the mode has
+  probability 2.3e-08 -- 0.01 expected draws over a whole 4M-step run, i.e.
+  never. The distant half of an ordered codebook is unreachable by sampling,
+  which is what ``hrl/explore.py``'s eps-greedy index jump exists to work
+  around from outside the policy.
+
+  A uniform mixture (``unimix``) also puts mass out there, but FLAT mass: at
+  ``unimix=0.075`` classes 0, 6 and 7 all sit at exactly u/C = 0.0094, so the
+  far region carries no ordering, and a draw from it has d log p / d loc ~ 0 --
+  the sample is explained by the uniform component, which does not depend on
+  ``loc``, so it moves the mean not at all. It informs the CRITIC about distant
+  codes but cannot steer the policy toward them.
+
+  A Student-t tail decays monotonically all the way out, so the ordering
+  survives to the edge of the codebook and a distant draw does move the mean.
+  The shipped arm is nu=1 -- a true Cauchy -- at ``manager_actent_target`` 0.7
+  (sigma 0.652), against the Gaussian at the SAME 0.7 (sigma 1.039):
+
+      class      0       1       2       3       4       5       6       7
+      Cauchy     0.0237  0.0504  0.1566  0.5252  0.1566  0.0504  0.0237  0.0136
+      Gaussian   0.0060  0.0603  0.2417  0.3839  0.2417  0.0603  0.0060  0.0002
+
+  At a matched entropy the Cauchy wins on every count that matters here:
+
+    * it is MORE decisive, mode 0.525 against 0.384;
+    * it preserves more ordering, mode/neighbour 3.35 against 1.59 -- better
+      even than the Gaussian manages at the lower target of 0.5 (2.90);
+    * p(class 7) is 1.4e-02 against 2.3e-04, a factor of 58, which is ~7500
+      decisions per 4M-step run at index distance >= 20 against ~400;
+    * d p(class 7) / d loc is 6.5e-03 against 8.6e-04.
+
+  The Gaussian can only buy reach by widening its core until the mode stops
+  being distinguishable from its neighbour; the Cauchy buys it from the tail
+  and leaves the core alone.
+
+  NU AND THE ENTROPY TARGET ARE ONE CHOICE, NOT TWO. At a tie -- loc exactly
+  between two classes -- shrinking the scale does not give a one-hot, and for
+  this family the limit is p_j / p_mode -> (d_mode / d_j)^(nu+1), so the floor
+  is set by ``nu`` and NOT by ``scale_min``. Normalized-entropy floor, as
+  actually reachable at ``scale_min=0.1``:
+
+      nu      1       1.5     2       2.5     3       5       inf
+      floor   0.601   0.509   0.446   0.405   0.379   0.342   0.333
+
+  The floor must stay under ``manager_actent_target`` or the adapter cannot
+  reach its target and rails, as in e479. nu=1 therefore CANNOT run at the
+  default 0.5 -- 22.7% of the loc range, not a measure-zero tie set, would sit
+  above target -- and 0.6 is not enough either, landing 0.001 under the floor.
+  0.7 leaves 0.10 of headroom. The alternative is nu > 1.558 at target 0.5,
+  which keeps a single-factor comparison against the mgr_gaussian arms but
+  gives up most of the reach (nu=2.5: p(class 7) 2.3e-03, ~24 decisions/run at
+  distance >= 20).
+
+  WHAT IT COSTS. Total steering power sum_j |d p_j / d loc| over the L blocks
+  is 4.22 against the Gaussian's 4.29 at the same 0.7 -- essentially equal, but
+  distributed across every distance rather than concentrated at distance 1. The
+  higher target does make the manager less decisive than the Gaussian at 0.5
+  (mode 0.525 against 0.582), and the arm is no longer a single-factor change
+  against the existing mgr_gaussian runs. See the ``mgr_studentt`` block.
+  """
+
+  def __init__(self, loc, logscale, classes, unimix=0.0, nu=2.5,
+               loc_init=None, scale_init=2.0, scale_min=0.3):
+    assert loc.shape == logscale.shape, (loc.shape, logscale.shape)
+    assert nu > 0, nu
+    # Same centring as GaussianOnehot: a fresh head starts near max entropy
+    # with its mode mid-line rather than pinned to class 0.
+    loc_init = 0.5 * (classes - 1) if loc_init is None else loc_init
+    mu = f32(loc) + f32(loc_init)
+    sigma = scale_min + jax.nn.softplus(
+        f32(logscale) + _inv_softplus(scale_init - scale_min))
+    j = jnp.arange(classes, dtype=f32)
+    z = (j - mu[..., None]) / sigma[..., None]
+    nu = float(nu)
+    # log1p keeps this accurate for the small-z core; the large-z tail is where
+    # the whole point lies, and there z^2/nu is O(1e2) at worst (index span 7
+    # over scale_min 0.1), far from overflow in f32.
+    logits = -0.5 * (nu + 1.0) * jnp.log1p(jnp.square(z) / nu)
+    super().__init__(logits, unimix)
+    self.loc = mu
+    self.scale = sigma
+    self.nu = nu
+
+
 def _inv_softplus(y):
   # softplus(x) = y  =>  x = log(exp(y) - 1), stable for large y.
   y = float(y)

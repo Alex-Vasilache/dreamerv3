@@ -47,6 +47,15 @@ defaults:
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
     dmc: {size: [64, 64], repeat: 1, proprio: True, image: True, camera: -1}
     loconav: {size: [64, 64], repeat: 1, camera: -1, image: True}
+    # Director paper, Sec. 3.1: "Episodes last for 2000 steps and there are
+    # no intermediate rewards for activating the pads." Both our pinpad.py
+    # and the released Director repo default the constructor to length=10000
+    # and neither ships an env override, so every pinpad run before
+    # 2026-08-26 used 5x the paper's episode. Reward is +10 per completed pad
+    # sequence with the agent's position reset after, so score scales roughly
+    # linearly with episode length -- a 10k-step run is not comparable to the
+    # paper's Figure 5 at all.
+    pinpad: {length: 2000}
 
   replay:
     size: 5e6
@@ -283,7 +292,7 @@ defaults:
     # the best-performing cell of the F19 retest (both above their Director
     # baseline late in training; see EXPERIMENTS.md §2/§3 F19 interim update and
     # paper/main.tex §softreuse). Pairs with goal_struct_adapt/_target below.
-    goal_soft_reuse_adapt: True
+    goal_soft_reuse_adapt: False
     goal_soft_reuse_target: 0.5
     # Open-loop anneal of the target itself (agent.Ratchet, same mechanism as
     # impl_sparsity_target_sched / goal_reuse_target_sched): ramps from
@@ -337,7 +346,7 @@ defaults:
     # e286/e290 default recipe (see goal_soft_reuse_adapt above): struct+ratchet
     # on top of the block-overlap reuse loss, target 0.01 (not the 0.005 general
     # struct-adapt setpoint -- this specific pairing was tuned as target 0.01).
-    goal_struct_adapt: True
+    goal_struct_adapt: False
     goal_struct_adapt_target: 0.01
     goal_struct_adapt_one_sided: False
     goal_struct_adapt_min: 1.0
@@ -362,9 +371,11 @@ defaults:
     goal_kl_vel: 0.1
     goal_kl_init: 1.0
     # tau_init/tau_min are only read by `output: poisson` (see the mgr_poisson
-    # block); they are inert for the default onehot head but must exist here
-    # because elements.Config.update can only overwrite keys that already exist.
-    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in, tau_init: 1.0, tau_min: 0.02, scale_init: 2.0, scale_min: 0.3}
+    # block), scale_init/scale_min by `gaussian` and `studentt`, and nu by
+    # `studentt` alone; they are inert for the default onehot head but must
+    # exist here because elements.Config.update can only overwrite keys that
+    # already exist.
+    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in, tau_init: 1.0, tau_min: 0.02, scale_init: 2.0, scale_min: 0.3, nu: 2.5}
     manager_sample_freq: 8
     # Variable goal length (opt-in, HiPPO-style): the manager additionally emits a
     # discrete duration p in {goal_duration_min..goal_duration_max}; the emitted
@@ -441,6 +452,23 @@ defaults:
     worker_report_horizon: 32
     worker_split_traj: True
     mgr_expl_weight: 0.1
+    # Weight on the count-novelty advantage (agent.mgr_novel). Negative means
+    # "same as mgr_expl_weight", which is the original equal-weight behaviour.
+    # Set it lower to stop the count bonus from crowding out the
+    # reconstruction-error bonus before the first task reward is found.
+    mgr_novel_weight: -1.0
+    # Selection-time UCB over the goal code: when the manager picks a goal in
+    # the environment rollout, draw `mgr_ucb_candidates` samples from its own
+    # policy and keep the one maximising `logp + mgr_ucb_c * 1/sqrt(count+1)`.
+    # 0 disables (default). This is NOT a reward -- nothing bootstraps it, so
+    # the manager's learned objective stays pure task reward and the tilt fades
+    # by itself as counts fill in. Needs no weight schedule for that reason.
+    # Scale note: logp of an 8-block code spans several nats between candidates
+    # while the bonus is in (0, 1], so `mgr_ucb_c` must be of order 1-10 to
+    # matter at all. Uses the same count table as `mgr_novel` and can run
+    # without it.
+    mgr_ucb_c: 0.0
+    mgr_ucb_candidates: 8
     # Probability that a manager decision in the ENVIRONMENT rollout is
     # replaced by a deliberate large index jump from its mode (hrl/explore.py).
     # 0 disables. Only meaningful on an ordered codebook (SOM on a line).
@@ -455,6 +483,90 @@ defaults:
     manager_actent_vel: 0.1
     manager_actent_init: 1.0
     manager_actent_perdim: True
+    # Rao's quadratic entropy on the manager's skill head. Entropy fixes how
+    # MUCH mass the manager spreads; Rao fixes how far apart, along the ordered
+    # SOM codebook, the classes carrying it are. Q = sum_{a,b} p_a p_b d(a,b),
+    # normalized so 1.0 = half the mass on each of the two most distant classes.
+    # Distances run along the SOM line, so this is only meaningful when the
+    # class index carries order: the measured ratio against shuffled class
+    # labels is 0.43 for SOM-line+LiP but 1.06 for Director (arbitrary indices). Whole-code Rao is the
+    # sum of these per-block Raos exactly (independent blocks, additive
+    # distance), so nothing here touches the 8^8 = 16.7M code space.
+    #
+    # Reference values at C=8 on a line: one class 0.0, three ADJACENT classes
+    # 0.054, uniform 0.429, half at each end 1.0. The e534-e573 arm measures
+    # 0.125 against a ceiling of 0.925 at the entropy it already holds.
+    # NOTE manager_rao_target 0.5 is ABOVE uniform (0.429), so it demands an
+    # end-heavy shape and not merely a wider one: at entropy 0.5 the solutions
+    # look like ~0.25 / 0.5 / 0.25 on classes 0 / middle / C-1.
+    manager_rao: False
+    manager_rao_impl: mult
+    manager_rao_target: 0.5
+    manager_rao_min: 1e-5
+    manager_rao_max: 1e2
+    manager_rao_vel: 0.1
+    manager_rao_init: 1.0
+    manager_rao_perdim: True
+    # Count-based novelty as a THIRD manager reward, with its own critic
+    # (mgr_novel_val), carried alongside the reconstruction-error exploration
+    # bonus rather than replacing it. Both exploration advantages enter at
+    # mgr_expl_weight, so the TOTAL exploration pull is 2 * mgr_expl_weight
+    # against the task reward.
+    #
+    # Counting only needs the goal encoder to LABEL a state consistently, not to
+    # reconstruct it. That is why this works where boosting the codes of
+    # high-reconstruction-error states does not: a novel state's code is exactly
+    # the code that fails to decode back to it.
+    #
+    # decay and insertion weight are DERIVED in agent.py from replay.size,
+    # train_ratio and the batch shape -- deliberately not set here -- so the
+    # memory forgets at exactly the rate replay forgets, and a count reads as
+    # "env steps spent near this code inside the replay window".
+    mgr_novel: False
+    mgr_novel_count:
+      # Grid resolutions, from measured occupancy growth (experiments/
+      # manager_rao). Writing alpha for the exponent in occupancy ~ n^alpha,
+      # alpha is 0.39/0.61/0.74/0.83/0.87 at 2/3/4/5/6 bins and the p90/p10
+      # count ratio falls 46.9 -> 2.6. alpha -> 1 puts every visit in its own
+      # cell and pins the reward at its maximum; a saturating grid stops
+      # discriminating. 4 bins keeps a 5.3x count spread at a 256-fold
+      # reduction of the 8^8 space; 2 bins saturates, which is what makes the
+      # coarse grid a REACHABILITY test rather than a second novelty measure.
+      fine_bins: 4        # 4^8 = 65,536 cells, 256 KB
+      coarse_bins: 2      # 2^8 = 256 cells, 1 KB
+      # Grid for the SELECTION table (UCB only). Coarser than the visit grid on
+      # purpose: the bonus must ANNEAL, which needs the grid to fill. At 4 bins
+      # there are 65,536 cells against ~500k decisions per 4M run, so a
+      # never-selected candidate at bonus 1.0 always exists, the candidate
+      # spread never shrinks, and the override rate RISES over training
+      # (measured 67% -> 75% between 100k and 300k). At 3 bins each cell takes
+      # ~76 selections, so counts saturate and the spread compresses.
+      select_bins: 4      # 4^8 = 65,536 cells, 256 KB
+      # Kernel width in CLASS units (a block has 8 classes); 0 = hard grid.
+      # Chosen by sweeping (bins, h, c) against the manager's REAL per-state
+      # probabilities from finished checkpoints, scoring how the override rate
+      # evolves over a run. Hard grids do not anneal (b=4 gives a flat 38/38/38
+      # across 50k/250k/500k decisions, b=5 rises 43/47/48). Full resolution is
+      # worse still: at b=8 mass is so diluted that every candidate scores ~1.0
+      # early and the rate RISES 5-18x, inverting the schedule. b=4 with h=1.0
+      # anneals cleanly, 46/36/22 at c=7.5.
+      select_h: 1.0
+      # A cell counts as occupied past this much mass, in env-step units. Must
+      # not be 0: decayed cells approach zero without reaching it, so a >0 test
+      # would count every cell ever touched and creep upward forever.
+      occ_thresh: 1.0
+      eps: 1.0
+      # Frontier gating: damp the bonus where the COARSE grid is also empty, so
+      # it points just outside the explored set rather than at the farthest and
+      # typically unreachable corner. Off by default so the first test moves one
+      # thing at a time.
+      frontier: False
+      # Emit the 256x256 fine / 16x16 coarse coverage pictures. Costs a
+      # device transfer every train step (the jit metrics dict has a static
+      # key set, so it cannot be strided), so off unless the picture is
+      # wanted. NOT in report(): the production sbatch sets agent.report
+      # False, so report-only metrics never reach a real run.
+      log_images: False
     manager_slowtar: False
     policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
     value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
@@ -565,6 +677,116 @@ director_match: &director_match
   .*\.layers: 4
   batch_size: 4
   batch_length: 32
+
+# --- Director's actor-critic stabilizers, which director_match never carried ---
+#
+# `director_match` sets network SIZES only; everything else stayed at DreamerV3
+# defaults. Four of those defaults are what let the pinpad_five Director seeds
+# e652-e655/e676 peak near 215 by 1M steps and then decay to ~83 by 3.75M, with
+# two of five seeds driving the manager's task critic to impossible values
+# (mgr_extr_val reached -23 on e654 and -210 on e655, on a task whose reward is
+# 0 or +10 and can never be negative). Measured against TF Director:
+#
+#  1. manager_slowtar. We bootstrap the manager critic off ITSELF -- both the
+#     critic target and the actor's advantage read the live critic, with the
+#     slow copy only a soft `slowreg` pull (hrl/losses.py:241). TF Director's
+#     VFunction.target() reads `self.target_net`, a separate network hard-copied
+#     every 100 updates (slow_target_update: 100, slow_target_fraction: 1.0,
+#     adv_slow_critic: True). Once pinpad's sparse task reward stops arriving,
+#     nothing anchors our critic but its own output, and it runs away.
+#  2. advnorm. Director normalizes TWICE: each reward stream by its own running
+#     std, then the WEIGHTED SUM by running mean and std (agent.py:329-337,
+#     advnorm: {impl: mean_std, decay: 0.99}). Ours had that second stage set to
+#     `none` -- offset 0, scale 1 -- so the manager's policy-gradient magnitude
+#     floated free. Measured on e652-e676: median mgr_adv_std ~0.3 with peaks of
+#     10.3/10.5/14.7, i.e. updates 30-50x normal size. It also removes the
+#     persistent -0.5..-0.85 offset our exploration advantage carries, which
+#     comes from that reward being non-stationary downward (visit a region, the
+#     goal AE learns it, the bonus there decays, so the critic over-predicts).
+#     `advnorm` is shared by the manager and the worker; Director's is too,
+#     since every ImagActorCritic builds one.
+#  3. mgr_retnorm.limit. Director floors the per-stream return std at 1e-2
+#     (retnorm: {impl: std, max: 1e2} -> var floored at 1/max^2). Ours floored
+#     it at 1e-8, six orders of magnitude lower, so a task stream with almost no
+#     spread left divides the advantage by ~0.
+#  4. Weight decay. Director runs wd 1e-2 with wd_pattern 'kernel' on all four
+#     of its optimizers. Ours ran wd 0.0 on all three, and nothing else bounds
+#     parameter norm: over e654's 4M steps the actor-critic parameter RMS grew
+#     0.046 -> 0.109 (2.4x, still a straight line at the end), the world model
+#     0.0293 -> 0.0386, the goal AE 0.0563 -> 0.0656. The goal AE reconstructs
+#     `deter` with a summed MSE, so a growing `deter` scale grows that error with
+#     no bug anywhere: goal/rec_mean went 6.4 -> 52. That error IS the manager's
+#     exploration reward (`adver`, squared), and mgr_expl_rew tracked it exactly
+#     (0.0069 -> 0.0559, the same 8x). So the manager's second objective grew in
+#     absolute size for the whole run instead of converging.
+#     2.5e-2 not 1e-2: both implementations are decoupled (Director assigns
+#     `var *= (1 - wd*lr)`; ours appends optax.add_decayed_weights after the RMS
+#     and momentum stages, so the step is -lr*wd*param). Effective shrinkage is
+#     therefore wd*lr, and our lr is 4e-5 against Director's 1e-4. 2.5e-2 * 4e-5
+#     matches their 1e-2 * 1e-4 = 1e-6 per step. `wdregex` already defaults to
+#     '/kernel$', which is Director's wd_pattern.
+#
+# Still NOT matched, deliberately, so this block stays a four-factor change:
+# mgr_retnorm.rate is 0.01 (a 100-batch EMA) against Director's decay 0.999
+# (1000 batches), mgr_retnorm.debias is False against Director's always-on bias
+# correction, and imag_loss.slowtar / repl_loss.slowtar stay False so only the
+# MANAGER critic changes its bootstrap (the worker's cosine_max goal reward is
+# bounded in [0,1] and its critic stayed healthy in every seed).
+director_stable:
+  agent:
+    manager_slowtar: True
+    advnorm: {impl: meanstd}
+    mgr_retnorm: {limit: 1e-2}
+    opt: {wd: 2.5e-2}
+    ac_opt: {wd: 2.5e-2}
+    goal_opt: {wd: 2.5e-2}
+
+# Director's actual optimizer settings (`model_opt`/`actor_opt`/`critic_opt`/
+# `encdec_opt` are all identical in TF Director: lr 1e-4, wd 1e-2, kernel-only).
+# LAYER THIS AFTER `director_stable`, which sets wd 2.5e-2 for our lr of 4e-5:
+# both decays are decoupled, so shrinkage = wd*lr and 2.5e-2*4e-5 == 1e-2*1e-4
+# == 1e-6. This block therefore holds the shrinkage that `director_stable`
+# already had and raises the learning rate 2.5x to Director's, rather than
+# changing both.
+# Still unmatched here on purpose (not asked for, and separable): `eps` 1e-20 vs
+# Director's 1e-6, and our adaptive `agc: 0.3` vs their global-norm `clip: 100`
+# (recorded as "not binding" in docs/VERIFICATION.md).
+director_optmatch:
+  agent:
+    opt: {lr: 1e-4, wd: 1e-2}
+    ac_opt: {lr: 1e-4, wd: 1e-2}
+    goal_opt: {lr: 1e-4, wd: 1e-2}
+
+# Director has no beta on the goal-VAE KL: `train_vae_replay` is
+# `loss = (rec + kl).mean()`, with `kl` already scaled by the AutoAdapt whose
+# ceiling is 1.0. Our 0.25 was introduced as 1.0 on 2026-05-15 (e1ab1ed) and
+# tuned down on 2026-06-02 (713d15b); it is binding, because the adapter sits
+# pinned at its 1.0 ceiling from ~1M onward with raw KL ~11.9 against target 10.
+# This restores Director's weight. See the 2026-09-01 note in EXPERIMENTS.md.
+director_vaebeta:
+  agent:
+    goal_autoencoder_beta: 1.0
+
+# Put every MLP back to the DreamerV3 base default sizes, undoing the size half
+# of `director_match`. That block resizes ELEVEN nets via the glob patterns
+# `.*\.units: 512` and `.*\.layers: 4`; this restores each of them explicitly.
+# Note rewhead/conhead are 1-layer at base default, not 3, so director_match is a
+# bigger change to those two than to anything else. Layer this AFTER
+# `director_match`, which keeps its rssm (deter/hidden 1024, classes 32), depth
+# 64 and batch settings. act/norm are untouched by the globs (already silu/rms).
+v3nets:
+  agent:
+    policy: {layers: 3, units: 1024}
+    value: {layers: 3, units: 1024}
+    manager_policy: {layers: 3, units: 1024}
+    goal_enc: {layers: 3, units: 1024}
+    goal_dec: {layers: 3, units: 1024}
+    goal_vq_enc: {layers: 3, units: 1024}
+    goal_vq_dec: {layers: 3, units: 1024}
+    rewhead: {layers: 1, units: 1024}
+    conhead: {layers: 1, units: 1024}
+    enc: {simple: {layers: 3, units: 1024}}
+    dec: {simple: {layers: 3, units: 1024}}
 
 # --- Goal-autoencoder ablation arms (motivation.tex, Lipschitz-SOM-VAE) ---
 # Each block is self-contained: "pure Director, with the goal autoencoder
@@ -906,6 +1128,76 @@ mgr_gaussian:
   agent:
     manager_policy: {output: gaussian, scale_init: 2.0, scale_min: 0.3}
 
+# Unimodal STUDENT-T manager policy: mgr_gaussian with polynomial tails.
+#
+#   --configs director_match goal_som_lipvq_line_prod lip_relu mgr_studentt
+#
+# Same two scalars and the same contract as mgr_gaussian -- nu -> inf IS the
+# Gaussian -- so this is a one-parameter generalization, not a replacement.
+#
+# WHAT IT IS FOR. The point of a SOM line is that the index is ordered, so the
+# manager can reach a distant code by WALKING the mean rather than by finding
+# it. Walking needs the far region to say which direction is better. Under the
+# Gaussian it cannot: at the regulated entropy a class 4 steps out has
+# probability 2.3e-08, ~0.01 draws over a 4M-step run, so nothing is ever
+# observed out there. Adding unimix puts mass there but FLAT mass -- at 0.075
+# classes 0, 6 and 7 all sit at u/C = 0.0094 -- which carries no ordering, and
+# a draw from the uniform component has d log p / d loc ~ 0 because that
+# component does not depend on loc. It teaches the critic about far codes but
+# cannot steer the policy toward them.
+#
+# A Student-t tail decays monotonically to the edge of the codebook, so the
+# ordering survives and a distant draw DOES move the mean. Measured at C=8,
+# entropy 0.5, mode at class 3 (see outs.StudentTOnehot), per 4M-step run:
+#
+#   nu     sigma   nbr     p(class7)  dp7/dloc  steering  d>=20/run  tie floor
+#   1      0.400   0.099   7.1e-03    3.5e-03   3.65        400      0.601  XX
+#   2      0.482   0.123   3.3e-03    2.4e-03   4.82         55      0.446
+#   2.5    0.509   0.132   2.3e-03    1.9e-03   5.16         24      0.405  <-
+#   3      0.530   0.140   1.7e-03    1.6e-03   5.40         11      0.379
+#   inf    0.685   0.201   2.3e-08    2.0e-07   6.47          0.0    0.333
+#
+# NU = 1 (A TRUE CAUCHY), AND THE BLOCK RAISES THE ENTROPY TARGET TO 0.7 TO
+# MAKE IT FEASIBLE. At a tie -- loc exactly between two classes -- shrinking
+# the scale does not give a one-hot: the limit is p_j/p_mode ->
+# (d_mode/d_j)^(nu+1), so the floor is set by nu, NOT by scale_min. nu=1 floors
+# at 0.601 (the tie floor column above is the floor actually REACHABLE at
+# scale_min 0.1; the s -> 0 limit is 0.595), which is ABOVE the default target
+# of 0.5 -- at 0.5, 22.7% of the loc range, not a measure-zero set, would be
+# stuck above target with the adapter railing as in e479.
+#
+# Two ways out, and we take the second:
+#   nu > 1.558 at target 0.5  -- keeps the single-factor comparison against the
+#                mgr_gaussian arms, but nu=2.5 gives up most of the reach.
+#   nu = 1 at target 0.7      -- 0.10 of headroom, and at a MATCHED entropy of
+#                0.7 the Cauchy beats the Gaussian on every count: mode 0.525
+#                vs 0.384 (more decisive), mode/neighbour 3.35 vs 1.59 (better
+#                ordering than the Gaussian has even at 0.5), p(class7)
+#                1.4e-02 vs 2.3e-04, and ~7500 vs ~400 decisions per run at
+#                index distance >= 20.
+# The cost of the second is that it is no longer single-factor against the
+# existing mgr_gaussian arms, which all run target 0.5; pair it with a
+# Gaussian-at-0.7 arm if the target effect has to be separated from the head.
+#
+# COSTS, both real. The tail spends entropy, so the adapter tightens sigma and
+# the core sharpens: the immediate neighbour falls 0.201 -> 0.132, and total
+# steering power sum_j |d p_j/d loc| over the L blocks falls 6.47 -> 5.16. The
+# Gaussian concentrates all its steering at distance 1; this spreads it across
+# every distance. Move nu to trade reach against margin.
+#
+# scale_min 0.10, NOT the Gaussian's 0.3 -- a SEPARATE floor from the tie bound
+# above, and the one that scale_min does fix. A heavy tail keeps leaking mass,
+# so at 0.3 a confident state floors at 0.222 (the Gaussian floors at 0.012).
+# By scale_min at nu=2.5: 0.30 -> 0.222, 0.20 -> 0.087, 0.15 -> 0.040,
+# 0.10 -> 0.013, which matches the Gaussian's ability to commit.
+mgr_studentt:
+  agent:
+    manager_policy: {output: studentt, nu: 1.0, scale_init: 2.0, scale_min: 0.1}
+    # Raised from the default 0.5: nu=1's tie floor is 0.601, so 0.5 is
+    # unreachable and 0.6 lands 0.001 under it. This is part of the arm, not a
+    # separate knob -- changing nu without changing this rails the adapter.
+    manager_actent_target: 0.7
+
 # eps-greedy index jump in the environment rollout, 10%.
 #
 #   --configs director_match goal_som_lipvq_line_prod lip_relu mgr_gaussian mgr_explore
@@ -944,6 +1236,67 @@ lip_relu:
   agent:
     goal_vq_enc: {act: relu}
     goal_vq_dec: {act: relu}
+
+# Rao regularizer on the manager's skill head, held at a normalized Rao of 0.5
+# by an AutoAdapt Lagrange multiplier, alongside the unchanged 0.5 entropy
+# target. Distances are measured along the SOM LINE, so layer this only on a
+# line arm -- on Director's unordered codebook the class index means nothing
+# and the term would regulate noise (measured shuffle ratio 1.06 there,
+# against 0.43 on SOM-line+LiP).
+#
+# 0.5 is a demanding setpoint: it sits above the uniform value of 0.429, so the
+# manager cannot satisfy it by widening a unimodal distribution -- it has to put
+# mass at both ends. If it proves too aggressive, lower manager_rao_target
+# (0.25-0.3 is still 2x the measured 0.125 and stays below uniform) or ratchet
+# it up over training rather than starting there.
+# Count-based novelty as a third manager reward + critic. Layer on any HRL arm.
+mgr_novel:
+  agent:
+    mgr_novel: True
+
+# The same, with the count bonus down-weighted so it stops crowding out the
+# reconstruction bonus before the first task reward is found. At equal weights
+# the count term took ~50% of the manager's exploration signal on pinpad_five;
+# at 0.03 it takes ~24%, close to Director's recon-only balance.
+# Counts used ONLY to tilt goal selection -- no reward, no third critic.
+# The count table is built and updated exactly as in mgr_novel.
+mgr_ucb:
+  agent:
+    mgr_novel: False
+    # 3-bin selection grid (6,561 cells) rather than the 4-bin visit grid. With
+    # 4 bins there are 65,536 cells against ~500k decisions, so the grid never
+    # fills, a bonus-1.0 candidate always exists, and the tilt SHARPENS over
+    # training (measured 67% -> 75% override rate between 100k and 300k) instead
+    # of annealing. At 3 bins each cell takes ~76 selections, counts saturate and
+    # the spread compresses.
+    # c=5 from MEASURED override rates, not the earlier arithmetic. That
+    # derivation assumed a candidate bonus spread of 0.05-0.10 and gave c=20;
+    # the real spread is ~0.85, because candidates range from heavily-visited
+    # cells (bonus ~0.1) to never-visited ones (1.0). So c=20 was ~10x too high.
+    # Weight on the novelty term when RESAMPLING among the policy's candidates
+    # (see hrl/explore.py:ucb_pick). Measured on the manager's real per-state
+    # probabilities with the smeared b=4 table: c=10 picks goals 1.3-1.5x rarer
+    # than the candidate average while costing ~1.4 nats of log-probability out
+    # of 9.5, and returns diminish sharply above it (c=20 buys 1.7x for 1.9
+    # nats). c=0 reproduces an exact policy sample.
+    mgr_ucb_c: 10.0
+    mgr_ucb_candidates: 8
+
+mgr_novel_lowweight:
+  agent:
+    mgr_novel: True
+    mgr_novel_weight: 0.03
+
+# The same, with the reachability gate on.
+mgr_novel_frontier:
+  agent:
+    mgr_novel: True
+    mgr_novel_count: {frontier: True}
+
+mgr_rao:
+  agent:
+    manager_rao: True
+    manager_rao_target: 0.5
 
 goal_som_lipvq_line:
   agent:
