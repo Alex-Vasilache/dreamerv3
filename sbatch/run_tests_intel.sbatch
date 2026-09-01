@@ -17,7 +17,7 @@
 #SBATCH -e /work/DoyaU/vasilache/work/slurm_logs/%x_%j.err
 set -uo pipefail
 
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 TESTS="${TESTS:-embodied/tests/}"
 PYTEST_ARGS="${PYTEST_ARGS:--x -q}"
 

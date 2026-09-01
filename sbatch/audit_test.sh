@@ -7,7 +7,7 @@
 # Falls back across partitions so the audit never stalls on a full queue.
 set -uo pipefail
 
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 LOGS=/work/DoyaU/vasilache/work/slurm_logs
 TESTS="$*"
 [ -z "$TESTS" ] && { echo "usage: $0 <test files>"; exit 2; }

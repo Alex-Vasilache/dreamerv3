@@ -24,7 +24,7 @@
 #   scancel <jobid>     # to stop supervision
 set -uo pipefail
 
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 
 echo "[watchdog] starting at $(date -Is) as job $SLURM_JOB_ID"
 echo "[watchdog] repo=$REPO interval=${INTERVAL:-1800}s deadline=${DEADLINE:-2026-08-16T12:00:00}"

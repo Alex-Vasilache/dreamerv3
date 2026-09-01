@@ -24,7 +24,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 # HRL loss, so smoke on a real (tiny) DMC task instead.
 export MUJOCO_GL=egl
 
-REPO="${REPO:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae}"
+REPO="${REPO:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3}"
 RUN_DIR="${RUN_DIR:-/work/DoyaU/vasilache/work/smoke_ckpt_milestones_j${SLURM_JOB_ID:-manual}}"
 LOGDIR="$RUN_DIR/logdir"
 EVERY=200

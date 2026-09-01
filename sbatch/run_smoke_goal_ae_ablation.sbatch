@@ -23,7 +23,7 @@
 set -uo pipefail
 
 # Overridable so the audit worktree can smoke-test its own code.
-REPO="${REPO:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae}"
+REPO="${REPO:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3}"
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 export MUJOCO_GL=egl
 

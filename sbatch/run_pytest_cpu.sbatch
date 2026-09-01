@@ -31,7 +31,7 @@ export MUJOCO_GL="${MUJOCO_GL:-egl}"
 # REPO defaults to the main tree, so a copy of this script sitting in a
 # worktree still tests the main tree unless asked otherwise. Override it to
 # test the tree the script lives in:
-#   REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae sbatch ...
+#   REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3 sbatch ...
 REPO="${REPO:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3}"
 cd "$REPO"
 # Lustre's coarse mtime resolution can leave pytest's assertion-rewritten

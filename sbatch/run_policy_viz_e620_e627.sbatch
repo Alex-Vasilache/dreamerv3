@@ -29,7 +29,7 @@
 #   sbatch --export=ALL,FAMILY=pinpad  sbatch/run_policy_viz_e620_e627.sbatch
 set -uo pipefail
 
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 W=/work/DoyaU/vasilache/work
 OUT="$REPO/experiments/manager_head/policy"
 

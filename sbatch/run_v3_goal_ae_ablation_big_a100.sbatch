@@ -37,18 +37,18 @@
 # can be attributed to the SOM / Lipschitz component rather than to the
 # bottleneck swap.
 #
-# IMPORTANT -- this script runs main.py from the dreamerv3_somvae WORKTREE, not
+# IMPORTANT -- this script runs main.py from the dreamerv3 tree, not
 # the primary code/dreamerv3 tree (which stays pinned on `main` for the live
 # antmaze baselines e410-e414). SLURM freezes this script at submit time but NOT
 # the Python source, which is re-read on every requeue: do not switch branches
-# or land unrelated commits in dreamerv3_somvae while these runs are in flight.
+# or land unrelated commits in dreamerv3 while these runs are in flight.
 #
 # Usage (see sbatch/submit_goal_ae_ablation.sh for the staged matrix launcher):
 #   sbatch -J e415_hopper_som --export=ALL,EXP_TAG=e415,TASK=dmc_hopper_hop,ARM=som,SEED=0 \
 #     sbatch/run_v3_goal_ae_ablation_big_a100.sbatch
 set -euo pipefail
 
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 unset DREAMERV3_CONV_IMPL   # native cuDNN conv (A100 sm_80 ~2x faster)
@@ -59,7 +59,9 @@ EXP_TAG="${EXP_TAG:?set EXP_TAG}"
 # block, so EXTRA_CONFIGS=director_stable could not turn weight decay on for
 # the goal AE while this was pinned. Default 0.0 keeps earlier submissions
 # byte-identical.
-GOAL_OPT_WD="${GOAL_OPT_WD:-0.0}"
+GOAL_AE_BETA="${GOAL_AE_BETA:-1.0}"
+GOAL_OPT_LR="${GOAL_OPT_LR:-1e-4}"
+GOAL_OPT_WD="${GOAL_OPT_WD:-1e-2}"
 TASK="${TASK:-dmc_hopper_hop}"
 ARM="${ARM:?set ARM (director|vq|som|lipvq|som_lipvq)}"
 SEED="${SEED:-0}"
@@ -233,9 +235,9 @@ NOTE=goal-AE ablation vs e390-e409 pure-Director baselines (identical except the
 EOF
 
 AGENT_FLAGS=(
-  --agent.goal_autoencoder_beta 0.25
+  --agent.goal_autoencoder_beta "$GOAL_AE_BETA"
   --agent.goal_rec_loss_agg sum
-  --agent.goal_opt.lr 4e-5
+  --agent.goal_opt.lr "$GOAL_OPT_LR"
   --agent.goal_opt.wd "$GOAL_OPT_WD"
   --agent.goal_opt.eps 1e-20
   --agent.manager_actent_impl mult
