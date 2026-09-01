@@ -21,7 +21,15 @@
 #   CKPT_SUFFIX=logdir/ckpt_milestones/000002000000
 set -uo pipefail
 
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+# Overridable, not hardcoded to the main checkout: sbatch copies the script
+# into a spool dir before running it, so self-locating via ${BASH_SOURCE[0]}
+# does NOT work here (resolves to /var/spool/..., confirmed the hard way). A
+# plain `REPO=/path/to/main/checkout` silently runs the MAIN CHECKOUT's
+# diag_goal_geometry.py even when this script is submitted from a worktree
+# -- pass REPO=<worktree path> at submission time when testing worktree
+# edits, or FORCE=1 will happily overwrite the main checkout's results/*.npz
+# with output from code the worktree never intended to run.
+REPO="${REPO:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae}"
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 # Native cuDNN conv is ~2x faster but is broken on V100 sm_70 in this env (it
 # needs the Route-A clone). This measurement is a forward pass over a few
