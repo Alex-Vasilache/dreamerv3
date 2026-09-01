@@ -26,5 +26,9 @@ job_logs/*.bak_*
 # (.npz, ~13MB each) and rendered videos (.mp4). Regenerated from the scripts
 # beside them; archived at
 # /bucket/DoyaU/vasilache/bucket/results/dreamerv3_experiments_artifacts/
-experiments/**/*.npz
+# .npz and .gif are stripped from history (2026-09-01): 2.53GB of extracted
+# policy dumps and rendered animations. Archived at
+# /bucket/DoyaU/vasilache/bucket/results/dreamerv3_experiments_artifacts/
+*.npz
+*.gif
 experiments/**/*.mp4
