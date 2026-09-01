@@ -1,0 +1,6 @@
+exp	jobid	task	arm	seed	partition	configs	note
+e730	4704360	pinpad_five	director	1	gpu-v100	director_match director_stable	seed-1 pair of e722-e726; 4 GPUs, RouteA native conv
+e731	4704361	pinpad_six	director	1	gpu-v100	director_match director_stable	seed-1 pair of e722-e726; 4 GPUs, RouteA native conv
+e732	4704362	dmc_cartpole_swingup	director	1	gpu-p100	director_match director_stable	seed-1 pair of e722-e726; 4 GPUs, RouteA native conv
+e733	4704363	dmc_cheetah_run	director	1	gpu-p100	director_match director_stable	seed-1 pair of e722-e726; 4 GPUs, RouteA native conv
+e734	4704364	dmc_hopper_hop	director	1	gpu-v100	director_match director_stable	seed-1 pair of e722-e726; 4 GPUs, RouteA native conv
