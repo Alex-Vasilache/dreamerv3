@@ -21,7 +21,7 @@
 #
 #   RUN=<run_dir> CKPT=<milestone> TAG=<name> sbatch run_novelty_viz_cpu.sbatch
 set -uo pipefail
-REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3_somvae
+REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 export DREAMERV3_CONV_IMPL=reference     # no cuDNN on CPU
 export MUJOCO_GL=osmesa                  # software GL; egl needs a GPU

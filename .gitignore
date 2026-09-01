@@ -32,3 +32,4 @@ job_logs/*.bak_*
 *.npz
 *.gif
 experiments/**/*.mp4
+experiments/**/*.png
