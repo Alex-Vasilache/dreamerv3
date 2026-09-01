@@ -105,29 +105,46 @@ is ahead of `origin/main` by 179 commits and **has not been pushed**.
   every collapse is `wkr_goal_rew` roughly doubling (0.19–0.25 -> 0.50–0.53)
   while the score falls ~90% — the worker gets better at reaching goals as the
   score dies. Manager entropy is held at target throughout and is ruled out.
-- **The goal VAE now matches Director except for the nets.** Audited line by
-  line on 2026-09-01 (`docs/VERIFICATION.md`, *Goal autoencoder*). The one active
-  difference was `goal_autoencoder_beta` 0.25 vs Director's 1.0, now available as
-  the `director_vaebeta` block.
+- **The goal VAE was audited against Director line by line** on 2026-09-01
+  (`docs/VERIFICATION.md`, *Goal autoencoder* — the component previously had no
+  entry at all). Encoder/decoder inputs, the summed-MSE reconstruction, the KL
+  prior and its AutoAdapt controller, the training data and the exploration
+  reward all match. The one active difference, `goal_autoencoder_beta` 0.25 vs
+  Director's 1.0, **is now the default**. What still differs: the nets are
+  DreamerV3-sized (3x1024, silu/rms) against Director's 4x512 elu/layer, and
+  `eps` is 1e-20 against their 1e-6.
 
 **Next, in order.**
 
-1. `goal_autoencoder_beta: 1.0` (`director_vaebeta`) — the only active goal-VAE
-   difference from Director.
-2. Split `advnorm` into worker and manager keys, then ablate the 17x worker
+1. Split `advnorm` into worker and manager keys, then ablate the 17x worker
    change apart from the manager normalization.
-3. Log `success_manager` (Director's "final goal reward > 0.7" fraction) and a
+2. Log `success_manager` (Director's "final goal reward > 0.7" fraction) and a
    time-to-reach within the K-block, so the "worker arrives early and idles"
    reading of the collapse can be tested at all.
-4. Archive the cancelled e706–e721 run dirs to the bucket and clear `/work`.
+3. Archive the cancelled e706–e721 run dirs to the bucket and clear `/work`.
+4. Re-baseline both arms under the new defaults — every number in the archive
+   predates them.
 
-**New config blocks (2026-09-01), all composable and off by default:**
-`director_optmatch` (lr 1e-4, wd 1e-2 — Director's optimizer; layered after
-`director_stable` this holds shrinkage at `wd*lr` = 1e-6 and only raises the lr),
-`director_vaebeta` (goal-VAE KL weight 1.0), `v3nets` (all eleven MLPs back to
-DreamerV3 base sizes, undoing the size half of `director_match`).
-`goal_struct_adapt` and `goal_soft_reuse_adapt` now default to **False**, so a
-Director baseline is a clean control; recipes that want them must opt in.
+**Default changes (2026-09-01).** Four moves, all in `defaults`, so both arms get
+them with no extra config block:
+
+- **Optimizers** `opt`/`ac_opt`/`goal_opt`: lr **4e-5 -> 1e-4**, wd **0 -> 1e-2**,
+  matching TF Director exactly. Decoupled shrinkage `wd*lr` stays at 1e-6, which
+  is what `director_stable`'s old wd 2.5e-2 gave at lr 4e-5 — the decay is
+  unchanged and only the learning rate rose. `director_stable` no longer carries
+  wd overrides.
+- **`goal_autoencoder_beta` 0.25 -> 1.0**, matching Director, which puts no beta
+  on the goal-VAE KL at all.
+- **Network sizes**: `director_match` no longer resizes every MLP — its
+  `.*\.units: 512` / `.*\.layers: 4` globs are gone, so all eleven nets keep the
+  DreamerV3 base sizes (3x1024; 1x1024 for the reward and continue heads). The
+  block now sets only rssm (deter/hidden 1024, classes 32), depth 64 and the
+  batch shape. **This moves the nets away from Director, not toward it.**
+- **`goal_struct_adapt` and `goal_soft_reuse_adapt` default to False**, so a
+  Director baseline is a clean control; recipes that want them must opt in.
+
+Every result in the archive predates these defaults. Reproducing an old run needs
+its own `logdir/config.yaml`, not the current file.
 
 ---
 

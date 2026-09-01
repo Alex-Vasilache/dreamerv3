@@ -124,9 +124,9 @@ defaults:
     # Three independent optimizers (Director-style): the world model + heads, the
     # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
     # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
-    opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
-    goal_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
-    ac_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
+    goal_opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
+    ac_opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
       typ: rssm
@@ -312,7 +312,7 @@ defaults:
     goal_soft_reuse_adapt_one_sided: False
     skill_shape: [8, 8]
     skill_classes: 8
-    goal_autoencoder_beta: 0.25
+    goal_autoencoder_beta: 1.0
     # Geometry preservation: extra goal-AE term making code-space cosine_max
     # distances match deter-space distances (far->far, near->near, proportional),
     # so running-goal edits move the goal predictably. 0 = off. Folds into the
@@ -673,8 +673,6 @@ size6m_director: &size6m_director
 director_match: &director_match
   .*\.rssm: {deter: 1024, hidden: 1024, classes: 32}
   .*\.depth: 64
-  .*\.units: 512
-  .*\.layers: 4
   batch_size: 4
   batch_length: 32
 
@@ -737,76 +735,7 @@ director_stable:
     manager_slowtar: True
     advnorm: {impl: meanstd}
     mgr_retnorm: {limit: 1e-2}
-    opt: {wd: 2.5e-2}
-    ac_opt: {wd: 2.5e-2}
-    goal_opt: {wd: 2.5e-2}
 
-# Director's actual optimizer settings (`model_opt`/`actor_opt`/`critic_opt`/
-# `encdec_opt` are all identical in TF Director: lr 1e-4, wd 1e-2, kernel-only).
-# LAYER THIS AFTER `director_stable`, which sets wd 2.5e-2 for our lr of 4e-5:
-# both decays are decoupled, so shrinkage = wd*lr and 2.5e-2*4e-5 == 1e-2*1e-4
-# == 1e-6. This block therefore holds the shrinkage that `director_stable`
-# already had and raises the learning rate 2.5x to Director's, rather than
-# changing both.
-# Still unmatched here on purpose (not asked for, and separable): `eps` 1e-20 vs
-# Director's 1e-6, and our adaptive `agc: 0.3` vs their global-norm `clip: 100`
-# (recorded as "not binding" in docs/VERIFICATION.md).
-director_optmatch:
-  agent:
-    opt: {lr: 1e-4, wd: 1e-2}
-    ac_opt: {lr: 1e-4, wd: 1e-2}
-    goal_opt: {lr: 1e-4, wd: 1e-2}
-
-# Director has no beta on the goal-VAE KL: `train_vae_replay` is
-# `loss = (rec + kl).mean()`, with `kl` already scaled by the AutoAdapt whose
-# ceiling is 1.0. Our 0.25 was introduced as 1.0 on 2026-05-15 (e1ab1ed) and
-# tuned down on 2026-06-02 (713d15b); it is binding, because the adapter sits
-# pinned at its 1.0 ceiling from ~1M onward with raw KL ~11.9 against target 10.
-# This restores Director's weight. See the 2026-09-01 note in EXPERIMENTS.md.
-director_vaebeta:
-  agent:
-    goal_autoencoder_beta: 1.0
-
-# Put every MLP back to the DreamerV3 base default sizes, undoing the size half
-# of `director_match`. That block resizes ELEVEN nets via the glob patterns
-# `.*\.units: 512` and `.*\.layers: 4`; this restores each of them explicitly.
-# Note rewhead/conhead are 1-layer at base default, not 3, so director_match is a
-# bigger change to those two than to anything else. Layer this AFTER
-# `director_match`, which keeps its rssm (deter/hidden 1024, classes 32), depth
-# 64 and batch settings. act/norm are untouched by the globs (already silu/rms).
-v3nets:
-  agent:
-    policy: {layers: 3, units: 1024}
-    value: {layers: 3, units: 1024}
-    manager_policy: {layers: 3, units: 1024}
-    goal_enc: {layers: 3, units: 1024}
-    goal_dec: {layers: 3, units: 1024}
-    goal_vq_enc: {layers: 3, units: 1024}
-    goal_vq_dec: {layers: 3, units: 1024}
-    rewhead: {layers: 1, units: 1024}
-    conhead: {layers: 1, units: 1024}
-    enc: {simple: {layers: 3, units: 1024}}
-    dec: {simple: {layers: 3, units: 1024}}
-
-# --- Goal-autoencoder ablation arms (motivation.tex, Lipschitz-SOM-VAE) ---
-# Each block is self-contained: "pure Director, with the goal autoencoder
-# swapped". They pin goal_struct_adapt and goal_soft_reuse_adapt to False
-# because both default to True (since 2026-07-22) and both would otherwise
-# ride along:
-#
-#   * goal_struct_adapt optimizes the very goal-code/goal-space geometry this
-#     architecture is meant to provide, so leaving it on confounds the result
-#     (it is what makes the e410-e414 antmaze runs unusable as a control); and
-#     it is numerically INCOMPATIBLE with the quantizer -- its Lagrange
-#     multiplier (init 200, max 2000) multiplies a term whose gradient reaches
-#     z_e through softmax(-distances), and at the quantizer's small distance
-#     scale that diverges to NaN within ~4 train steps (measured at debug
-#     scale on dmc_hopper_hop; the Director head is unaffected).
-#   * goal_soft_reuse_adapt is a separate sparsity mechanism and is off in the
-#     e390-e409 baselines these arms are compared against.
-#
-# goal_kl is off because the adaptive KL-to-uniform is a property of the
-# categorical posterior the quantizer replaces -- codebook usage is instead
 # reported as goal/used_frac and goal/perplexity.
 goal_vq:
   agent:

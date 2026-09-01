@@ -149,7 +149,7 @@ with Director's HRL and Director's layer sizes", not a port of TF Director.
 | Knob | TF Director | Ours | Status |
 |---|---|---|---|
 | replay size | 1e6 | 5e6 (never evicts at 4e6 steps) | **BUG in effect** |
-| optimizer | adam lr 1e-4, eps 1e-6, wd 1e-2 (kernel) | lr 4e-5, eps 1e-20, wd 0 | DIFF; lr+wd fixed by the `director_optmatch` block (2026-09-01), `eps` still DIFF |
+| optimizer | adam lr 1e-4, eps 1e-6, wd 1e-2 (kernel) | lr 4e-5, eps 1e-20, wd 0 | **lr+wd now MATCH** (default since 2026-09-01: lr 1e-4, wd 1e-2); `eps` 1e-20 vs 1e-6 still DIFF |
 | grad clip | global norm 100 | adaptive `agc` 0.3 | DIFF, not binding |
 | discount | 0.99 | horizon 333 (~0.997) | DIFF, 4.5% effect |
 | return norm | `std`, decay .999, max 1e2 | `perc` 5/95, limit 1.0 | DIFF, TODO |
@@ -236,10 +236,10 @@ stricter sense of "OK" does not apply until tests exist (see next actions).
 | Reconstruction loss | OK | Director `dist: mse` -> `MSEDist(out, len(shape), 'sum')`, summed over the 1024 deter dims. Ours `MSEDist('sum')` with `goal_rec_loss_agg: sum`. Same reduction over the same dimension count. |
 | KL prior and reduction | OK | Uniform one-hot prior, `Independent` over the L=8 block axis, so KL sums over blocks on both sides. |
 | KL controller | OK | Director `encdec_kl: {impl: mult, target: 10.0, min: 1e-5, max: 1.0}`; ours `goal_kl_impl/target/min/max` identical. **Trap:** Director's config reads `scale: 0.0`, which looks like the multiplier starts at zero. It does not -- `AutoAdapt.__init__` ignores `scale` unless `impl == 'fixed'` and always initialises to `tf.ones`. Our `goal_kl_init: 1.0` is correct. |
-| **KL weight (`goal_autoencoder_beta`)** | **DIFF, binding** | Director: `loss = (rec + kl).mean()`, no coefficient, in both `train_vae_replay` and `train_vae_imag`. Ours: `rec + 0.25 * kl_adapted`. Verified absent in Director exhaustively -- `0.25` appears nowhere in their `configs.yaml`; `encdec_kl` occurs exactly once in the codebase (the AutoAdapt construction) and `goal_kl` only as a boolean; no task preset overrides either; their `Optimizer.__call__` carries only the fp16 grad scale, divided back out. **Binding, not nominal:** `goal/kl_adapt_scale_mean` is pinned at its 1.0 ceiling from ~1M onward with `goal/kl_raw_mean` 11.9 against target 10, i.e. the controller is saturated asking for more pressure while we apply a quarter of it. Ours introduced at 1.0 (`e1ab1ed`, 2026-05-15), tuned to 0.25 in `713d15b` (2026-06-02). Restored by the `director_vaebeta` block. |
+| **KL weight (`goal_autoencoder_beta`)** | **DIFF, binding** | Director: `loss = (rec + kl).mean()`, no coefficient, in both `train_vae_replay` and `train_vae_imag`. Ours: `rec + 0.25 * kl_adapted`. Verified absent in Director exhaustively -- `0.25` appears nowhere in their `configs.yaml`; `encdec_kl` occurs exactly once in the codebase (the AutoAdapt construction) and `goal_kl` only as a boolean; no task preset overrides either; their `Optimizer.__call__` carries only the fp16 grad scale, divided back out. **Binding, not nominal:** `goal/kl_adapt_scale_mean` is pinned at its 1.0 ceiling from ~1M onward with `goal/kl_raw_mean` 11.9 against target 10, i.e. the controller is saturated asking for more pressure while we apply a quarter of it. Ours introduced at 1.0 (`e1ab1ed`, 2026-05-15), tuned to 0.25 in `713d15b` (2026-06-02). **Now the default (2026-09-01): beta 1.0.** |
 | Training data | OK | Director `vae_replay: True`, `vae_imag: False` -- replay only. Ours trains from `repfeat` (replay), matching. |
 | Manager exploration reward | OK | Director `expl_rew: adver` -> `elbo_reward` with `adver_impl: squared` -> `((dec.mode() - feat) ** 2).mean(-1)[1:]`, mean over dims from a *sampled* code. Ours `_mgr_expl_reward` computes the same. |
-| Goal AE optimizer | DIFF (lr), fixed | Director `encdec_opt`: lr 1e-4, wd 1e-2 kernel-only, eps 1e-6, clip 100. Ours was lr 4e-5, wd 0; `director_stable` set wd 2.5e-2 (matching the decoupled shrinkage `wd*lr = 1e-6`), and `director_optmatch` (2026-09-01) now sets lr 1e-4 + wd 1e-2 exactly. `eps` and the `agc`-vs-`clip` difference remain. |
+| Goal AE optimizer | DIFF (lr), fixed | Director `encdec_opt`: lr 1e-4, wd 1e-2 kernel-only, eps 1e-6, clip 100. Ours was lr 4e-5, wd 0; `director_stable` set wd 2.5e-2 (matching the decoupled shrinkage `wd*lr = 1e-6`), and the 2026-09-01 defaults now set lr 1e-4 + wd 1e-2 exactly. `eps` and the `agc`-vs-`clip` difference remain. |
 | `manager_delta` | OK | `False` both -- the decoded goal is absolute, not a residual on the current state. |
 | Manager entropy target | OK | Director's `mconfig` sets `actent.target = manager_actent = 0.5`, normalized, matching our `manager_actent_target: 0.5`. |
 | Goal AE numerics vs Director | TODO | No test asserts encoder/decoder/KL numerics against a transcription of Director's, the way `test_tensors_vs_director.py` does for block pooling. |
@@ -278,17 +278,13 @@ Ordered by expected effect on the variance, largest first.
 Added 2026-09-01, from the goal-VAE audit and the e718-e721 null (see
 EXPERIMENTS.md for the measurements behind each):
 
-5. **`goal_autoencoder_beta` 0.25 -> 1.0** (`director_vaebeta`). The only
-   *active* goal-VAE difference from Director: the KL controller is saturated at
-   its ceiling and we apply a quarter of what it asks for.
-6. **`director_optmatch`** (added 2026-09-01): lr 4e-5 -> 1e-4 and wd -> 1e-2,
-   matching Director exactly. Layered after `director_stable` this holds the
-   decoupled shrinkage constant at `wd*lr = 1e-6` and changes only the lr.
-7. **Log `success_manager` and a time-to-reach within the K-block.** Director
+5. **Done 2026-09-01:** goal-VAE beta 1.0, optimizer lr 1e-4 / wd 1e-2, and
+   DreamerV3 base net sizes are all defaults now, so both arms carry them.
+6. **Log `success_manager` and a time-to-reach within the K-block.** Director
    logs `success_manager` (fraction of rollouts whose final goal reward > 0.7)
    and we log no equivalent, so the "worker arrives early and idles for the rest
    of the block" hypothesis -- which the e718-e721 collapse signature points at
    -- currently cannot be tested at all.
-8. **Test the goal AE numerics against Director**, the way
+7. **Test the goal AE numerics against Director**, the way
    `test_tensors_vs_director.py` covers block pooling. Today's audit is a code
    read on both sides, not an assertion.
