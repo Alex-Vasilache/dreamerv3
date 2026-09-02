@@ -63,7 +63,7 @@ defaults:
     # ~600 and peaks near 2400, so 1e-3 puts per-step reward around 0.25
     # and peak near 2. fall_angle 0 disables fall termination, which is
     # right for a robot on a wheeled frame; robot_balance turns it on.
-    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-3, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.047, theta_max: 0.25, theta_sigma: 0.08, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
+    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-3, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0253, theta_max: 0.25, theta_sigma: 0.08, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
 
   replay:
     size: 5e6
