@@ -1,4 +1,5 @@
 import collections
+import concurrent.futures
 import multiprocessing as mp
 import os
 import pickle
@@ -85,6 +86,12 @@ class FileCoordination:
   def set_learner_ready(self):
     self._paths.learner_ready.parent.mkdir(parents=True, exist_ok=True)
     self._paths.learner_ready.write('1')
+
+  def partner_exited(self):
+    # The actor is a separate process here, so there is no pid to poll the way
+    # MpCoordination does. standalone_actor sets the shutdown flag on its way
+    # out, including on exceptions, so shutdown_set() already covers it.
+    return False
 
   def shutdown_set(self):
     return self._paths.shutdown.exists()
@@ -311,6 +318,23 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
         result['reward_rate'] = (np.abs(rew[1:] - rew[:-1]) >= 0.01).mean()
       epstats.add(result)
 
+  # Writing metrics takes long enough to be visible at the robot: measured
+  # 2026-09-02 on the smartphone robot, the ~300ms logger.write() showed up as
+  # the phone sitting blocked for a whole control step every log_every seconds.
+  # Hand the write to a worker and skip a round if the previous one is still
+  # going, so a slow disk can never stall the policy.
+  log_pool = concurrent.futures.ThreadPoolExecutor(1, 'actor_logger')
+  log_lock = threading.Lock()
+  log_future = None
+
+  def write_logs():
+    with log_lock:
+      # Gathered here rather than on the policy thread because psutil is itself
+      # slow enough to matter at 50Hz.
+      logger.add(usage.stats(), prefix='usage')
+      logger.add({'timer': elements.timer.stats()['summary']})
+      logger.write()
+
   fns = [bind(make_env, i) for i in range(args.envs)]
   driver = embodied.Driver(fns, parallel=not args.debug)
   driver.on_step(lambda tran, _: step.increment())
@@ -334,15 +358,17 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
     if flush_pending >= flush_every:
       shared_buffer.flush()
       flush_pending = 0
-    if should_log(step):
-      logger.add(epstats.result(), prefix='epstats')
-      logger.add(shared_buffer.stats(), prefix='replay')
-      logger.add(usage.stats(), prefix='usage')
-      logger.add({'fps/policy': policy_fps.result()})
-      logger.add({'timer': elements.timer.stats()['summary']})
-      logger.write()
+    if should_log(step) and (log_future is None or log_future.done()):
+      with log_lock:
+        logger.add(epstats.result(), prefix='epstats')
+        logger.add(shared_buffer.stats(), prefix='replay')
+        logger.add({'fps/policy': policy_fps.result()})
+      log_future = log_pool.submit(write_logs)
   shared_buffer.flush()
   _write_actor_step(paths.actor_step, step)
+  if log_future is not None:
+    log_future.result()
+  log_pool.shutdown(wait=True)
   logger.close()
 
 

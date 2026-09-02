@@ -56,6 +56,14 @@ defaults:
     # linearly with episode length -- a 10k-step run is not comparable to the
     # paper's Figure 5 at all.
     pinpad: {length: 2000}
+    # Physical OIST smartphone robot reached over TCP; the phone connects
+    # in and drives the control clock. See embodied/envs/robot.py.
+    # speed_scale converts the encoder speeds the phone reports into reward
+    # units. Measured on the real robot 2026-09-02: |wheel speed| averages
+    # ~600 and peaks near 2400, so 1e-3 puts per-step reward around 0.25
+    # and peak near 2. fall_angle 0 disables fall termination, which is
+    # right for a robot on a wheeled frame; robot_balance turns it on.
+    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-3, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.047, theta_max: 0.25, theta_sigma: 0.08, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, use_logdir: True}
 
   replay:
     size: 5e6
@@ -1317,6 +1325,50 @@ atari100k:
 crafter:
   task: crafter_reward
   run: {steps: 1.1e6, envs: 1, train_ratio: 512}
+
+robot: &robot
+  <<: *size1m
+  task: robot_drive
+  # Episode length is in steps, not seconds, so it tracks the phone's
+  # CONTROL_HZ: 1000 steps is 20s at 50Hz and 100s at 10Hz.
+  env.robot.length: 1000
+  online_learning: True
+  batch_size: 16
+  batch_length: 32
+  report_length: 32
+  run:
+    steps: 1e5
+    envs: 1
+    train_ratio: 512
+    log_every: 30
+    report_every: 300
+    save_every: 300
+    log_video: False
+  replay: {size: 1e5}
+  online_actor_replay_size: 100000
+  online_sync_every: 30
+  # No platform pin: embodied/jax/internal.py:resolve_platform already maps
+  # the configured platform onto whatever this machine has, and pinning cpu
+  # here would only bite on Linux while being ignored on macOS anyway.
+  jax: {compute_dtype: float32, prealloc: False}
+  logger: {outputs: [jsonl, scope]}
+
+robot_balance:
+  <<: *robot
+  task: robot_balance
+  # The body is a genuine inverted pendulum: released by hand it runs to a
+  # bumper rather than returning. So terminate at 8deg from upright, inside
+  # the bumpers at roughly -10/+11deg, which synthesises "fell over" without
+  # needing the robot to actually topple. The termination is what makes this
+  # learnable: the critic gets to learn time-to-failure rather than only a
+  # shaped tilt score.
+  env.robot.fall_angle: 0.14
+  env.robot.status_every: 25
+  # Determined on hardware 2026-09-02: under a sustained forward command the
+  # body was observed leaning backwards while tilt read +9.16deg, so positive
+  # tilt is a backward lean. An inverted pendulum is caught by driving the base
+  # toward the lean, so a positive error needs a negative wheel command.
+  env.robot.recover_gain: -1.0
 
 dmc_proprio:
   <<: *size1m
