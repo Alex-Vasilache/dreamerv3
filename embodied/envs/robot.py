@@ -24,6 +24,21 @@ MOTIONS = (
     ('right', 1.0, -1.0),
 )
 
+# Symmetric drive only: both wheels always get the same value, so the robot can
+# translate but never turn. Differential turning is what tears the wheels off
+# this rig, and it does nothing for pitch balance anyway -- the pendulum axis is
+# unaffected by yaw. Spending the freed action budget on speed granularity
+# instead is strictly better for balancing. The slow step is 0.5 rather than
+# something smaller because 0.30 PWM was measured to produce no wheel motion at
+# all on this hardware.
+MOTIONS_SYMMETRIC = (
+    ('stop', 0.0, 0.0),
+    ('forward_slow', 0.5, 0.5),
+    ('forward_fast', 1.0, 1.0),
+    ('backward_slow', -0.5, -0.5),
+    ('backward_fast', -1.0, -1.0),
+)
+
 
 class SmartphoneRobot(embodied.Env):
   """DreamerV3 environment backed by the OIST smartphone robot.
@@ -44,7 +59,7 @@ class SmartphoneRobot(embodied.Env):
       discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
-      drift_clip=1.0,
+      drift_clip=1.0, symmetric=True,
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6,
@@ -74,6 +89,8 @@ class SmartphoneRobot(embodied.Env):
     # than sustained drift -- at scale 1e-4 the p99 alone would cost 0.38
     # of a reward capped at 1.0. Clipping bounds it at drift_penalty.
     self.drift_clip = float(drift_clip)
+    self.symmetric = bool(symmetric)
+    self.motions = MOTIONS_SYMMETRIC if symmetric else MOTIONS
     self.ref_range = float(ref_range)
     self.ref_hold = int(ref_hold)
     self._rng = np.random.RandomState(seed)
@@ -144,7 +161,10 @@ class SmartphoneRobot(embodied.Env):
   def act_space(self):
     space = {'reset': elements.Space(bool)}
     if self.discrete:
-      space['motion'] = elements.Space(np.int32, (), 0, len(MOTIONS))
+      space['motion'] = elements.Space(np.int32, (), 0, len(self.motions))
+    elif self.symmetric:
+      # One value driving both wheels, not two.
+      space['wheels'] = elements.Space(np.float32, (1,), -1.0, 1.0)
     else:
       space['wheels'] = elements.Space(np.float32, (2,), -1.0, 1.0)
     return space
@@ -242,9 +262,11 @@ class SmartphoneRobot(embodied.Env):
   def _decode(self, action):
     if self.discrete:
       index = int(action['motion'])
-      return MOTIONS[index][1], MOTIONS[index][2]
-    left, right = np.clip(np.asarray(action['wheels'], np.float32), -1, 1)
-    return float(left), float(right)
+      return self.motions[index][1], self.motions[index][2]
+    wheels = np.clip(np.asarray(action['wheels'], np.float32), -1, 1)
+    if self.symmetric:
+      return float(wheels[0]), float(wheels[0])
+    return float(wheels[0]), float(wheels[1])
 
   def _evaluate(self, sensors):
     theta = float(sensors['theta'])
