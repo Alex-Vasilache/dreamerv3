@@ -42,8 +42,8 @@ class SmartphoneRobot(embodied.Env):
   def __init__(
       self, task='drive', host='0.0.0.0', port=3000, length=200,
       discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
-      spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0253,
-      theta_max=0.25, theta_sigma=0.08, drift_penalty=0.1,
+      spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
+      theta_lo=-0.123, theta_hi=0.173, theta_sigma=0.05, drift_penalty=0.1,
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6,
@@ -60,7 +60,12 @@ class SmartphoneRobot(embodied.Env):
     self.spin_penalty = float(spin_penalty)
     self.rate_penalty = float(rate_penalty)
     self.theta_zero = float(theta_zero)
-    self.theta_max = float(theta_max)
+    # The bumper stops, as offsets from upright, and NOT symmetric. The tilt
+    # term is normalised per side so the reward reaches 0 at each stop; one
+    # symmetric theta_max paid 0.51 at the near stop and 0.31 at the far one,
+    # leaving half the reward available for lying against a bumper.
+    self.theta_lo = float(theta_lo)
+    self.theta_hi = float(theta_hi)
     self.theta_sigma = float(theta_sigma)
     self.drift_penalty = float(drift_penalty)
     self.ref_range = float(ref_range)
@@ -99,7 +104,7 @@ class SmartphoneRobot(embodied.Env):
     self._step = 0
     self._done = True
     self._sent = 0.0
-    self._timing = (0.0, 0.0)
+    self._timing = (0.0, 0.0, 0.0, 0.0)
     self._last = dict(
         wheel_speed_l=0.0, wheel_speed_r=0.0, wheel_distance_l=0.0,
         wheel_distance_r=0.0, theta=0.0, angular_velocity=0.0,
@@ -124,6 +129,8 @@ class SmartphoneRobot(embodied.Env):
         'log/latency_ms': elements.Space(np.float32),
         'log/phone_wait_ms': elements.Space(np.float32),
         'log/phone_work_ms': elements.Space(np.float32),
+        'log/imu_age_ms': elements.Space(np.float32),
+        'log/imu_stale_ms': elements.Space(np.float32),
     }
 
   @property
@@ -251,7 +258,8 @@ class SmartphoneRobot(embodied.Env):
       # acceleration -- standing still scores badly as soon as the reference
       # moves away from the equilibrium.
       err = theta - self._ref
-      linear = 1.0 - min(1.0, abs(err) / self.theta_max)
+      reach = self.theta_hi if err > 0 else abs(self.theta_lo)
+      linear = 1.0 - min(1.0, abs(err) / max(reach, 1e-6))
       bonus = np.exp(-((err / self.theta_sigma) ** 2))
       rate = float(sensors['angular_velocity'])
       reward = (
@@ -270,7 +278,8 @@ class SmartphoneRobot(embodied.Env):
       # calibration here establishes. Estimate it as the midpoint of the tilt
       # range the robot actually reaches and set it per rig.
       offset = theta - self.theta_zero
-      linear = 1.0 - min(1.0, abs(offset) / self.theta_max)
+      reach = self.theta_hi if offset > 0 else abs(self.theta_lo)
+      linear = 1.0 - min(1.0, abs(offset) / max(reach, 1e-6))
       bonus = np.exp(-((offset / self.theta_sigma) ** 2))
       rate = float(sensors['angular_velocity'])
       # Without this a constant forward acceleration holds a constant tilt
@@ -309,6 +318,8 @@ class SmartphoneRobot(embodied.Env):
             'log/latency_ms': np.float32(latency * 1e3),
             'log/phone_wait_ms': np.float32(self._timing[0]),
             'log/phone_work_ms': np.float32(self._timing[1]),
+            'log/imu_age_ms': np.float32(self._timing[2]),
+            'log/imu_stale_ms': np.float32(self._timing[3]),
         },
     )
 
@@ -364,7 +375,9 @@ class SmartphoneRobot(embodied.Env):
       raise ValueError(f'Expected an obs message, got {header!r}')
     self._last = header['sensors']
     self._timing = (
-        float(header.get('wait_ms', 0.0)), float(header.get('work_ms', 0.0)))
+        float(header.get('wait_ms', 0.0)), float(header.get('work_ms', 0.0)),
+        float(header.get('imu_age_ms', 0.0)),
+        float(header.get('imu_stale_ms', 0.0)))
     return self._last, time.time() - self._sent
 
   def _write(self, header, blob=b''):

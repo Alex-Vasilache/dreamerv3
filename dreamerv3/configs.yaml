@@ -58,12 +58,20 @@ defaults:
     pinpad: {length: 2000}
     # Physical OIST smartphone robot reached over TCP; the phone connects
     # in and drives the control clock. See embodied/envs/robot.py.
-    # speed_scale converts the encoder speeds the phone reports into reward
-    # units. Measured on the real robot 2026-09-02: |wheel speed| averages
-    # ~600 and peaks near 2400, so 1e-3 puts per-step reward around 0.25
-    # and peak near 2. fall_angle 0 disables fall termination, which is
-    # right for a robot on a wheeled frame; robot_balance turns it on.
-    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-3, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0253, theta_max: 0.25, theta_sigma: 0.08, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
+    # speed_scale converts encoder speeds into reward units. The phone now
+    # reports instantaneous rather than exponentially averaged speed, which is
+    # ~20x larger: |v| reaches 58000 with p99 near 8300, so 1e-3 made the drift
+    # penalty 0.1*|v|*scale reach 5.8 against a reward bounded at 1.0 and drove
+    # observed rewards to -21. 1e-4 puts the p99 penalty at 0.083. Re-derive
+    # from a fresh calibration run; this is from data taken before the IMU
+    # backlog fix, so the wheel figures are sound but were logged alongside
+    # 8.5s-stale tilt.
+    #
+    # theta_lo/theta_hi are the bumper stops relative to upright, which the
+    # user set to 0 by eye. The tilt term is normalised per side so both stops
+    # score 0; fall_angle 0 disables termination, since the body cannot
+    # self-right and terminating would collapse the run into 1-step episodes.
+    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.123, theta_hi: 0.173, theta_sigma: 0.05, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
 
   replay:
     size: 5e6
