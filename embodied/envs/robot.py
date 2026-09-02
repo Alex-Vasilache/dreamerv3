@@ -60,6 +60,8 @@ class SmartphoneRobot(embodied.Env):
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
       drift_clip=1.0, symmetric=True,
+      obs_theta_scale=0.18, obs_rate_scale=3.0, obs_wheel_scale=3.3e-4,
+      obs_clip=3.0,
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6,
@@ -90,6 +92,14 @@ class SmartphoneRobot(embodied.Env):
     # of a reward capped at 1.0. Clipping bounds it at drift_penalty.
     self.drift_clip = float(drift_clip)
     self.symmetric = bool(symmetric)
+    # Observation normalisation. Raw units put wheel speed ~70x above tilt
+    # once symlog is applied (std 6.4 against 0.09), so the encoder saw
+    # encoder counts and barely saw the angle the reward depends on.
+    # Each feature is scaled to roughly unit range instead.
+    self.obs_theta_scale = float(obs_theta_scale)
+    self.obs_rate_scale = float(obs_rate_scale)
+    self.obs_wheel_scale = float(obs_wheel_scale)
+    self.obs_clip = float(obs_clip)
     self.motions = MOTIONS_SYMMETRIC if symmetric else MOTIONS
     self.ref_range = float(ref_range)
     self.ref_hold = int(ref_hold)
@@ -137,7 +147,10 @@ class SmartphoneRobot(embodied.Env):
   def obs_space(self):
     return {
         'wheels': elements.Space(np.float32, (2,)),
-        'orientation': elements.Space(np.float32, (3,)),
+        # [tilt, rate], both normalised. cos(theta) is dropped: over the +/-10
+        # deg this rig can reach it spans 0.988 to 1.000, a std of 0.002 after
+        # symlog, so it is a constant carrying no information.
+        'orientation': elements.Space(np.float32, (2,)),
         **({'target': elements.Space(np.float32, (2,))}
            if self.task == 'track' else {}),
         'reward': elements.Space(np.float32),
@@ -327,11 +340,13 @@ class SmartphoneRobot(embodied.Env):
            is_terminal=False):
     theta = float(sensors['theta'])
     return dict(
-        wheels=np.array([
-            sensors['wheel_speed_l'], sensors['wheel_speed_r']], np.float32),
-        orientation=np.array([
-            np.sin(theta), np.cos(theta), sensors['angular_velocity']],
-            np.float32),
+        wheels=np.clip(np.array([
+            sensors['wheel_speed_l'], sensors['wheel_speed_r']],
+            np.float32) * self.obs_wheel_scale, -self.obs_clip, self.obs_clip),
+        orientation=np.clip(np.array([
+            (theta - self.theta_zero) / self.obs_theta_scale,
+            sensors['angular_velocity'] / self.obs_rate_scale],
+            np.float32), -self.obs_clip, self.obs_clip),
         **({'target': np.array(
             [self._ref - self.theta_zero, theta - self._ref], np.float32)}
            if self.task == 'track' else {}),

@@ -71,7 +71,7 @@ defaults:
     # user set to 0 by eye. The tilt term is normalised per side so both stops
     # score 0; fall_angle 0 disables termination, since the body cannot
     # self-right and terminating would collapse the run into 1-step episodes.
-    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: True, theta_sigma: 0.05, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
+    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: True, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
 
   replay:
     size: 5e6
@@ -1353,7 +1353,7 @@ robot: &robot
     steps: 1e5
     envs: 1
     train_ratio: 512
-    log_every: 30
+    log_every: 10
     report_every: 300
     save_every: 300
     log_video: False
@@ -1379,7 +1379,13 @@ robot_daydreamer:
   # sustains ~6 gradient steps/s, which lands the achieved ratio near 256
   # instead of the ~64 measured at repeat 1. The phone keeps sensing at 48Hz
   # either way, so control authority is unaffected between decisions.
-  env.robot.repeat: 4
+  # Continuous action: five discrete levels is too coarse for balancing, where
+  # the correction needed near upright is much finer than the 0.5 PWM step.
+  # With symmetric drive this is a single value applied to both wheels.
+  env.robot.discrete: False
+  # repeat 2 rather than 4: reacting at ~22Hz instead of ~11Hz. Costs half the
+  # train ratio, from ~470 to ~235, which is still close to DayDreamer's 256.
+  env.robot.repeat: 2
   # 1000 underlying steps is 250 agent decisions, matching their env.length.
   env.robot.length: 1000
   # No terminations: the quadruped learned to roll over and stand up without
