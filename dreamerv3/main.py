@@ -396,7 +396,13 @@ def make_env(config, index, **overrides):
     kwargs['seed'] = hash((config.seed, index)) % (2 ** 32 - 1)
   if kwargs.pop('use_logdir', False):
     kwargs['logdir'] = elements.Path(config.logdir) / f'env{index}'
+  # Other suites apply action repeat inside their own constructor; the robot
+  # cannot, because the phone owns the control clock and must keep sensing at
+  # full rate while the agent decides less often.
+  repeat = kwargs.pop('repeat', 1) if suite == 'robot' else 1
   env = ctor(task, **kwargs)
+  if repeat > 1:
+    env = embodied.wrappers.ActionRepeat(env, repeat)
   return wrap_env(env, config)
 
 

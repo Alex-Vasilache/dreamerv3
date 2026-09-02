@@ -63,7 +63,7 @@ defaults:
     # ~600 and peaks near 2400, so 1e-3 puts per-step reward around 0.25
     # and peak near 2. fall_angle 0 disables fall termination, which is
     # right for a robot on a wheeled frame; robot_balance turns it on.
-    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-3, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.047, theta_max: 0.25, theta_sigma: 0.08, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, use_logdir: True}
+    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-3, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.047, theta_max: 0.25, theta_sigma: 0.08, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
 
   replay:
     size: 5e6
@@ -1352,6 +1352,48 @@ robot: &robot
   # here would only bite on Linux while being ignored on macOS anyway.
   jax: {compute_dtype: float32, prealloc: False}
   logger: {outputs: [jsonl, scope]}
+
+robot_daydreamer:
+  <<: *robot
+  task: robot_balance
+  # Matched to the DayDreamer A1 quadruped, the closest published analogue:
+  # high control rate, no resets, learned in about an hour. Their settings are
+  # action repeat 50, train_every 4 and batch 32x32, giving 0.25 gradient steps
+  # per agent step and an effective train_ratio of 256.
+  #
+  # train_ratio is spent per AGENT step, so repeat is what buys the ratio: at
+  # 48Hz with repeat 4 the agent decides 12 times a second while this Mac
+  # sustains ~6 gradient steps/s, which lands the achieved ratio near 256
+  # instead of the ~64 measured at repeat 1. The phone keeps sensing at 48Hz
+  # either way, so control authority is unaffected between decisions.
+  env.robot.repeat: 4
+  # 1000 underlying steps is 250 agent decisions, matching their env.length.
+  env.robot.length: 1000
+  # No terminations: the quadruped learned to roll over and stand up without
+  # resets, which is the same answer as ours since the body cannot self-right
+  # under proportional drive.
+  env.robot.fall_angle: 0.0
+  # Keep size1m's 3x64 MLPs and only shrink the RSSM. DayDreamer instead left
+  # actor/critic/encoder/decoder at 4x512 and shrank just the RSSM, so our
+  # policy is ~8x narrower than the one that learned to walk -- worth revisiting
+  # if learning stalls for want of capacity rather than data.
+  #
+  # Measured on this Mac 2026-09-02, throughput against network shape, all at
+  # repeat 4 and batch 16x32 unless noted (train_ratio counts SAMPLES per agent
+  # step, so batch size matters as much as width):
+  #
+  #   shape                deter  samples/s  achieved ratio
+  #   3x64  (size1m)         256       3011             336
+  #   4x256                  256       1613             178
+  #   4x512 (DayDreamer)     256       1193             134
+  #   3x1024                 256        594              67
+  #   size6m (batch 4x32)   1024        603              67
+  #
+  # Only 3x64 and 4x256 are on the Pareto frontier; size6m does plenty of
+  # gradient steps but starves the ratio because batch_size 4 exists to fit
+  # deter 1024. A real GPU would remove the trade-off entirely.
+  agent:
+    .*\.rssm: {deter: 256, hidden: 64, classes: 4}
 
 robot_balance:
   <<: *robot
