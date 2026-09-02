@@ -1364,7 +1364,7 @@ robot: &robot
   # the configured platform onto whatever this machine has, and pinning cpu
   # here would only bite on Linux while being ignored on macOS anyway.
   jax: {compute_dtype: float32, prealloc: False}
-  logger: {outputs: [jsonl, scope]}
+  logger: {outputs: [jsonl, scope, tensorboard]}
 
 robot_daydreamer:
   <<: *robot
