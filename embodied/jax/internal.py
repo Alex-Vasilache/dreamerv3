@@ -2,6 +2,7 @@ import concurrent.futures
 import math
 import os
 import string
+import sys
 
 import elements
 import jax
@@ -10,6 +11,36 @@ import numpy as np
 from jax.sharding import PartitionSpec as P
 
 from . import nets
+
+
+def resolve_platform(platform):
+  """Map the configured JAX platform onto what this machine actually has.
+
+  On Linux (Saion) this is the identity: whatever the config asked for is what
+  gets used, so cluster runs are unaffected. On macOS there is no CUDA, so a
+  config that says `cuda` would fail; if Apple's Metal plugin is installed we
+  transparently run on the GPU instead, and otherwise fall back to CPU. That
+  makes a laptop checkout work with no flags and no local config edits.
+
+  Set DREAMERV3_PLATFORM to override (e.g. DREAMERV3_PLATFORM=cpu). On macOS
+  this override is the only way to force a platform, because the configured
+  value -- including the `cpu` that the `debug` block sets -- is otherwise
+  superseded.
+  """
+  override = os.environ.get('DREAMERV3_PLATFORM')
+  if override:
+    return override
+  if sys.platform != 'darwin':
+    return platform
+  import importlib.util
+  # jax-metal ships the PJRT plugin as `jax_plugins.metal_plugin`, not a
+  # top-level module. find_spec avoids importing jax here, which would pin the
+  # backend before setup() has configured it.
+  if importlib.util.find_spec('jax_plugins.metal_plugin') is None:
+    return 'cpu'
+  # The plugin registers the backend under this exact spelling; 'metal' is
+  # rejected by jax as an unknown backend.
+  return 'METAL'
 
 
 def setup(
@@ -31,6 +62,7 @@ def setup(
     coordinator_address=None,
     compilation_cache=True,
 ):
+  platform = resolve_platform(platform)
   platform and jax.config.update('jax_platforms', platform)
   jax.config.update('jax_disable_most_optimizations', debug)
   jax.config.update('jax_disable_jit', not jit)

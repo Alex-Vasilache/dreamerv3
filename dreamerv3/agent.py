@@ -784,8 +784,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
     out = {}
+    # The reduce is done in float rather than as a boolean `.all()`: Apple's
+    # Metal backend cannot lower a multi-axis boolean `mhlo.reduce` and fails
+    # with "failed to legalize operation 'mhlo.reduce'". min(float(finite)) > 0
+    # is the same predicate and lowers on every backend.
     out['finite'] = elements.tree.flatdict(jax.tree.map(
-        lambda x: jnp.isfinite(x).all(range(1, x.ndim)),
+        lambda x: jnp.isfinite(x).astype(jnp.float32).min(range(1, x.ndim)) > 0,
         dict(obs=obs, carry=carry, tokens=tokens, feat=feat, act=act)))
     # Offline diagnostic: encode the *current real state* (not a manager proposal)
     # through the goal VAE and emit both the deter vector and the soft code, so an
