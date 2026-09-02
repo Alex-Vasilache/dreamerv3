@@ -176,10 +176,12 @@ class SmartphoneRobot(embodied.Env):
     if self.discrete:
       space['motion'] = elements.Space(np.int32, (), 0, len(self.motions))
     elif self.symmetric:
+      # Named 'drive', not 'wheels': the observation already uses that key and
+      # CheckSpaces requires the observation and action keys to be disjoint.
       # One value driving both wheels, not two.
-      space['wheels'] = elements.Space(np.float32, (1,), -1.0, 1.0)
+      space['drive'] = elements.Space(np.float32, (1,), -1.0, 1.0)
     else:
-      space['wheels'] = elements.Space(np.float32, (2,), -1.0, 1.0)
+      space['drive'] = elements.Space(np.float32, (2,), -1.0, 1.0)
     return space
 
   def step(self, action):
@@ -276,10 +278,10 @@ class SmartphoneRobot(embodied.Env):
     if self.discrete:
       index = int(action['motion'])
       return self.motions[index][1], self.motions[index][2]
-    wheels = np.clip(np.asarray(action['wheels'], np.float32), -1, 1)
+    drive = np.clip(np.asarray(action['drive'], np.float32), -1, 1)
     if self.symmetric:
-      return float(wheels[0]), float(wheels[0])
-    return float(wheels[0]), float(wheels[1])
+      return float(drive[0]), float(drive[0])
+    return float(drive[0]), float(drive[1])
 
   def _evaluate(self, sensors):
     theta = float(sensors['theta'])
