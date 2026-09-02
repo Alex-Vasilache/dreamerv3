@@ -10,12 +10,53 @@ sys.path.insert(1, str(folder.parent.parent))
 __package__ = folder.name
 
 import collections
+import re
 
 import elements
 import embodied
 import numpy as np
 import portal
 import ruamel.yaml as yaml
+
+
+class TorchTensorBoardOutput:
+  """TensorBoard scalars without a TensorFlow dependency.
+
+  elements.logger.TensorBoardOutput imports tensorflow, which is a heavy
+  dependency to add purely to write scalars and is not installed in this venv.
+  torch's SummaryWriter produces the same event files.
+  """
+
+  def __init__(self, logdir, fps=20, pattern=r'.*'):
+    from torch.utils.tensorboard import SummaryWriter
+    self._writer = SummaryWriter(str(logdir), flush_secs=20)
+    self._pattern = re.compile(pattern)
+
+  def __call__(self, summaries):
+    for step, name, value in summaries:
+      if not self._pattern.search(name):
+        continue
+      try:
+        if isinstance(value, str):
+          self._writer.add_text(name, value, step)
+          continue
+        value = np.asarray(value)
+        if value.ndim == 0:
+          self._writer.add_scalar(name, float(value), step)
+        elif value.ndim == 1:
+          self._writer.add_histogram(name, value, step)
+        elif value.ndim in (2, 3):
+          image = value if value.ndim == 3 else value[..., None]
+          if image.dtype != np.uint8:
+            image = (255 * np.clip(image, 0, 1)).astype(np.uint8)
+          self._writer.add_image(name, image, step, dataformats='HWC')
+        # Videos are skipped: add_video needs moviepy, and episode footage is
+        # already available through the wandb output.
+      except Exception:
+        # A logging backend must never take the run down with it, which is
+        # exactly what the tensorflow import did.
+        continue
+    self._writer.flush()
 
 
 class WandBOutputWithFPS(elements.logger.WandBOutput):
@@ -252,8 +293,7 @@ def make_logger(config):
       outputs.append(elements.logger.JSONLOutput(
           logdir, 'scores.jsonl', 'episode/score'))
     elif output == 'tensorboard':
-      outputs.append(elements.logger.TensorBoardOutput(
-          logdir, config.logger.fps))
+      outputs.append(TorchTensorBoardOutput(logdir, config.logger.fps))
     elif output == 'expa':
       exp = logdir.split('/')[-4]
       run = '/'.join(logdir.split('/')[-3:])
