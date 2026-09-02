@@ -122,7 +122,8 @@ class SmartphoneRobot(embodied.Env):
         'wheels': elements.Space(np.float32, (2,)),
         'orientation': elements.Space(np.float32, (3,)),
         'battery': elements.Space(np.float32, (1,)),
-        'target': elements.Space(np.float32, (2,)),
+        **({'target': elements.Space(np.float32, (2,))}
+           if self.task == 'track' else {}),
         'reward': elements.Space(np.float32),
         'is_first': elements.Space(bool),
         'is_last': elements.Space(bool),
@@ -310,8 +311,9 @@ class SmartphoneRobot(embodied.Env):
             np.sin(theta), np.cos(theta), sensors['angular_velocity']],
             np.float32),
         battery=np.array([sensors['battery_voltage']], np.float32),
-        target=np.array([
-            self._ref - self.theta_zero, theta - self._ref], np.float32),
+        **({'target': np.array(
+            [self._ref - self.theta_zero, theta - self._ref], np.float32)}
+           if self.task == 'track' else {}),
         reward=np.float32(reward),
         is_first=is_first,
         is_last=is_last,

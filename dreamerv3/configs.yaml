@@ -1337,6 +1337,11 @@ crafter:
 robot: &robot
   <<: *size1m
   task: robot_drive
+  # Flat DreamerV3, not Director. The repo default is use_hrl True, which adds
+  # a manager, a worker and a goal autoencoder -- extra losses and latent
+  # machinery this task has no use for, and which cost learner throughput we
+  # are already short of.
+  agent.use_hrl: False
   # Episode length is in steps, not seconds, so it tracks the phone's
   # CONTROL_HZ: 1000 steps is 20s at 50Hz and 100s at 10Hz.
   env.robot.length: 1000
