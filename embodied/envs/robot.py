@@ -43,7 +43,8 @@ class SmartphoneRobot(embodied.Env):
       self, task='drive', host='0.0.0.0', port=3000, length=200,
       discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
-      theta_lo=-0.123, theta_hi=0.173, theta_sigma=0.05, drift_penalty=0.1,
+      theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
+      drift_clip=1.0,
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6,
@@ -68,6 +69,11 @@ class SmartphoneRobot(embodied.Env):
     self.theta_hi = float(theta_hi)
     self.theta_sigma = float(theta_sigma)
     self.drift_penalty = float(drift_penalty)
+    # Instantaneous wheel speed is spiky: measured p50 689, p90 3406 but
+    # p99 37965. Without a clip the penalty tracks sensor spikes rather
+    # than sustained drift -- at scale 1e-4 the p99 alone would cost 0.38
+    # of a reward capped at 1.0. Clipping bounds it at drift_penalty.
+    self.drift_clip = float(drift_clip)
     self.ref_range = float(ref_range)
     self.ref_hold = int(ref_hold)
     self._rng = np.random.RandomState(seed)
@@ -265,7 +271,8 @@ class SmartphoneRobot(embodied.Env):
       reward = (
           0.5 * linear + 0.5 * bonus
           - self.rate_penalty * abs(rate)
-          - self.drift_penalty * abs(0.5 * (speed_l + speed_r)))
+          - self.drift_penalty * min(
+              abs(0.5 * (speed_l + speed_r)), self.drift_clip))
     elif self.task == 'balance':
       # cos(theta) is second-order flat at upright, so on a rig whose tilt only
       # spans a few degrees it delivers almost no gradient. Instead combine a
@@ -284,7 +291,7 @@ class SmartphoneRobot(embodied.Env):
       rate = float(sensors['angular_velocity'])
       # Without this a constant forward acceleration holds a constant tilt
       # forever, which scores perfectly while driving off the bench.
-      drift = abs(0.5 * (speed_l + speed_r))
+      drift = min(abs(0.5 * (speed_l + speed_r)), self.drift_clip)
       reward = (
           0.5 * linear + 0.5 * bonus
           - self.rate_penalty * abs(rate)
