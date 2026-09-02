@@ -121,7 +121,6 @@ class SmartphoneRobot(embodied.Env):
     return {
         'wheels': elements.Space(np.float32, (2,)),
         'orientation': elements.Space(np.float32, (3,)),
-        'battery': elements.Space(np.float32, (1,)),
         **({'target': elements.Space(np.float32, (2,))}
            if self.task == 'track' else {}),
         'reward': elements.Space(np.float32),
@@ -131,6 +130,7 @@ class SmartphoneRobot(embodied.Env):
         'log/theta_deg': elements.Space(np.float32),
         'log/distance_l': elements.Space(np.float32),
         'log/distance_r': elements.Space(np.float32),
+        'log/battery_v': elements.Space(np.float32),
         'log/theta_ref_deg': elements.Space(np.float32),
         'log/track_err_deg': elements.Space(np.float32),
         'log/latency_ms': elements.Space(np.float32),
@@ -310,7 +310,6 @@ class SmartphoneRobot(embodied.Env):
         orientation=np.array([
             np.sin(theta), np.cos(theta), sensors['angular_velocity']],
             np.float32),
-        battery=np.array([sensors['battery_voltage']], np.float32),
         **({'target': np.array(
             [self._ref - self.theta_zero, theta - self._ref], np.float32)}
            if self.task == 'track' else {}),
@@ -322,6 +321,7 @@ class SmartphoneRobot(embodied.Env):
             'log/theta_deg': np.float32(np.degrees(theta)),
             'log/distance_l': np.float32(sensors.get('wheel_distance_l', 0.0)),
             'log/distance_r': np.float32(sensors.get('wheel_distance_r', 0.0)),
+            'log/battery_v': np.float32(sensors['battery_voltage']),
             'log/theta_ref_deg': np.float32(np.degrees(self._ref)),
             'log/track_err_deg': np.float32(np.degrees(theta - self._ref)),
             'log/latency_ms': np.float32(latency * 1e3),
