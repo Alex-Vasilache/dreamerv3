@@ -15,7 +15,7 @@
 # Goal-autoencoder ablation (motivation.tex, Lipschitz-constrained SOM-VAE).
 #
 # Identical in every respect to the pure-Director baselines e390-e409 -- same
-# BIG/director_match scale, batch 16x64, imag16, train_ratio 64, 8 envs, 4M
+# BIG/director_match scale, batch 16x64, imag16, train_ratio 256, 8 envs, 1.1M
 # steps, native conv, MGR_FREQ=8, STRUCT_ADAPT=False, GOAL_SOFT_REUSE_ADAPT=False
 # -- EXCEPT for the goal autoencoder, selected by ARM:
 #
@@ -71,12 +71,14 @@ MGR_EXPL_W="${MGR_EXPL_W:-0.1}"
 IMAG_LENGTH="${IMAG_LENGTH:-16}"
 RUN_ENVS="${RUN_ENVS:-8}"
 # A CLI flag beats a config block, so this has to be a variable: leaving it
-# hardcoded at 64 would silently override loconav's train_ratio 256.
-TRAIN_RATIO="${TRAIN_RATIO:-64}"
-RUN_STEPS="${RUN_STEPS:-4000000}"
+# hardcoded would silently override a task block that sets its own train_ratio.
+# 256 + 1.1M steps is DreamerV3's dmc_vision cell: ~2.8e8 replayed steps, within
+# 10% of the old 64 x 4M, so wall time is unchanged and only the env budget moves.
+TRAIN_RATIO="${TRAIN_RATIO:-256}"
+RUN_STEPS="${RUN_STEPS:-1100000}"
 # Track goal-code/goal-space geometry across training. Costs an
 # O((batch_size*batch_length)^2 = 1024^2) similarity matrix per train step --
-# i.e. 64 of them per env step at train_ratio 64 -- and does NOT enter any
+# i.e. 256 of them per env step at train_ratio 256 -- and does NOT enter any
 # loss. Now OFF by default: it was the single biggest avoidable cost in the
 # 4M-step budget (see below), and nothing in the current programme reads
 # goal/struct_corr*. Set GOAL_STRUCT_DIAG=True to get it back.
@@ -102,7 +104,7 @@ RUN_DEBUG="${RUN_DEBUG:-True}"
 # the online queue, so ~87.5% of every training batch is drawn uniformly over
 # the WHOLE run history, mean sample age ~2M steps. TF Director uses 1e6.
 # Written as an integer, not 1e6: PyYAML parses unquoted `1e6` as a STRING.
-REPLAY_SIZE="${REPLAY_SIZE:-1000000}"
+REPLAY_SIZE="${REPLAY_SIZE:-5000000}"
 # Checkpoint interval in seconds. 900 is the default and is right for a 48h
 # job that never restarts; on `short-a100`, where the association caps a job at
 # 2h and the run requeues itself ~16 times over its life, every requeue throws

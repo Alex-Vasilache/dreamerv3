@@ -390,6 +390,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.mgr_novel_weight = float(getattr(config, 'mgr_novel_weight', -1.0))
 
       # Director-style adaptive Lagrange multipliers (``tfutils.AutoAdapt``).
+      # The adapter is always CONSTRUCTED so its variable stays in the parameter
+      # tree and old checkpoints keep loading; ``manager_actent_adapt`` only
+      # decides whether it is handed to the loss. Off (the DreamerV3 default)
+      # the manager falls back to the fixed ``manager_actent`` coefficient.
+      self.manager_actent_adapt = bool(
+          getattr(config, 'manager_actent_adapt', False))
       self.manager_actent_perdim = bool(config.manager_actent_perdim)
       mgr_actent_shape = (skill_shape_t[0],) if self.manager_actent_perdim else ()
       self.mgr_actent = embodied.jax.AutoAdapt(
@@ -1562,7 +1568,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             self.mgr_novel_slowval(inp_eff, 2) if self.mgr_novel else None),
         mgr_novel_retnorm=self.mgr_novel_retnorm if self.mgr_novel else None,
         mgr_novel_valnorm=self.mgr_novel_valnorm if self.mgr_novel else None,
-        mgr_actent_adapter=self.mgr_actent,
+        mgr_actent_adapter=self.mgr_actent if self.manager_actent_adapt else None,
         mgr_actent_perdim=self.manager_actent_perdim,
         mgr_rao_adapter=self.mgr_rao,
         mgr_rao_perdim=self.manager_rao_perdim,

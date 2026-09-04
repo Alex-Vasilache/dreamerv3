@@ -123,10 +123,15 @@ defaults:
     loss_scales: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3, goal_autoencoder: 1.0, goal_duration_prior: 1.0, goal_soft_reuse: 1.0}
     # Three independent optimizers (Director-style): the world model + heads, the
     # goal autoencoder (VAE), and the actor-critic (manager + worker actors/critics).
-    # All default to the same DreamerV3 settings; tune per-component lr/agc as needed.
-    opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
-    goal_opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
-    ac_opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
+    # All three carry the DreamerV3 defaults verbatim (LaProp: RMS-normalize then
+    # momentum, hence the small eps; AGC at 30% of each tensor's weight norm).
+    # lr 4e-5 / wd 0.0 restored 2026-09-04: both DreamerV3 papers state "we do not
+    # use any hyperparameter annealing, prioritized replay, weight decay, or
+    # dropout", and the 09-01 rationale for wd (a growing `deter` scale inflating
+    # goal/rec_mean) is false -- the GRU bounds deter to [-1, 1] by construction.
+    opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    goal_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    ac_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
       typ: rssm
@@ -375,7 +380,7 @@ defaults:
     # `studentt` alone; they are inert for the default onehot head but must
     # exist here because elements.Config.update can only overwrite keys that
     # already exist.
-    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in, tau_init: 1.0, tau_min: 0.02, scale_init: 2.0, scale_min: 0.3, nu: 2.5}
+    manager_policy: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.01, winit: trunc_normal_in, tau_init: 1.0, tau_min: 0.02, scale_init: 2.0, scale_min: 0.3, nu: 2.5}
     manager_sample_freq: 8
     # Variable goal length (opt-in, HiPPO-style): the manager additionally emits a
     # discrete duration p in {goal_duration_min..goal_duration_max}; the emitted
@@ -483,6 +488,14 @@ defaults:
     manager_actent_vel: 0.1
     manager_actent_init: 1.0
     manager_actent_perdim: True
+    # False (DreamerV3): the manager uses the fixed `manager_actent` coefficient,
+    # like the worker's `imag_loss.actent`. True (Director): an AutoAdapt holds
+    # normalized entropy at `manager_actent_target`. v3 normalizes returns SO THAT a
+    # fixed coefficient works across sparsity regimes; Director adapts the
+    # coefficient instead because its returns are not percentile-normalized. Pick
+    # one -- running v3's `perc` retnorm with Director's adaptive entropy stacks two
+    # fixes for the same problem.
+    manager_actent_adapt: False
     # Rao's quadratic entropy on the manager's skill head. Entropy fixes how
     # MUCH mass the manager spreads; Rao fixes how far apart, along the ordered
     # SOM codebook, the classes carrying it are. Q = sum_{a,b} p_a p_b d(a,b),
@@ -590,12 +603,16 @@ defaults:
     # at that perc scale. This is the proven flat-v3 normalization, applied
     # identically to every AC head so the default v3 hyperparameters transfer.
     retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
-    # Manager-only retnorm override. ``meanstd`` scales the manager advantage by
-    # the running return std (Director's original ``retnorm: std``); the mean
-    # offset it returns is unused by the manager advantage path (``roff_*`` is
-    # discarded), so this is std-only scaling. Worker and flat heads keep the
-    # ``perc`` retnorm above.
-    mgr_retnorm: {impl: meanstd, rate: 0.01, limit: 1e-8, perclo: 5.0, perchi: 95.0, debias: False}
+    # Manager retnorm. Identical to ``retnorm`` above since 2026-09-04: the
+    # manager now uses DreamerV3's percentile normalization like every other
+    # head. It previously ran Director's ``meanstd`` (running return std) with
+    # ``limit: 1e-8``, which is exactly the failure DreamerV3 names --
+    # "normalizing rewards or returns by standard deviation can fail under
+    # sparse rewards where their standard deviation is near zero, drastically
+    # amplifying rewards regardless of their size". ``perc``'s limit of 1.0 is
+    # their answer to it: scale large ranges down, never scale small ones up.
+    # Kept as its own key so the manager can still be swept independently.
+    mgr_retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
     valnorm: {impl: none, rate: 0.01, limit: 1e-8}
     advnorm: {impl: none, rate: 0.01, limit: 1e-8}
     reward_grad: True
@@ -676,65 +693,122 @@ director_match: &director_match
   batch_size: 4
   batch_length: 32
 
-# --- Director's actor-critic stabilizers, which director_match never carried ---
+# ---------------------------------------------------------------------------
+# The three production configs (2026-09-04). Pass exactly one as CONFIGS=<name>.
 #
-# `director_match` sets network SIZES only; everything else stayed at DreamerV3
-# defaults. Four of those defaults are what let the pinpad_five Director seeds
-# e652-e655/e676 peak near 215 by 1M steps and then decay to ~83 by 3.75M, with
-# two of five seeds driving the manager's task critic to impossible values
-# (mgr_extr_val reached -23 on e654 and -210 on e655, on a task whose reward is
-# 0 or +10 and can never be negative). Measured against TF Director:
+# They differ only where they must. Everything else is the DreamerV3 default,
+# which `defaults` now carries verbatim: LaProp lr 4e-5 / wd 0.0 / eps 1e-20 /
+# agc 0.3, retnorm perc(5-95, limit 1.0), advnorm none, valnorm none, fixed
+# actent 3e-4, policy unimix 0.01, critic EMA regularizer (slowvalue rate 0.02,
+# slowtar False, slowreg 1.0), batch 16x64, replay 5e6 uniform, train_ratio 256
+# at 1.1M steps.
 #
-#  1. manager_slowtar. We bootstrap the manager critic off ITSELF -- both the
-#     critic target and the actor's advantage read the live critic, with the
-#     slow copy only a soft `slowreg` pull (hrl/losses.py:241). TF Director's
-#     VFunction.target() reads `self.target_net`, a separate network hard-copied
-#     every 100 updates (slow_target_update: 100, slow_target_fraction: 1.0,
-#     adv_slow_critic: True). Once pinpad's sparse task reward stops arriving,
-#     nothing anchors our critic but its own output, and it runs away.
-#  2. advnorm. Director normalizes TWICE: each reward stream by its own running
-#     std, then the WEIGHTED SUM by running mean and std (agent.py:329-337,
-#     advnorm: {impl: mean_std, decay: 0.99}). Ours had that second stage set to
-#     `none` -- offset 0, scale 1 -- so the manager's policy-gradient magnitude
-#     floated free. Measured on e652-e676: median mgr_adv_std ~0.3 with peaks of
-#     10.3/10.5/14.7, i.e. updates 30-50x normal size. It also removes the
-#     persistent -0.5..-0.85 offset our exploration advantage carries, which
-#     comes from that reward being non-stationary downward (visit a region, the
-#     goal AE learns it, the bonus there decays, so the critic over-predicts).
-#     `advnorm` is shared by the manager and the worker; Director's is too,
-#     since every ImagActorCritic builds one.
-#  3. mgr_retnorm.limit. Director floors the per-stream return std at 1e-2
-#     (retnorm: {impl: std, max: 1e2} -> var floored at 1/max^2). Ours floored
-#     it at 1e-8, six orders of magnitude lower, so a task stream with almost no
-#     spread left divides the advantage by ~0.
-#  4. Weight decay. Director runs wd 1e-2 with wd_pattern 'kernel' on all four
-#     of its optimizers. Ours ran wd 0.0 on all three, and nothing else bounds
-#     parameter norm: over e654's 4M steps the actor-critic parameter RMS grew
-#     0.046 -> 0.109 (2.4x, still a straight line at the end), the world model
-#     0.0293 -> 0.0386, the goal AE 0.0563 -> 0.0656. The goal AE reconstructs
-#     `deter` with a summed MSE, so a growing `deter` scale grows that error with
-#     no bug anywhere: goal/rec_mean went 6.4 -> 52. That error IS the manager's
-#     exploration reward (`adver`, squared), and mgr_expl_rew tracked it exactly
-#     (0.0069 -> 0.0559, the same 8x). So the manager's second objective grew in
-#     absolute size for the whole run instead of converging.
-#     2.5e-2 not 1e-2: both implementations are decoupled (Director assigns
-#     `var *= (1 - wd*lr)`; ours appends optax.add_decayed_weights after the RMS
-#     and momentum stages, so the step is -lr*wd*param). Effective shrinkage is
-#     therefore wd*lr, and our lr is 4e-5 against Director's 1e-4. 2.5e-2 * 4e-5
-#     matches their 1e-2 * 1e-4 = 1e-6 per step. `wdregex` already defaults to
-#     '/kernel$', which is Director's wd_pattern.
+# Size is `size6m`: deter 1024, hidden/units 128, classes 8, depth 8. That is
+# DreamerV3's ladder rung at deter 1024 and it satisfies all three of their
+# scaling rules -- deter = 8*units, classes = units/16, depth = units/16
+# ("the number of recurrent units, split into eight blocks of the same size as
+# the MLPs... Each latent also uses 16-times-fewer codes than the model
+# dimension", Nature 2025 Methods). `director_match` above satisfies none of the
+# first two: it runs deter 1024 against units 1024 and classes 32, which is a
+# 107M-parameter model carrying a 6M-parameter recurrent state. It is kept
+# because ~30 launchers and every archived run still reference it.
 #
-# Still NOT matched, deliberately, so this block stays a four-factor change:
-# mgr_retnorm.rate is 0.01 (a 100-batch EMA) against Director's decay 0.999
-# (1000 batches), mgr_retnorm.debias is False against Director's always-on bias
-# correction, and imag_loss.slowtar / repl_loss.slowtar stay False so only the
-# MANAGER critic changes its bootstrap (the worker's cosine_max goal reward is
-# bounded in [0,1] and its critic stayed healthy in every seed).
-director_stable:
+# `director_match` and `goal_som_lipvq_line_prod`/`lip_relu` remain valid; these
+# blocks supersede them for new work.
+# ---------------------------------------------------------------------------
+
+# Flat DreamerV3: no hierarchy, single actor-critic over world-model features.
+# The control for every HRL claim.
+dreamerv3:
+  <<: *size6m
+  # DreamerV3's dmc_vision cell: 1.1M env steps at replay ratio 256 =
+  # ~2.8e8 replayed steps. Wall time is set by gradient count, not env
+  # steps, so this is within 10%% of the old 64 x 4M and costs the same.
+  run: {steps: 1.1e6, train_ratio: 256}
   agent:
-    manager_slowtar: True
-    advnorm: {impl: meanstd}
-    mgr_retnorm: {limit: 1e-2}
+    use_hrl: False
+    # 15 is DreamerV3's imagination horizon. The HRL blocks below need 16
+    # instead, because Director requires (1 + H) % train_skill_duration == 1.
+    imag_length: 15
+
+# Director-style hierarchy on DreamerV3 hyperparameters. The goal autoencoder
+# is Director's (categorical code, KL to a uniform prior under an AutoAdapt
+# targeting 10 nats); everything about the manager and worker actor-critics is
+# DreamerV3, including the fixed entropy coefficient and the percentile
+# retnorm. Most keys here restate a current default on purpose, so the block
+# keeps its meaning if a default later moves.
+director:
+  <<: *size6m
+  # DreamerV3's dmc_vision cell: 1.1M env steps at replay ratio 256 =
+  # ~2.8e8 replayed steps. Wall time is set by gradient count, not env
+  # steps, so this is within 10%% of the old 64 x 4M and costs the same.
+  run: {steps: 1.1e6, train_ratio: 256}
+  agent:
+    use_hrl: True
+    imag_length: 16
+    goal_ae_impl: director
+    goal_kl: True
+    goal_autoencoder_beta: 1.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    manager_actent_adapt: False
+    manager_slowtar: False
+
+# `director` with the SOM + Lipschitz VQ goal autoencoder in place of the
+# Director one: a line-topology SOM over the codebook, a Lipschitz-constrained
+# ReLU trunk, and no KL (the VQ objective carries codebook/commitment terms
+# instead). Add `mgr_ucb` alongside for the UCB selection arm.
+som_lip:
+  <<: *size6m
+  # DreamerV3's dmc_vision cell: 1.1M env steps at replay ratio 256 =
+  # ~2.8e8 replayed steps. Wall time is set by gradient count, not env
+  # steps, so this is within 10%% of the old 64 x 4M and costs the same.
+  run: {steps: 1.1e6, train_ratio: 256}
+  agent:
+    use_hrl: True
+    imag_length: 16
+    goal_ae_impl: vq
+    goal_kl: False
+    goal_struct_weight: 0.0
+    goal_struct_adapt: False
+    goal_soft_reuse_adapt: False
+    manager_actent_adapt: False
+    manager_slowtar: False
+    goal_vq: {som: True, lip: True, topology: line,
+              lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11}
+    goal_vq_enc: {act: relu}
+    goal_vq_dec: {act: relu}
+
+# --- `director_stable` was REMOVED on 2026-09-04 ---
+#
+# It layered four of TF Director's actor-critic settings onto the DreamerV3
+# defaults: manager_slowtar, advnorm meanstd, mgr_retnorm.limit 1e-2, and weight
+# decay. Measured as a null on pinpad_five (peak ~191 vs ~202, same decay), and
+# three of the four are now positively argued against by the DreamerV3 papers:
+#
+#  * advnorm. Nature 2025 Fig. 6a ablates exactly this -- the bar is labelled
+#    "No return normalization (advnorm)" -- and reports that every robustness
+#    technique contributes, with return normalization ranked second overall.
+#    Because one `advnorm` key feeds both `mgr_advnorm` and `wkr_goal_advnorm`,
+#    turning it on also raised the WORKER's update magnitude ~17x
+#    (wkr_goal_adv_mag 0.037-0.043 -> 0.699-0.700) while its fixed actent 3e-4
+#    stayed put, and worker action entropy fell to 0.038-0.067 nats against a
+#    pinpad ceiling of ln(5) = 1.609 -- a near-deterministic worker.
+#  * mgr_retnorm.limit 1e-2 patched the near-zero-denominator failure that v3
+#    describes; v3's own answer is the `perc` retnorm's limit of 1.0, which the
+#    manager now inherits, so the override is redundant rather than wrong.
+#  * Weight decay: both papers state "we do not use any hyperparameter annealing,
+#    prioritized replay, weight decay, or dropout", and the stated rationale (a
+#    growing `deter` scale inflating goal/rec_mean) is false -- deter is bounded
+#    to [-1, 1] by the GRU update, verified in test_goal_vae_director_parity.py.
+#
+# manager_slowtar was the fourth factor and is untested on its own: v3 says its
+# EMA regularizer and DreamerV2's slow critic "perform similarly in practice", so
+# a hard periodic copy (slowvalue {rate: 1.0, every: 100} + manager_slowtar) is a
+# legitimate separate arm rather than something to bake into the baseline.
+#
+# Full rationale and measurements: git show 9d7b4bf:dreamerv3/configs.yaml,
+# EXPERIMENTS.md and docs/VERIFICATION.md.
 
 # reported as goal/used_frac and goal/perplexity.
 goal_vq:

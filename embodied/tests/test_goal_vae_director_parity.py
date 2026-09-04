@@ -231,11 +231,20 @@ class TestConfigParity:
     assert 'wdregex' not in agent().config.goal_opt, (
         'goal_opt now overrides wdregex; check it still matches TF')
 
-  def test_optimizer_lr_and_wd_match(self):
-    """TF: ``encdec_opt: {lr: 1e-4, wd: 1e-2, ...}``."""
+  def test_optimizer_lr_and_wd_are_dreamerv3_not_director(self):
+    """Deliberate divergence since 2026-09-04.
+
+    Director's ``encdec_opt`` is ``{lr: 1e-4, wd: 1e-2}``; DreamerV3's ``opt``
+    is ``{lr: 4e-5, wd: 0.0}``. We take DreamerV3's, because the rest of this
+    optimizer is already DreamerV3's -- it is LaProp with ``eps: 1e-20`` and
+    AGC 0.3, not Director's Adam with ``eps: 1e-6`` and a global-norm clip --
+    and because both DreamerV3 papers state in their hyperparameter tables that
+    "we do not use any hyperparameter annealing, prioritized replay, weight
+    decay, or dropout".
+    """
     opt = agent().config.goal_opt
-    assert float(opt.lr) == 1e-4
-    assert float(opt.wd) == 1e-2
+    assert float(opt.lr) == 4e-5, 'DreamerV3 lr; Director uses 1e-4'
+    assert float(opt.wd) == 0.0, 'DreamerV3 uses no weight decay'
 
   def test_known_divergences_are_still_the_ones_we_chose(self):
     """Deliberate, documented differences. Failing here is a signal to update
@@ -243,6 +252,8 @@ class TestConfigParity:
     """
     ag = agent()
     opt = ag.config.goal_opt
+    # eps 1e-20 belongs to LaProp, which is what DreamerV3 (and we) use;
+    # Director's 1e-6 is an Adam epsilon and does not transfer.
     assert float(opt.eps) == 1e-20, 'TF uses Adam eps 1e-6'
     assert float(opt.agc) == 0.3, 'TF clips global grad norm at 100.0'
     assert ag.config.goal_enc.act == 'silu', 'TF goal nets use elu'
