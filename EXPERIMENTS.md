@@ -123,6 +123,45 @@ peaks and decays with a non-evicting buffer, eviction is ruled out and the
 trigger is in the algorithm. -> If it holds, the whole 2026-08 collapse
 programme was chasing a buffer-size artifact.
 
+**e789–e824 added 2026-09-04 22:50** — the paired exploration-floor arm.
+`director` and `som_lip` with `mgr_expl_perc01` layered on (36 runs, seed-major,
+arrays `4706728` p100 / `4706729` short-a100). Everything else is identical to
+e735–e788, so the pairs differ only in `mgr_expl_retnorm.limit`.
+
+**Why.** Measured across all 15 HRL runs of the first batch, both arms and four
+tasks, the manager's exploration return is 0.19–0.55 against a `perc` floor of
+1.0. `perc` returns `max(limit, hi−lo)`, so **the exploration stream is never
+normalized, in any run, on any task**, while the extrinsic stream (return ~17
+on cheetah) is normalized properly. Where extrinsic reward is exactly 0 — every
+pinpad task until the first pad sequence is found — that leaves `mgr_adv_mag`
+at 4e-4 against 8e-2 on cheetah, and manager entropy pinned at its 16.64-nat
+ceiling (measured 16.47 on pinpad_six against 1.76 on cheetah).
+
+The cause is a unit mismatch rather than a broken normalizer: the exploration
+reward is a per-dim *mean* of squared reconstruction error over 1024 deter
+dims, so it is intrinsically ~1e-3, while the floor is absolute and was chosen
+for a task-reward stream. DreamerV3 never met this because it has one stream;
+Director avoids it with per-stream `std`.
+
+`perc` is kept rather than switched to `meanstd` because `meanstd` divides by
+the running std unconditionally, and would keep handing the manager a
+unit-scale advantage built from noise once the goal AE reconstructs everything
+equally well. A floor gives the wanted annealing for free: real novelty
+structure → divide by the real range → signal; structure gone → range falls
+under the floor → advantage decays → entropy returns to maximum.
+
+**0.1 is provisional.** It is ~1/3 of the estimated current 5–95 range, but
+propagating the measured spread gives 0.07–0.8 — the uncertainty is entirely in
+how correlated reconstruction errors are along a trajectory, which the logs
+could not settle. `mgr/rscale_expl` is now logged; set the floor from that
+rather than from this arithmetic. **Read it first: if it equals the configured
+limit, the stream is still clamped.**
+
+**Branches.** → If the paired arm's manager entropy falls below the ceiling on
+pinpad while the baseline's stays pinned, the floor was suppressing the
+exploration signal and 0.1 (or lower) becomes the default. → If both stay
+pinned, `mgr_expl_weight` is the binding constraint instead, not the normalizer.
+
 **Measured while setting this up** (size6m, one GPU per run):
 
 | GPU | conv | env fps | GPU mem | ETA for 1.1M |
