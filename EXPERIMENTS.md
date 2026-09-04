@@ -191,6 +191,64 @@ runs** despite 2.4 GB of an 80 GB A100 being nothing: the cluster exposes
   identical hardware.
 
 
+### First results (2026-09-05 08:00, ~36% of the matrix)
+
+Two runs finished, both flat `dreamerv3` at seed 0:
+
+| run | task | last-15 | best |
+|---|---|---|---|
+| e737 | `dmc_cheetah_run` | **910.5** | 923.5 |
+| e740 | `pinpad_six` | 0.0 | 0.0 |
+
+**The flat control reproduces published DreamerV3 on cheetah** (~800–900 at 1M)
+with a 4.19M-parameter `size6m` model, against the ~200M `size200m` that v3
+uses for its own `dmc_vision` benchmark. That is a useful calibration: the
+harness, the config and the 30x-smaller model are all sound, and any deficit
+elsewhere is not "our DreamerV3 is broken".
+
+**The hierarchy is far behind on dense control.** At comparable steps on
+cheetah: flat 910.5, `som_lip` 418.3, `director` 166.7. Manager skill entropy
+there is ~1.5 of a possible 16.64 nats, i.e. the manager has collapsed onto
+essentially one goal and the worker is chasing a constant target. That is the
+predicted consequence of `manager_actent_adapt: False` — DreamerV3's fixed
+`actent` 3e-4 is calibrated for a worker-sized action space against
+percentile-normalized returns, and nothing holds an 8x8 categorical open.
+**e825–e828** (`mgr_actent_adapt`, both arms, cheetah and pinpad_six, seed 0)
+test exactly this. Treat the current DMC ordering as provisional until they
+report.
+
+**Nothing has scored on pinpad_six**, in any arm, flat or hierarchical, at
+~980k steps. One run has found reward on a pinpad task at all: e781
+(`som_lip`, pinpad_five, seed 2) at last-15 192.7 after 104 episodes.
+
+**The exploration floor works directionally.** On pinpad_six the paired arm
+(floor 0.1) has manager advantage 0.00844 against the baseline's 0.00096 —
+8.8x, exactly the 1.0/0.1 ratio — and manager entropy has come off its ceiling
+to 13.06 against 15.13. But `mgr/rscale_expl` still reads exactly 0.1000, so
+the stream is *still* clamped and the true 5–95 range is below 0.1. The new
+`mgr/range_expl` metric logs the unclamped range so the floor can be set from a
+measurement rather than the arithmetic that produced 0.1.
+
+### Packing runs onto one GPU: measured and rejected (2026-09-05)
+
+A run uses 2.4 GB of an 80 GB A100, which looks like 97% waste. It is not.
+Four runs packed onto one A100 reach **21.6 aggregate env-fps against 24.2 for
+a single run** — 0.89x, slightly *slower* in total, with each run crawling at
+5.4 fps. Memory was never the constraint; the card is already compute-saturated
+by one run, and `nvidia-smi`'s `compute_avg` of 0.97 meant what it said.
+SLURM also cannot subdivide a GPU here (`GresTypes = gpu,mic`, no MPS or shard
+type), so packing inside one job was the only route and it does not pay.
+
+`sbatch/run_benchmark_packed.sbatch` is kept with the measurement in its header
+in case a smaller model or shorter imagination horizon changes the arithmetic.
+**One run per GPU stands.**
+
+A 1.26x reading taken at ~1000 steps was warmup, not signal — the runs had not
+finished filling replay or settled after JIT. Do not trust a throughput number
+from the first minutes of a run.
+
+---
+
 ## 3. Dead ends (don't retry)
 
 - `mask_sparsity_mode` **`sample`** / **`reinforce`**; fixed-weight sparsity→0 (F1).
