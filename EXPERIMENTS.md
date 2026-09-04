@@ -79,111 +79,78 @@ metrics reference.
 
 ## 2. Live board
 
-**e722–e729 launched 2026-09-01** (job ids 4704341–4704348, log
-`job_logs/e722_e729_director_vs_somlip.tsv`). Eight runs, one seed each, 4M
-steps, all on `gpu-a100` at 1 GPU apiece — exactly the 8-GPU cap, so they run as
-one wave. **First batch under the new defaults**, so nothing in the archive is a
-valid comparator.
+**e735–e788 launched 2026-09-04** — the benchmark matrix. 54 runs: three
+configs x six tasks x three seeds, one GPU each, 1.1M env steps at replay
+ratio 256. Arrays `4706650` (a100, 36), `4706651` (v100, 12), `4706660`
+(p100, 6); watchdog `4706677`; log `job_logs/bench_20260904_204028.tsv`.
+W&B project **`dreamerv3-bench-2026-09`**.
 
-| exp | job | task | arm |
-|---|---|---|---|
-| e722 | 4704341 | pinpad_five | director |
-| e723 | 4704342 | pinpad_six | director |
-| e724 | 4704343 | dmc_cartpole_swingup | director |
-| e725 | 4704344 | dmc_cheetah_run | director |
-| e726 | 4704345 | dmc_hopper_hop | director |
-| e727 | 4704346 | pinpad_five | som_lipvq_line_relu |
-| e728 | 4704347 | pinpad_six | som_lipvq_line_relu |
-| e729 | 4704348 | dmc_cheetah_run | som_lipvq_line_relu |
+| config | what it is |
+|---|---|
+| `dreamerv3` | flat DreamerV3, no hierarchy. The control. |
+| `director` | hierarchy + Director's categorical goal VAE |
+| `som_lip` | hierarchy + SOM/Lipschitz VQ goal VAE |
 
-Director is `director_match director_stable`; SOM/LiP is
-`director_match goal_som_lipvq_line_prod lip_relu director_stable` — the ReLU
-Lipschitz-SOM variant **without** `mgr_ucb`. **Both arms carry `director_stable`,
-so the goal autoencoder is the only difference between them** — this is the
-matched comparison the e718–e721 batch could not support (there the Director arm
-had slowtar/advnorm/retnorm and the SOM arm did not).
+Tasks: `dmc_cheetah_run`, `pinpad_six`, `dmc_hopper_hop`, `pinpad_five`,
+`dmc_cartpole_swingup`, `pinpad_four`. Submission order is seed-major then
+environment then config, so a full seed-0 sweep of all six environments and
+all three arms is in flight before any seed-1 run starts, and within a cell the
+order is director -> som_lip -> dreamerv3.
 
-**Hypothesis:** with the arms matched and the goal AE isolated, the SOM-line +
-Lipschitz codebook should hold its pinpad score later into training than the
-Director codebook, whose curve peaks near 1M and decays. **Caveat, stated up
-front:** one seed per cell resolves nothing on its own, and `dmc_hopper_hop` is
-retired as a comparison substrate (5 seeds there have ~1% power). e726 is a
-smoke/sanity cell, not evidence.
+**This is the first batch on DreamerV3 hyperparameters throughout** (38f8bf6,
+856ffb8), so nothing in the archive is a valid comparator — not even the
+2026-09-01 batch. What changed: lr 4e-5 / wd 0.0, `manager_policy.unimix` 0.01,
+`mgr_retnorm` percentile, fixed manager entropy instead of the AutoAdapt,
+`director_stable` deleted, replay 5e6, and `size6m` in place of
+`director_match`. That last one is the big one: **3.94M parameters against
+107M**, because `size6m` is DreamerV3's ladder rung at deter 1024 and satisfies
+their scaling rules (deter = 8*units, classes = units/16, depth = units/16)
+while `director_match` ran deter 1024 against units 1024 — a 107M model with a
+6M recurrent state.
 
-**Prerequisite fixes that landed with this batch** (`9ae4ee0`): ten sbatch
-scripts hardcoded the removed `dreamerv3_somvae` worktree path, and both
-launchers pinned `goal_opt.lr` 4e-5, `goal_opt.wd` 0.0 and
-`goal_autoencoder_beta` 0.25 **on the command line**, where a flag beats any
-config block — so the 2026-09-01 defaults would never have reached a run. All
-three are now variables defaulting to the config values.
+**Question:** does the hierarchy beat flat DreamerV3 at all, on a matched and
+now-honest hyperparameter set, and does the SOM/Lipschitz goal AE beat
+Director's on the sparse pinpad tasks where the collapse lives?
 
-**Cancelled earlier the same day:** e718–e721 at ~3.47M/4M and e706–e712 before
-starting. Their run dirs are still under `/work/DoyaU/vasilache/work/` and are
-not yet archived to the bucket.
+**Pre-registered expectations.** On the three DMC tasks all three arms should
+be close; DreamerV3 reaches ~800+ on cheetah at 1M steps and the hierarchy has
+never bought anything on dense control, so a large gap in *either* direction
+there means something is misconfigured rather than interesting. The claim under
+test is pinpad. Director's pinpad curve has peaked near 1M and decayed in every
+batch we have run; if the decay is a replay-eviction artifact it should be gone
+here, because replay 5e6 against 1.1M steps never evicts. -> If Director still
+peaks and decays with a non-evicting buffer, eviction is ruled out and the
+trigger is in the algorithm. -> If it holds, the whole 2026-08 collapse
+programme was chasing a buffer-size artifact.
 
-**Repo state.** One worktree (`code/dreamerv3`) on `main`, holding both the
-Director and SOM/LiP arms. `archive/hrl` is the only other branch. Local `main`
-is ahead of `origin/main` by 179 commits and **has not been pushed**.
+**Measured while setting this up** (size6m, one GPU per run):
 
-**Where the science stands.**
+| GPU | conv | env fps | GPU mem | ETA for 1.1M |
+|---|---|---|---|---|
+| A100-80GB | native | 24.2 | 2.4 GB (3%) | ~12.6 h |
+| V100-16GB | reference | 7.8 | 4.2 GB (26%) | ~39 h |
+| P100-16GB | reference | 7.2 | 3.8 GB (24%) | ~42 h |
 
-- **The `director_stable` arm is a null.** Its four factors each hit their
-  mechanical target and the seed-averaged pinpad-five curve is indistinguishable
-  from the plain baseline (peak ~191 vs ~202 at 1.0M, same decay). It fixed the
-  *recovery-blocker* — the manager value runaway, which only ever hit 2 of 5
-  baseline seeds — not the *trigger*, which is present in every seed. Full
-  measurements in the 2026-09-01 archive.
-- **`director_stable` is a five-factor change, not four.** `mgr_advnorm` and
-  `wkr_goal_advnorm` read one shared `config.advnorm` key, so turning on the
-  manager's advantage normalization also raised the worker's update magnitude
-  ~17x (0.037–0.043 -> 0.699–0.700). Splitting that key is a prerequisite for
-  ablating either half.
-- **The collapse trigger is not identified.** The one signal that moves with
-  every collapse is `wkr_goal_rew` roughly doubling (0.19–0.25 -> 0.50–0.53)
-  while the score falls ~90% — the worker gets better at reaching goals as the
-  score dies. Manager entropy is held at target throughout and is ruled out.
-- **The goal VAE was audited against Director line by line** on 2026-09-01
-  (`docs/VERIFICATION.md`, *Goal autoencoder* — the component previously had no
-  entry at all). Encoder/decoder inputs, the summed-MSE reconstruction, the KL
-  prior and its AutoAdapt controller, the training data and the exploration
-  reward all match. The one active difference, `goal_autoencoder_beta` 0.25 vs
-  Director's 1.0, **is now the default**. What still differs: the nets are
-  DreamerV3-sized (3x1024, silu/rms) against Director's 4x512 elu/layer, and
-  `eps` is 1e-20 against their 1e-6.
+Two standing answers from that. **One GPU per run is enough everywhere** — the
+old multi-V100 scripts used four because the 107M model needed ~59 GB, and at
+3.94M a single 16 GB card is 4x oversized. **A GPU cannot be shared between
+runs** despite 2.4 GB of an 80 GB A100 being nothing: the cluster exposes
+`GresTypes = gpu,mic` with no MPS or shard type, so SLURM hands out whole GPUs.
 
-**Next, in order.**
+**Two bugs found by launching it**, both fixed in 856ffb8:
 
-1. Split `advnorm` into worker and manager keys, then ablate the 17x worker
-   change apart from the manager normalization.
-2. Log `success_manager` (Director's "final goal reward > 0.7" fraction) and a
-   time-to-reach within the K-block, so the "worker arrives early and idles"
-   reading of the collapse can be tested at all.
-3. Archive the cancelled e706–e721 run dirs to the bucket and clear `/work`.
-4. Re-baseline both arms under the new defaults — every number in the archive
-   predates them.
+- `som_lip` died on every V100 within two minutes (`agent.py:254 assert all
+  finite`) while running fine on A100. `goal_vq_enc/dec` use `norm: none`
+  because a norm would undo the Lipschitz bound, and an unnormalized trunk in
+  bfloat16 goes non-finite. `goal_vq.dtype: float32` is what `LipMLP.dtype`
+  exists for. Applied to A100 too, so the arm is not bf16 on one card and f32
+  on another.
+- The partition split assigned runs by index mod 9, but algorithm is index
+  mod 3, so every P100 task was `dreamerv3` and every V100 task was
+  `director`/`som_lip`. The unit of assignment is now a *cell* — the three
+  arms for one (environment, seed) — so the arms being compared always ran on
+  identical hardware.
 
-**Default changes (2026-09-01).** Four moves, all in `defaults`, so both arms get
-them with no extra config block:
-
-- **Optimizers** `opt`/`ac_opt`/`goal_opt`: lr **4e-5 -> 1e-4**, wd **0 -> 1e-2**,
-  matching TF Director exactly. Decoupled shrinkage `wd*lr` stays at 1e-6, which
-  is what `director_stable`'s old wd 2.5e-2 gave at lr 4e-5 — the decay is
-  unchanged and only the learning rate rose. `director_stable` no longer carries
-  wd overrides.
-- **`goal_autoencoder_beta` 0.25 -> 1.0**, matching Director, which puts no beta
-  on the goal-VAE KL at all.
-- **Network sizes**: `director_match` no longer resizes every MLP — its
-  `.*\.units: 512` / `.*\.layers: 4` globs are gone, so all eleven nets keep the
-  DreamerV3 base sizes (3x1024; 1x1024 for the reward and continue heads). The
-  block now sets only rssm (deter/hidden 1024, classes 32), depth 64 and the
-  batch shape. **This moves the nets away from Director, not toward it.**
-- **`goal_struct_adapt` and `goal_soft_reuse_adapt` default to False**, so a
-  Director baseline is a clean control; recipes that want them must opt in.
-
-Every result in the archive predates these defaults. Reproducing an old run needs
-its own `logdir/config.yaml`, not the current file.
-
----
 
 ## 3. Dead ends (don't retry)
 
