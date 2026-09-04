@@ -321,6 +321,11 @@ def imag_loss_mgr(
         mgr_novel_ret, update, weights=dec_mask)
     mgr_novel_adv = (mgr_novel_ret - mgr_novel_tarval[:, :-1]) / rscale_novel
     mgr_adv = mgr_adv + novel_weight * mgr_novel_adv
+  # Realized divisors. `perc` returns max(limit, hi-lo), so rscale_expl equal
+  # to the configured limit means the stream is CLAMPED, i.e. not normalized.
+  # This is the number to set `mgr_expl_retnorm.limit` from.
+  metrics['mgr/rscale_extr'] = rscale_extr.mean()
+  metrics['mgr/rscale_expl'] = rscale_expl.mean()
   mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update, weights=dec_mask)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 

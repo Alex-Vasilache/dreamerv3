@@ -372,7 +372,11 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # Director's std-based return scaling. Each critic owns its own valnorm
       # (no-op under ``none`` but kept so the unnorm/norm path mirrors flat v3).
       self.mgr_extr_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_extr_retnorm')
-      self.mgr_expl_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_expl_retnorm')
+      # Own key: the exploration stream's units are ~2 orders of magnitude
+      # below the task reward's, so it needs its own denominator floor.
+      self.mgr_expl_retnorm = embodied.jax.Normalize(
+          **getattr(config, 'mgr_expl_retnorm', config.mgr_retnorm),
+          name='mgr_expl_retnorm')
       self.mgr_novel_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_novel_retnorm')
       self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
 

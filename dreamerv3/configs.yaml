@@ -613,6 +613,33 @@ defaults:
     # their answer to it: scale large ranges down, never scale small ones up.
     # Kept as its own key so the manager can still be swept independently.
     mgr_retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
+    # Exploration stream gets its OWN retnorm, because its units differ from the
+    # task reward's by ~2 orders of magnitude and `perc`'s denominator floor is
+    # absolute. The exploration reward is a per-dim MEAN of squared
+    # reconstruction error over 1024 deter dims, so its lambda-return sits at
+    # 0.19-0.55 (measured across all 15 HRL runs of e735-e788, both arms, four
+    # tasks). Against `limit: 1.0` that is ALWAYS clamped: every one of those
+    # runs divides the exploration advantage by 1.0, i.e. does not normalize it
+    # at all, while the extrinsic stream (return ~17 on cheetah) is normalized
+    # properly. On a sparse task, where extrinsic return is exactly 0 and
+    # exploration is the manager's only signal, that leaves mgr_adv_mag at
+    # 4e-4 against 8e-2 on cheetah -- ~200x weaker -- and manager entropy pinned
+    # at its 16.64-nat maximum.
+    #
+    # `perc` is kept rather than switched to `meanstd` on purpose. meanstd
+    # divides by the running std ALWAYS, so once the goal AE reconstructs every
+    # state equally well it would still hand the manager a unit-scale advantage
+    # built from noise -- exactly what DreamerV3 objects to. A floor gives the
+    # behaviour we want for free: real novelty structure -> divide by the real
+    # range -> signal; structure gone -> range collapses under the floor ->
+    # advantage decays -> entropy returns to maximum -> uniform goal sampling.
+    #
+    # limit 0.1 is PROVISIONAL. Estimated as ~1/3 of the current 5-95 range,
+    # which propagates to 0.07-0.8 depending on how correlated reconstruction
+    # errors are along a trajectory -- the one quantity the logs could not
+    # settle. `mgr/rscale_expl` is now logged so it can be set from the measured
+    # value instead of this arithmetic.
+    mgr_expl_retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
     valnorm: {impl: none, rate: 0.01, limit: 1e-8}
     advnorm: {impl: none, rate: 0.01, limit: 1e-8}
     reward_grad: True
@@ -716,6 +743,15 @@ director_match: &director_match
 # `director_match` and `goal_som_lipvq_line_prod`/`lip_relu` remain valid; these
 # blocks supersede them for new work.
 # ---------------------------------------------------------------------------
+
+# Lower the exploration stream's denominator floor so it is actually
+# normalized. Layer onto `director` or `som_lip`:
+#   CONFIGS="director mgr_expl_perc01"
+# Paired against the unmodified arm, this measures whether the manager's
+# exploration signal was being suppressed by the floor.
+mgr_expl_perc01:
+  agent:
+    mgr_expl_retnorm: {impl: perc, rate: 0.01, limit: 0.1, perclo: 5.0, perchi: 95.0, debias: False}
 
 # Flat DreamerV3: no hierarchy, single actor-critic over world-model features.
 # The control for every HRL claim.

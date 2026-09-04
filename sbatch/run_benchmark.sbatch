@@ -30,16 +30,25 @@ REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 WD=/work/DoyaU/vasilache/work
 mkdir -p "$WD/slurm_logs"
 
-# Array mode: one line per task in PARAMS, "CONFIG TASK SEED EXP_TAG".
+# Array mode: one line per task in PARAMS,
+#   "CONFIG TASK SEED EXP_TAG [EXTRA_BLOCKS...]"
+# Extra blocks are appended to CONFIG, so a layered arm is expressed as a
+# trailing column. They go LAST rather than inside the CONFIG field because the
+# arrays already in flight have four-field rows and re-read this file on every
+# requeue -- a delimiter or column-order change would break them mid-run.
 # Single-job mode: CONFIG/TASK/SEED/EXP_TAG come straight from --export.
 if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
   PARAMS="${PARAMS:?array mode needs PARAMS=<file>}"
   mapfile -t ROWS < "$PARAMS"
-  read -r CONFIG TASK SEED EXP_TAG <<< "${ROWS[$SLURM_ARRAY_TASK_ID]}"
-  echo "[array] task=$SLURM_ARRAY_TASK_ID -> $CONFIG $TASK seed=$SEED tag=$EXP_TAG"
+  read -r CONFIG TASK SEED EXP_TAG EXTRA_BLOCKS <<< "${ROWS[$SLURM_ARRAY_TASK_ID]}"
+  CONFIG="$CONFIG${EXTRA_BLOCKS:+ $EXTRA_BLOCKS}"
+  echo "[array] task=$SLURM_ARRAY_TASK_ID -> '$CONFIG' $TASK seed=$SEED tag=$EXP_TAG"
 fi
 
-CONFIG="${CONFIG:?set CONFIG=dreamerv3|director|som_lip}"
+# May be several space-separated blocks, layered left to right, e.g.
+# CONFIG="director mgr_expl_perc01". Intentionally unquoted at the call
+# site so the words split into separate --configs entries.
+CONFIG="${CONFIG:?set CONFIG=dreamerv3|director|som_lip [extra blocks]}"
 TASK="${TASK:?set TASK}"
 SEED="${SEED:-0}"
 EXP_TAG="${EXP_TAG:-bench}"
@@ -54,7 +63,8 @@ RUN_ENVS="${RUN_ENVS:-8}"
 # SLURM_JOB_ID is stable across `scontrol requeue` of the same job.
 JOBKEY="${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}"
 [ -n "${SLURM_ARRAY_TASK_ID:-}" ] && JOBKEY="${JOBKEY}_${SLURM_ARRAY_TASK_ID}"
-RUN_DIR="${RUN_DIR:-$WD/${EXP_TAG}_${TASK}_${CONFIG}_s${SEED}_j${JOBKEY}}"
+CONFIG_TAG="${CONFIG_TAG:-$(printf %s "$CONFIG" | tr " " "-")}"
+RUN_DIR="${RUN_DIR:-$WD/${EXP_TAG}_${TASK}_${CONFIG_TAG}_s${SEED}_j${JOBKEY}}"
 mkdir -p "$RUN_DIR/logdir"
 
 # Env must be sourced (not the venv activated directly): source_dreamerv3_env.sh
@@ -87,7 +97,7 @@ export MUJOCO_GL=egl
 # Re-apply after the source, which sets its own WANDB_PROJECT.
 WANDB_PROJECT="$BENCH_WANDB_PROJECT"
 export WANDB_PROJECT
-export WANDB_RUN_GROUP="${CONFIG}_${TASK}"
+export WANDB_RUN_GROUP="${CONFIG_TAG}_${TASK}"
 
 NGPU=$(python3 - <<'EOF'
 import os
@@ -123,7 +133,7 @@ run_training() {
   python -u "$REPO/dreamerv3/main.py" \
     --logdir "$RUN_DIR/logdir" \
     --seed "$SEED" \
-    --configs "$CONFIG" \
+    --configs $CONFIG \
     --task "$TASK" \
     "${ENV_FLAGS[@]}" \
     --online_learning False \

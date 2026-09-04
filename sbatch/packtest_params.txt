@@ -1,0 +1,4 @@
+director dmc_cheetah_run 7 packtest0
+som_lip dmc_cheetah_run 7 packtest1
+director pinpad_five 7 packtest2
+som_lip pinpad_five 7 packtest3
