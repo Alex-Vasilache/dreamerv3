@@ -1,0 +1,3 @@
+director dmc_cheetah_run 8 packp0
+som_lip dmc_cheetah_run 8 packp1
+director pinpad_six 8 packp2

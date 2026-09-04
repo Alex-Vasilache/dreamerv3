@@ -326,6 +326,21 @@ def imag_loss_mgr(
   # This is the number to set `mgr_expl_retnorm.limit` from.
   metrics['mgr/rscale_extr'] = rscale_extr.mean()
   metrics['mgr/rscale_expl'] = rscale_expl.mean()
+  # UNCLAMPED 5-95 range of each return, computed straight off the batch. The
+  # rscale_* above are max(limit, hi-lo), so once a stream is clamped they only
+  # report the limit back and say nothing about where it should be set. These
+  # do: if range_expl < mgr_expl_retnorm.limit, the stream is being clamped and
+  # the limit needs to come down to that value.
+  def _p595(x, mask):
+    xf = x.reshape(-1)
+    if mask is not None:
+      mf = jnp.broadcast_to(mask.reshape(mask.shape + (1,) * (x.ndim - 2)),
+                            x.shape).reshape(-1)
+      xf = jnp.where(mf > 0, xf, jnp.nan)
+      return (jnp.nanpercentile(xf, 95) - jnp.nanpercentile(xf, 5))
+    return jnp.percentile(xf, 95) - jnp.percentile(xf, 5)
+  metrics['mgr/range_extr'] = _p595(mgr_extr_ret, dec_mask)
+  metrics['mgr/range_expl'] = _p595(mgr_expl_ret, dec_mask)
   mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update, weights=dec_mask)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 

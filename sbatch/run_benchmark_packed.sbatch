@@ -10,6 +10,17 @@
 
 # Run SEVERAL training runs concurrently on ONE GPU.
 #
+# MEASURED 2026-09-05 AND REJECTED. Four size6m runs on one A100 reach 21.6
+# aggregate env-fps against 24.2 for a single run on the same card -- packing is
+# 0.89x, i.e. slightly SLOWER in total, and each run individually crawls at 5.4
+# fps instead of 24.2. The 2.4 GB footprint is misleading: memory was never the
+# constraint, compute is, and the card is already saturated by one run.
+# nvidia-smi's compute_avg of 0.97 turned out to mean what it says here.
+#
+# Kept for the record and in case a much smaller model or a shorter
+# imagination horizon changes the arithmetic. DO NOT use it for the current
+# benchmark: one run per GPU is correct.
+#
 # WHY. At size6m a run uses ~2.4 GB of an 80 GB A100 and nvidia-smi reports
 # compute_avg 0.97 -- but that metric only says a kernel was resident, not that
 # the SMs were busy. A 3.94M-parameter model at batch 16x64 does not fill an
@@ -22,11 +33,14 @@
 # of the card per process and the second one would OOM immediately.
 #
 # Usage:
-#   sbatch -p gpu-a100 --gres=gpu:a100:1 -c 32 --mem=160G \
-#     --export=ALL,PARAMS=<file>,ROWS=0,1,2,3 \
-#     sbatch/run_benchmark_packed.sbatch
+#   PARAMS=<file> ROWS=0,1,2,3 sbatch -p gpu-a100 --gres=gpu:a100:1 \
+#     -c 32 --mem=160G --export=ALL sbatch/run_benchmark_packed.sbatch
 #
-# ROWS is a comma-separated list of 0-based line numbers in PARAMS.
+# ROWS is a comma-separated list of 0-based line numbers in PARAMS. Pass it
+# through the ENVIRONMENT with --export=ALL, never inside the --export list:
+# that list is itself comma-separated, so "ROWS=0,1,2,3" is read as ROWS=0
+# followed by three junk entries, and the job silently runs a single training
+# instead of four.
 
 set -uo pipefail
 
