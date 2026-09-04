@@ -164,8 +164,8 @@ with Director's HRL and Director's layer sizes", not a port of TF Director.
 | manager_rews | extr 1.0, expl 0.1 | extr 1.0, expl 0.1 | OK |
 | worker_report_horizon | 64 | 32 | DIFF |
 | goal_reward | `cosine_max` | `cosine_max` | OK (`test_tensors_vs_director.py`) |
-| goal VAE KL weight | `rec + kl`, no beta | `rec + 0.25 * kl` | **DIFF, binding** -- see *Goal autoencoder* below |
-| goal AE nets | 4x512, elu/layer | 4x512, silu/rms | OK on shape (`director_match`); act/norm DIFF |
+| goal VAE KL weight | `rec + kl`, no beta | `rec + kl` (beta 1.0) | OK since 2026-09-01 (was `0.25 * kl`); `test_goal_vae_director_parity.py` |
+| goal AE nets | 4x512, elu/layer | 3x1024, silu/rms | DIFF -- since the 09-01 defaults `director_match` no longer resizes MLPs |
 | deter (goal AE target dim) | 1024 | 1024 | OK |
 
 ## Component checklist
@@ -223,9 +223,15 @@ with Director's HRL and Director's layer sizes", not a port of TF Director.
 Audited 2026-09-01, line by line against
 `code/director/embodied/agents/director/hierarchy.py` (`train_vae_replay`,
 `train_vae_imag`, `elbo_reward`) and their `configs.yaml`. **Before this the
-component had no row anywhere in this document, not even a TODO.** These rows
-are `read the code on both sides and compared`, not test-backed; the status key's
-stricter sense of "OK" does not apply until tests exist (see next actions).
+component had no row anywhere in this document, not even a TODO.**
+
+**Test-backed since 2026-09-04** by
+`embodied/tests/test_goal_vae_director_parity.py` (39 assertions). The 09-01
+rows were a code read on both sides; a read cannot catch a reduction that
+silently changed axis, a straight-through estimator that stopped passing
+gradient, or a controller whose clip makes its target unreachable. Everything
+the tests cover now carries the status key's stricter sense of "OK". Nothing
+the read called OK turned out to be wrong.
 
 | Item | Status | Evidence |
 |---|---|---|
@@ -242,7 +248,68 @@ stricter sense of "OK" does not apply until tests exist (see next actions).
 | Goal AE optimizer | DIFF (lr), fixed | Director `encdec_opt`: lr 1e-4, wd 1e-2 kernel-only, eps 1e-6, clip 100. Ours was lr 4e-5, wd 0; `director_stable` set wd 2.5e-2 (matching the decoupled shrinkage `wd*lr = 1e-6`), and the 2026-09-01 defaults now set lr 1e-4 + wd 1e-2 exactly. `eps` and the `agc`-vs-`clip` difference remain. |
 | `manager_delta` | OK | `False` both -- the decoded goal is absolute, not a residual on the current state. |
 | Manager entropy target | OK | Director's `mconfig` sets `actent.target = manager_actent = 0.5`, normalized, matching our `manager_actent_target: 0.5`. |
-| Goal AE numerics vs Director | TODO | No test asserts encoder/decoder/KL numerics against a transcription of Director's, the way `test_tensors_vs_director.py` does for block pooling. |
+| Goal AE numerics vs Director | OK | `test_goal_vae_director_parity.py`. Shapes `[B,T,8,8]`; hard one-hot code; reconstruction summed over `deter` and provably *not* the per-dim mean; KL per-block then summed. KL identities exact to float precision: uniform -> 0, deterministic -> `8*ln8 = 16.6355`, and `KL + entropy == 16.6355` always -- so `goal/kl_raw_mean` and `goal/entropy_mean` are one signal, not two (KL 11.0 <-> entropy 5.6 nats). |
+| Straight-through estimator | OK | `TestStraightThrough`. `d(sample)/d(logits)` equals `d(softmax)/d(logits)` with max difference **exactly 0.0**, matching TF `OneHotDist.sample`'s `sg(onehot) + (probs - sg(probs))`. |
+| Gradient routing | OK | `TestGradientRouting`. Gradient reaches `goal_enc` and `goal_dec` and is **exactly zero** into `enc/dyn/dec/rew/con` and into every actor-critic module -- the JAX equivalent of TF taping only `[self.enc, self.dec]`. |
+| KL controller update rule | OK | `TestAutoAdapt`. Our `AutoAdapt('mult')` reproduces Director's branch-for-branch at every deadband edge (target 10.0, +-10%: grow above 11.0, shrink below 9.0909, hold between), including both clips. |
+| Loss assembly | OK | `TestLossAssembly`, from real train steps: `loss/goal_autoencoder == rec + beta * (kl_raw * adapt_scale)`, outer `loss_scales` entry 1.0. |
+| Replay/batch geometry and train cadence | OK | Both sides: batch 16 x 64, **uniform** sampling from a 1e6 window, one goal-VAE update per 16 env steps on the replay posterior `deter`. Director `batch_size 16` / `replay_chunk 64` / `train_every 16` / `replay_size 1e6`; ours `batch_size 16` / `batch_length 64` / `train_ratio 64` / `replay.size 1e6` with `fracs.uniform 1.0` and `consec_train 1` (so `Consec` is a pass-through). |
+| `deter` scale comparability | OK | Both RSSMs use `deter = update * tanh(...) + (1 - update) * deter` from a zero init, so `deter` is bounded elementwise to [-1, 1] on both sides. Reconstruction totals are therefore directly comparable between implementations, and a rising `goal/rec_mean` is real error growth, never a target that grew. |
+| Weight-decay pattern | OK | Ours `wdregex: '/kernel$'` == Director `wd_pattern: 'kernel'`. |
+
+#### Empirical reference: what a healthy goal VAE looks like
+
+Measured 2026-09-04 from four **real TF Director runs** on `dmc_hopper_hop`
+(`/work/DoyaU/vasilache/work/tfdir_dmc_hopper_hop_s{0,2,3,4}_*`, 4M steps, scale
+parity confirmed from their stdout config dump: deter 1024, `skill_shape [8,8]`,
+batch 16 x 64, `train_every 16`, goal nets 4x512). Scalars come from the
+TensorBoard event files, not `metrics.jsonl`, which carries episode stats only.
+
+| Metric | 0.0M | 1.0M | 2.0M | 3.5M |
+|---|---|---|---|---|
+| TF Director `goalrec_mean` (4 seeds) | 36.2 | 25.3 | 19.8 | **17.1** |
+| TF Director `goalkl_mean` | 9.9 | 9.7 | 9.5 | 9.6 |
+| TF Director `goalkl_scale_mean` | 0.79 | 0.79 | 0.75 | **0.66** |
+| ours e726 `dmc_hopper_hop` rec | 13.9 | 25.7 | 23.4 | **22.9** |
+| ours e726 `goal/kl_adapt_scale_mean` | 0.38 | 0.58 | 0.58 | **0.61** |
+| ours e722 `pinpad_five` rec | 5.6 | 40.1 | 60.0 | **85.7** |
+| ours e722 `goal/kl_adapt_scale_mean` | 0.36 | 1.00 | 1.00 | **1.00 (railed)** |
+
+Three things follow, and they are the reason this table is here rather than in a
+session log:
+
+1. **Director's reconstruction falls by half over training** (36 -> 17) in every
+   seed. A goal VAE whose `goal/rec_mean` *rises* is not doing what the
+   reference does. "It only has to be a good code, not a good reconstructor" is
+   not supported by Director's own logs.
+2. **On a matched task our VAE is in Director's regime** -- rec 23 vs 17 over
+   the same 1024 bounded dims, KL near target, multiplier unrailed. The
+   implementation is not broken.
+3. **`goal/kl_adapt_scale_mean` pinned at 1.0 is the diagnostic.** Director
+   never rails on hopper; neither do we. We rail only on pinpad, and that is
+   exactly where the reconstruction runs away and the score collapses. Because
+   `goal_kl_init == goal_kl_max == 1.0` the controller can only ever relax, so
+   once it rails `goal_kl_target` is no longer in control and the effective KL
+   weight is `goal_autoencoder_beta` alone.
+
+Caveat on 2: `dmc_hopper_hop` is retired as a *scoring* comparison (5 seeds have
+~1% power there). It is used here only as a substrate where both
+implementations have real runs at matched scale, and the quantity compared is a
+training loss, not a score.
+
+#### Deliberate divergences (asserted, so they cannot drift back silently)
+
+`test_known_divergences_are_still_the_ones_we_chose` pins each of these. A
+failure there means someone changed a choice, not necessarily that a bug
+appeared -- update this section with it.
+
+| Item | Director | Ours | Note |
+|---|---|---|---|
+| goal net act / norm | elu / layer | silu / rms | DreamerV3 house style. |
+| goal net shape | 4 x 512 | 3 x 1024 | Since the 2026-09-01 defaults; `director_match` no longer resizes MLPs. |
+| Adam `eps` | 1e-6 | 1e-20 | DreamerV3 default; untested either way. |
+| gradient clipping | global norm 100.0 | AGC 0.3 | **Neither ever binds:** measured `opt/goal_grad_norm` is ~22 and `update_rms / param_rms` ~5e-4, i.e. ~600x below the AGC threshold. |
+| RSSM | monolithic GRU (DreamerV2) | blocked GRU, `blocks: 8` (DreamerV3) | Plausibly why Director's rec starts high and falls while ours starts low and climbs: the reconstruction target is a differently-shaped representation. Not tested. |
 ### World model
 
 | Item | Status | Evidence |
@@ -285,6 +352,24 @@ EXPERIMENTS.md for the measurements behind each):
    and we log no equivalent, so the "worker arrives early and idles for the rest
    of the block" hypothesis -- which the e718-e721 collapse signature points at
    -- currently cannot be tested at all.
-7. **Test the goal AE numerics against Director**, the way
-   `test_tensors_vs_director.py` covers block pooling. Today's audit is a code
-   read on both sides, not an assertion.
+7. **Done 2026-09-04:** the goal AE numerics are asserted against Director in
+   `embodied/tests/test_goal_vae_director_parity.py` (39 checks), and the
+   *Goal autoencoder* section now carries an empirical reference table from
+   four real TF Director runs. Nothing the 09-01 code read called OK turned out
+   to be wrong.
+
+Added 2026-09-04, from the goal-VAE parity work:
+
+8. **Treat `goal/kl_adapt_scale_mean == 1.0` as an alarm, not a reading.**
+   It means the KL controller has saturated and `goal_kl_target` is no longer
+   in control. It rails on pinpad and not on hopper, and pinpad is where the
+   reconstruction runs away. Two one-seed probes separate the causes, and they
+   pull in opposite directions: raise `goal_kl_max` (let the controller reach
+   its 10.0 target) versus lower `goal_autoencoder_beta` (let reconstruction
+   recover). Neither has been run.
+9. **Find out why `goal/rec_mean` rises on pinpad and falls in Director.**
+   The implementation is verified faithful and matches Director's regime on
+   hopper, so the runaway is task-specific rather than a code defect. The
+   suspects worth measuring are the blocked-vs-monolithic RSSM (is the
+   pinpad `deter` less compressible by an ~11-nat code?) and whether the code's
+   16.64-nat ceiling is simply too small for pinpad's state diversity.
