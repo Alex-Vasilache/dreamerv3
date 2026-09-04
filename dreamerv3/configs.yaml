@@ -753,6 +753,21 @@ mgr_expl_perc01:
   agent:
     mgr_expl_retnorm: {impl: perc, rate: 0.01, limit: 0.1, perclo: 5.0, perchi: 95.0, debias: False}
 
+# Restore Director's adaptive manager-entropy controller (AutoAdapt holding
+# normalized entropy at `manager_actent_target`) in place of DreamerV3's fixed
+# coefficient. Layer onto `director` or `som_lip`:
+#   CONFIGS="director mgr_actent_adapt"
+#
+# Why this exists: with the fixed 3e-4 coefficient the manager's skill entropy
+# collapses to ~1.5 of a possible 16.64 nats on dense tasks, and the first
+# completed cheetah runs put flat DreamerV3 at 910 against director 167 and
+# som_lip 418. DreamerV3's fixed coefficient is calibrated for a worker-sized
+# action space against percentile-normalized returns; the manager's action is 8
+# categoricals over 8 classes, and nothing holds it open.
+mgr_actent_adapt:
+  agent:
+    manager_actent_adapt: True
+
 # Flat DreamerV3: no hierarchy, single actor-critic over world-model features.
 # The control for every HRL claim.
 dreamerv3:
