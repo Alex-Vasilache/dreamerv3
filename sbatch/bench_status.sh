@@ -22,7 +22,7 @@ python3 - "$WD" "$VERBOSE" <<'PYEOF'
 import json, os, sys, glob, time
 wd, verbose = sys.argv[1], sys.argv[2] == '-v'
 rows, bad = [], []
-for d in sorted(glob.glob(os.path.join(wd, 'e7*_j4706*'))):
+for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j4706*'))):
     name = os.path.basename(d)
     mpath = os.path.join(d, 'logdir', 'metrics.jsonl')
     spath = os.path.join(d, 'logdir', 'scores.jsonl')

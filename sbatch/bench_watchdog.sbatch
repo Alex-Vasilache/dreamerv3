@@ -57,7 +57,7 @@ bw_bump() {
 }
 
 while [ "$(date +%s)" -lt "$(date -d "$BW_DEADLINE" +%s)" ]; do
-  BW_NDIRS=$(ls -d "$BW_RUNS_DIR"/e7*_j4706[0-9][0-9][0-9]_* 2>/dev/null | wc -l)
+  BW_NDIRS=$(ls -d "$BW_RUNS_DIR"/e[0-9]*_j4706* 2>/dev/null | wc -l)
   BW_HWM=$(awk -F'\t' '$1=="__hwm__"{n=$2} END{print n+0}' "$BW_STATE")
   if [ "$BW_NDIRS" -gt "$BW_HWM" ]; then
     grep -v -P '^__hwm__\t' "$BW_STATE" > "$BW_STATE.tmp" 2>/dev/null || : > "$BW_STATE.tmp"
