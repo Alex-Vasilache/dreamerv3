@@ -29,11 +29,17 @@ for d in sorted(glob.glob(os.path.join(wd, 'e7*_j4706*'))):
     step, score, age = None, None, None
     if os.path.exists(mpath):
         age = time.time() - os.path.getmtime(mpath)
+        # Scan the file rather than seeking to a fixed tail: a metrics row here
+        # carries 237 keys, so an 8 KB window can miss a complete line entirely
+        # and silently report step=None. That made a 36% run look like 3.6%.
         try:
-            with open(mpath, 'rb') as f:
-                f.seek(max(0, f.seek(0, 2) - 8192))
-                last = [l for l in f.read().decode(errors='ignore').split('\n') if l.strip()]
-            step = json.loads(last[-1]).get('step')
+            with open(mpath) as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            step = json.loads(line).get('step', step)
+                        except Exception:
+                            pass
         except Exception:
             pass
     if os.path.exists(spath):
@@ -45,6 +51,12 @@ for d in sorted(glob.glob(os.path.join(wd, 'e7*_j4706*'))):
         except Exception:
             pass
     rows.append((name, step, score, age))
+    # A run at target is DONE, not stalled -- and it stops a few thousand steps
+    # short of run.steps because the driver checks between chunks, so compare
+    # against what runs actually reach.
+    done = step is not None and step >= 1_090_000
+    if done:
+        continue
     if step is None and age is not None and age > 3600:
         bad.append(f'{name}: metrics file untouched for {age/60:.0f} min, no step')
     elif age is not None and age > 3600:
