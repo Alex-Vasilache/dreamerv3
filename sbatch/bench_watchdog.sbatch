@@ -116,9 +116,28 @@ PY
     [ -n "$BW_CFG" ] && [ -n "$BW_TASK" ] || { echo "[watchdog] $BW_NAME: unreadable job.env, skipping"; continue; }
 
     # Resubmit on A100 with the same RUN_DIR so it RESUMES from the checkpoint.
-    BW_JID=$(sbatch --parsable -J "bench_retry" -p gpu-a100,gpu-v100 \
-      --exclude="saion-gpu[01-10]" --gres=gpu:1 -c 8 --mem=48G -t 2-00:00:00 \
-      --export=ALL,CONFIG="$BW_CFG",TASK="$BW_TASK",SEED="$BW_SEED",EXP_TAG="$BW_TAG",RUN_DIR="$BW_DIR",WANDB_PROJECT=dreamerv3-bench-2026-09 \
+    # ONE partition only: our association is per-partition, and a multi-partition
+    # request is rejected outright with "Multiple partition job request not
+    # supported when a partition is set in the association". Pick whichever of
+    # our three has a free slot, else fall back to the preemptible short-a100
+    # (runs are resumable, so preemption costs one checkpoint interval).
+    BW_PART=""
+    for cand in gpu-a100 gpu-v100 gpu-p100; do
+      BW_USED=$(squeue -u "$(whoami)" -h -p "$cand" -t RUNNING,PENDING -o "%D" | wc -l)
+      if [ "$BW_USED" -lt 8 ]; then BW_PART=$cand; break; fi
+    done
+    [ -n "$BW_PART" ] || BW_PART=short-a100
+    BW_EXTRA=""
+    [ "$BW_PART" = gpu-p100 ] && BW_EXTRA="--nodelist=saion-gpu[11-14]"
+    # shellcheck disable=SC2086
+    # Values go through the ENVIRONMENT with --export=ALL, not through the
+    # --export list. A layered arm's CONFIG contains a space
+    # ("director mgr_expl_perc01") and sbatch's --export parser treats that as
+    # the end of the list, silently dropping everything after it.
+    BW_JID=$(CONFIG="$BW_CFG" TASK="$BW_TASK" SEED="$BW_SEED" EXP_TAG="$BW_TAG" \
+      RUN_DIR="$BW_DIR" WANDB_PROJECT=dreamerv3-bench-2026-09 \
+      sbatch --parsable -J "bench_retry" -p "$BW_PART" $BW_EXTRA \
+      --gres=gpu:1 -c 8 --mem=48G -t 2-00:00:00 --export=ALL \
       "$BW_REPO/sbatch/run_benchmark.sbatch" 2>&1)
     if [[ "$BW_JID" =~ ^[0-9]+$ ]]; then
       bw_bump "$BW_NAME"
