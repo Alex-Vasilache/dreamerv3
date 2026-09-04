@@ -74,5 +74,17 @@ else:
 PYEOF
 
 echo
-echo "=== recent non-zero exits ==="
-grep -l "^\[done\] rc=[^0]" "$WD"/slurm_logs/bench_*.out 2>/dev/null | tail -10 || echo "  none"
+echo "=== non-zero exits (live run dirs only) ==="
+# Filter to run dirs that still exist: a cancelled array leaves its old logs
+# behind and they would otherwise be reported forever.
+found=0
+for f in "$WD"/slurm_logs/bench_*.out; do
+  [ -f "$f" ] || continue
+  rc=$(grep -aoE '^\[done\] rc=[0-9]+' "$f" 2>/dev/null | tail -1 | grep -oE '[0-9]+$')
+  [ -n "$rc" ] && [ "$rc" != 0 ] || continue
+  d=$(grep -aoE 'run_dir=\S+' "$f" 2>/dev/null | tail -1 | cut -d= -f2)
+  [ -n "$d" ] && [ -d "$d" ] || continue
+  echo "  rc=$rc $(basename "$d")"
+  found=1
+done
+[ "$found" -eq 0 ] && echo "  none"
