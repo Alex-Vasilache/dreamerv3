@@ -774,8 +774,17 @@ som_lip:
     goal_soft_reuse_adapt: False
     manager_actent_adapt: False
     manager_slowtar: False
+    # dtype float32 on the Lipschitz trunk. goal_vq_enc/dec run `norm: none`
+    # (the norm would undo the Lipschitz bound), and an unnormalized trunk in
+    # bfloat16 produces non-finite activations: every som_lip task on V100 in
+    # the first benchmark submission died at
+    # `embodied/jax/agent.py:254 assert all finite` within minutes, while the
+    # same config survived on A100. Pinning f32 is what `LipMLP.dtype` exists
+    # for (hrl/lipschitz.py: "which is what makes norm='none' work") and it
+    # also removes a hardware-correlated numerical difference inside one arm.
     goal_vq: {som: True, lip: True, topology: line,
-              lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11}
+              lip_per_row: False, lip_impl: prod, lip_scale: 1.1e-11,
+              dtype: float32}
     goal_vq_enc: {act: relu}
     goal_vq_dec: {act: relu}
 
