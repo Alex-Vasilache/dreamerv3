@@ -213,9 +213,11 @@ essentially one goal and the worker is chasing a constant target. That is the
 predicted consequence of `manager_actent_adapt: False` — DreamerV3's fixed
 `actent` 3e-4 is calibrated for a worker-sized action space against
 percentile-normalized returns, and nothing holds an 8x8 categorical open.
-**e825–e828** (`mgr_actent_adapt`, both arms, cheetah and pinpad_six, seed 0)
-test exactly this. Treat the current DMC ordering as provisional until they
-report.
+A `mgr_actent_adapt` block exists to restore the controller, but **e825–e828
+were cancelled before running on 2026-09-05 and the probe was not taken**. The
+DMC ordering therefore stands unattributed: we know the manager collapses onto
+one goal under the fixed coefficient, and we do not know whether restoring the
+controller recovers the deficit.
 
 **Nothing has scored on pinpad_six**, in any arm, flat or hierarchical, at
 ~980k steps. One run has found reward on a pinpad task at all: e781
