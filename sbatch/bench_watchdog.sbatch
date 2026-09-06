@@ -37,6 +37,7 @@ set -uo pipefail
 BW_REPO=/apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 BW_RUNS_DIR=/work/DoyaU/vasilache/work
 BW_STATE="$BW_RUNS_DIR/bench_watchdog_state.tsv"
+BW_DROPLIST="$BW_RUNS_DIR/bench_droplist.txt"
 BW_INTERVAL="${BW_INTERVAL:-900}"
 BW_TARGET_STEPS="${BW_TARGET_STEPS:-1090000}"
 BW_MAX_RETRIES="${BW_MAX_RETRIES:-4}"
@@ -97,6 +98,11 @@ PY
     if bw_in_queue "$BW_ENVJOB"; then BW_LIVE=$((BW_LIVE+1)); continue; fi
     BW_OURJOB=$(bw_get "$BW_NAME" 3)
     if bw_in_queue "$BW_OURJOB"; then BW_LIVE=$((BW_LIVE+1)); continue; fi
+
+    # Explicit drop list: runs deliberately abandoned. Without this a cancelled
+    # run looks exactly like a crashed one 45 minutes later, and the watchdog
+    # dutifully brings it back.
+    if [ -f "$BW_DROPLIST" ] && grep -qxF "$BW_NAME" "$BW_DROPLIST"; then continue; fi
 
     BW_N=$(bw_get "$BW_NAME" 2); BW_N=${BW_N:-0}
     if [ "$BW_N" -ge "$BW_MAX_RETRIES" ]; then
