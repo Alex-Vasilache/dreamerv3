@@ -231,6 +231,46 @@ the stream is *still* clamped and the true 5–95 range is below 0.1. The new
 `mgr/range_expl` metric logs the unclamped range so the floor can be set from a
 measurement rather than the arithmetic that produced 0.1.
 
+### Standings at 2026-09-06 09:00 (17 of 90 runs finished, 37% of env steps)
+
+Best run per cell, **single seeds, so treat every ordering as provisional**.
+`last-15` episode return; `*` marks a run still in flight (~520-590k steps).
+
+| task | dreamerv3 | director | som_lip | director+expl | som_lip+expl |
+|---|---|---|---|---|---|
+| `dmc_cartpole_swingup` | **858.9** | 528.2 | 744.9 | 704.0 | 704.0 |
+| `dmc_cheetah_run` | **910.5** | 338.7 | 282.1 | 361.4* | 381.1* |
+| `dmc_hopper_hop` | **336.8** | 0.0 | 65.1 | 65.1 | — |
+| `pinpad_four` | **381.3** | 0.0 | 12.0 | 234.0 | 326.7 |
+| `pinpad_five` | **297.3** | 0.0 | 2.0 | — | 0.0 |
+| `pinpad_six` | 0.0 | 0.0 | 0.0 | 0.0* | 0.0* |
+
+**Flat DreamerV3 leads every task**, including the sparse pinpad ones the
+hierarchy exists for. Director's paper claims the opposite there, so either the
+hierarchy is misconfigured or something about this setup differs from theirs in
+a way we have not identified. Do not read this as "hierarchy does not work"
+yet: it is one seed per cell, and the manager is in a state we already know is
+degenerate (below).
+
+**The exploration floor is the largest single effect measured.** On
+`pinpad_four` it moves the HRL arms from 0.0/12.0 to **234.0/326.7**. That is
+direct confirmation of the diagnosis behind e789-e824: with `perc`'s floor at
+1.0 the exploration return (0.19-0.55) was never normalized, so on a task whose
+extrinsic reward is 0 the manager had almost no gradient. Lowering the floor to
+0.1 gave it one. Note `mgr/rscale_expl` still reads exactly 0.1000, so the
+stream is *still* clamped and a lower floor should help further --
+`mgr/range_expl` now logs the unclamped range to set it from.
+
+**Open, and the most likely reason the HRL arms trail:** manager skill entropy
+sits at ~1.5 of a possible 16.64 nats on dense tasks under the fixed
+`actent: 3e-4` (`manager_actent_adapt: False`). A manager collapsed onto one
+goal makes the worker chase a constant target. The `mgr_actent_adapt` block
+restores Director's controller but **was deliberately not run**, so this stays
+a hypothesis with no experiment attached.
+
+**Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
+~1.09M steps.
+
 ### Packing runs onto one GPU: measured and rejected (2026-09-05)
 
 A run uses 2.4 GB of an 80 GB A100, which looks like 97% waste. It is not.
