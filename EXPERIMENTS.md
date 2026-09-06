@@ -271,6 +271,42 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### e829–e864: exploration floor 0.02, set from measurement (2026-09-07)
+
+`director` and `som_lip` with `mgr_expl_perc002`, 6 tasks x 3 seeds, arrays
+`4707513` (a100, 24) / `4707514` (v100, 8) / `4707517` (p100, 4). Third point on
+the floor axis, against the unmodified arm (1.0) and the 0.1 arm.
+
+**The value comes from `mgr/range_expl`, not from arithmetic.** Across 39 runs
+past 200k steps the exploration return's unclamped 5–95 range is:
+
+| arm | n | min | p25 | median | p75 | max |
+|---|---|---|---|---|---|---|
+| baseline (floor 1.0) | 24 | 0.034 | 0.096 | **0.167** | 0.216 | 0.481 |
+| floor 0.1 | 15 | 0.056 | 0.082 | **0.115** | 0.164 | 0.506 |
+
+Sparse tasks (pinpad/hopper) sit lower than dense ones: median 0.090 against
+0.137 in the 0.1 arm. **At floor 0.1, four of fifteen cells were still clamped**
+— both `pinpad_four` runs, `dmc_hopper_hop`, and one cheetah, with ranges
+0.056–0.076. Those are exactly the tasks where lowering the floor produced the
+largest gains, so the remaining headroom sits where it matters.
+
+0.02 is ~40% below the lowest range ever observed (0.034), so nothing clamps at
+launch, while still guarding a genuine collapse toward zero. Lower would sit
+inside the noise floor of a stream whose per-step reward is ~5e-3.
+
+**Correction to the 2026-09-06 entry**, which said the 0.1 arm was "still
+clamped": that came from four early runs where the range estimate had not
+settled. With the full set it is 4 of 15, not all — 0.1 landed near the median
+of the distribution and fixed most cells. The earlier estimate of 0.15–0.5,
+derived from the per-state reward spread, was about 2x too high; the lambda-
+return damps that spread more than assumed. This is why the metric was added.
+
+**Also on 2026-09-07:** the baseline (non-exploration) `director`/`som_lip`
+runs still early or unstarted were dropped, keeping the seven already past 900k
+so the control retains its seed coverage. `bench_droplist.txt` stops the
+watchdog resurrecting them.
+
 ### Standings at 2026-09-07 08:30 (38 of 90 finished, 63 with scores)
 
 Mean last-15 over the seeds started; (n seeds, lowest step reached).

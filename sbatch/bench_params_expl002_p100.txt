@@ -1,0 +1,4 @@
+director dmc_hopper_hop 1 e845 mgr_expl_perc002
+som_lip dmc_hopper_hop 1 e846 mgr_expl_perc002
+director pinpad_four 2 e863 mgr_expl_perc002
+som_lip pinpad_four 2 e864 mgr_expl_perc002

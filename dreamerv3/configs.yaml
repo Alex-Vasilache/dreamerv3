@@ -768,6 +768,20 @@ mgr_actent_adapt:
   agent:
     manager_actent_adapt: True
 
+# Exploration floor at 0.02, set from measurement rather than estimate.
+# `mgr/range_expl` across 39 settled runs puts the exploration return's 5-95
+# range at median 0.167 (baseline arm) with an observed minimum of 0.034, and
+# 0.062 among the sparse tasks. At limit 0.1 four of fifteen cells were still
+# clamped -- both pinpad_four runs, hopper, and one cheetah -- i.e. exactly the
+# tasks where the fix produced the largest gains. 0.02 sits ~40% below the
+# lowest range ever observed, so nothing clamps today, while remaining a real
+# guard: if the spread genuinely collapses as the goal AE converges, it engages
+# and the annealing still happens. Lower would sit inside the noise floor of a
+# stream whose per-step reward is ~5e-3.
+mgr_expl_perc002:
+  agent:
+    mgr_expl_retnorm: {impl: perc, rate: 0.01, limit: 0.02, perclo: 5.0, perchi: 95.0, debias: False}
+
 # Flat DreamerV3: no hierarchy, single actor-critic over world-model features.
 # The control for every HRL claim.
 dreamerv3:
