@@ -271,6 +271,37 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### Standings at 2026-09-07 08:30 (38 of 90 finished, 63 with scores)
+
+Mean last-15 over the seeds started; (n seeds, lowest step reached).
+
+| task | dreamerv3 | director | som_lip | director+expl | som_lip+expl |
+|---|---|---|---|---|---|
+| `dmc_cartpole_swingup` | **865.6** (3) | 624.2 (3) | 691.8 (3) | 704.0 (1) | 744.5 (1) |
+| `dmc_cheetah_run` | **909.2** (2) | 280.8 (3) | 373.9 (3) | 481.3 (2) | 232.0 (2) |
+| `dmc_hopper_hop` | **278.7** (2) | 0.3 (2) | 48.7 (2) | 88.6 (2) | 142.2 (1) |
+| `pinpad_four` | **382.0** (3) | 23.6 (3) | 128.0 (3) | 326.0 (1) | 250.0 (1) |
+| `pinpad_five` | **99.1** (3) | 0.0 (3) | 6.7 (3) | — | 0.0 (1) |
+| `pinpad_six` | 0.0 (2) | 0.0 (2) | 0.0 (2) | 0.0 (2) | 0.0 (2) |
+
+**The exploration floor now helps across tasks, not just one.** Comparing each
+HRL arm against its `+expl` pair: director gains on pinpad_four (23.6 -> 326.0),
+cheetah (280.8 -> 481.3) and hopper (0.3 -> 88.6); som_lip gains on hopper
+(48.7 -> 142.2) and pinpad_four (128.0 -> 250.0). Five of six comparable cells
+improve. The single regression, som_lip+expl on cheetah (232.0 against 373.9),
+is two partial runs at ~870k steps. This is now repeated evidence rather than
+one striking cell, and it is the strongest result in the batch.
+
+**Flat DreamerV3 still leads every task.** The gap narrows a lot with the
+exploration fix but does not close. Since the manager is known to be collapsed
+onto ~1.5 of 16.64 nats under the fixed `actent`, the honest reading is that
+this batch does not yet test "hierarchy vs flat" -- it tests one particular
+degenerate manager against flat.
+
+**`pinpad_six` is unsolved by everything**, two seeds per arm, all at ~1M steps,
+all exactly 0.0. Whatever the six-pad sequence needs, none of these agents has
+it, and that includes the flat agent that solves pinpad_four at 382.
+
 ### Packing runs onto one GPU: measured and rejected (2026-09-05)
 
 A run uses 2.4 GB of an 80 GB A100, which looks like 97% waste. It is not.
