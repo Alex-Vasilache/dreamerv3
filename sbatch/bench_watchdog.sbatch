@@ -171,9 +171,21 @@ PY
     # size50m needs 24 GB of GPU memory; a 16 GB V100/P100 cannot hold it, so
     # that arm is A100-only. The small arms may go anywhere.
     case "$BW_CFG" in
-      *size50m*) BW_CANDS="gpu-a100"; BW_MEM=96G ;;
-      *)         BW_CANDS="gpu-a100 gpu-v100 gpu-p100"; BW_MEM=48G ;;
+      *size50m*) BW_CANDS="gpu-a100" ;;
+      *)         BW_CANDS="gpu-a100 gpu-v100 gpu-p100" ;;
     esac
+    # HOST memory scales with how long the run lives, because replay
+    # (`replay.size` 5e6) is held in RAM and simply keeps filling. A 1.1M-step
+    # arm peaks around 26 GB and fits in 48G; the 4M-step arms do not -- e919
+    # and e920 were OOM-killed at 50 GB after 9-11 hours. The established 4M
+    # production script (`run_v3_director_baseline_multigpu.sbatch`) asks for
+    # 192G, so match it rather than guess. Keyed on the run's own configured
+    # step count, not on a config name, so a future long arm is covered too.
+    if [ "${BW_CFGSTEPS%%.*}" -ge 2000000 ] 2>/dev/null; then
+      BW_MEM=192G
+    else
+      BW_MEM=48G
+    fi
     # Pick the least-contended candidate and SUBMIT REGARDLESS of occupancy.
     # The old rule refused when a partition already held 8 running+pending
     # jobs, which sounds like the GPU cap but is not: SLURM enforces the cap
