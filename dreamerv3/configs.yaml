@@ -496,6 +496,18 @@ defaults:
     # one -- running v3's `perc` retnorm with Director's adaptive entropy stacks two
     # fixes for the same problem.
     manager_actent_adapt: False
+    # Worker entropy controller, mirroring the manager's. False (DreamerV3) =
+    # fixed `imag_loss.actent`; True (Director) = AutoAdapt holding normalized
+    # per-dim entropy at `worker_actent_target`. Director regulates BOTH actors
+    # this way from one `actent` block at target 0.5.
+    worker_actent_adapt: False
+    worker_actent_impl: mult
+    worker_actent_target: 0.5
+    worker_actent_min: 1e-5
+    worker_actent_max: 1e2
+    worker_actent_vel: 0.1
+    worker_actent_init: 1.0
+    worker_actent_perdim: True
     # Rao's quadratic entropy on the manager's skill head. Entropy fixes how
     # MUCH mass the manager spreads; Rao fixes how far apart, along the ordered
     # SOM codebook, the classes carrying it are. Q = sum_{a,b} p_a p_b d(a,b),
@@ -819,6 +831,18 @@ director_og:
     manager_actent_max: 1e2
     manager_actent_vel: 0.1
     manager_actent_perdim: True
+    # Director applies the SAME actent controller to the worker, at the same
+    # normalized target of 0.5. This closes the one gap that could not be
+    # matched before, and it matters here: switching retnorm to meanstd
+    # rescales the worker's advantage, and a fixed coefficient calibrated
+    # against `perc` would be weighed against the wrong scale.
+    worker_actent_adapt: True
+    worker_actent_impl: mult
+    worker_actent_target: 0.5
+    worker_actent_min: 1e-5
+    worker_actent_max: 1e2
+    worker_actent_vel: 0.1
+    worker_actent_perdim: True
     # retnorm: {impl: std, decay: 0.999, max: 1e2}
     retnorm:          {impl: meanstd, rate: 0.001, limit: 1e-2, perclo: 5.0, perchi: 95.0, debias: False}
     mgr_retnorm:      {impl: meanstd, rate: 0.001, limit: 1e-2, perclo: 5.0, perchi: 95.0, debias: False}
@@ -839,6 +863,11 @@ director_og:
     ac_opt:   {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
     # discount: 0.99 -> horizon 1/(1-0.99). DreamerV3 and our other arms use 333.
     horizon: 100
+  # Director's own budget: 4M env steps at replay ratio 64 (batch 16x64 every
+  # 16 env steps). Note this costs the SAME compute as the other arms' 1.1M at
+  # ratio 256 -- 4e6 x 64 = 2.6e8 replayed steps against 1.1e6 x 256 = 2.8e8 --
+  # so matching Director's protocol here is free in wall-clock.
+  run: {steps: 4e6, train_ratio: 64}
 
 # Flat DreamerV3: no hierarchy, single actor-critic over world-model features.
 # The control for every HRL claim.

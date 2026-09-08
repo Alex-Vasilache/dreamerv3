@@ -47,6 +47,8 @@ def imag_loss_wkr(
     actent=3e-4,
     slowreg=1.0,
     skill_window=0,
+    wkr_actent_adapter=None,
+    wkr_actent_perdim=True,
 ):
   """Worker actor-critic losses on imagined trajectories.
 
@@ -100,13 +102,54 @@ def imag_loss_wkr(
 
   w = sg(weight[:, :-1])
 
-  # REINFORCE with the percentile-scaled advantage and a fixed entropy bonus
-  # (DreamerV3 actor loss).
+  # Entropy term. DreamerV3 uses a fixed coefficient; Director holds NORMALIZED
+  # per-dim entropy at a target with an AutoAdapt on both actors. Mirrors the
+  # manager path in ``imag_loss_mgr`` exactly, including the min/max
+  # normalization, so the two heads are regulated the same way.
+  wkr_actent_mets = {}
+  if wkr_actent_adapter is None:
+    wkr_ent_term = actent * sum(wkr_ents.values())
+  else:
+    terms = []
+    for k, head in policy.items():
+      inner = _head_inner(head)
+      if not hasattr(inner, 'minent') or not hasattr(inner, 'maxent'):
+        # No entropy range to normalize against -- fall back to the fixed
+        # coefficient for that head rather than dropping its bonus entirely.
+        terms.append(-actent * wkr_ents[k])
+        continue
+      ent_perdim = head_entropy_perdim_time(head)
+      L = ent_perdim.shape[-1] if ent_perdim.ndim > 2 else 1
+      # minent/maxent are scalars for a categorical head but PER-ELEMENT arrays
+      # for a continuous one, where the entropy range depends on the predicted
+      # std -- so they carry the full time axis while the entropy above has
+      # already been sliced to T-1. Align before normalizing.
+      def _align(x):
+        x = jnp.asarray(x, f32)
+        if x.ndim >= 2 and x.shape[1] == ent_perdim.shape[1] + 1:
+          x = x[:, :-1]
+        return x
+      lo, hi = _align(inner.minent) / L, _align(inner.maxent) / L
+      ent_norm = (ent_perdim - lo) / jnp.maximum(hi - lo, 1e-8)
+      if wkr_actent_perdim and ent_perdim.ndim > 2:
+        loss_pd, mets = wkr_actent_adapter(ent_norm, update=update)
+        terms.append(loss_pd.sum(-1))
+      else:
+        ent_s = ent_norm.mean(-1) if ent_norm.ndim > 2 else ent_norm
+        loss_s, mets = wkr_actent_adapter(ent_s, update=update)
+        terms.append(loss_s)
+      wkr_actent_mets.update({f'wkr_actent_{mk}': mv for mk, mv in mets.items()})
+    # The adapter returns a LOSS (inverse=True already negates the entropy), so
+    # it enters with the opposite sign to the fixed-coefficient bonus below.
+    wkr_ent_term = -sum(terms)
+
+  # REINFORCE with the scaled advantage plus the entropy term above.
   wkr_goal_policy_loss = w * -(
-      wkr_logpi * sg(wkr_goal_adv_normed) + actent * sum(wkr_ents.values()))
+      wkr_logpi * sg(wkr_goal_adv_normed) + wkr_ent_term)
 
   losses['wkr_policy'] = wkr_goal_policy_loss
 
+  metrics.update(wkr_actent_mets)
   metrics['wkr_goal_policy_loss'] = wkr_goal_policy_loss.mean()
   metrics['wkr_goal_rew'] = wkr_goal_rew.mean()
 

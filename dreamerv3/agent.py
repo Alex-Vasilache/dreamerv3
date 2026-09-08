@@ -412,6 +412,26 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           inverse=True,
           init=float(config.manager_actent_init),
           name='mgr_actent')
+      # Worker entropy controller. Director runs its `actent` AutoAdapt on BOTH
+      # actors at the same normalized target; DreamerV3 uses a fixed
+      # coefficient on its one actor. Constructed unconditionally so the
+      # variable stays in the parameter tree and old checkpoints keep loading;
+      # `worker_actent_adapt` decides whether it is handed to the loss.
+      self.worker_actent_adapt = bool(
+          getattr(config, 'worker_actent_adapt', False))
+      self.worker_actent_perdim = bool(
+          getattr(config, 'worker_actent_perdim', True))
+      wkr_actent_shape = ()
+      self.wkr_actent = embodied.jax.AutoAdapt(
+          shape=wkr_actent_shape,
+          impl=str(getattr(config, 'worker_actent_impl', 'mult')),
+          target=float(getattr(config, 'worker_actent_target', 0.5)),
+          min=float(getattr(config, 'worker_actent_min', 1e-5)),
+          max=float(getattr(config, 'worker_actent_max', 1e2)),
+          vel=float(getattr(config, 'worker_actent_vel', 0.1)),
+          inverse=True,
+          init=float(getattr(config, 'worker_actent_init', 1.0)),
+          name='wkr_actent')
       # Rao's quadratic entropy on the skill head (``manager_rao``). Regulates
       # WHERE on the ordered SOM codebook the manager's probability mass sits,
       # which ``mgr_actent`` cannot see: entropy is invariant to permuting the
@@ -1600,7 +1620,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     kwargs_wkr.update(
         update=training,
         contdisc=self.config.contdisc,
-        horizon=self.config.horizon)
+        horizon=self.config.horizon,
+        wkr_actent_adapter=(
+            self.wkr_actent if self.worker_actent_adapt else None),
+        wkr_actent_perdim=self.worker_actent_perdim)
     K_split = worker_split_window(
         self.config.worker_split_traj, self.variable_goal_length,
         self.goal_duration_fixed, self.manager_sample_freq, H)
