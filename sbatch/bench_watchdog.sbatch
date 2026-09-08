@@ -45,7 +45,7 @@ BW_INTERVAL="${BW_INTERVAL:-900}"
 BW_TARGET_STEPS="${BW_TARGET_STEPS:-1090000}"
 BW_MAX_RETRIES="${BW_MAX_RETRIES:-4}"
 BW_STALE_MIN="${BW_STALE_MIN:-45}"
-BW_DEADLINE="${BW_DEADLINE:-2026-10-01T00:00:00}"
+BW_DEADLINE="${BW_DEADLINE:-2026-11-01T00:00:00}"
 # Space reclaim: a FINISHED run's logdir/replay is dead weight -- multi-GB of
 # raw experience needed only to resume training. Deleting it is safe once the
 # run is at target and, unlike archiving to /bucket, works from a compute node
