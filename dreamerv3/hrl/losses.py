@@ -112,6 +112,14 @@ def imag_loss_wkr(
   else:
     terms = []
     for k, head in policy.items():
+      # One adapter per action head, each holding its own dimensions at the
+      # target (Director `actent_perdim`). A single adapter shared across heads
+      # could not do that: heads differ in width.
+      adapter = (wkr_actent_adapter[k] if isinstance(wkr_actent_adapter, dict)
+                 else wkr_actent_adapter)
+      if adapter is None:
+        terms.append(-actent * wkr_ents[k])
+        continue
       inner = _head_inner(head)
       if not hasattr(inner, 'minent') or not hasattr(inner, 'maxent'):
         # No entropy range to normalize against -- fall back to the fixed
@@ -132,13 +140,14 @@ def imag_loss_wkr(
       lo, hi = _align(inner.minent) / L, _align(inner.maxent) / L
       ent_norm = (ent_perdim - lo) / jnp.maximum(hi - lo, 1e-8)
       if wkr_actent_perdim and ent_perdim.ndim > 2:
-        loss_pd, mets = wkr_actent_adapter(ent_norm, update=update)
+        loss_pd, mets = adapter(ent_norm, update=update)
         terms.append(loss_pd.sum(-1))
       else:
         ent_s = ent_norm.mean(-1) if ent_norm.ndim > 2 else ent_norm
-        loss_s, mets = wkr_actent_adapter(ent_s, update=update)
+        loss_s, mets = adapter(ent_s, update=update)
         terms.append(loss_s)
-      wkr_actent_mets.update({f'wkr_actent_{mk}': mv for mk, mv in mets.items()})
+      wkr_actent_mets.update(
+          {f'wkr_actent_{k}_{mk}': mv for mk, mv in mets.items()})
     # The adapter returns a LOSS (inverse=True already negates the entropy), so
     # it enters with the opposite sign to the fixed-coefficient bonus below.
     wkr_ent_term = -sum(terms)

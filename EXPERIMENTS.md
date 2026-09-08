@@ -79,15 +79,15 @@ metrics reference.
 
 ## 2. Live board
 
-### Unattended operation, 2026-09-08 to ~2026-10-01
+### Unattended operation, 2026-09-08 to ~2026-11-01
 
 Everything below runs without intervention. What is in place, and what is not:
 
 | piece | job | lifetime | what it does |
 |---|---|---|---|
 | training arrays | `bench_*` | until their tasks finish | `--requeue` plus a USR1 self-requeue at walltime, with a fixed `RUN_DIR`, so preemption and walltime resume from the last checkpoint |
-| watchdog | `bench_watchdog` | self-renewing to 2026-10-01 | resubmits any run that stopped without finishing; reclaims `logdir/replay` from finished runs |
-| journal | `bench_journal` | self-renewing to 2026-10-01 | appends a status snapshot every 30 min to `/work/.../bench_journal.log` |
+| watchdog | `bench_watchdog` | self-renewing to 2026-11-01 | resubmits any run that stopped without finishing; reclaims `logdir/replay` from finished runs |
+| journal | `bench_journal` | self-renewing to 2026-11-01 | appends a status snapshot every 30 min to `/work/.../bench_journal.log` |
 
 Both infrastructure jobs have a 3-day walltime and trap USR1 shortly before it
 to submit their own successor, so neither needs a human to restart it.
@@ -100,6 +100,17 @@ Three checks guard against double-submitting, and `bench_droplist.txt` holds
 runs that were deliberately abandoned, since a cancelled run is otherwise
 indistinguishable from a crashed one.
 
+**It finds runs by marker, not by job-id prefix, and reads each run's own
+target.** Both were wrong until 2026-09-08. Discovery was a glob on
+`j4706*`/`j4707*`, and job ids only go up, so the 42 `director_og` and `size50m`
+runs submitted later had no watchdog behind them and did not appear in
+`bench_status.sh`; it now selects the dirs whose `job.env` names the benchmark's
+wandb project. The target was a hardcoded 1.09M, which is right for the
+`size6m` arms and wrong for `director_og` and `size50m`, both of which run 4M --
+under the widened glob that constant would have called a 4M run finished at 27%
+and reaped its replay, the one thing that makes it resumable. Both scripts now
+read `run.steps` from the run's own `logdir/config.yaml`.
+
 **Space.** Archiving to `/bucket` **cannot** be automated: it is read-only on
 compute nodes, which is why the 2026-09-04 SLURM cleanup job archived nothing
 and correctly refused to delete. The watchdog instead deletes `logdir/replay`
@@ -110,8 +121,10 @@ of 10 TB, so space is not expected to bind.
 
 **Still manual, for whoever returns first:** archiving finished runs to
 `/bucket` (login node only, `SKIP_REPLAY=1` is now moot for reaped runs since
-replay is already gone), and `git push` -- the push permission has been blocked
-for this session throughout, so the commits are local.
+replay is already gone). `git push` worked again on 2026-09-08 and the backlog
+is on the remote; the rebase there picked up an Apple-GPU commit made from
+another machine, whose `resolve_platform` is the identity on Linux, so requeued
+jobs re-reading the tree are unaffected.
 
 **Reading the state:** `bash sbatch/bench_status.sh -v`, or the journal log for
 a timeline.
@@ -310,11 +323,29 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
-### e865–e882: TF Director's own hyperparameters on our networks (2026-09-08)
+### e919–e954: TF Director's own hyperparameters on our networks (2026-09-08)
 
-`director` + `director_og`, 6 tasks x 3 seeds, arrays `4709501` (a100, 12) /
-`4709502` (v100, 4) / `4709503` (p100, 2). Networks stay at `size6m` — the
-point is to vary the hyperparameters, not the model.
+`director` + `director_og`, 6 tasks x 3 seeds at `size6m` (arrays `4709678`
+a100 12 / `4709679` v100 4 / `4709680` p100 2) and the same matrix at `size50m`
+(array `4709681`, 18). Networks are held fixed inside each set — the point is
+to vary the hyperparameters, not the model.
+
+**These replace e865–e900, which are void.** Those ran with the worker entropy
+controller as a single shared SCALAR multiplier; Director keeps one per action
+dimension (TF `agent.py:297-300`). A scalar holds only the MEAN normalized
+entropy at 0.5, so a saturated dimension offset by a high-entropy one leaves it
+still — and e865 logged `wkr_actent_std` 1.44–1.67 around a mean of 0.55, so
+the dimensions were nowhere near uniform and the two controllers were not the
+same experiment. Fixed 2026-09-08 (one adapter per action head, shaped by
+`space.shape`), covered by `embodied/tests/test_worker_actent_parity.py`
+(10 assertions, including the TF config file itself), and the eight started
+runs were deleted rather than kept — about 1.7M env steps discarded.
+
+Note the shape rule differs from Director's line for a reason: TF writes
+`shape[:-1] if discrete` because its onehot spaces carry the class axis inside
+`shape`, while ours keep classes in a separate field. Stripping an axis here
+would collapse a multi-dimensional discrete head to a scalar — the same bug
+again, in a different place.
 
 Transcribed from `code/director/embodied/agents/director/configs.yaml`:
 
@@ -333,13 +364,12 @@ decay`. Their `std` divides without subtracting the mean while our `meanstd`
 returns both, but the offset is discarded on every advantage path in
 `hrl/losses.py`, so the two are equivalent here.
 
-**Three differences remain and cannot be closed by config:**
+**Two differences remain and cannot be closed by config** (worker entropy was
+the third until 2026-09-08; `worker_actent_adapt` now runs the same normalized
+per-dimension controller at target 0.5 on the worker, which matters here
+because switching `retnorm` to `meanstd` rescales the worker's advantage and
+the fixed 3e-4 was calibrated against `perc`):
 
-- **Worker entropy.** Director runs its AutoAdapt on *both* actors; we have an
-  adaptive controller only for the manager, so the worker keeps the fixed
-  `imag_loss.actent: 3e-4`. This bites hardest exactly here: switching
-  `retnorm` to `meanstd` rescales the worker's advantage, and 3e-4 was
-  calibrated against `perc`. Director compensates with the controller we lack.
 - **Optimizer family.** Director is Adam (`eps 1e-6`, global-norm clip 100);
   ours is LaProp (`eps 1e-20`, AGC 0.3). `lr` and `wd` are matched; `eps` and
   the clipping rule are not comparable across the two.

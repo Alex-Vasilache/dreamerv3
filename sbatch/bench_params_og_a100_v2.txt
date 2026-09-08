@@ -1,0 +1,12 @@
+director dmc_cheetah_run 0 e919 director_og
+director pinpad_six 0 e920 director_og
+director dmc_hopper_hop 0 e921 director_og
+director pinpad_five 0 e922 director_og
+director dmc_cartpole_swingup 0 e923 director_og
+director pinpad_four 0 e924 director_og
+director pinpad_five 1 e928 director_og
+director dmc_cartpole_swingup 1 e929 director_og
+director pinpad_four 1 e930 director_og
+director dmc_cheetah_run 2 e931 director_og
+director pinpad_six 2 e932 director_og
+director dmc_hopper_hop 2 e933 director_og

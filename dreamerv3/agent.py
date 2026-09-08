@@ -417,21 +417,41 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # coefficient on its one actor. Constructed unconditionally so the
       # variable stays in the parameter tree and old checkpoints keep loading;
       # `worker_actent_adapt` decides whether it is handed to the loss.
+      #
+      # ONE MULTIPLIER PER ACTION DIMENSION, as Director does (TF `agent.py`
+      # 297-300: `shape = act_space.shape[:-1] if discrete else act_space.shape`
+      # with `actent_perdim`). This was a shared scalar until 2026-09-08, which
+      # is a different controller: a scalar holds only the MEAN normalized
+      # entropy at the target, so one saturated dimension can be offset by a
+      # high-entropy one and the multiplier never corrects either. It is not a
+      # hypothetical -- e865 (cheetah, 6 action dims) logged `wkr_actent_std`
+      # 1.44-1.67 around a mean of 0.55, so the dimensions were far from
+      # uniform. One adapter per action head, because heads differ in width.
       self.worker_actent_adapt = bool(
           getattr(config, 'worker_actent_adapt', False))
       self.worker_actent_perdim = bool(
           getattr(config, 'worker_actent_perdim', True))
-      wkr_actent_shape = ()
-      self.wkr_actent = embodied.jax.AutoAdapt(
-          shape=wkr_actent_shape,
-          impl=str(getattr(config, 'worker_actent_impl', 'mult')),
-          target=float(getattr(config, 'worker_actent_target', 0.5)),
-          min=float(getattr(config, 'worker_actent_min', 1e-5)),
-          max=float(getattr(config, 'worker_actent_max', 1e2)),
-          vel=float(getattr(config, 'worker_actent_vel', 0.1)),
-          inverse=True,
-          init=float(getattr(config, 'worker_actent_init', 1.0)),
-          name='wkr_actent')
+
+      def wkr_actent_shape(space):
+        # `space.shape` IS the per-dimension entropy shape here, discrete or
+        # not. Director writes `shape[:-1] if discrete` because its onehot
+        # spaces carry the class axis inside `shape`; ours keep classes in a
+        # separate `classes` field, so there is no axis to strip and stripping
+        # one would collapse a multi-dimensional discrete head to a scalar.
+        return tuple(space.shape) if self.worker_actent_perdim else ()
+
+      self.wkr_actent = {
+          k: embodied.jax.AutoAdapt(
+              shape=wkr_actent_shape(v),
+              impl=str(getattr(config, 'worker_actent_impl', 'mult')),
+              target=float(getattr(config, 'worker_actent_target', 0.5)),
+              min=float(getattr(config, 'worker_actent_min', 1e-5)),
+              max=float(getattr(config, 'worker_actent_max', 1e2)),
+              vel=float(getattr(config, 'worker_actent_vel', 0.1)),
+              inverse=True,
+              init=float(getattr(config, 'worker_actent_init', 1.0)),
+              name=f'wkr_actent_{k}')
+          for k, v in act_space.items()}
       # Rao's quadratic entropy on the skill head (``manager_rao``). Regulates
       # WHERE on the ordered SOM codebook the manager's probability mass sits,
       # which ``mgr_actent`` cannot see: entropy is invariant to permuting the
