@@ -782,6 +782,64 @@ mgr_expl_perc002:
   agent:
     mgr_expl_retnorm: {impl: perc, rate: 0.01, limit: 0.02, perclo: 5.0, perchi: 95.0, debias: False}
 
+# TF Director's own actor-critic hyperparameters, on our size6m networks.
+# Layer onto `director`:  CONFIGS="director director_og"
+#
+# Everything here is transcribed from
+# code/director/embodied/agents/director/configs.yaml. Two mappings are not
+# one-to-one and are worth stating:
+#   * Director's Normalize takes `max`, which floors the divisor at 1/max --
+#     so retnorm {std, max: 1e2} is our limit 1e-2, and advnorm
+#     {mean_std, max: 1e8} is our limit 1e-8.
+#   * Their `decay` is our `rate = 1 - decay`: 0.999 -> 0.001, 0.99 -> 0.01.
+# Director's `std` divides without subtracting the mean, while our `meanstd`
+# returns both; the offset is discarded on every advantage path in
+# hrl/losses.py, so the two are equivalent here.
+#
+# WHAT CANNOT BE MATCHED, and so remains a difference:
+#   * Worker entropy. Director runs its AutoAdapt on BOTH actors (actent
+#     target 0.5, normalized, per-dim). We have an adaptive controller only for
+#     the manager; the worker keeps the fixed `imag_loss.actent`. This matters
+#     more here than elsewhere, because switching retnorm to meanstd rescales
+#     the worker's advantage and the fixed coefficient was calibrated against
+#     `perc`. Director compensates with the controller we do not have.
+#   * Optimizer family. Director uses Adam (eps 1e-6, global-norm clip 100);
+#     ours is LaProp (eps 1e-20, AGC 0.3). lr and wd are matched; eps and the
+#     clipping rule are not comparable across the two.
+#   * Network shapes stay at size6m by design -- the point is to vary the
+#     hyperparameters, not the model.
+director_og:
+  agent:
+    # actent {impl: mult, scale: 3e-3, target: 0.5, min: 1e-5, max: 1e2, vel: 0.1}
+    # + actent_norm: True + actent_perdim: True + manager_actent: 0.5
+    manager_actent_adapt: True
+    manager_actent_impl: mult
+    manager_actent_target: 0.5
+    manager_actent_min: 1e-5
+    manager_actent_max: 1e2
+    manager_actent_vel: 0.1
+    manager_actent_perdim: True
+    # retnorm: {impl: std, decay: 0.999, max: 1e2}
+    retnorm:          {impl: meanstd, rate: 0.001, limit: 1e-2, perclo: 5.0, perchi: 95.0, debias: False}
+    mgr_retnorm:      {impl: meanstd, rate: 0.001, limit: 1e-2, perclo: 5.0, perchi: 95.0, debias: False}
+    mgr_expl_retnorm: {impl: meanstd, rate: 0.001, limit: 1e-2, perclo: 5.0, perchi: 95.0, debias: False}
+    # advnorm: {impl: mean_std, decay: 0.99, max: 1e8}
+    advnorm: {impl: meanstd, rate: 0.01, limit: 1e-8}
+    # slow_target: True, slow_target_update: 100, slow_target_fraction: 1.0,
+    # adv_slow_critic: True. rate 1.0 every 100 is a hard full copy, which is
+    # exactly what fraction 1.0 at that interval means. Director has no EMA
+    # regularizer on top of it, hence slowreg 0.0.
+    slowvalue: {rate: 1.0, every: 100}
+    manager_slowtar: True
+    imag_loss: {slowtar: True, lam: 0.95, actent: 3e-4, slowreg: 0.0}
+    repl_loss: {slowtar: True, lam: 0.95, slowreg: 0.0}
+    # model_opt / actor_opt / critic_opt / encdec_opt: lr 1e-4, wd 1e-2 on kernels
+    opt:      {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
+    goal_opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
+    ac_opt:   {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 1e-2, schedule: const, warmup: 1000, anneal: 0}
+    # discount: 0.99 -> horizon 1/(1-0.99). DreamerV3 and our other arms use 333.
+    horizon: 100
+
 # Flat DreamerV3: no hierarchy, single actor-critic over world-model features.
 # The control for every HRL claim.
 dreamerv3:

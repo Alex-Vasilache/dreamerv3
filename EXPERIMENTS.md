@@ -271,6 +271,50 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### e865–e882: TF Director's own hyperparameters on our networks (2026-09-08)
+
+`director` + `director_og`, 6 tasks x 3 seeds, arrays `4709501` (a100, 12) /
+`4709502` (v100, 4) / `4709503` (p100, 2). Networks stay at `size6m` — the
+point is to vary the hyperparameters, not the model.
+
+Transcribed from `code/director/embodied/agents/director/configs.yaml`:
+
+| Director | ours in this block |
+|---|---|
+| `actent {mult, target 0.5, min 1e-5, max 1e2, vel 0.1}`, `actent_norm/perdim True` | `manager_actent_adapt: True` + the matching `manager_actent_*` |
+| `retnorm {std, decay 0.999, max 1e2}` | `retnorm`/`mgr_retnorm`/`mgr_expl_retnorm` `{meanstd, rate 0.001, limit 1e-2}` |
+| `advnorm {mean_std, decay 0.99, max 1e8}` | `advnorm {meanstd, rate 0.01, limit 1e-8}` |
+| `slow_target True, _update 100, _fraction 1.0, adv_slow_critic True` | `slowvalue {rate 1.0, every 100}`, `manager_slowtar True`, `imag_loss/repl_loss.slowtar True`, `slowreg 0.0` |
+| `*_opt {lr 1e-4, wd 1e-2 kernel}` | `opt`/`goal_opt`/`ac_opt` lr 1e-4, wd 1e-2 |
+| `discount 0.99` | `horizon: 100` (our other arms use 333) |
+
+Two mappings are not one-to-one: Director's `max` floors the divisor at `1/max`
+(so `max: 1e2` is our `limit: 1e-2`), and their `decay` is our `rate = 1 -
+decay`. Their `std` divides without subtracting the mean while our `meanstd`
+returns both, but the offset is discarded on every advantage path in
+`hrl/losses.py`, so the two are equivalent here.
+
+**Three differences remain and cannot be closed by config:**
+
+- **Worker entropy.** Director runs its AutoAdapt on *both* actors; we have an
+  adaptive controller only for the manager, so the worker keeps the fixed
+  `imag_loss.actent: 3e-4`. This bites hardest exactly here: switching
+  `retnorm` to `meanstd` rescales the worker's advantage, and 3e-4 was
+  calibrated against `perc`. Director compensates with the controller we lack.
+- **Optimizer family.** Director is Adam (`eps 1e-6`, global-norm clip 100);
+  ours is LaProp (`eps 1e-20`, AGC 0.3). `lr` and `wd` are matched; `eps` and
+  the clipping rule are not comparable across the two.
+- **Network shapes**, held at `size6m` deliberately.
+
+**What it tests.** Every HRL arm so far has trailed flat DreamerV3 on every
+task, with the manager collapsed to ~1.5 of 16.64 nats. This is the arm that
+gives the manager back everything Director gave it — the entropy controller,
+per-stream std normalization, advantage normalization, and a hard periodic
+target network — while holding size and the goal AE fixed. -> If it closes the
+gap to flat, the deficit was our DreamerV3-flavoured actor-critic settings, not
+the hierarchy. -> If it does not, the hierarchy itself is the problem at this
+scale, and `director_og` rules out the most obvious confound.
+
 ### e829–e864: exploration floor 0.02, set from measurement (2026-09-07)
 
 `director` and `som_lip` with `mgr_expl_perc002`, 6 tasks x 3 seeds, arrays
