@@ -6,6 +6,9 @@
 #SBATCH --mem=4G
 #SBATCH -o /work/DoyaU/vasilache/work/slurm_logs/%x-%j.out
 #SBATCH -e /work/DoyaU/vasilache/work/slurm_logs/%x-%j.err
+#SBATCH --requeue
+#SBATCH --open-mode=append
+#SBATCH --signal=B:USR1@300
 
 # Watchdog for the 2026-09 benchmark matrix.
 #
@@ -42,7 +45,26 @@ BW_INTERVAL="${BW_INTERVAL:-900}"
 BW_TARGET_STEPS="${BW_TARGET_STEPS:-1090000}"
 BW_MAX_RETRIES="${BW_MAX_RETRIES:-4}"
 BW_STALE_MIN="${BW_STALE_MIN:-45}"
-BW_DEADLINE="${BW_DEADLINE:-2026-09-12T00:00:00}"
+BW_DEADLINE="${BW_DEADLINE:-2026-10-01T00:00:00}"
+# Space reclaim: a FINISHED run's logdir/replay is dead weight -- multi-GB of
+# raw experience needed only to resume training. Deleting it is safe once the
+# run is at target and, unlike archiving to /bucket, works from a compute node
+# (/bucket is read-only there). Checkpoints and ckpt_milestones are untouched.
+BW_REAP_REPLAY="${BW_REAP_REPLAY:-1}"
+
+# The walltime is 3 days but this has to survive weeks, so hand off to a
+# successor shortly before being killed rather than relying on a human.
+bw_relaunch() {
+  if [ "$(date +%s)" -lt "$(date -d "$BW_DEADLINE" +%s)" ]; then
+    local nxt
+    nxt=$(sbatch --parsable "$BW_REPO/sbatch/bench_watchdog.sbatch" 2>&1)
+    echo "[watchdog] walltime near; successor submitted: $nxt"
+  else
+    echo "[watchdog] walltime near and deadline passed; not relaunching"
+  fi
+  exit 0
+}
+trap bw_relaunch USR1
 
 touch "$BW_STATE"
 echo "[watchdog] start $(date -Is) interval=${BW_INTERVAL}s stale=${BW_STALE_MIN}min deadline=$BW_DEADLINE"
@@ -85,7 +107,15 @@ except Exception:
 print(int(step))
 PY
 )
-    if [ "${BW_STEP:-0}" -ge "$BW_TARGET_STEPS" ]; then BW_DONE=$((BW_DONE+1)); continue; fi
+    if [ "${BW_STEP:-0}" -ge "$BW_TARGET_STEPS" ]; then
+      BW_DONE=$((BW_DONE+1))
+      if [ "$BW_REAP_REPLAY" = 1 ] && [ -d "$BW_DIR/logdir/replay" ]; then
+        BW_SZ=$(du -sm "$BW_DIR/logdir/replay" 2>/dev/null | cut -f1)
+        rm -rf "$BW_DIR/logdir/replay" && \
+          echo "[watchdog] reaped ${BW_SZ}MB of replay from finished $BW_NAME"
+      fi
+      continue
+    fi
 
     if [ -f "$BW_M" ]; then
       BW_AGE=$(( ( $(date +%s) - $(stat -c %Y "$BW_M") ) / 60 ))
