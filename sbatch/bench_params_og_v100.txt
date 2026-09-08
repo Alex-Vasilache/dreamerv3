@@ -1,4 +1,0 @@
-director dmc_cheetah_run 1 e871 director_og
-director pinpad_six 1 e872 director_og
-director pinpad_five 2 e880 director_og
-director dmc_cartpole_swingup 2 e881 director_og
