@@ -19,7 +19,7 @@ done
 echo
 echo "=== runs ==="
 python3 - "$WD" "$VERBOSE" <<'PYEOF'
-import json, os, sys, glob, time
+import json, os, sys, glob, time, subprocess
 wd, verbose = sys.argv[1], sys.argv[2] == '-v'
 # Runs deliberately abandoned. Without this they are reported as stalled in
 # every snapshot, which over an unattended stretch buries real problems.
@@ -49,6 +49,28 @@ def target_steps(d):
     except Exception:
         pass
     return 1_090_000.0
+
+
+def queued(d):
+    """Is the job that owns this run dir still in the queue (running OR pending)?"""
+    try:
+        with open(os.path.join(d, 'job.env')) as f:
+            job = next(l.split('=', 1)[1].strip()
+                       for l in f if l.startswith('JOB='))
+    except Exception:
+        return False
+    try:
+        # 3.6-compatible: this runs under the login node's python3, which has
+        # neither `capture_output` nor `text`. Getting that wrong is silent
+        # here -- the except below turns it into "not queued" and the false
+        # alarm stays.
+        out = subprocess.run(
+            ['squeue', '-j', job, '-h', '-o', '%i'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=30)
+        return bool(out.stdout.strip())
+    except Exception:
+        return False  # squeue unavailable: report rather than hide
 
 
 rows, bad = [], []
@@ -95,9 +117,19 @@ for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j*'))):
     done = step is not None and step >= tgt
     if done or name in dropped:
         continue
-    if step is None and age is not None and age > 3600:
+    if age is None or age <= 3600:
+        continue
+    # A quiet metrics file is not a stall if the run's job is still queued: a
+    # job that hit its 48h walltime self-requeues and then sits PENDING for
+    # hours waiting for a GPU. e788 was reported stalled for 269 minutes that
+    # way while doing exactly the right thing. The watchdog already checks
+    # this; the status script has to agree with it or every snapshot carries a
+    # false alarm that buries the real ones.
+    if queued(d):
+        continue
+    if step is None:
         bad.append(f'{name}: metrics file untouched for {age/60:.0f} min, no step')
-    elif age is not None and age > 3600:
+    else:
         bad.append(f'{name}: no metric written for {age/60:.0f} min (step {step})')
 
 done_ = [r for r in rows if r[1] and r[1] >= r[4]]
