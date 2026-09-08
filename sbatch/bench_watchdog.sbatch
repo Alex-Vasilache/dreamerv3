@@ -51,6 +51,7 @@ BW_DEADLINE="${BW_DEADLINE:-2026-10-01T00:00:00}"
 # run is at target and, unlike archiving to /bucket, works from a compute node
 # (/bucket is read-only there). Checkpoints and ckpt_milestones are untouched.
 BW_REAP_REPLAY="${BW_REAP_REPLAY:-1}"
+BW_PROJECT="${BW_PROJECT:-dreamerv3-bench-2026-09}"
 
 # The walltime is 3 days but this has to survive weeks, so hand off to a
 # successor shortly before being killed rather than relying on a human.
@@ -78,9 +79,17 @@ bw_put() {  # key retries lastjob
 bw_in_queue() { [ -n "${1:-}" ] && [ "$1" != "-" ] && squeue -j "$1" -h -o "%i" 2>/dev/null | grep -q . ; }
 
 while [ "$(date +%s)" -lt "$(date -d "$BW_DEADLINE" +%s)" ]; do
-  BW_DIRS=("$BW_RUNS_DIR"/e[0-9]*_j4706* "$BW_RUNS_DIR"/e[0-9]*_j4707*)
-  BW_NDIRS=0
-  for d in "${BW_DIRS[@]}"; do [ -d "$d" ] && BW_NDIRS=$((BW_NDIRS+1)); done
+  # Which dirs are ours: the ones whose job.env carries the benchmark's wandb
+  # project. A job-id prefix glob (j4706*/j4707*) was wrong twice -- it missed
+  # every later submission, so the director_og and size50m arrays ran with no
+  # watchdog at all. Job ids only go up; a marker does not age.
+  BW_DIRS=()
+  for d in "$BW_RUNS_DIR"/e[0-9]*_j*; do
+    [ -d "$d" ] || continue
+    grep -qxF "WANDB_PROJECT=$BW_PROJECT" "$d/job.env" 2>/dev/null || continue
+    BW_DIRS+=("$d")
+  done
+  BW_NDIRS=${#BW_DIRS[@]}
   BW_HWM=$(bw_get __hwm__ 2); BW_HWM=${BW_HWM:-0}
   if [ "$BW_NDIRS" -gt "$BW_HWM" ]; then bw_put __hwm__ "$BW_NDIRS" -; BW_HWM=$BW_NDIRS; fi
   if [ "$BW_NDIRS" -lt $(( BW_HWM / 2 )) ]; then
@@ -93,6 +102,17 @@ while [ "$(date +%s)" -lt "$(date -d "$BW_DEADLINE" +%s)" ]; do
     [ -d "$BW_DIR" ] || continue
     BW_NAME=$(basename "$BW_DIR")
     BW_M="$BW_DIR/logdir/metrics.jsonl"
+
+    # Target is per run, not global: the size6m arms stop at 1.1M but the
+    # director_og and size50m arms run 4M. A single hardcoded 1.09M would call
+    # a 4M run finished at 27% and -- worse -- reap its replay, which is the one
+    # thing that makes it resumable. Read what the run itself was configured
+    # with; the 0.99 margin is because the driver checks between chunks and
+    # stops a few thousand steps short.
+    BW_CFGSTEPS=$(awk '/^run:/{r=1;next} /^[a-z]/{r=0} r&&/^  steps:/{print $2;exit}' \
+      "$BW_DIR/logdir/config.yaml" 2>/dev/null)
+    BW_TGT=$(awk -v s="${BW_CFGSTEPS:-0}" -v d="$BW_TARGET_STEPS" \
+      'BEGIN{printf "%d", (s+0 > 0) ? s*0.99 : d}')
 
     BW_STEP=$(python3 - "$BW_M" <<'PY' 2>/dev/null
 import json, sys
@@ -107,7 +127,7 @@ except Exception:
 print(int(step))
 PY
 )
-    if [ "${BW_STEP:-0}" -ge "$BW_TARGET_STEPS" ]; then
+    if [ "${BW_STEP:-0}" -ge "$BW_TGT" ]; then
       BW_DONE=$((BW_DONE+1))
       if [ "$BW_REAP_REPLAY" = 1 ] && [ -d "$BW_DIR/logdir/replay" ]; then
         BW_SZ=$(du -sm "$BW_DIR/logdir/replay" 2>/dev/null | cut -f1)
@@ -148,8 +168,14 @@ PY
 
     # One partition only: a multi-partition request is rejected outright when
     # the association is per-partition.
+    # size50m needs 24 GB of GPU memory; a 16 GB V100/P100 cannot hold it, so
+    # that arm is A100-only. The small arms may go anywhere.
+    case "$BW_CFG" in
+      *size50m*) BW_CANDS="gpu-a100"; BW_MEM=96G ;;
+      *)         BW_CANDS="gpu-a100 gpu-v100 gpu-p100"; BW_MEM=48G ;;
+    esac
     BW_PART=""
-    for cand in gpu-a100 gpu-v100 gpu-p100; do
+    for cand in $BW_CANDS; do
       [ "$(squeue -u "$(whoami)" -h -p "$cand" -t RUNNING,PENDING -o '%i' | wc -l)" -lt 8 ] && { BW_PART=$cand; break; }
     done
     [ -n "$BW_PART" ] || { echo "[watchdog] $BW_NAME: all partitions full, retry next pass"; continue; }
@@ -160,9 +186,9 @@ PY
     # end it early and silently drop TASK/SEED/RUN_DIR.
     # shellcheck disable=SC2086
     BW_JID=$(CONFIG="$BW_CFG" TASK="$BW_TASK" SEED="$BW_SEED" EXP_TAG="$BW_TAG" \
-      RUN_DIR="$BW_DIR" WANDB_PROJECT=dreamerv3-bench-2026-09 \
+      RUN_DIR="$BW_DIR" WANDB_PROJECT="$BW_PROJECT" \
       sbatch --parsable -J bench_retry -p "$BW_PART" $BW_EXTRA \
-      --gres=gpu:1 -c 8 --mem=48G -t 2-00:00:00 --export=ALL \
+      --gres=gpu:1 -c 8 --mem="$BW_MEM" -t 2-00:00:00 --export=ALL \
       "$BW_REPO/sbatch/run_benchmark.sbatch" 2>&1)
     if [[ "$BW_JID" =~ ^[0-9]+$ ]]; then
       bw_put "$BW_NAME" $((BW_N + 1)) "$BW_JID"

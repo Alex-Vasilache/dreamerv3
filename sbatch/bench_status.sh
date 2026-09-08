@@ -27,9 +27,41 @@ try:
     dropped = {l.strip() for l in open(os.path.join(wd, 'bench_droplist.txt')) if l.strip()}
 except Exception:
     dropped = set()
+PROJECT = 'dreamerv3-bench-2026-09'
+
+
+def target_steps(d):
+    """What this run was configured to reach.
+
+    The size6m arms stop at 1.1M, the director_og and size50m arms at 4M, so a
+    single hardcoded number would report the long arms as permanently stalled.
+    0.99 because the driver checks between chunks and stops slightly short.
+    """
+    try:
+        run = False
+        for line in open(os.path.join(d, 'logdir', 'config.yaml')):
+            if line.startswith('run:'):
+                run = True
+            elif run and line[:1].isalpha():
+                break
+            elif run and line.startswith('  steps:'):
+                return float(line.split(':')[1]) * 0.99
+    except Exception:
+        pass
+    return 1_090_000.0
+
+
 rows, bad = [], []
-for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j4706*'))):
+# Ours are the dirs whose job.env names the benchmark's wandb project; a job-id
+# prefix glob silently excluded every array submitted after the first day.
+for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j*'))):
     name = os.path.basename(d)
+    try:
+        if 'WANDB_PROJECT=%s' % PROJECT not in open(os.path.join(d, 'job.env')).read():
+            continue
+    except Exception:
+        continue
+    tgt = target_steps(d)
     mpath = os.path.join(d, 'logdir', 'metrics.jsonl')
     spath = os.path.join(d, 'logdir', 'scores.jsonl')
     step, score, age = None, None, None
@@ -56,11 +88,11 @@ for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j4706*'))):
                 score = sum(tail) / len(tail) if tail else None
         except Exception:
             pass
-    rows.append((name, step, score, age))
+    rows.append((name, step, score, age, tgt))
     # A run at target is DONE, not stalled -- and it stops a few thousand steps
     # short of run.steps because the driver checks between chunks, so compare
     # against what runs actually reach.
-    done = step is not None and step >= 1_090_000
+    done = step is not None and step >= tgt
     if done or name in dropped:
         continue
     if step is None and age is not None and age > 3600:
@@ -68,20 +100,19 @@ for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j4706*'))):
     elif age is not None and age > 3600:
         bad.append(f'{name}: no metric written for {age/60:.0f} min (step {step})')
 
-done_ = [r for r in rows if r[1] and r[1] >= 1_090_000]
-print(f'  {len(rows)} run dirs, {len(done_)} at/over 1.09M steps')
+done_ = [r for r in rows if r[1] and r[1] >= r[4]]
+print(f'  {len(rows)} run dirs, {len(done_)} at their target step count')
 if rows:
-    withstep = [r for r in rows if r[1]]
-    if withstep:
-        tot = sum(r[1] for r in withstep)
-        print(f'  aggregate progress: {tot/1e6:.2f}M of {len(rows)*1.1:.1f}M env steps '
-              f'({100*tot/(len(rows)*1.1e6):.1f}%)')
+    tot = sum(r[1] for r in rows if r[1])
+    want = sum(r[4] for r in rows)
+    print(f'  aggregate progress: {tot/1e6:.2f}M of {want/1e6:.1f}M env steps '
+          f'({100*tot/want:.1f}%)')
 if verbose:
-    for name, step, score, age in rows:
+    for name, step, score, age, tgt in rows:
         s = f'{step:>9,}' if step else '        -'
         sc = f'{score:7.1f}' if score is not None else '      -'
         a = f'{age/60:5.1f}m' if age else '    -'
-        print(f'  {name[:58]:58s} step={s} last15={sc} idle={a}')
+        print(f'  {name[:58]:58s} step={s}/{tgt/1e6:.1f}M last15={sc} idle={a}')
 print()
 if bad:
     print('  !! attention:')
