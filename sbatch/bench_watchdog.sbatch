@@ -52,6 +52,7 @@ BW_DEADLINE="${BW_DEADLINE:-2026-11-01T00:00:00}"
 # (/bucket is read-only there). Checkpoints and ckpt_milestones are untouched.
 BW_REAP_REPLAY="${BW_REAP_REPLAY:-1}"
 BW_PROJECT="${BW_PROJECT:-dreamerv3-bench-2026-09}"
+BW_BUCKET="${BW_BUCKET:-/bucket/DoyaU/vasilache/bucket/results/dreamerv3}"
 
 # The walltime is 3 days but this has to survive weeks, so hand off to a
 # successor shortly before being killed rather than relying on a human.
@@ -93,8 +94,20 @@ while [ "$(date +%s)" -lt "$(date -d "$BW_DEADLINE" +%s)" ]; do
   BW_HWM=$(bw_get __hwm__ 2); BW_HWM=${BW_HWM:-0}
   if [ "$BW_NDIRS" -gt "$BW_HWM" ]; then bw_put __hwm__ "$BW_NDIRS" -; BW_HWM=$BW_NDIRS; fi
   if [ "$BW_NDIRS" -lt $(( BW_HWM / 2 )) ]; then
-    echo "[watchdog] ABORT PASS: $BW_NDIRS dirs against high-water mark $BW_HWM. Not acting."
-    sleep "$BW_INTERVAL"; continue
+    # A big drop in the run count means one of two things: the mount went away
+    # (act on nothing) or finished runs were archived to /bucket and deleted
+    # from /work, which is routine housekeeping. Only the second leaves the
+    # runs somewhere, so look there before refusing to work. Without this the
+    # watchdog latched off for good on 2026-09-09 after 73 runs were archived:
+    # the mark stays at 107 and the count can never climb back.
+    BW_ARCHIVED=$(ls -1 "$BW_BUCKET" 2>/dev/null | grep -cE '^e[0-9]+_.*_j[0-9]+' || echo 0)
+    if [ $(( BW_NDIRS + BW_ARCHIVED )) -ge "$BW_HWM" ]; then
+      echo "[watchdog] run count fell to $BW_NDIRS from $BW_HWM, but $BW_ARCHIVED are in the bucket; archived, not lost. Lowering the mark."
+      bw_put __hwm__ "$BW_NDIRS" -; BW_HWM=$BW_NDIRS
+    else
+      echo "[watchdog] ABORT PASS: $BW_NDIRS dirs against high-water mark $BW_HWM, only $BW_ARCHIVED archived. Not acting."
+      sleep "$BW_INTERVAL"; continue
+    fi
   fi
 
   BW_ACTED=0; BW_DONE=0; BW_LIVE=0

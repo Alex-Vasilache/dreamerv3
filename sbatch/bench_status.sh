@@ -51,14 +51,43 @@ def target_steps(d):
     return 1_090_000.0
 
 
+def watchdog_jobs():
+    """job the watchdog last submitted, per run. `job.env` is only rewritten
+    when the replacement actually STARTS, so between a resubmit and its start
+    the run's own job.env still names the dead job -- which is exactly the
+    window a queued retry sits in while it waits for a node."""
+    out = {}
+    try:
+        for line in open(os.path.join(wd, 'bench_watchdog_state.tsv')):
+            f = line.rstrip('\n').split('\t')
+            if len(f) >= 3 and f[0] != '__hwm__' and f[2] not in ('', '-'):
+                out[f[0]] = f[2]
+    except Exception:
+        pass
+    return out
+
+
+WD_JOBS = watchdog_jobs()
+
+
 def queued(d):
-    """Is the job that owns this run dir still in the queue (running OR pending)?"""
+    """Is a job that owns this run dir still in the queue (running OR pending)?"""
+    jobs = []
     try:
         with open(os.path.join(d, 'job.env')) as f:
-            job = next(l.split('=', 1)[1].strip()
-                       for l in f if l.startswith('JOB='))
+            jobs.append(next(l.split('=', 1)[1].strip()
+                             for l in f if l.startswith('JOB=')))
     except Exception:
+        pass
+    j = WD_JOBS.get(os.path.basename(d))
+    if j:
+        jobs.append(j)
+    if not jobs:
         return False
+    return any(_in_queue(job) for job in jobs)
+
+
+def _in_queue(job):
     try:
         # 3.6-compatible: this runs under the login node's python3, which has
         # neither `capture_output` nor `text`. Getting that wrong is silent
@@ -165,6 +194,19 @@ for f in "$WD"/slurm_logs/bench_*.out; do
   [ -n "$rc" ] && [ "$rc" != 0 ] || continue
   d=$(grep -aoE 'run_dir=\S+' "$f" 2>/dev/null | tail -1 | cut -d= -f2)
   [ -n "$d" ] && [ -d "$d" ] || continue
+  # Only report a failure that is still the last word on this run. Two ways it
+  # stops being that: the run has since moved to a different job, or a
+  # replacement is already queued for it. Either way the incident is resolved
+  # and reporting it forever turns it into a permanent alarm.
+  logjob=$(basename "$f" .out); logjob=${logjob##*-}
+  envjob=$(awk -F= '$1=="JOB"{print $2}' "$d/job.env" 2>/dev/null)
+  [ -n "$envjob" ] && [ "${logjob%%_*}" != "${envjob%%_*}" ] && continue
+  wdjob=$(awk -F'\t' -v k="$(basename "$d")" '$1==k{print $3}' \
+    "$WD/bench_watchdog_state.tsv" 2>/dev/null)
+  if [ -n "$wdjob" ] && [ "$wdjob" != - ] && \
+     squeue -j "$wdjob" -h -o "%i" 2>/dev/null | grep -q .; then
+    continue
+  fi
   echo "  rc=$rc $(basename "$d")"
   found=1
 done
