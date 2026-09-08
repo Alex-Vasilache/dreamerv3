@@ -79,6 +79,45 @@ metrics reference.
 
 ## 2. Live board
 
+### Unattended operation, 2026-09-08 to ~2026-10-01
+
+Everything below runs without intervention. What is in place, and what is not:
+
+| piece | job | lifetime | what it does |
+|---|---|---|---|
+| training arrays | `bench_*` | until their tasks finish | `--requeue` plus a USR1 self-requeue at walltime, with a fixed `RUN_DIR`, so preemption and walltime resume from the last checkpoint |
+| watchdog | `bench_watchdog` | self-renewing to 2026-10-01 | resubmits any run that stopped without finishing; reclaims `logdir/replay` from finished runs |
+| journal | `bench_journal` | self-renewing to 2026-10-01 | appends a status snapshot every 30 min to `/work/.../bench_journal.log` |
+
+Both infrastructure jobs have a 3-day walltime and trap USR1 shortly before it
+to submit their own successor, so neither needs a human to restart it.
+
+**The watchdog detects death by staleness**, not by an exit code: it resubmits a
+run whose `metrics.jsonl` has not been written for 45 minutes and which has no
+live job behind it. Keying off `rc != 0` -- the first version -- misses
+`scancel`, OOM kills and node failures, which is how e795 sat dead for 25 hours.
+Three checks guard against double-submitting, and `bench_droplist.txt` holds
+runs that were deliberately abandoned, since a cancelled run is otherwise
+indistinguishable from a crashed one.
+
+**Space.** Archiving to `/bucket` **cannot** be automated: it is read-only on
+compute nodes, which is why the 2026-09-04 SLURM cleanup job archived nothing
+and correctly refused to delete. The watchdog instead deletes `logdir/replay`
+from runs that have reached target -- multi-GB of raw experience needed only to
+resume -- keeping `ckpt`, `ckpt_milestones`, `config.yaml`, `metrics.jsonl` and
+`scores.jsonl`. First pass reclaimed 55 GB from 20 runs. `/work` sits at ~340 GB
+of 10 TB, so space is not expected to bind.
+
+**Still manual, for whoever returns first:** archiving finished runs to
+`/bucket` (login node only, `SKIP_REPLAY=1` is now moot for reaped runs since
+replay is already gone), and `git push` -- the push permission has been blocked
+for this session throughout, so the commits are local.
+
+**Reading the state:** `bash sbatch/bench_status.sh -v`, or the journal log for
+a timeline.
+
+
+
 **e735–e788 launched 2026-09-04** — the benchmark matrix. 54 runs: three
 configs x six tasks x three seeds, one GPU each, 1.1M env steps at replay
 ratio 256. Arrays `4706650` (a100, 36), `4706651` (v100, 12), `4706660`
