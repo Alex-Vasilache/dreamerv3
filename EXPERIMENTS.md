@@ -323,6 +323,48 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### Standings at 2026-09-09 07:00 (73 of 107 at target, 76%)
+
+Pinpad read with the sustained-50 crossing plus a late-20% window, never the
+final last-15.
+
+**Pin Pad Six is unsolved by everything.** Flat DreamerV3, Director and SOM/LiP
+all score 0.0 on all three seeds, at `size6m` and at `size50m`, and
+`director_og` is still 0.0 at 2.6–3.0M steps. No arm has ever crossed 50 there.
+It is not a discriminating task at this budget and should not be read as
+evidence about the hierarchy.
+
+**Flat DreamerV3 wins every completed cell, including the sparse ones.**
+
+| task | dreamerv3 | director | director+expl0.1 | som_lip+expl0.1 |
+|---|---|---|---|---|
+| cartpole | 869 | 528/703/642 | 704/565 | 745/691 |
+| cheetah | **910** (910/908/911) | 339/202/406 | 420/484/103 | 382/62/415 |
+| hopper_hop | 319 | 0.0/0.0 | 65/65/28 | 74/145/14 |
+| pinpad_four (late-20%) | **381** (3/3 cross by 0.19M) | 0/0/110 | 222/3 | 302/57 |
+| pinpad_five (late-20%) | 296/0/321 (2/3) | 0/0/0 | 128/0/94 | 0/0/0 |
+| pinpad_six | 0.0 | 0.0 | 0.0 | 0.0 |
+
+Cheetah is the cleanest read: flat is at 910 on all three seeds while no HRL arm
+exceeds 484. On pinpad_four flat crosses 50 by 0.11–0.19M on every seed; the
+best HRL arm crosses at 0.64M on one seed and never on the other.
+
+**`director_og` is the first HRL arm to move the DMC numbers**, and it is early
+(1–2 seeds per cell, 4M-step runs at ratio 64, so far less gradient work than
+the 1.1M/ratio-256 arms):
+
+- cheetah: 442 at 2.95M (s0), 482 at 1.11M (s1), and **657 at 2.64M at
+  `size50m`** — the best cheetah any hierarchical arm has produced here, against
+  339/202/406 for plain `director` at the same size.
+- hopper_hop: 178 at 1.48M and 95 at 0.95M, against 0.0 for plain `director` on
+  both finished seeds. Every HRL arm before this scored 0 on hopper.
+- pinpad: no effect. 0.0 on four and six, 10.2 late-window on five.
+
+Step-matched rather than compute-matched this is already ahead: at 1.11M env
+steps `director_og` s1 reads 482 on cheetah having used a quarter of the
+replayed samples of the ratio-256 arms. Hold the conclusion until three seeds
+land, but the DMC direction is the opposite of everything before it.
+
 ### e919–e954: TF Director's own hyperparameters on our networks (2026-09-08)
 
 `director` + `director_og`, 6 tasks x 3 seeds at `size6m` (arrays `4709678`
