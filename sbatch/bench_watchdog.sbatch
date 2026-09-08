@@ -174,11 +174,19 @@ PY
       *size50m*) BW_CANDS="gpu-a100"; BW_MEM=96G ;;
       *)         BW_CANDS="gpu-a100 gpu-v100 gpu-p100"; BW_MEM=48G ;;
     esac
-    BW_PART=""
+    # Pick the least-contended candidate and SUBMIT REGARDLESS of occupancy.
+    # The old rule refused when a partition already held 8 running+pending
+    # jobs, which sounds like the GPU cap but is not: SLURM enforces the cap
+    # itself and simply queues the surplus. With multi-task arrays every
+    # partition is permanently "full" by that count, so a dead run could never
+    # come back -- e819 sat stalled for 222 minutes on 2026-09-08 watching the
+    # watchdog decline it every pass. A pending job costs nothing, and the
+    # already-submitted check above is what actually prevents duplicates.
+    BW_PART=""; BW_BEST=-1
     for cand in $BW_CANDS; do
-      [ "$(squeue -u "$(whoami)" -h -p "$cand" -t RUNNING,PENDING -o '%i' | wc -l)" -lt 8 ] && { BW_PART=$cand; break; }
+      n=$(squeue -u "$(whoami)" -h -p "$cand" -t RUNNING,PENDING -o '%i' | wc -l)
+      if [ "$BW_BEST" -lt 0 ] || [ "$n" -lt "$BW_BEST" ]; then BW_BEST=$n; BW_PART=$cand; fi
     done
-    [ -n "$BW_PART" ] || { echo "[watchdog] $BW_NAME: all partitions full, retry next pass"; continue; }
     BW_EXTRA=""; [ "$BW_PART" = gpu-p100 ] && BW_EXTRA="--nodelist=saion-gpu[11-14]"
 
     # Values travel through the ENVIRONMENT with --export=ALL: the --export list
