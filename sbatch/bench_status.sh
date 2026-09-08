@@ -21,6 +21,12 @@ echo "=== runs ==="
 python3 - "$WD" "$VERBOSE" <<'PYEOF'
 import json, os, sys, glob, time
 wd, verbose = sys.argv[1], sys.argv[2] == '-v'
+# Runs deliberately abandoned. Without this they are reported as stalled in
+# every snapshot, which over an unattended stretch buries real problems.
+try:
+    dropped = {l.strip() for l in open(os.path.join(wd, 'bench_droplist.txt')) if l.strip()}
+except Exception:
+    dropped = set()
 rows, bad = [], []
 for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j4706*'))):
     name = os.path.basename(d)
@@ -55,7 +61,7 @@ for d in sorted(glob.glob(os.path.join(wd, 'e[0-9]*_j4706*'))):
     # short of run.steps because the driver checks between chunks, so compare
     # against what runs actually reach.
     done = step is not None and step >= 1_090_000
-    if done:
+    if done or name in dropped:
         continue
     if step is None and age is not None and age > 3600:
         bad.append(f'{name}: metrics file untouched for {age/60:.0f} min, no step')
