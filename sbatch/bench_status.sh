@@ -213,7 +213,7 @@ done
 [ "$found" -eq 0 ] && echo "  none"
 
 echo
-echo "=== matrix coverage (10 arms x 6 tasks x 3 seeds) ==="
+echo "=== matrix coverage (14 arms x 6 tasks x 3 seeds) ==="
 # Runs on /work are the wrong denominator once finished ones are archived out:
 # after the 2026-09-09 sweep this script read "0 of 36 at target" while 73 were
 # complete. Report against the design as well, and name any cell that has

@@ -1,4 +1,4 @@
-"""Completion of the whole benchmark matrix: 10 arms x 6 tasks x 3 seeds.
+"""Completion of the whole benchmark matrix: 14 arms x 6 tasks x 3 seeds.
 
 `bench_status.sh` reports the runs that exist on /work. That is the wrong
 denominator once finished runs are archived away -- after the 2026-09-09 sweep
@@ -27,6 +27,9 @@ ARMS = [
     ('director mgr_expl_perc002', 1.1e6), ('som_lip mgr_expl_perc002', 1.1e6),
     ('dreamerv3 size50m', 1.1e6),
     ('director director_og', 4e6), ('director director_og size50m', 4e6),
+    ('som_lip director_og', 4e6), ('som_lip director_og size50m', 4e6),
+    ('director mgr_expl_perc002 size50m', 1.1e6),
+    ('som_lip mgr_expl_perc002 size50m', 1.1e6),
 ]
 TASKS = ['dmc_cartpole_swingup', 'dmc_cheetah_run', 'dmc_hopper_hop',
          'pinpad_four', 'pinpad_five', 'pinpad_six']
@@ -45,6 +48,11 @@ ARRAY_PARAMS = {
     '4709680': 'bench_params_og_p100_v2.txt',
     '4709681': 'bench_params_og50m_v2.txt',
     '4710469': 'bench_params_fill4.txt',
+    '4710487': 'bench_params_somog_v100.txt',
+    '4710488': 'bench_params_somog_p100.txt',
+    '4710489': 'bench_params_somog50m.txt',
+    '4710490': 'bench_params_e002_50m_dir.txt',
+    '4710491': 'bench_params_e002_50m_som.txt',
 }
 
 
