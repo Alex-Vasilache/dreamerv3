@@ -219,3 +219,7 @@ echo "=== matrix coverage (14 arms x 6 tasks x 3 seeds) ==="
 # complete. Report against the design as well, and name any cell that has
 # neither data nor a job behind it.
 python3 "$(dirname "$0")/bench_coverage.py" 2>/dev/null | tail -25
+
+echo
+echo "=== deadline forecast ==="
+python3 "$(dirname "$0")/bench_forecast.py" 2>/dev/null | tail -20
