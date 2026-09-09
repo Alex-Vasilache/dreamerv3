@@ -323,6 +323,32 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### director_og beats flat DreamerV3 on hopper (2026-09-10)
+
+First time in this benchmark that a hierarchical arm has beaten the flat agent
+on any task. One seed, so read it as a signal and not a result.
+
+| task | flat `dreamerv3` (3 seeds) | best other HRL arm | `director_og` 6m | `director_og` **size50m** |
+|---|---|---|---|---|
+| hopper_hop | 334 / 278 / 343 | 117 (`+perc01`) | 164 @2.9M, 81 @2.4M | **451** @3.7M |
+| cheetah_run | 907 / 897 / 900 | 480 (`+perc01`) | **524** done, 545 @2.8M | 662 @3.0M |
+| cartpole | 858 / 873 / 874 | 726 (`+perc01`) | 417 @0.5M (early) | — |
+| pinpad four/five/six | 381 / 296 / 0 | 302 / 128 / 0 | 27 / 3 / **0.0 done** | — / 3 / 0.0 |
+
+Late-20% windows. The size50m hopper number is the one that matters: 451
+against 318 for flat at the same task, where every earlier HRL arm scored 0.0
+or double digits. Cheetah moves the same way and stays behind flat (662 vs
+901), and pinpad does not move at all -- `director_og` finished pinpad_six at
+4M steps with a late window of exactly 0.0, the same as everything else.
+
+Not put in the paper yet: one seed on the arm that carries the claim. The other
+two size50m seeds are queued; revisit when they land.
+
+**Newly complete cells** (all 3 seeds at target): `dreamerv3`,
+`director mgr_expl_perc01` and `som_lip mgr_expl_perc01` on all three DMC
+tasks. The two `perc01` arms are indistinguishable from each other on cartpole
+(713/661/726 against 713/719/702) and both trail flat everywhere.
+
 ### Standings at 2026-09-09 07:00 (73 of 107 at target, 76%)
 
 Pinpad read with the sustained-50 crossing plus a late-20% window, never the
