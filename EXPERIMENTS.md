@@ -323,6 +323,34 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### Pinpad, all complete cells (2026-09-11)
+
+Read as the sustained-50 crossing plus a late-20% window, never the final
+last-15. 20 cells are now complete at 3 seeds.
+
+| arm | pinpad_four | pinpad_five | pinpad_six |
+|---|---|---|---|
+| `dreamerv3` | **383 / 380 / 380**, crosses 0.11–0.19M on 3/3 | 296 / 0 / 321, crosses 2/3 | 0 / 0 / 0 |
+| `director` | 0 / 0 / 139, crosses 0/3 | 0 / 0 / 0 | — |
+| `director mgr_expl_perc01` | 222 / 3 / 104, crosses 1/3 (0.78M) | — | 0 / 0 / 0 |
+| `som_lip` | — | 1 / 0 / 15 | — |
+| `som_lip mgr_expl_perc01` | 302 / 57 / 108, crosses 3/3 but at 0.64–1.09M | 0 / 0 / 0 | 0 / 0 / 0 |
+
+Flat DreamerV3 is the only arm that solves pinpad_four reliably -- three seeds
+within 3 points of each other, all crossing before 0.19M. The exploration floor
+is what lets the hierarchy reach it at all (`som_lip mgr_expl_perc01` crosses on
+all three seeds, `som_lip` alone on none), but it crosses 3-6x later and lands
+at a third of the score. Pinpad_five separates the same way: flat gets 2 of 3
+seeds, every HRL arm gets nothing. **Pin Pad Six remains 0.0 for every arm**,
+which is why it should not be read as evidence about the hierarchy.
+
+*Correction to the 2026-09-10 entry, which said 9 cells were complete: the
+count was 20. The check compared the last SCORE step against the target, and a
+pinpad episode is 2000 steps, so the final partial episode goes unscored and
+the last score lands ~11k steps short -- just under the 0.99 threshold. Cell
+completion is measured from `metrics.jsonl`, which is what `bench_coverage.py`
+has always used; only the ad-hoc summary was wrong.*
+
 ### director_og beats flat DreamerV3 on hopper (2026-09-10)
 
 First time in this benchmark that a hierarchical arm has beaten the flat agent
