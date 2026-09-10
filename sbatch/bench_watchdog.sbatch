@@ -77,7 +77,14 @@ bw_put() {  # key retries lastjob
   printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$(date -Is)" >> "$BW_STATE.tmp"
   mv "$BW_STATE.tmp" "$BW_STATE"
 }
-bw_in_queue() { [ -n "${1:-}" ] && [ "$1" != "-" ] && squeue -j "$1" -h -o "%i" 2>/dev/null | grep -q . ; }
+# EXACT match. `squeue -j <arrayid>` expands to every task of that array, so
+# a prefix match reports a DEAD array task as live whenever any sibling is
+# still queued -- e936 sat idle 8.7 hours that way on 2026-09-10. Guard 2 (the
+# job this watchdog last submitted) is what prevents double-submitting.
+bw_in_queue() {
+  [ -n "${1:-}" ] && [ "$1" != "-" ] || return 1
+  squeue -u "$(whoami)" -h -o "%i" 2>/dev/null | grep -qxF "$1"
+}
 
 while [ "$(date +%s)" -lt "$(date -d "$BW_DEADLINE" +%s)" ]; do
   # Which dirs are ours: the ones whose job.env carries the benchmark's wandb

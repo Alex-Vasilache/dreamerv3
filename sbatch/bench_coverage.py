@@ -171,11 +171,14 @@ def main():
     wd = watchdog_jobs()
 
     def has_live_job(key):
+        # EXACT job ids only. Matching an array PREFIX hides a dead task behind
+        # its live siblings: e936 sat idle for 8.7 hours reported as covered,
+        # because its own array task had finished while other tasks of the same
+        # array were still queued. Array tasks are already accounted for
+        # exactly, by mapping each queued index through its params file.
         for name, job in dirs.get(key, []):
             for j in (job, wd.get(name)):
-                if not j:
-                    continue
-                if j in live or any(x.split('_')[0] == j for x in live):
+                if j and j in live:
                     return True
         return False
 
