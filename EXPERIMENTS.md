@@ -323,6 +323,22 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### The exploration floor on cheetah, both trunks (2026-09-12)
+
+`director` cheetah completed at 234 / 123 / 320 (mean 226, late-20%). Against
+the same arm with the exploration floor, `director mgr_expl_perc01` at
+433 / 480 / 223 (mean 379), that is the clearest single-factor comparison we
+have on a dense task: +68% from giving the manager's exploration return its own
+normalizer floor. Both remain far below flat DreamerV3 at 901.
+
+Scheduling note: the A100 partition became contended on 2026-09-11 -- we were
+held to 3 of our 8 GPUs for about six hours, recovering to 5. The five size50m
+arms can only run there (24 GB model, 16 GB cards elsewhere), so the projected
+finish moved from 09-19 to 10-03 at 3 GPUs. It returns to ~09-25 at 5 and
+~09-20 at 8, so it recovers without intervention if the squeeze keeps easing.
+`sbatch/bench_forecast.py` now projects from the GPUs actually held rather than
+from our quota.
+
 ### Pinpad, all complete cells (2026-09-11)
 
 Read as the sustained-50 crossing plus a late-20% window, never the final
