@@ -144,7 +144,12 @@ def effective_cap(occ):
             if len(f) != 4:
                 continue
             try:
-                when = datetime.datetime.fromisoformat(f[0])
+                # strptime, not fromisoformat: this runs under the login node's
+                # python3, which is 3.6, and fromisoformat arrives in 3.7. The
+                # except below turned that into "no history" and the forecast
+                # silently fell back to the quota -- reporting ON TRACK through
+                # four hours of holding 3 A100s instead of 8.
+                when = datetime.datetime.strptime(f[0], '%Y-%m-%dT%H:%M:%S')
             except ValueError:
                 continue
             if when < cutoff:
