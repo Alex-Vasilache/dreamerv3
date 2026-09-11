@@ -30,6 +30,8 @@ from bench_coverage import (ARMS, ARRAY_PARAMS, BUCKET, PROJECT, SEEDS, TASKS,
 
 DEADLINE = os.environ.get('BENCH_DEADLINE', '2026-09-28')
 CAP = 8                      # GrpTRES gres/gpu per partition
+OCC_LOG = os.path.join('/work/DoyaU/vasilache/work', 'bench_occupancy.tsv')
+OCC_WINDOW_H = 24            # hours of history the effective capacity uses
 # Days per run, measured 2026-09-09. Re-measure if the arms change shape.
 RATE = {('gpu-a100', 'size6m'): 0.53, ('gpu-a100', 'size50m'): 0.85,
         ('gpu-v100', 'size6m'): 2.45, ('gpu-p100', 'size6m'): 2.65}
@@ -116,25 +118,76 @@ def movable_a100_tasks():
     return out
 
 
+def effective_cap(occ):
+    """How many GPUs we ACTUALLY hold, not how many we are entitled to.
+
+    The quota is 8 per partition, but the partition is shared: on 2026-09-11 all
+    32 A100 GPUs were allocated and we held 3, with the rest going to other
+    users. Projecting from the quota in that state reports ON TRACK while the
+    work is in fact stretching out. Samples are appended on every run and the
+    median of the last OCC_WINDOW_H hours is used, so a momentary dip between
+    one job ending and the next starting does not swing the forecast.
+    """
+    now = datetime.datetime.now()
+    try:
+        with open(OCC_LOG, 'a') as f:
+            f.write('%s\t%d\t%d\t%d\n' % (
+                now.isoformat(timespec='seconds'), occ.get('gpu-a100', 0),
+                occ.get('gpu-v100', 0), occ.get('gpu-p100', 0)))
+    except Exception:
+        pass
+    hist = {'gpu-a100': [], 'gpu-v100': [], 'gpu-p100': []}
+    cutoff = now - datetime.timedelta(hours=OCC_WINDOW_H)
+    try:
+        for line in open(OCC_LOG):
+            f = line.rstrip('\n').split('\t')
+            if len(f) != 4:
+                continue
+            try:
+                when = datetime.datetime.fromisoformat(f[0])
+            except ValueError:
+                continue
+            if when < cutoff:
+                continue
+            for k, v in zip(('gpu-a100', 'gpu-v100', 'gpu-p100'), f[1:]):
+                hist[k].append(int(v))
+    except Exception:
+        pass
+    out = {}
+    for k, v in hist.items():
+        if len(v) < 6:            # too little history to trust; assume the quota
+            out[k] = CAP
+        else:
+            v = sorted(v)
+            out[k] = max(1, v[len(v) // 2])
+    return out
+
+
 def main():
     small, a100_only = remaining_runs()
     left = (datetime.datetime.strptime(DEADLINE, '%Y-%m-%d')
             - datetime.datetime.now()).total_seconds() / 86400
     occ = occupancy()
 
+    eff = effective_cap(occ)
+    a100_n = eff['gpu-a100']
+    vp_n = eff['gpu-v100'] + eff['gpu-p100']
     a100_days = a100_only * RATE[('gpu-a100', 'size50m')]
     vp_rate = (RATE[('gpu-v100', 'size6m')] + RATE[('gpu-p100', 'size6m')]) / 2
     # Split the size6m work so both pools land together.
-    x = (vp_rate * small * CAP - 2 * CAP * a100_days) / (
-        2 * CAP * RATE[('gpu-a100', 'size6m')] + vp_rate * CAP)
+    x = (vp_rate * small * a100_n - vp_n * a100_days) / (
+        vp_n * RATE[('gpu-a100', 'size6m')] + vp_rate * a100_n)
     x = max(0.0, min(small, x))
-    finish = (a100_days + RATE[('gpu-a100', 'size6m')] * x) / CAP
+    finish = (a100_days + RATE[('gpu-a100', 'size6m')] * x) / a100_n
     eta = datetime.datetime.now() + datetime.timedelta(days=finish)
 
     print('remaining      : %.0f size6m runs, %.0f size50m runs (A100-only)'
           % (small, a100_only))
     print('running now    : ' + ', '.join('%s=%d' % (p.replace('gpu-', ''), n)
                                           for p, n in sorted(occ.items())))
+    print('held (24h med) : a100=%d v100=%d p100=%d of %d each -- the partition is '
+          'shared, so this is what we actually get'
+          % (eff['gpu-a100'], eff['gpu-v100'], eff['gpu-p100'], CAP))
     print('best split     : %.0f size6m on A100, %.0f on V100/P100' % (x, small - x))
     print('projected      : %.1f days -> %s' % (finish, eta.strftime('%Y-%m-%d')))
     print('deadline       : %s (%.1f days away)' % (DEADLINE, left))
