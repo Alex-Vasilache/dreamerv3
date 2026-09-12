@@ -323,6 +323,38 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### The floor value is settled: 0.1, not 0.02 (2026-09-13)
+
+36 cells complete. Both `mgr_expl_perc002` arms finished on the dense tasks, so
+the three-point comparison the 0.02 batch was launched to make is now closed.
+Means of the per-seed late-20% windows:
+
+| arm | cartpole | cheetah | hopper |
+|---|---|---|---|
+| `director` (no floor) | 654 | 226 | 0 |
+| `director mgr_expl_perc002` (0.02) | 599 | 220 | — |
+| `director mgr_expl_perc01` (**0.1**) | **700** | **379** | 64 |
+| `som_lip mgr_expl_perc002` (0.02) | — | 292 | 61 |
+| `som_lip mgr_expl_perc01` (**0.1**) | — | **340** | 66 |
+
+**0.02 is not a smaller version of the same benefit -- it is no benefit.** On
+cartpole and cheetah it lands within noise of having no floor at all (599 vs
+654, 220 vs 226), while 0.1 gains +7% and +68%. The measurement that produced
+0.02 (median observed exploration-return range 0.167, minimum 0.034) argued for
+a floor just under the smallest range seen; what that actually does is leave
+the stream unnormalized in exactly the regime the floor exists to fix. Read
+`mgr_expl_perc002` as a dead end and use 0.1.
+
+**Scale does not help the flat agent on cheetah.** `dreamerv3 size50m`
+completed at 853 / 852 / 866 (mean 857) against 907 / 897 / 900 (mean 901) for
+`dreamerv3` at `size6m` -- 11x the parameters, slightly worse. Whatever limits
+these runs on cheetah, it is not model capacity.
+
+One oddity worth watching: plain `som_lip` pinpad_four reads 137 / 245 / 94
+with one seed crossing 50, better than `som_lip mgr_expl_perc002` (74/160/71)
+and comparable to `som_lip mgr_expl_perc01` (302/57/108). Pinpad_four seed
+variance is large enough that none of these three separate.
+
 ### The exploration floor on cheetah, both trunks (2026-09-12)
 
 `director` cheetah completed at 234 / 123 / 320 (mean 226, late-20%). Against
