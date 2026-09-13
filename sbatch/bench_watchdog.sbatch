@@ -201,8 +201,14 @@ PY
     # production script (`run_v3_director_baseline_multigpu.sbatch`) asks for
     # 192G, so match it rather than guess. Keyed on the run's own configured
     # step count, not on a config name, so a future long arm is covered too.
+    # 120G, not 192G. Completed 4M-step runs peak at 73-77 GB (sacct MaxRSS,
+    # 2026-09-14), so 192G was 2.5x what they use -- and on gpu-a100 that is
+    # not free: our association caps memory at 1T as well as 8 GPUs, so five
+    # 192G jobs exhaust the memory quota and leave GPUs we are entitled to
+    # sitting idle. 120G keeps 8 x 120 = 960G under the cap with ~57% headroom
+    # over the observed peak.
     if [ "${BW_CFGSTEPS%%.*}" -ge 2000000 ] 2>/dev/null; then
-      BW_MEM=192G
+      BW_MEM=120G
     else
       BW_MEM=48G
     fi
