@@ -323,6 +323,46 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### director_og trades sparse for dense (2026-09-14)
+
+48 cells complete. `director director_og` finished cheetah and both smaller
+pinpads, and the two directions are opposite:
+
+| arm | cheetah | hopper | pinpad_four | pinpad_five |
+|---|---|---|---|---|
+| flat `dreamerv3` | **901** | 318 | **381** | 296/0/321 |
+| `director` | 226 | 0 | 0/0/139 | 0 |
+| `director mgr_expl_perc01` | 379 | 64 | 222/3/104 | 128/0/0 |
+| `director director_og` | **515** (524/603/419) | 242* | **0/0/1** | **2/0/0** |
+| `som_lip director_og` | 468* (498/553/354) | 240* | 3/105/195* | 52/20/18* |
+
+\* not all three seeds at 4M yet.
+
+On the dense tasks `director_og` is far ahead of every other HRL arm -- cheetah
+515 against 379 for the best exploration-floor arm and 226 for plain Director,
+and hopper around 242 where plain Director scores exactly 0. On the sparse ones
+it is the **worst** arm we have run: pinpad_four 0/0/1 complete, against
+0/0/139 for plain Director and 222/3/104 with the floor. It did not merely fail
+to help, it removed what little the other arms had.
+
+That is a coherent story rather than noise. `director_og` swaps `perc` return
+normalization for Director's `meanstd` with a `1e-2` floor on every stream
+including the exploration return, which is the opposite of the change that
+rescued pinpad in the first place (`mgr_expl_perc01`, floor 0.1 on a `perc`
+normalizer). The og recipe is tuned for tasks where the extrinsic return is
+informative; on a task whose extrinsic reward is identically zero until the
+goal is reached, it puts the manager back where it started.
+
+**Scale still does nothing for the flat agent.** `dreamerv3 size50m` is now
+complete on five tasks and matches `size6m` within noise everywhere: cartpole
+858 vs 868, cheetah 857 vs 901, hopper 310 vs 318, pinpad_four 402 vs 381,
+pinpad_five 337/0/319 vs 296/0/321.
+
+**For the paper:** the figure's DirectorV3 arm is `director mgr_expl_perc01`.
+If the headline is "the best hierarchy we can build at matched scale", that is
+now `director_og` on dense tasks and `mgr_expl_perc01` on sparse ones, and no
+single arm wins both. Worth a decision before the figure is final.
+
 ### The floor value is settled: 0.1, not 0.02 (2026-09-13)
 
 36 cells complete. Both `mgr_expl_perc002` arms finished on the dense tasks, so
