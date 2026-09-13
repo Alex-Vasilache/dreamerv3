@@ -113,7 +113,7 @@ while [ "$(date +%s)" -lt "$(date -d "$BW_DEADLINE" +%s)" ]; do
       bw_put __hwm__ "$BW_NDIRS" -; BW_HWM=$BW_NDIRS
     else
       echo "[watchdog] ABORT PASS: $BW_NDIRS dirs against high-water mark $BW_HWM, only $BW_ARCHIVED archived. Not acting."
-      sleep "$BW_INTERVAL"; continue
+      sleep "$BW_INTERVAL" & wait $!; continue
     fi
   fi
 
@@ -240,6 +240,12 @@ PY
   done
 
   echo "[watchdog] $(date -Is) dirs=$BW_NDIRS done=$BW_DONE live=$BW_LIVE resubmitted=$BW_ACTED"
-  sleep "$BW_INTERVAL"
+  # Backgrounded + wait so the USR1 walltime trap can interrupt it. A plain
+  # `sleep 900` is a foreground command and bash defers the trap until it
+  # returns -- past the 300s warning -- so the successor is never submitted and
+  # the watchdog simply dies at walltime. It did exactly that on 2026-09-13;
+  # only a manual handoff check caught it. bench_journal has always used this
+  # form (`sleep 1800 & wait $!`) and hands off correctly.
+  sleep "$BW_INTERVAL" & wait $!
 done
 echo "[watchdog] deadline reached, exiting"
