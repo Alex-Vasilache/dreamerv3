@@ -323,6 +323,40 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### `director director_og` complete on all six tasks (2026-09-15)
+
+56 cells done. The whole arm has landed, so the trade-off recorded yesterday
+can be stated with three seeds everywhere. Means of the per-seed late-20%
+windows, against flat DreamerV3 at the same size:
+
+| task | flat `dreamerv3` | `director director_og` | ratio |
+|---|---|---|---|
+| cartpole | 868 | 635 (664/572/668) | 0.73 |
+| cheetah | 901 | 515 (524/603/419) | 0.57 |
+| hopper_hop | 318 | **260** (165/319/296) | **0.82** |
+| pinpad_four | 381 | 0 (0/0/1) | 0.00 |
+| pinpad_five | 206 | 1 (2/0/0) | 0.00 |
+| pinpad_six | 0 | 1 (0/0/2) | — |
+
+Hopper is the closest any hierarchical arm has come to the flat agent at this
+scale, and it is the task where plain Director scores exactly 0. The sparse
+column is unchanged: `director_og` produces nothing on any pinpad.
+
+**One sparse result did move.** `som_lip director_og` finished pinpad_five at
+52 / 3 / 48 -- the first non-zero pinpad_five from any og arm, against 2/0/0
+for the Director trunk. It is still a fifth of flat (206), but it says the goal
+autoencoder and the og hyperparameters are not simply additive: the SOM/LiP
+trunk keeps something on the sparse task that the Director trunk loses.
+
+**size50m, single seeds so far, and the numbers are the best HRL results in the
+benchmark**: `director_og size50m` cheetah 774 at 4M (against 515 at size6m and
+901 for flat), hopper 456 (against 318 for flat), cartpole 688. Three of the
+six tasks now have a hierarchical arm at or above the flat agent at 50M
+parameters. Hold judgement until the other two seeds land -- one seed produced
+the 2026-09-10 hopper claim and this is the same exposure -- but if it holds,
+the story changes from "the hierarchy never wins" to "the hierarchy needs both
+Director's hyperparameters and the larger model".
+
 ### director_og trades sparse for dense (2026-09-14)
 
 48 cells complete. `director director_og` finished cheetah and both smaller
