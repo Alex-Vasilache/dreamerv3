@@ -201,16 +201,22 @@ PY
     # production script (`run_v3_director_baseline_multigpu.sbatch`) asks for
     # 192G, so match it rather than guess. Keyed on the run's own configured
     # step count, not on a config name, so a future long arm is covered too.
-    # 120G, not 192G. Completed 4M-step runs peak at 73-77 GB (sacct MaxRSS,
-    # 2026-09-14), so 192G was 2.5x what they use -- and on gpu-a100 that is
-    # not free: our association caps memory at 1T as well as 8 GPUs, so five
-    # 192G jobs exhaust the memory quota and leave GPUs we are entitled to
-    # sitting idle. 120G keeps 8 x 120 = 960G under the cap with ~57% headroom
-    # over the observed peak.
+    # Host RAM is set by BOTH the step count and the model size, and getting
+    # that wrong in either direction costs real time. Measured peaks (sacct
+    # MaxRSS, 2026-09-15):
+    #   size6m  1.1M steps :  26 GB     -> 48G
+    #   size50m 1.1M steps :  43-52 GB  -> 72G
+    #   size6m  4M steps   :  73-77 GB  -> 120G
+    #   size50m 4M steps   : 138-140 GB -> 176G
+    # Replay dominates and grows with steps; the bigger model adds a roughly
+    # constant ~17 GB at 1.1M and far more at 4M. An earlier version keyed on
+    # steps alone and gave every 4M run 120G, which OOM-killed the size50m ones
+    # at 126 GB after five hours of work.
+    BW_BIG=0; case "$BW_CFG" in *size50m*) BW_BIG=1 ;; esac
     if [ "${BW_CFGSTEPS%%.*}" -ge 2000000 ] 2>/dev/null; then
-      BW_MEM=120G
+      [ "$BW_BIG" = 1 ] && BW_MEM=176G || BW_MEM=120G
     else
-      BW_MEM=48G
+      [ "$BW_BIG" = 1 ] && BW_MEM=72G || BW_MEM=48G
     fi
     # Pick the least-contended candidate and SUBMIT REGARDLESS of occupancy.
     # The old rule refused when a partition already held 8 running+pending
