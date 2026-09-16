@@ -323,6 +323,41 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### `som_lip director_og` is the best hierarchy, and it answers the open question (2026-09-17)
+
+Ten arms complete, 196 of 252 cells. Means of the per-seed late-20% windows:
+
+| arm | cartpole | cheetah | hopper | pp4 | pp5 | pp6 |
+|---|---|---|---|---|---|---|
+| `dreamerv3` | 868 | **901** | **319** | **381** | **206** | 0 |
+| `dreamerv3 size50m` | 858 | 857 | 310 | 402 | 219 | 0 |
+| `director` | 654 | 226 | 0 | 46 | 0 | 1 |
+| `director mgr_expl_perc01` | 700 | 379 | 64 | 110 | 42 | 0 |
+| `director director_og` | 635 | 515 | 260 | 0 | 0 | 1 |
+| `som_lip` | 707 | 426 | 79 | 159 | 5 | 0 |
+| `som_lip mgr_expl_perc01` | 711 | 340 | 66 | 156 | 0 | 0 |
+| **`som_lip director_og`** | **717** | **513** | **279** | 75 | 34 | 0 |
+
+**The dense/sparse trade-off recorded on 09-14 was a property of the Director
+trunk, not of the og hyperparameters.** `director director_og` buys dense
+performance and gives up every pinpad (0 / 0 / 1). `som_lip director_og` gets
+the same dense numbers -- cartpole 717 vs 635, cheetah 513 vs 515, hopper 279
+vs 260 -- and keeps sparse performance (75 / 34 / 0). The goal autoencoder is
+what survives the switch to `meanstd` normalization.
+
+It is the best hierarchical arm on all three dense tasks and the only one that
+is simultaneously strong there and non-zero on pinpad. It still trails flat
+DreamerV3 everywhere: 0.83 of flat on cartpole, 0.57 on cheetah, 0.87 on
+hopper, 0.20 on pinpad_four.
+
+**Recommendation for the paper, not yet acted on:** the figure's "DirectorV3"
+is `director mgr_expl_perc01`, chosen when the exploration floor was the only
+thing that made the hierarchy work at all. On complete data `som_lip
+director_og` beats it on five of six tasks (717/513/279/75/34 against
+700/379/64/110/42) and is the natural single arm to carry the name. Changing
+which arm the paper calls DirectorV3 is a scientific choice, so it is flagged
+rather than made.
+
 ### `director director_og` complete on all six tasks (2026-09-15)
 
 56 cells done. The whole arm has landed, so the trade-off recorded yesterday
