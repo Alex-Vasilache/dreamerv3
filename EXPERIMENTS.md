@@ -323,6 +323,41 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### size50m in progress: the 0.02 floor may be scale-dependent (2026-09-19)
+
+210 of 252 cells. Only `dreamerv3 size50m` is complete across all six tasks;
+the other four size50m arms are part-way, so what follows is provisional and
+flagged as such.
+
+**The one that should change our minds.** `director mgr_expl_perc002 size50m`
+-- the 0.02 exploration floor I recorded as a dead end on 09-13 -- is producing
+the best hierarchical pinpad numbers in the benchmark:
+
+| task | `...perc002` **size6m** (complete) | `...perc002` **size50m** (partial) | flat size50m |
+|---|---|---|---|
+| pinpad_four | 142 / 0 / 225 | **375** / ~0 | 402 |
+| pinpad_five | 0 / 6 / 0 | **108 / 191** / ~9 | 337 / 0 / 319 |
+
+At size6m the 0.02 floor did nothing on pinpad_five (0/6/0). At size50m two
+seeds read 108 and 191, against 42 for the best size6m arm on that task. The
+"0.02 is no better than no floor" conclusion was drawn entirely at size6m and
+may not carry: it is plausible that the floor only matters once the model is
+large enough to make use of the exploration signal. Seed variance is large
+(pinpad_four is 375 and ~0), so this needs its remaining seeds before it is
+more than a hypothesis. **Do not cite the 09-13 dead-end entry without this
+caveat.**
+
+**`director director_og size50m`**, still partial: cartpole complete at
+688/638/653 (660), cheetah 684/774/719 (~726, against 857 for flat -- the best
+hierarchical cheetah anywhere in the benchmark), hopper 456 / ~344 / 1 with a
+third seed that has produced nothing yet, and pinpad_four complete at 0/3/0.
+The dense gains hold at scale; the sparse failure holds too.
+
+**`som_lip director_og size50m`** has one to two seeds per cell so far: cheetah
+634/~593, hopper 229/~236, cartpole 712. Below the Director trunk on cheetah at
+this size, which is the opposite of the size6m ordering -- another reason to
+wait for seeds before drawing the size50m picture.
+
 ### `som_lip director_og` is the best hierarchy, and it answers the open question (2026-09-17)
 
 Ten arms complete, 196 of 252 cells. Means of the per-seed late-20% windows:
