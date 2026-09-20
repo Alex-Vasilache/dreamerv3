@@ -323,6 +323,36 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+### Confirmed: the 0.02 floor works at size50m and not at size6m (2026-09-21)
+
+226 of 252 cells. `director mgr_expl_perc002 size50m` has finished pinpad_five
+and the scale-dependence flagged on 09-19 is real, not seed noise:
+
+| task | `perc002` size6m (complete) | `perc002` **size50m** | flat size50m |
+|---|---|---|---|
+| pinpad_five | 0 / 6 / 0 → **2** | 108 / 191 / 3 → **101** | 337 / 0 / 319 → 219 |
+| pinpad_four | 142 / 0 / 225 → 122 | 375 / 227 / (1 running) | 402 |
+| cheetah | 408 / 106 / 147 → 220 | 380 / 421 / 373 → **391** | 857 |
+| cartpole | 521 / 649 / 628 → 599 | 723 / 734 / 726 → **728** | 858 |
+
+101 on pinpad_five is **2.4x the best size6m hierarchical arm** on that task
+(42, `director mgr_expl_perc01`) and 46% of flat, where every size6m HRL arm
+sat below 20%. Cheetah and cartpole improve too, and with far tighter seed
+spread (373-421 against 106-408 at size6m).
+
+**The 09-13 "0.02 is a dead end" entry is wrong as stated** and should be read
+as "0.02 does nothing at size6m". The floor sets how small an exploration
+return has to get before it stops being normalized; at 4.19M parameters the
+manager apparently never produces a signal worth protecting, and at 45.6M it
+does. That is a statement about when the exploration bonus becomes useful, not
+about the floor value itself.
+
+**`som_lip director_og size50m`** finished cheetah at 634/574/601 (603) against
+~726 for `director director_og size50m`. At size6m the two trunks were level on
+cheetah (513 vs 515); at size50m the Director trunk is ahead. The trunk
+ordering is not stable across scale, so neither "SOM/LiP is better" nor the
+reverse should be claimed without saying at which size.
+
 ### size50m in progress: the 0.02 floor may be scale-dependent (2026-09-19)
 
 210 of 252 cells. Only `dreamerv3 size50m` is complete across all six tasks;
