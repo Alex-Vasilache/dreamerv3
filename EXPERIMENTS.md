@@ -323,6 +323,80 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+## BENCHMARK COMPLETE — 252/252 cells (2026-09-25)
+
+14 arms x 6 tasks x 3 seeds, every cell at its target step count. Means of the
+per-seed late-20% windows.
+
+| arm | cartpole | cheetah | hopper | pp4 | pp5 | pp6 |
+|---|---|---|---|---|---|---|
+| **`dreamerv3`** | **868** | **901** | 319 | 381 | 206 | 0 |
+| `dreamerv3 size50m` | 858 | 857 | 310 | **402** | **219** | 0 |
+| `director` | 654 | 226 | 0 | 46 | 0 | 1 |
+| `som_lip` | 707 | 426 | 79 | 159 | 5 | 0 |
+| `director mgr_expl_perc01` | 700 | 379 | 64 | 110 | 42 | 0 |
+| `som_lip mgr_expl_perc01` | 711 | 340 | 66 | 156 | 0 | 0 |
+| `director mgr_expl_perc002` | 599 | 220 | 68 | 122 | 2 | 0 |
+| `som_lip mgr_expl_perc002` | 707 | 292 | 61 | 101 | 0 | 0 |
+| `director director_og` | 637 | 515 | 260 | 0 | 0 | 1 |
+| `som_lip director_og` | 717 | 513 | 279 | 75 | 34 | 0 |
+| `director director_og size50m` | 660 | **726** | 266 | 1 | 12 | 2 |
+| `som_lip director_og size50m` | 714 | 603 | **323** | 1 | 10 | 0 |
+| `director mgr_expl_perc002 size50m` | 728 | 391 | 114 | **270** | **101** | 0 |
+| `som_lip mgr_expl_perc002 size50m` | **741** | 302 | 120 | 203 | 75 | 0 |
+
+(bold = best flat and best hierarchical arm per column)
+
+### What the benchmark answered
+
+**1. Flat DreamerV3 beats the hierarchy on five of six tasks, at both scales.**
+Best hierarchical arm as a fraction of the best flat arm: cartpole 0.85,
+cheetah 0.81, pinpad_four 0.67, pinpad_five 0.46, pinpad_six undefined (all
+zero). The ordering in \citet{hafner_deep_2022} does not reproduce here.
+
+**2. The single exception is hopper_hop.** `som_lip director_og size50m`
+reaches 323 against 319 for flat `dreamerv3` and 310 for `dreamerv3 size50m` --
+a tie, and the only column where a hierarchy is not behind. `director
+director_og size50m` has a seed at 456, the highest single-seed hopper number
+in the benchmark. This is the one place the hierarchy earns its complexity, and
+it is also the task where plain `director` scores exactly 0.
+
+**3. Pin Pad Six is unsolved by everything**, flat included, at both scales and
+at 4M steps. It should be dropped from future comparisons rather than reported
+as a hierarchy failure.
+
+**4. Model scale does nothing for the flat agent and a lot for the hierarchy.**
+`dreamerv3` vs `dreamerv3 size50m` is within noise on all six tasks (868/858,
+901/857, 319/310, 381/402, 206/219, 0/0) at 11x the parameters. Every
+hierarchical arm improves with scale, some sharply: `director director_og`
+cheetah 515 -> 726, `director mgr_expl_perc002` pinpad_four 122 -> 270 and
+pinpad_five 2 -> 101.
+
+**5. Open question (i) — which arm is "DirectorV3" — has no single answer, at
+either scale.** At `size6m` `som_lip director_og` is the best compromise: it is
+the only arm strong on dense tasks (717/513/279) while non-zero on sparse ones
+(75/34). At `size50m` the split hardens instead of closing -- `director_og`
+wins dense (cheetah 726) and is dead on sparse (pp4 1, pp5 12), while
+`mgr_expl_perc002` wins sparse (pp4 270, pp5 101) and gives up cheetah (391).
+The paper cannot name one arm "the hierarchy at matched scale" without choosing
+which half of the benchmark to represent. **This is a decision for the author,
+not a measurement.**
+
+**6. Open question (ii) — the 0.02 exploration floor — is scale-dependent, and
+it holds on both trunks.** `director mgr_expl_perc002` pinpad_four 122 -> 270
+and pinpad_five 2 -> 101 going from size6m to size50m; `som_lip
+mgr_expl_perc002` 101 -> 203 and 0 -> 75. At size50m both cross the sustained-50
+bar on 3/3 seeds on pinpad_four, against 2/3 and 1/3 at size6m. The 09-13 entry
+calling 0.02 a dead end was measured only at size6m and is corrected: at 4.19M
+parameters the manager never produces an exploration signal worth protecting;
+at 45.6M it does.
+
+### Cost
+
+2026-09-04 to 2026-09-25, 252 runs, roughly 302M env steps. Peak concurrency 24
+GPUs (8 each on gpu-a100/v100/p100); the last week ran on A100 alone because
+`size50m` is a 24 GB model and the V100/P100 cards are 16 GB.
+
 ### Confirmed: the 0.02 floor works at size50m and not at size6m (2026-09-21)
 
 226 of 252 cells. `director mgr_expl_perc002 size50m` has finished pinpad_five
