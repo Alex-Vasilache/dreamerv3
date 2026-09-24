@@ -66,9 +66,46 @@ def env_of(d):
 
 
 def last_step(d):
+    """Final env step of a run, read from the TAIL of metrics.jsonl.
+
+    Reading the whole file is what this used to do and it does not scale: an
+    archived run's metrics.jsonl is ~5.7 MB of 237-key rows, so scanning 230 of
+    them off /bucket meant parsing ~2 million JSON objects over a network
+    filesystem. On 2026-09-24 that took seven hours and starved a concurrent
+    archive rsync until it hit its own timeout mid-batch.
+
+    A row is a few KB, so 512 KB covers hundreds of them. The earlier
+    tail-seek attempt in bench_status.sh used an 8 KB window, which could miss
+    a complete line entirely and silently report step=None -- hence the
+    generous window plus a full-file fallback when nothing parses.
+    """
+    path = os.path.join(d, 'logdir', 'metrics.jsonl')
+    try:
+        size = os.path.getsize(path)
+    except Exception:
+        return 0
+    try:
+        with open(path, 'rb') as f:
+            if size > 512 * 1024:
+                f.seek(-512 * 1024, os.SEEK_END)
+                f.readline()          # discard the partial first line
+            chunk = f.read().decode('utf-8', 'replace')
+        for line in reversed(chunk.splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                step = json.loads(line).get('step')
+            except Exception:
+                continue
+            if step:
+                return int(step)
+    except Exception:
+        pass
+    # Nothing parseable in the tail: fall back to the whole file.
     step = 0
     try:
-        for line in open(os.path.join(d, 'logdir', 'metrics.jsonl')):
+        for line in open(path):
             line = line.strip()
             if line:
                 try:
