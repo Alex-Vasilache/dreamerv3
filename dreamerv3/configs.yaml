@@ -1639,3 +1639,15 @@ collapse_freeze_manager_model:
   run.steps: 1.2e6
   agent.freeze_manager_at: 75000
   agent.freeze_model_at: 75000
+
+# Stable, meaningful goal space: goal AE AND world model frozen together, so the
+# decoded goals keep the same meaning in feature space. Worker + manager learn.
+collapse_freeze_goal_model:
+  run.steps: 1.2e6
+  agent.freeze_goal_at: 75000
+  agent.freeze_model_at: 75000
+
+# World model only frozen (no representation drift); worker, goal AE, manager learn.
+collapse_freeze_model:
+  run.steps: 1.2e6
+  agent.freeze_model_at: 75000
