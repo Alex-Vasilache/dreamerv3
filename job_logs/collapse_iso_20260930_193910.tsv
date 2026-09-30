@@ -1,0 +1,8 @@
+array_job	task_idx	exp	config
+4738427	0	e1046	goal_model
+4738427	1	e1047	goal_model
+4738428	0	e1048	model
+4738428	1	e1049	model
+4738450	-	e1044	resume (task 4738292_5 cancelled in error 19:39)
+4738691	-	e1048	resumed on gpu-a100 (short-a100 preempted)
+4738692	-	e1049	resumed on gpu-a100 (short-a100 preempted)

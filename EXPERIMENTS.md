@@ -323,6 +323,58 @@ a hypothesis with no experiment attached.
 **Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
 ~1.09M steps.
 
+## Pinpad collapse: the world model, not the worker (e1031–e1053, 2026-09-30/10-01)
+
+**Question.** In every `director director_og` pinpad_four/five run (both sizes)
+the sequence is found by 0.1–0.3M, then lost by ~0.5M (size6m) / ~1M (size50m)
+and never recovered. The collapse coincides with the worker's goal reward
+jumping 0.25 → 0.45. Is the worker's learning the cause, or a correlate?
+
+**Method.** Causal freezes: `agent.freeze_{worker,goal,manager,model}_at`
+(new, `embodied/jax/opt.py`) hold a module group's parameters exactly fixed —
+no gradient step, no weight decay — from 75k updates (~150k env steps), after
+the sequence is found and before the goal-reward jump. `director director_og
+collapse_<arm>`, pinpad_four, size6m, 3 seeds, 1.2–2M steps, gpu-a100/short-a100
+(arrays 4738154, 4738292, 4738427/8, 4738651; tsv in `job_logs/collapse_*`).
+Wandb project `dreamerv3-collapse-2026-09`.
+
+| arm (frozen at 150k) | score 0.1–0.3M | 0.6–0.9M | 0.9–1.2M | goal reward 0.1–0.3M → 0.6–0.9M |
+|---|---|---|---|---|
+| control (old e924/30/36) | 229 | 23 | 0 | 0.27 → 0.52 |
+| control (e1031/35/39) | 239 | 51 | 0 | 0.27 → 0.48 |
+| worker | 220 | 22 | 9 | 0.33 → **0.69** |
+| manager | 63 | 0 | – | 0.45 → 0.56 |
+| manager + world model | 146 | 21 | 4 | 0.34 → 0.43 |
+| worker + goal AE | 232 | 198 | 211 | 0.14 → 0.01 |
+| goal AE | 241 | 160 | 136 | 0.19 → 0.00 |
+| goal AE + world model | 185 | 201 | **252** | 0.29 → 0.28 |
+| **world model** | 244 | **254** | **247** | 0.25 → 0.23 |
+
+**Findings.**
+1. **The worker's learning is a correlate, not the cause.** Freezing the worker
+   does not prevent the collapse (3/3 seeds collapse, ~100–200k later than
+   control). The goal-reward jump happens anyway — larger, to 0.69 — with the
+   worker's weights fixed, so that jump was never the worker improving.
+2. **World-model learning is necessary for the collapse.** Freezing the world
+   model alone holds 3/3 seeds at ~250 to 1.2M, with the worker, goal AE and
+   manager all still learning; with the goal AE also frozen, 3/3 hold. In all six
+   the goal-reward jump never happens and imagined reward stays tied to real
+   reward (imagined/real reward ratio 4.4–6.6 in the held runs vs. imagined 0.04–0.11 against real ≈ 0 in
+   collapsed controls).
+3. Freezing the goal AE alone (world model drifting) breaks the goal channel
+   (goal reward → 0) and degrades partially (136); freezing worker + goal AE
+   holds (211) — with the goal channel dead, the frozen worker acts as a fixed
+   task policy. A frozen manager collapses at once, and still collapses with the
+   world model frozen too (the learning worker/goal AE move under it).
+
+**Not separated by these arms.** Freezing the world model fixes both (a) the
+feature space that goals are decoded into and scored in, and (b) the
+imagination model (dynamics + reward head) the manager and critic train in.
+Either drift could be the mechanism. A world-model freeze is also not a fix:
+the agent stops learning a model of new experience. Single task (pinpad_four),
+single size (size6m), 3 seeds, ≤1.2M steps for the frozen-model arms.
+e1044's run was interrupted once (cancelled in error, resumed from its run dir).
+
 ## BENCHMARK COMPLETE — 252/252 cells (2026-09-25)
 
 14 arms x 6 tasks x 3 seeds, every cell at its target step count. Means of the
