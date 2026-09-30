@@ -1,0 +1,4 @@
+director pinpad_four 2 e1050 director_og collapse_freeze_goal_model
+director pinpad_four 2 e1051 director_og collapse_freeze_model
+director pinpad_four 0 e1052 director_og collapse_freeze_goal
+director pinpad_four 1 e1053 director_og collapse_freeze_goal

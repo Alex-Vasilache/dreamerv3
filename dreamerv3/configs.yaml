@@ -1651,3 +1651,9 @@ collapse_freeze_goal_model:
 collapse_freeze_model:
   run.steps: 1.2e6
   agent.freeze_model_at: 75000
+
+# Goal AE only frozen; world model, worker and manager learn. Completes the
+# isolation: goal AE alone vs world model alone vs both.
+collapse_freeze_goal:
+  run.steps: 1.2e6
+  agent.freeze_goal_at: 75000
