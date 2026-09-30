@@ -441,6 +441,9 @@ defaults:
     freeze_worker_at: 0
     freeze_goal_at: 0
     freeze_manager_at: 0
+    # model = dyn + enc + dec + rew + con (the world model). Used with
+    # freeze_manager_at so a frozen manager also sees frozen input features.
+    freeze_model_at: 0
     # Optional per-decision cost subtracted from the manager extrinsic reward at each
     # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
     # shapes the duration.
@@ -1628,3 +1631,11 @@ collapse_freeze_worker_goal:
 collapse_freeze_manager:
   run.steps: 2e6
   agent.freeze_manager_at: 75000
+
+# Frozen manager whose INPUTS are also frozen: the world model stops at the same
+# update, so the manager's features cannot drift. Worker + goal AE keep learning.
+# Separates "the worker changed" from "the frozen manager's inputs drifted".
+collapse_freeze_manager_model:
+  run.steps: 1.2e6
+  agent.freeze_manager_at: 75000
+  agent.freeze_model_at: 75000

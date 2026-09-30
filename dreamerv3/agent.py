@@ -619,7 +619,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       for fname, mods in (
           ('worker', [self.pol, self.wkr_goal_val]),
           ('goal', [self.goal_enc, self.goal_dec]),
-          ('manager', mgr_mods)):
+          ('manager', mgr_mods),
+          ('model', model_modules)):
         at = int(getattr(config, f'freeze_{fname}_at', 0))
         if at > 0:
           freeze[fname] = (mods, at)
