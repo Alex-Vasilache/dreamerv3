@@ -432,6 +432,15 @@ defaults:
     # bypassing the duration head sample. >0 enables; used as a control (variable
     # training graph at a fixed K, no duration prior). 0 = use the emitted duration.
     goal_duration_fixed: 0
+    # Causal-intervention freezes (pinpad collapse study, 2026-09-30). Each is an
+    # optimizer-UPDATE count (not env steps; director_og at ratio 64 does ~0.5
+    # updates per env step) after which that module group's parameters are held
+    # exactly fixed -- no gradient step and no weight decay. 0 = never freeze.
+    # worker = pol + wkr_goal_val; goal = goal_enc + goal_dec;
+    # manager = manager_pol + mgr_extr_val + mgr_expl_val (+ mgr_novel_val).
+    freeze_worker_at: 0
+    freeze_goal_at: 0
+    freeze_manager_at: 0
     # Optional per-decision cost subtracted from the manager extrinsic reward at each
     # switch step (discourages churning short goals, HiTS-style). 0 = advantage alone
     # shapes the duration.
@@ -1596,3 +1605,26 @@ debug:
     .*\.hidden: 3
     .*\.blocks: 4
     .*\.depth: 2
+
+# ---------------------------------------------------------------------------
+# Pinpad collapse causal study (e1031-e1042, 2026-09-30). Layer AFTER
+# `director director_og`. Question: is the worker's goal-following improvement
+# (wkr_goal_rew ~0.25 -> ~0.45 at ~0.3-0.4M env steps) the CAUSE of the pinpad
+# collapse, or only coincident with it? Freezes act at 75k optimizer updates
+# ~= 150k env steps (0.5 updates/env step at train_ratio 64): after every
+# director_og pinpad_four run had found the sequence, before the worker jump.
+collapse_ctrl:
+  run.steps: 2e6
+
+collapse_freeze_worker:
+  run.steps: 2e6
+  agent.freeze_worker_at: 75000
+
+collapse_freeze_worker_goal:
+  run.steps: 2e6
+  agent.freeze_worker_at: 75000
+  agent.freeze_goal_at: 75000
+
+collapse_freeze_manager:
+  run.steps: 2e6
+  agent.freeze_manager_at: 75000

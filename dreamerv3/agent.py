@@ -611,8 +611,20 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           'ac': (ac_modules, self._make_opt(**config.ac_opt)),
       }
     self.modules = [m for ms, _ in groups.values() for m in ms]
+    freeze = {}
+    if self.use_hrl:
+      mgr_mods = [self.manager_pol, self.mgr_extr_val, self.mgr_expl_val]
+      if self.mgr_novel:
+        mgr_mods.append(self.mgr_novel_val)
+      for fname, mods in (
+          ('worker', [self.pol, self.wkr_goal_val]),
+          ('goal', [self.goal_enc, self.goal_dec]),
+          ('manager', mgr_mods)):
+        at = int(getattr(config, f'freeze_{fname}_at', 0))
+        if at > 0:
+          freeze[fname] = (mods, at)
     self.opt = embodied.jax.MultiOptimizer(
-        groups, summary_depth=1, name='opt')
+        groups, freeze=freeze, summary_depth=1, name='opt')
 
     # One ``rec`` scale is expanded to every reconstruction key in ``dec_space``.
     scales = self.config.loss_scales.copy()

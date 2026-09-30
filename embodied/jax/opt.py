@@ -121,9 +121,14 @@ class MultiOptimizer(nj.Module):
 
   summary_depth: int = 2
 
-  def __init__(self, groups):
+  def __init__(self, groups, freeze=None):
     self.groups = {k: (tuple(ms), opt) for k, (ms, opt) in groups.items()}
     self.allmods = tuple(m for ms, _ in self.groups.values() for m in ms)
+    # ``freeze`` maps a name to ``(modules, at)``: once the update counter
+    # reaches ``at``, those modules' parameters are written back unchanged, so
+    # neither the gradient step nor weight decay moves them. The optimizer state
+    # keeps updating, which is harmless because its output is discarded.
+    self.freeze = {k: (tuple(ms), int(at)) for k, (ms, at) in (freeze or {}).items()}
     self.step = nj.Variable(jnp.array, 0, i32, name='step')
     # float16 loss scaling (Optimizer's ``scaling`` path) is not supported here;
     # this codebase computes in bfloat16, so it is never needed.
@@ -159,7 +164,19 @@ class MultiOptimizer(nj.Module):
       assert gparams, (gname, prefixes, sorted(params.keys())[:4])
       state = self.sub(f'state_{gname}', nj.Tree, opt.init, gparams)
       updates, new_state = opt.update(ggrads, state.read(), gparams)
-      nj.context().update(optax.apply_updates(gparams, updates))
+      newparams = optax.apply_updates(gparams, updates)
+      for fname, (fmods, at) in self.freeze.items():
+        fpre = tuple(m.path + '/' for m in fmods)
+        frozen = self.step.read() >= at
+        moved = []
+        for k in newparams:
+          if k.startswith(fpre):
+            newparams[k] = jnp.where(frozen, gparams[k], newparams[k])
+            moved.append(newparams[k] - gparams[k])
+        if moved:
+          metrics[f'frozen_{fname}'] = f32(frozen)
+          metrics[f'frozen_{fname}_delta_rms'] = nets.rms(moved)
+      nj.context().update(newparams)
       state.write(new_state)
       metrics[f'{gname}_grad_norm'] = optax.global_norm(ggrads)
       metrics[f'{gname}_grad_rms'] = nets.rms(ggrads)
