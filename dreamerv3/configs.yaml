@@ -401,6 +401,11 @@ defaults:
     # the deadline is otherwise random and invisible to the worker. False = the
     # worker sees only (feat, goal), exactly as before.
     worker_timed_goals: False
+    # What the worker conditions on: 'decoded' = the decoded goal vector (Director),
+    # 'code' = the manager's raw 8x8 goal code. The worker REWARD is cosine_max to
+    # the decoded goal either way. 'code' shields the worker's goal input from the
+    # world model re-expressing states in new coordinates (2026-10-01 study).
+    worker_goal_input: decoded
     # Soft prior pulling the manager's expected goal duration toward a setpoint
     # (e.g. the fixed-K=8 regime that lifted worker reaching), independent of the
     # REINFORCE advantage. Adds ``goal_duration_reg * (E[duration] -
@@ -1657,3 +1662,12 @@ collapse_freeze_model:
 collapse_freeze_goal:
   run.steps: 1.2e6
   agent.freeze_goal_at: 75000
+
+# Worker sees the manager's goal CODE instead of the decoded goal (reward unchanged).
+# e1054-e1059: 3 seeds + matched control, pinpad_four size6m, 1.2M steps.
+collapse_wkr_code:
+  run.steps: 1.2e6
+  agent.worker_goal_input: code
+
+collapse_ctrl12:
+  run.steps: 1.2e6

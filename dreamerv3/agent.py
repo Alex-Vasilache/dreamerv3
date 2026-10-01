@@ -130,6 +130,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # V(s, goal, countdown) is well-posed under variable goal lengths instead
     # of facing a random unobservable deadline.
     self.worker_timed_goals = bool(getattr(config, 'worker_timed_goals', False))
+    # What the worker SEES as its goal: the decoded goal vector (Director) or
+    # the manager's raw goal code. The worker reward always uses the decoded goal.
+    self.worker_goal_input = str(getattr(config, 'worker_goal_input', 'decoded'))
+    assert self.worker_goal_input in ('decoded', 'code'), self.worker_goal_input
     self.goal_switch_cost = float(getattr(config, 'goal_switch_cost', 0.0))
     # Manager extrinsic-reward block aggregation: 'mean' (per-step average, the
     # original; under per-step discounting this under-credits long blocks -> short-K
@@ -842,7 +846,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       else:
         act_cd = K - ((mgr_step - 1) % K)
       policy = self.pol(self._feat_goal2tensor(
-          feat, goal, countdown=self._countdown_norm(act_cd)), bdims=1)
+          feat, self._wkr_goal_in(goal, mgr_skill),
+          countdown=self._countdown_norm(act_cd)), bdims=1)
     else:
       policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
@@ -1392,7 +1397,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     last_goal = sg(self._goal_from_skill(jax.tree.map(sg, last_mgr_skill), bdims=1))
     lastact = sample(self.pol(
         self._feat_goal2tensor(
-            last_feat, last_goal,
+            last_feat, self._wkr_goal_in(last_goal, last_mgr_skill),
             countdown=self._countdown_norm(img_countdowns[:, -1])), 1))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
@@ -1681,8 +1686,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # window's goal for bootstrap, so its honest countdown is 0 (time's up).
       win_cd = jnp.broadcast_to(
           K - jnp.arange(K + 1, dtype=i32), (M * n_win, K + 1))
+      win_goal_in = win_goal
+      if self.worker_goal_input == 'code':
+        codes = sg(f32(self._running_goal_code(mgr_skills)))
+        win_goal_in = merge(jnp.broadcast_to(
+            codes[:, win_starts][:, :, None],
+            (M, n_win, K + 1) + codes.shape[2:]))
       win_feat_goal = self._feat_goal2tensor(
-          win_feat, win_goal, countdown=self._countdown_norm(win_cd))
+          win_feat, win_goal_in, countdown=self._countdown_norm(win_cd))
       win_goal_rew = self._wkr_goal_reward(win_goal, win_feat)
       kwargs_wkr.update(skill_window=0)                         # each window is its own segment
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
@@ -1702,7 +1713,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # mask (``switch_mask``); the fixed-K fallback (e.g. H not a multiple of K)
       # passes the integer window length K.
       feat_goal = self._feat_goal2tensor(
-          imgfeat, goals, countdown=self._countdown_norm(img_countdowns))
+          imgfeat, self._wkr_goal_in(goals, mgr_skills),
+          countdown=self._countdown_norm(img_countdowns))
       wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
       kwargs_wkr.update(
           skill_window=(switch_mask if self.variable_goal_length else K))
@@ -1826,7 +1838,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # Detach manager goals in replay value path.
       repl_goals = sg(self._goals_from_skills(jax.tree.map(sg, repl_skills), bdims=2))
       feat_goal_wkr = self._feat_goal2tensor(
-          feat_wkr, repl_goals, countdown=self._countdown_norm(repl_cd))
+          feat_wkr, self._wkr_goal_in(repl_goals, repl_skills),
+          countdown=self._countdown_norm(repl_cd))
       repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
 
       # --- 3. Compute Value Losses ---
