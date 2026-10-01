@@ -375,6 +375,37 @@ the agent stops learning a model of new experience. Single task (pinpad_four),
 single size (size6m), 3 seeds, ≤1.2M steps for the frozen-model arms.
 e1044's run was interrupted once (cancelled in error, resumed from its run dir).
 
+### Follow-up: do goal codes change meaning? (`tools/code_drift.py`, 2026-10-01)
+
+Decoded each code with each milestone checkpoint and found the nearest real
+probe state (cosine_max, each checkpoint in its own feature space), so only a
+change of *meaning* registers, not a change of coordinates. Fraction of codes
+still pointing within 2 grid cells of the same place 500k steps later
+(chance ≈ 5–10%): size6m controls 33–62%, worker-frozen 38–50%,
+**world-model-frozen 68–81%**, **size50m controls 67–85%**. Over 0.5→4M every
+control re-assigns its codes almost completely. So meaning drift is real and
+the world model drives it — but the size50m runs collapse (0.9–1M) while
+their codes are as stable as in the non-collapsing frozen-model runs, so
+meaning drift alone does not explain the collapse there. The other route —
+the world model re-expressing the *same* places in new coordinates — remains.
+Worker+goal-AE-frozen runs: the frozen decoder's goals still point at the
+right places (66–82%) while their cosine to the current state is ~0.05.
+
+### e1054–e1059: worker conditions on the goal code (launched 2026-10-01)
+
+`agent.worker_goal_input: code` (new): the worker sees the manager's raw 8×8
+code instead of the decoded goal; its reward is still cosine_max to the
+decoded goal. 3 seeds (e1054–56) + matched control (e1057–59, same commit),
+pinpad_four, size6m, `director director_og`, 1.2M steps, array `4740404`.
+
+**Prediction.** If coordinate drift in the worker's goal input is what breaks
+the hierarchy, the code arm holds its score past the control's ~0.45M
+collapse. → If it collapses like the control, the coordinate route through
+the goal input is not the cause; next suspect is meaning drift (anchor the
+goal AE, EMA target) or drift in the worker's *state* input. → Early
+discovery may be slower (the worker must learn every code from reward with no
+state-space generalisation); compare first sustained-50 crossings.
+
 ## BENCHMARK COMPLETE — 252/252 cells (2026-09-25)
 
 14 arms x 6 tasks x 3 seeds, every cell at its target step count. Means of the
