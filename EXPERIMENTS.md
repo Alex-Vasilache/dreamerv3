@@ -406,6 +406,23 @@ goal AE, EMA target) or drift in the worker's *state* input. → Early
 discovery may be slower (the worker must learn every code from reward with no
 state-space generalisation); compare first sustained-50 crossings.
 
+**Result (2026-10-01, all 6 complete at ~1.2M): the code input does not
+prevent the collapse — the second branch fired.**
+
+| arm | score 0.1–0.3M | 0.6–0.9M | 0.9–1.2M | goal reward 0.1–0.3M → 0.6–0.9M |
+|---|---|---|---|---|
+| control (e1057/58/59) | 237 / 244 / 192 | 53 / 2 / 0 | 3 / 1 / 0 | 0.27 → 0.52 |
+| worker sees code (e1054/55/56) | 269 / 220 / 179 | 58 / 1 / 23 | 0 / 0 / 0 | 0.26 → 0.55 |
+
+Discovery is not slower (both arms cross 50 by ~0.1M) and the goal-reward
+jump comes at the same point (~0.3M) and size. So coordinate drift in the
+worker's goal input is not the route: with the decoded goal removed from the
+worker's input, the world model still breaks the hierarchy. Remaining routes:
+meaning drift of the codes (the reward target D_t(z) still moves) and drift in
+the worker's *state* input. The jump appearing here too, with a fixed symbolic
+goal input, says rising cosine_max reward comes from the decoded goals / state
+features becoming easier to match, not from what the worker is shown.
+
 ## BENCHMARK COMPLETE — 252/252 cells (2026-09-25)
 
 14 arms x 6 tasks x 3 seeds, every cell at its target step count. Means of the
