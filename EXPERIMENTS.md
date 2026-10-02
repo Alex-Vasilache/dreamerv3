@@ -443,7 +443,7 @@ are e1057–e1059 (old predicted-reward code, 1.2M) and the earlier freeze-study
 | `wm_norepgrad` | e1071–e1073 | + `repval_grad False` | sequence held past 0.6M |
 | `wm_b64 wm_oldrew` | e1074–e1076 | batch length 64, lr 2.5e-5 on all 3 optimizers (updates x lr = Director's), old reward | later discovery, then held |
 
-Phase 2 (all fixes together) follows once these separate.
+Phase 2, e1077–e1079 (array 4742428, queued 2026-10-02 18:45): `wm_norepgrad wm_b64` with real rewards. Chosen over `wm_realrew` because at 0.65M norepgrad held 3/3 while realrew had collapsed on 2/3.
 
 ### e1060–e1067: reset one component of a collapsed run (2026-10-02)
 
