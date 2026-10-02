@@ -423,6 +423,41 @@ the worker's *state* input. The jump appearing here too, with a fixed symbolic
 goal input, says rising cosine_max reward comes from the decoded goals / state
 features becoming easier to match, not from what the worker is shown.
 
+### e1060–e1067: reset one component of a collapsed run (2026-10-02)
+
+**Question.** Why does `director_og` never re-find the pinpad sequence once it
+has lost it? Take the collapsed controls e1057–59 at their ~1.17M checkpoint
+(with replay), re-initialise ONE component — weights, optimizer state,
+normalizers, slow targets — and continue to 1.6M. Recovery after a reset says
+that component's state is what blocks rediscovery. Reset done offline by
+splicing a fresh step-0 checkpoint of the same seed into the run's checkpoint
+(`tools/splice_reset.py`; the in-run `run.reset_regex` path trips ninjax when
+it re-calls `_init_params`, and is kept only as a no-op marker check).
+
+| reset | runs | score after reset, 50k bins (+0 → +0.42M) |
+|---|---|---|
+| nothing | e1060 / e1061 | 33 0 8 0 … 0 / 0 5 1 0 … 0 |
+| **manager** | e1062 | **122 180 125** 1 24 8 6 5 7 |
+| manager | e1063 / e1067 | 21 2 0 … 0 / 11 2 22 0 3 0 … |
+| goal AE | e1064 / e1065 | 24 1 1 0 2 … / 0 0 0 1 5 0 … |
+| worker | e1066 | 0 0 2 53 0 0 2 0 0 |
+
+(First-bin 20–30s in several arms are one or two lucky episodes of the old
+policy; a 50k bin holds ~25 episodes.)
+
+**Reading.** Only a fresh manager re-found the sequence, and only on 1 of 3
+seeds — immediately (≤50k steps, score up to ~230 per episode) — then lost it
+again ~0.15M later. The second loss has the original collapse's signature in
+the same bin: worker goal reward 0.45 → 0.57, manager entropy 0.51 → 0.61.
+Resetting the goal AE or the worker never helped; doing nothing never helped.
+So (i) the collapsed manager's own state is part of why it cannot recover — a
+fresh one can re-find the sequence through the same, already-drifted world
+model, worker and goal AE — but (ii) recovery is not reliable (1/3), and (iii)
+whatever causes the loss is still active and re-fires. Small samples (1–3
+seeds per arm); treat as directional.
+
+Figure: `/work/DoyaU/vasilache/work/collapse_figs/reset_scores.png`.
+
 ## BENCHMARK COMPLETE — 252/252 cells (2026-09-25)
 
 14 arms x 6 tasks x 3 seeds, every cell at its target step count. Means of the
