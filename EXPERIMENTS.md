@@ -423,6 +423,28 @@ the worker's *state* input. The jump appearing here too, with a fixed symbolic
 goal input, says rising cosine_max reward comes from the decoded goals / state
 features becoming easier to match, not from what the worker is shown.
 
+### e1068–e1076: world-model drift fixes, phase 1 (launched 2026-10-02, array 4742298)
+
+**Question.** Freezing the world model stops the pinpad collapse (3/3). Two
+differences from TF Director could keep our world model moving: (a) the HRL
+replay value losses (3 critics x 0.3) backprop into enc/RSSM (`repval_grad`),
+which Director never does; (b) we update the world model once per 2 env steps
+(4x32 at ratio 64), Director once per 16 (16x64 at ratio 64), at the same lr.
+Also fixed a bug first: the HRL replay value targets used the reward head's
+prediction instead of the real replayed reward (flat v3 uses the real one);
+real reward is now the default, `agent.repval_pred_reward` restores the old.
+
+All `director director_og`, pinpad_four, size6m, 2M steps, 3 seeds; controls
+are e1057–e1059 (old predicted-reward code, 1.2M) and the earlier freeze-study controls.
+
+| arm | runs | change | expected if it is the cause |
+|---|---|---|---|
+| `wm_realrew` | e1068–e1070 | real rewards in replay value targets | small; target quality only |
+| `wm_norepgrad` | e1071–e1073 | + `repval_grad False` | sequence held past 0.6M |
+| `wm_b64 wm_oldrew` | e1074–e1076 | batch length 64, lr 2.5e-5 on all 3 optimizers (updates x lr = Director's), old reward | later discovery, then held |
+
+Phase 2 (all fixes together) follows once these separate.
+
 ### e1060–e1067: reset one component of a collapsed run (2026-10-02)
 
 **Question.** Why does `director_og` never re-find the pinpad sequence once it
