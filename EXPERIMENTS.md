@@ -445,6 +445,29 @@ are e1057–e1059 (old predicted-reward code, 1.2M) and the earlier freeze-study
 
 Phase 2, e1077–e1079 (array 4742428, queued 2026-10-02 18:45): `wm_norepgrad wm_b64` with real rewards. Chosen over `wm_realrew` because at 0.65M norepgrad held 3/3 while realrew had collapsed on 2/3.
 
+### Result, e1068–e1079 (2026-10-03 04:30): the critic gradient into the world model causes the collapse
+
+pinpad_four, 3 seeds per arm. Sustained-50 crossing (first 50k bin from which
+the next 200k stay >= 50) and window means of episode score:
+
+| arm | runs | cross-50 | 0.5–1M | 1–1.5M | 1.5–2M | 3–4M |
+|---|---|---|---|---|---|---|
+| control (old code) | e1057–59 | 0.05M | 57 / 2 / 5 | 5 / 1 / 0 | – | – |
+| `wm_realrew` | e1068–70 | 0.05M | 47 / 0 / 153 | 12 / 0 / 7 | 0 / 0 / 0 | – |
+| **`wm_norepgrad`** | e1071–73 | 0.05M | 243 / 270 / 269 | 256 / 277 / 288 | 258 / 275 / 292 | 261 / 279 / 289 (to 3.6M, continuing to 4M) |
+| `wm_b64 wm_oldrew` | e1074–76 | 0.15–0.40M | 245 / 251 / 211 | 197 / 209 / 161 | 120 / 94 / 130 (0 by 2M) | – |
+| `wm_norepgrad wm_b64` | e1077–79 | 0.20–0.30M | 275 / 240 / 237 | 286 / 239 / 248 | 279 / 245 / 243 | – |
+
+**Reading.** Stopping the HRL replay value losses from backpropagating into
+enc/RSSM (`agent.repval_grad False`, what TF Director does) removes the
+collapse: 3/3 hold to 3.6M with no decline, and the worker goal-reward jump
+that accompanied every collapse never happens (stays ~0.22). Real rewards in
+the repval targets alone change nothing (3/3 collapse). Batch length 64 with
+lr/4 (Director's update budget) only delays it (collapse at ~1.7–2M, 3/3).
+Adding batch 64 to the gradient fix holds equally but finds the sequence
+later, so `wm_norepgrad` alone is the recommended setting. Figure:
+`/work/DoyaU/vasilache/work/collapse_figs/wmfix_pinpad4.png`.
+
 ### e1080–e1094: `wm_norepgrad` on the other benchmark tasks (launched 2026-10-02 20:00)
 
 At 1M steps on pinpad_four `wm_norepgrad` held 3/3 (248–275) while
