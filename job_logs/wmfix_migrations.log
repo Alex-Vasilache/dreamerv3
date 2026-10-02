@@ -1,3 +1,7 @@
 4742472_0 -> 4742626  e1086 dmc_cartpole_swingup s0  /work/DoyaU/vasilache/work/e1086_dmc_cartpole_swingup_director-director_og-wm_norepgrad-steps4m_s0_j4742472_0
 4742472_1 -> 4742627  e1087 dmc_cartpole_swingup s1  /work/DoyaU/vasilache/work/e1087_dmc_cartpole_swingup_director-director_og-wm_norepgrad-steps4m_s1_j4742472_1
 4742472_2 -> 4742628  e1088 dmc_cartpole_swingup s2  /work/DoyaU/vasilache/work/e1088_dmc_cartpole_swingup_director-director_og-wm_norepgrad-steps4m_s2_j4742472_2
+2026-10-03 03:19:07 4742472_3 -> 4742629  e1089 dmc_cheetah_run s0  /work/DoyaU/vasilache/work/e1089_dmc_cheetah_run_director-director_og-wm_norepgrad-steps4m_s0_j4742472_3
+2026-10-03 04:23:20 4742472_4 -> 4742650  e1090 dmc_cheetah_run s1  /work/DoyaU/vasilache/work/e1090_dmc_cheetah_run_director-director_og-wm_norepgrad-steps4m_s1_j4742472_4
+2026-10-03 04:25:32 4742472_5 -> 4742652  e1091 dmc_cheetah_run s2  /work/DoyaU/vasilache/work/e1091_dmc_cheetah_run_director-director_og-wm_norepgrad-steps4m_s2_j4742472_5
+2026-10-03 05:11:39 4742472_6 -> 4742666  e1092 dmc_hopper_hop s0  /work/DoyaU/vasilache/work/e1092_dmc_hopper_hop_director-director_og-wm_norepgrad-steps4m_s0_j4742472_6

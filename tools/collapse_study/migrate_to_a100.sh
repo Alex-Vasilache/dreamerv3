@@ -12,7 +12,7 @@ for jid in "$@"; do
   . <(grep -E '^(EXP_TAG|CONFIG|TASK|SEED|RUN_DIR|WANDB_PROJECT)=' "$envf" | sed 's/^\([A-Z_]*\)=\(.*\)$/\1="\2"/')
   scancel "$jid"
   while [ -n "$(squeue -h -j "$jid" 2>/dev/null)" ]; do sleep 5; done
-  new=$(sbatch --parsable -p gpu-a100 --gres=gpu:a100:1 -c 16 --mem=64G -J "${EXP_TAG}_a100" \
+  new=$(sbatch --parsable -p gpu-a100 --gres=gpu:a100:1 -c 16 --mem=128G -J "${EXP_TAG}_a100" \
     --export=ALL,CONFIG="$CONFIG",TASK="$TASK",SEED="$SEED",EXP_TAG="$EXP_TAG",RUN_DIR="$RUN_DIR",WANDB_PROJECT="$WANDB_PROJECT" \
     sbatch/run_benchmark.sbatch)
   echo "$jid -> $new  $EXP_TAG $TASK s$SEED  $RUN_DIR"
