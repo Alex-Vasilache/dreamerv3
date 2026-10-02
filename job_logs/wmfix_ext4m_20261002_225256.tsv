@@ -1,0 +1,4 @@
+job	exp	config	seed	run_dir
+4742532	e1071	director director_og wm_norepgrad steps4m	0	/work/DoyaU/vasilache/work/e1071_pinpad_four_director-director_og-wm_norepgrad_s0_j4742298_3
+4742533	e1072	director director_og wm_norepgrad steps4m	1	/work/DoyaU/vasilache/work/e1072_pinpad_four_director-director_og-wm_norepgrad_s1_j4742298_4
+4742534	e1073	director director_og wm_norepgrad steps4m	2	/work/DoyaU/vasilache/work/e1073_pinpad_four_director-director_og-wm_norepgrad_s2_j4742298_5
