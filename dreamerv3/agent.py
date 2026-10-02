@@ -1749,7 +1749,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
 
       # --- 1. Replay sequence for Manager ---
       repl_con_full = self.con(self.feat2tensor(feat), 2).prob(1)
-      repl_rew_full = self.rew(self.feat2tensor(feat), 2).pred()
+      # Real replayed rewards, as in flat v3's ``repl_loss`` -- not the reward
+      # head's prediction, which can blur sparse rewards (pinpad). Same
+      # alignment as the reward loss: ``rew(feat[t])`` is fit to ``reward[t]``.
+      # ``repval_pred_reward`` restores the pre-2026-10-02 behaviour.
+      if self.config.repval_pred_reward:
+        repl_rew_full = self.rew(self.feat2tensor(feat), 2).pred()
+      else:
+        repl_rew_full = f32(obs['reward'])
       repl_expl_full = self._mgr_expl_reward(feat)
       repl_novel_full = self._mgr_novel_reward(feat) if self.mgr_novel else None
 

@@ -679,6 +679,9 @@ defaults:
     reward_grad: True
     repval_loss: True
     repval_grad: True
+    # HRL replay value targets: True = reward-head prediction (behaviour before
+    # 2026-10-02), False = the real replayed reward, as flat v3 does.
+    repval_pred_reward: False
     report: True
     report_gradnorms: False
     # Subset of HRL goal-proposal modes to render videos for. Director's original
@@ -1692,3 +1695,28 @@ reset_goal:
 reset_wkr:
   run.steps: 1.6e6
   run.reset_regex: '(^|/)(pol|wkr_goal_val|wkr_goal_slowval|wkr_goal_retnorm|wkr_goal_advnorm|wkr_actent_action|wkr_goal_slowval_count)(/|$)'
+
+# World-model drift fixes (e1068+, 2026-10-02). Layer onto
+# `director director_og`; all run 2M steps on pinpad_four size6m.
+#   wm_realrew   : the code default since 2026-10-02 (real replayed rewards in
+#                  the HRL replay value loss); the block only sets the length.
+#   wm_norepgrad : the replay value losses no longer backprop into enc/RSSM
+#                  (Director: no actor-critic gradient reaches the world model).
+#   wm_b64       : batch length 64 (was 32). At train_ratio 64 that is one update
+#                  per 4 env steps; Director makes one per 16 (16x64 at ratio 64),
+#                  so lr is cut 4x on all three optimizers to match its
+#                  per-env-step update budget (updates x lr).
+#   wm_oldrew    : restore reward-head targets, to test wm_b64 on its own.
+wm_realrew:
+  run.steps: 2e6
+wm_norepgrad:
+  run.steps: 2e6
+  agent.repval_grad: False
+wm_b64:
+  run.steps: 2e6
+  batch_length: 64
+  agent.opt.lr: 2.5e-5
+  agent.goal_opt.lr: 2.5e-5
+  agent.ac_opt.lr: 2.5e-5
+wm_oldrew:
+  agent.repval_pred_reward: True
