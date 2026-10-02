@@ -96,6 +96,12 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
     elements.checkpoint.load(args.from_checkpoint, dict(
         agent=bind(agent.load, regex=args.from_checkpoint_regex)))
   cp.load_or_save()
+  reset_regex = getattr(args, 'reset_regex', '')
+  if reset_regex and not (logdir / 'reset_done').exists():
+    keys = agent.reset_params(reset_regex)
+    (logdir / 'reset_done').write(f'step={int(step)}\n' + '\n'.join(keys) + '\n')
+    cp.save()
+    print(f'Reset {len(keys)} params at step {int(step)} (regex {reset_regex!r})')
   save_milestone = milestones.make_saver(cp, logdir, args.save_every_steps)
 
   print('Start training loop')

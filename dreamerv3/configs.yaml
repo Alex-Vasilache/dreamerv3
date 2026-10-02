@@ -85,6 +85,11 @@ defaults:
     report_batches: 1
     from_checkpoint: ''
     from_checkpoint_regex: '.*'
+    # Re-initialise every agent parameter whose name matches this regex, once,
+    # right after the run's own checkpoint is restored (marker file
+    # logdir/reset_done keeps a requeue from resetting again). Names include
+    # optimizer state paths, so a module's moments reset with it. '' = off.
+    reset_regex: ''
     episode_timeout: 180
     actor_addr: 'localhost:{auto}'
     replay_addr: 'localhost:{auto}'
@@ -1671,3 +1676,19 @@ collapse_wkr_code:
 
 collapse_ctrl12:
   run.steps: 1.2e6
+
+# Reset study (e1060-e1067, 2026-10-02): continue a COLLAPSED director_og
+# pinpad_four run (e1057-59, ckpt ~1.16M) for 0.4M more steps with one component
+# re-initialised (weights + optimizer state + normalizers + slow targets).
+# Recovery after a reset says that component's state is what blocks rediscovery.
+reset_none:
+  run.steps: 1.6e6
+reset_mgr:
+  run.steps: 1.6e6
+  run.reset_regex: '(^|/)(manager_pol|mgr_extr_val|mgr_extr_slowval|mgr_expl_val|mgr_expl_slowval|mgr_extr_retnorm|mgr_expl_retnorm|mgr_advnorm|mgr_actent|mgr_extr_slowval_count|mgr_expl_slowval_count)(/|$)'
+reset_goal:
+  run.steps: 1.6e6
+  run.reset_regex: '(^|/)(goal_enc|goal_dec|goal_kl_adapter)(/|$)'
+reset_wkr:
+  run.steps: 1.6e6
+  run.reset_regex: '(^|/)(pol|wkr_goal_val|wkr_goal_slowval|wkr_goal_retnorm|wkr_goal_advnorm|wkr_actent_action|wkr_goal_slowval_count)(/|$)'
