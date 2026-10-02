@@ -1,0 +1,16 @@
+partition	array_job	task_idx	exp	config	task	seed
+v100	4742471	0	e1080	director director_og wm_norepgrad steps4m	pinpad_five	0
+v100	4742471	1	e1081	director director_og wm_norepgrad steps4m	pinpad_five	1
+v100	4742471	2	e1082	director director_og wm_norepgrad steps4m	pinpad_five	2
+v100	4742471	3	e1083	director director_og wm_norepgrad steps4m	pinpad_six	0
+v100	4742471	4	e1084	director director_og wm_norepgrad steps4m	pinpad_six	1
+v100	4742471	5	e1085	director director_og wm_norepgrad steps4m	pinpad_six	2
+p100	4742472	0	e1086	director director_og wm_norepgrad steps4m	dmc_cartpole_swingup	0
+p100	4742472	1	e1087	director director_og wm_norepgrad steps4m	dmc_cartpole_swingup	1
+p100	4742472	2	e1088	director director_og wm_norepgrad steps4m	dmc_cartpole_swingup	2
+p100	4742472	3	e1089	director director_og wm_norepgrad steps4m	dmc_cheetah_run	0
+p100	4742472	4	e1090	director director_og wm_norepgrad steps4m	dmc_cheetah_run	1
+p100	4742472	5	e1091	director director_og wm_norepgrad steps4m	dmc_cheetah_run	2
+p100	4742472	6	e1092	director director_og wm_norepgrad steps4m	dmc_hopper_hop	0
+p100	4742472	7	e1093	director director_og wm_norepgrad steps4m	dmc_hopper_hop	1
+p100	4742472	8	e1094	director director_og wm_norepgrad steps4m	dmc_hopper_hop	2

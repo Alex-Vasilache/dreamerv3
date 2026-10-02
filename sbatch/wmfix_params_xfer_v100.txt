@@ -1,0 +1,6 @@
+director pinpad_five 0 e1080 director_og wm_norepgrad steps4m
+director pinpad_five 1 e1081 director_og wm_norepgrad steps4m
+director pinpad_five 2 e1082 director_og wm_norepgrad steps4m
+director pinpad_six 0 e1083 director_og wm_norepgrad steps4m
+director pinpad_six 1 e1084 director_og wm_norepgrad steps4m
+director pinpad_six 2 e1085 director_og wm_norepgrad steps4m

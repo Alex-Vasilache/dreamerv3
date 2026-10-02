@@ -445,6 +445,17 @@ are e1057–e1059 (old predicted-reward code, 1.2M) and the earlier freeze-study
 
 Phase 2, e1077–e1079 (array 4742428, queued 2026-10-02 18:45): `wm_norepgrad wm_b64` with real rewards. Chosen over `wm_realrew` because at 0.65M norepgrad held 3/3 while realrew had collapsed on 2/3.
 
+### e1080–e1094: `wm_norepgrad` on the other benchmark tasks (launched 2026-10-02 20:00)
+
+At 1M steps on pinpad_four `wm_norepgrad` held 3/3 (248–275) while
+`wm_realrew` declined on 3/3 and `wm_b64` slipped 290→190, so the
+world-model gradient fix alone goes to the other tasks: `director director_og
+wm_norepgrad steps4m`, 3 seeds, 4M steps, against the benchmark's director_og
+baselines e919–e936 (same budget). pinpad_five/six e1080–e1085 on V100 (array
+4742471); cartpole/cheetah/hopper e1086–e1094 on P100 nodes 11–14 (array 4742472).
+Expected: pinpad five/six keep the sequence past ~1M (baselines lose it by
+1–1.5M); DMC scores within seed noise of the baselines (no harm).
+
 ### e1060–e1067: reset one component of a collapsed run (2026-10-02)
 
 **Question.** Why does `director_og` never re-find the pinpad sequence once it

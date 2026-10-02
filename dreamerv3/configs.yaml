@@ -1720,3 +1720,7 @@ wm_b64:
   agent.ac_opt.lr: 2.5e-5
 wm_oldrew:
   agent.repval_pred_reward: True
+# Layer last to run a wm_* arm for director_og's full 4M budget (transfer runs
+# e1080+ against the benchmark's director_og baselines e919-e936).
+steps4m:
+  run.steps: 4e6
