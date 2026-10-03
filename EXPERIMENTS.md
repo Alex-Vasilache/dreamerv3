@@ -479,6 +479,35 @@ baselines e919–e936 (same budget). pinpad_five/six e1080–e1085 on V100 (arra
 Expected: pinpad five/six keep the sequence past ~1M (baselines lose it by
 1–1.5M); DMC scores within seed noise of the baselines (no harm).
 
+### Result, e1080–e1094 (2026-10-04 02:30): the fix on the other benchmark tasks
+
+`wm_norepgrad steps4m` vs the benchmark's `director_og` baselines e919–e936,
+3 seeds each, 4M steps. Mean +- std over seeds of each seed's mean return in
+3–4M (`tools/collapse_study/transfer_summary.py`; the paper's table is generated
+by `26_04_HRL-paper/figures/motivation/make_collapse_table.py`):
+
+| task | director_og | wm_norepgrad | note |
+|---|---|---|---|
+| pinpad_five | 1 ± 1 | **236 ± 8** | 3/3 hold to 4M (cross-50 0.05–0.35M); baselines find then lose by ~1M |
+| pinpad_six | 1 ± 1 | 65 ± 91 | 1/3 finds it at 1.7M and holds (194); 2/3 never find it. Discovery, not collapse |
+| cartpole swingup | 640 ± 42 | 692 ± 27 | |
+| cheetah run | 513 ± 78 | 433 ± 6 | lower; all 3 fix seeds below 2 of 3 baselines |
+| hopper hop | 253 ± 63 | 322 ± 67 | |
+
+**Reading.** The fix carries to Pin Pad Five unchanged. Pin Pad Six stays
+unsolved for a different reason (the sequence is rarely found at all). On the
+Control Suite nothing is resolved with 3 seeds; cheetah is the one task where
+the change may cost return.
+
+Run notes: these were launched on V100/P100 and moved to A100 mid-run from
+their own RUN_DIR (`tools/collapse_study/migrate_to_a100.sh`, `auto_migrate.sh`);
+64G jobs hit host OOM near 3.6M (in-RAM replay) and were resubmitted at
+120/128G by `keep_alive.sh`. e1083 (pinpad_six s0) ran as two jobs on the same
+RUN_DIR for ~11 min on 10-03 16:23 (keeper/migration race, since fixed), so a
+few episodes around 1.5M are logged twice; it scores 0 throughout. Figures:
+`/work/DoyaU/vasilache/work/collapse_figs/wmfix_{pinpad4,transfer}.png`; paper
+section 3.3 (`26_04_HRL-paper` commit 979dfce).
+
 ### e1060–e1067: reset one component of a collapsed run (2026-10-02)
 
 **Question.** Why does `director_og` never re-find the pinpad sequence once it

@@ -125,8 +125,9 @@ for ax, (task, title, first) in zip(axes, TASKS):
   draw(ax, [f'e{n0 + k}' for k in range(3)], 'score', XMAX, BW, BLUE, 'no critic gradient into WM')
   ax.set_title(title, fontsize=11, color=INK, loc='left', fontweight='bold')
   ax.set_xlabel('env steps (M)'); ax.set_xlim(0, XMAX / 1e6); ax.set_ylim(bottom=0)
-  ax.legend(loc='upper left', frameon=False, fontsize=8.5)
 axes[0].set_ylabel('episode score (100k-step bins)')
+h, l = axes[0].get_legend_handles_labels()
+fig.legend(h, l, loc='upper right', ncol=2, frameon=False, fontsize=10, bbox_to_anchor=(0.995, 0.97))
 fig.suptitle('The world-model fix on the other benchmark tasks', x=0.01, ha='left',
              fontsize=13, color=INK, fontweight='bold')
 fig.text(0.01, 0.905, 'director_og, size6m, 3 seeds each, 4M steps. Gray: benchmark baselines '
