@@ -14,3 +14,4 @@ p100	4742472	5	e1091	director director_og wm_norepgrad steps4m	dmc_cheetah_run	2
 p100	4742472	6	e1092	director director_og wm_norepgrad steps4m	dmc_hopper_hop	0
 p100	4742472	7	e1093	director director_og wm_norepgrad steps4m	dmc_hopper_hop	1
 p100	4742472	8	e1094	director director_og wm_norepgrad steps4m	dmc_hopper_hop	2
+a100	4742581	-	e1094	director director_og wm_norepgrad steps4m	dmc_hopper_hop	2	(moved from p100 4742472_8 before start)
