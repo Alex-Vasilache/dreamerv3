@@ -16,7 +16,10 @@ while :; do
     [ "$step" -ge "$TARGET" ] && continue
     pending=1
     j1=$(grep -h '^JOB=' "$d/job.env" | tail -1 | cut -d= -f2); j2=$(awk -v e="$e" '$1==e{j=$2} END{print j}' "$STATE")
-    alive "$j1" || alive "$j2" && continue
+    # Any of my jobs named "${e}_*" (e.g. a pending migration) also counts:
+    # job.env only learns a job id once that job starts.
+    named=$(squeue -u "$USER" -h -o '%j' | grep -c "^${e}_")
+    { alive "$j1" || alive "$j2" || [ "$named" -gt 0 ]; } && continue
     . <(grep -E '^(EXP_TAG|CONFIG|TASK|SEED|RUN_DIR|WANDB_PROJECT)=' "$d/job.env" | sed 's/^\([A-Z_]*\)=\(.*\)$/\1="\2"/')
     if [ "$(count gpu-a100)" -lt 8 ]; then res=(-p gpu-a100 --gres=gpu:a100:1 -c 16 --mem=128G)
     elif [ "$(count gpu-p100)" -lt 8 ]; then res=(-p gpu-p100 --gres=gpu:p100:1 --nodelist='saion-gpu[11-14]' -c 8 --mem=120G)
