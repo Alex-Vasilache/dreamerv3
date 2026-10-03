@@ -84,7 +84,7 @@ ARMS = [('Real rewards in replay value', ['e1068', 'e1069', 'e1070']),
         ('No critic gradient into world model', ['e1071', 'e1072', 'e1073']),
         ('Batch length 64, lr / 4 (old rewards)', ['e1074', 'e1075', 'e1076']),
         ('No critic gradient + batch length 64', ['e1077', 'e1078', 'e1079'])]
-XMAX, BW = 2e6, 5e4
+XMAX, BW = 4e6, 5e4
 fig, axes = plt.subplots(2, 4, figsize=(18, 7.4), sharex=True, sharey='row')
 for j, (title, exps) in enumerate(ARMS):
   for i, (key, ylabel, ylim) in enumerate([('score', 'episode score', (0, 320)),
@@ -103,7 +103,7 @@ for j, (title, exps) in enumerate(ARMS):
 fig.suptitle('Fixing the pinpad collapse: which world-model change holds the sequence',
              x=0.01, ha='left', fontsize=13, color=INK, fontweight='bold')
 fig.text(0.01, 0.935, 'pinpad_four, director_og, size6m, 3 seeds per arm, 50k-step bins. Gray: '
-         'control e1057-59 (old code, ran to 1.2M). Thin lines: single seeds. Bottom row: the '
+         'control e1057-59 (old code, ran to 1.2M); "no critic gradient" continued to 4M, the others stop at 2M. Thin lines: single seeds. Bottom row: the '
          'goal-reward jump that comes with collapse.', fontsize=9.5, color=MUTED)
 fig.tight_layout(rect=(0, 0, 1, 0.92))
 os.makedirs(OUT, exist_ok=True)
