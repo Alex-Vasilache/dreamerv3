@@ -9,6 +9,12 @@ STATE=job_logs/keep_alive_state.tsv; touch "$STATE"
 alive() { [ -n "$1" ] && [ -n "$(squeue -h -j "$1" 2>/dev/null)" ]; }
 count() { squeue -u "$USER" -h -p "$1" -t RUNNING,PENDING | wc -l; }
 while :; do
+  # If the controller is unreachable, squeue prints nothing and every run looks
+  # dead; resubmitting then duplicates live runs once sbatch works again. Skip
+  # the cycle unless squeue itself succeeds.
+  if ! squeue -u "$USER" -h -o '%i' > /dev/null 2>&1; then
+    echo "$(date '+%F %T') squeue failed, skipping cycle"; sleep 300; continue
+  fi
   pending=0
   for e in "$@"; do
     d=$(ls -d /work/DoyaU/vasilache/work/${e}_* 2>/dev/null | head -1); [ -n "$d" ] || continue
@@ -27,6 +33,7 @@ while :; do
     new=$(sbatch --parsable "${res[@]}" -t 2-00:00:00 -J "${EXP_TAG}_k" \
       --export=ALL,CONFIG="$CONFIG",TASK="$TASK",SEED="$SEED",EXP_TAG="$EXP_TAG",RUN_DIR="$RUN_DIR",WANDB_PROJECT="$WANDB_PROJECT" \
       sbatch/run_benchmark.sbatch)
+    [ -n "$new" ] || { echo "$(date '+%F %T') sbatch failed for $e"; continue; }
     printf '%s\t%s\t%s\t%s\n' "$e" "$new" "${res[1]}" "$(date '+%F %T') step=$step" >> "$STATE"
     echo "$(date '+%F %T') resubmit $e at step $step -> $new on ${res[1]}"
   done
