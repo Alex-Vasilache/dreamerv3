@@ -131,7 +131,7 @@ fig.legend(h, l, loc='upper right', ncol=2, frameon=False, fontsize=10, bbox_to_
 fig.suptitle('The world-model fix on the other benchmark tasks', x=0.01, ha='left',
              fontsize=13, color=INK, fontweight='bold')
 fig.text(0.01, 0.905, 'director_og, size6m, 3 seeds each, 4M steps. Gray: benchmark baselines '
-         '(e919-e936). Blue: same config with agent.repval_grad False and real replay rewards.',
+         '(e919-e936). Blue: same config with agent.hrl_repval_grad False and real replay rewards.',
          fontsize=9.5, color=MUTED)
 fig.tight_layout(rect=(0, 0, 1, 0.86))
 fig.savefig(f'{OUT}/wmfix_transfer.png', dpi=130, facecolor='white')

@@ -479,6 +479,21 @@ baselines e919–e936 (same budget). pinpad_five/six e1080–e1085 on V100 (arra
 Expected: pinpad five/six keep the sequence past ~1M (baselines lose it by
 1–1.5M); DMC scores within seed noise of the baselines (no harm).
 
+### e1095–e1112: batch length 64 with the fix, at the normal lr (launched 2026-10-05, array 4743866)
+
+`director director_og b64 steps4m`: batch 4x64 at train_ratio 64, lr 1e-4 on
+all optimizers, `hrl_repval_grad False` (the HRL default since 2026-10-05),
+real replay rewards; all six benchmark tasks x 3 seeds, 4M steps, A100, 128G
+(`job_logs/b64_*.tsv`; e1095–97 pinpad_six, e1098–100 pinpad_five, e1101–03
+pinpad_four, e1104–06 cartpole, e1107–09 cheetah, e1110–12 hopper). Unlike
+`wm_b64`, nothing else changes. Question: does a world model trained on 64-step
+windows help Pin Pad Six discovery? Compare against e1080–e1094 (same, at 32).
+
+**Default change (2026-10-05).** `agent.hrl_repval_grad: False` now gates the
+HRL replay value gradient into enc/RSSM; flat runs keep `repval_grad: True`.
+Add `wm_oldgrad` last to reproduce any HRL run up to e1079 (except the
+`wm_norepgrad` arms). Pinned by `embodied/tests/test_hrl_repval_grad.py`.
+
 ### Result, e1080–e1094 (2026-10-04 02:30): the fix on the other benchmark tasks
 
 `wm_norepgrad steps4m` vs the benchmark's `director_og` baselines e919–e936,

@@ -679,6 +679,12 @@ defaults:
     reward_grad: True
     repval_loss: True
     repval_grad: True
+    # HRL only: let the replay value losses (manager task, manager exploration,
+    # worker goal) backprop into enc/RSSM. Off since 2026-10-05: on, they reshape
+    # the world model and the manager loses the Pin Pad sequence (e1068-e1094).
+    # TF Director sends no actor-critic gradient into its world model. Flat
+    # runs still use `repval_grad` (upstream v3, one critic).
+    hrl_repval_grad: False
     # HRL replay value targets: True = reward-head prediction (behaviour before
     # 2026-10-02), False = the real replayed reward, as flat v3 does.
     repval_pred_reward: False
@@ -1707,11 +1713,17 @@ reset_wkr:
 #                  so lr is cut 4x on all three optimizers to match its
 #                  per-env-step update budget (updates x lr).
 #   wm_oldrew    : restore reward-head targets, to test wm_b64 on its own.
+#   wm_oldgrad   : restore the critic gradient into the world model (the default
+#                  before 2026-10-05). Every HRL run up to e1079 except the
+#                  wm_norepgrad arms ran this way; add it LAST to reproduce
+#                  them, e.g. `director director_og wm_b64 wm_oldrew wm_oldgrad`.
 wm_realrew:
   run.steps: 2e6
 wm_norepgrad:
   run.steps: 2e6
-  agent.repval_grad: False
+  agent.hrl_repval_grad: False   # the default since 2026-10-05
+wm_oldgrad:
+  agent.hrl_repval_grad: True
 wm_b64:
   run.steps: 2e6
   batch_length: 64
@@ -1724,3 +1736,10 @@ wm_oldrew:
 # e1080+ against the benchmark's director_og baselines e919-e936).
 steps4m:
   run.steps: 4e6
+
+# Batch length 64 at the unchanged lr (e1095-e1112, 2026-10-05). Unlike
+# `wm_b64`, nothing else moves: the world model trains on 64-step windows with
+# the gradient fix (hrl_repval_grad False, now default). Tests whether the
+# longer context helps Pin Pad Six discovery. Layer after director_og.
+b64:
+  batch_length: 64

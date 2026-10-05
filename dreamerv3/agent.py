@@ -1731,7 +1731,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
 
     # --- Optional replay value loss (tail of real sequence + imag bootstrap) ---
     if self.config.repval_loss:
-      feat = sg(repfeat, skip=self.config.repval_grad)
+      # ``hrl_repval_grad`` (default False), not the flat ``repval_grad``: with
+      # three critics the replay value losses reshape the world model and cause
+      # the late Pin Pad collapse (EXPERIMENTS e1068-e1094).
+      feat = sg(repfeat, skip=self.config.hrl_repval_grad)
       last, term = [obs[k] for k in ('is_last', 'is_terminal')]
       boot_extr = imgloss_mgr_out['mgr_extr_ret'][:, 0].reshape(B, K_imag)
       boot_expl = imgloss_mgr_out['mgr_expl_ret'][:, 0].reshape(B, K_imag)
