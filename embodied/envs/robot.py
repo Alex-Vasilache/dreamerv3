@@ -1,4 +1,6 @@
+import io
 import json
+import pickle
 import socket
 import struct
 import time
@@ -7,7 +9,7 @@ import elements
 import embodied
 import numpy as np
 
-PROTOCOL = 1
+PROTOCOL = 3
 
 # Anything that means the link went away rather than that the code is
 # wrong: socket errors and timeouts (both OSError), plus a truncated or
@@ -40,6 +42,29 @@ MOTIONS_SYMMETRIC = (
 )
 
 
+def _load_policy_pickle(blob):
+  """Unpickle a learner policy file written by whichever numpy is on that side.
+
+  numpy renamed `numpy.core` to `numpy._core` in 2.0, and this file crosses
+  machines: the learner writes it on Saion, the actor reads it here. Map in
+  whichever direction the local install needs rather than assuming one.
+  """
+
+  class Unpickler(pickle.Unpickler):
+
+    def find_class(self, module, name):
+      for src, dst in (('numpy.core', 'numpy._core'),
+                       ('numpy._core', 'numpy.core')):
+        if module.startswith(src):
+          try:
+            return super().find_class(module, name)
+          except (ModuleNotFoundError, AttributeError):
+            return super().find_class(module.replace(src, dst, 1), name)
+      return super().find_class(module, name)
+
+  return Unpickler(io.BytesIO(blob)).load()
+
+
 class SmartphoneRobot(embodied.Env):
   """DreamerV3 environment backed by the OIST smartphone robot.
 
@@ -48,6 +73,23 @@ class SmartphoneRobot(embodied.Env):
   action to the wheels, waits out the control period, then ships proprio sensor
   readings back. The phone therefore owns the control clock and `step` blocks
   until the next reading arrives.
+
+  Two timing modes, chosen by `pipeline` and announced in the handshake:
+
+  * Lock-step (`pipeline=False`, the protocol-1 behaviour). The phone blocks on
+    an action before every tick, so a step costs one control period *plus* the
+    round trip and whatever the policy took. Measured on this rig that capped
+    the loop at 9.7Hz against a phone ticking at 50Hz: the phone spent a median
+    36ms, and a p90 of 260ms, blocked on us.
+
+  * Pipelined (`pipeline=True`, the default). The phone free-runs on its own
+    clock, applying the most recent action it has received and reporting every
+    tick regardless. The round trip then hides inside the control period and
+    the rate is the phone's alone. The cost is a fixed one-tick delay between
+    an action and the observation that reflects it -- consistent, so the world
+    model can learn it -- and the need to keep up on average: observations we
+    are too slow to consume queue up, and `_recv` drops all but the newest,
+    counting them as `log/dropped`.
 
   The listening socket is opened lazily on the first `step` rather than in the
   constructor, because `main.make_agent` builds one throwaway env just to read
@@ -59,20 +101,38 @@ class SmartphoneRobot(embodied.Env):
       discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
-      drift_clip=1.0, symmetric=True,
+      drift_clip=1.0, wheel_penalty=0.0, symmetric=True,
       obs_theta_scale=0.18, obs_rate_scale=3.0, obs_wheel_scale=3.3e-4,
       obs_clip=3.0,
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6,
-      reconnect=True, logdir=None):
+      reconnect=True, pipeline=True, onboard=False, config=None,
+      policy_dir=None, weights_every=30.0, logdir=None, pace=None):
     assert task in ('drive', 'balance', 'track', 'none'), task
     self.task = task
     self.host = host
     self.port = int(port)
+    # Offer the phone the chance to run the policy itself. It only takes effect
+    # if the phone also has weights loaded, so this is safe to leave on: a
+    # phone without a policy simply keeps the old behaviour.
+    self.onboard = bool(onboard)
+    self._onboard = False        # negotiated per connection
+    self._onboard_act = None     # the action the phone actually applied
+    self._config = config
+    self._policy_dir = elements.Path(policy_dir) if policy_dir else None
+    self._weights_every = float(weights_every)
+    self._weights_stamp = None   # policy stamp last pushed to the phone
+    self._weights_check = 0.0
+    # 'serial' or 'clock', or None to take the phone's default. The phone's
+    # RP2040 applies one command per ~83 ms and reads USB only in between, so
+    # 'serial' -- one decision per reply -- is what gets every action applied.
+    self.pace = pace
+    self._seq = None  # the phone's observation counter, echoed in each action
     self.length = int(length)
     self.discrete = bool(discrete)
     self.timeout = float(timeout)
+    self.pipeline = bool(pipeline)
     self.speed_scale = float(speed_scale)
     self.fall_angle = float(fall_angle)
     self.spin_penalty = float(spin_penalty)
@@ -91,6 +151,10 @@ class SmartphoneRobot(embodied.Env):
     # than sustained drift -- at scale 1e-4 the p99 alone would cost 0.38
     # of a reward capped at 1.0. Clipping bounds it at drift_penalty.
     self.drift_clip = float(drift_clip)
+    # Effort cost on each wheel's own speed. drift only sees the net forward
+    # motion, so wheels turning in opposite directions, or oscillating fast
+    # around zero mean, cost nothing there. Clipped like drift per wheel.
+    self.wheel_penalty = float(wheel_penalty)
     self.symmetric = bool(symmetric)
     # Observation normalisation. Raw units put wheel speed ~70x above tilt
     # once symlog is applied (std 6.4 against 0.09), so the encoder saw
@@ -133,10 +197,17 @@ class SmartphoneRobot(embodied.Env):
       self._timing_path = None
     self._listener = None
     self._sock = None
-    self._file = None
+    # Own framing buffer rather than makefile('rb'): draining the queue needs a
+    # non-blocking peek, which a buffered file object cannot give us.
+    self._buffer = bytearray()
+    self._dropped = 0
     self._step = 0
     self._done = True
     self._sent = 0.0
+    # Mirrored back to the phone with the next action, so its screen can show
+    # what the state it just reported was worth. The reward is computed here,
+    # not on the phone, so this is the only way the phone can know it.
+    self._reward = 0.0
     self._timing = (0.0, 0.0, 0.0, 0.0)
     self._last = dict(
         wheel_speed_l=0.0, wheel_speed_r=0.0, wheel_distance_l=0.0,
@@ -168,6 +239,11 @@ class SmartphoneRobot(embodied.Env):
         'log/phone_work_ms': elements.Space(np.float32),
         'log/imu_age_ms': elements.Space(np.float32),
         'log/imu_stale_ms': elements.Space(np.float32),
+        # Observations discarded as stale in pipelined mode; anything but 0
+        # means we are not keeping up with the phone's clock.
+        'log/dropped': elements.Space(np.float32),
+        **({'executed/drive': elements.Space(np.float32, (2,), -1.0, 1.0)}
+           if self.onboard and not self.discrete else {}),
     }
 
   @property
@@ -209,6 +285,7 @@ class SmartphoneRobot(embodied.Env):
         sensors, latency = self._recover(sensors, latency)
         self._step = 0
         self._done = False
+        self._reward = 0.0
         self._ref = float(self.theta_zero)
         return self._obs(sensors, latency, 0.0, is_first=True)
       except LINKLOST as e:
@@ -261,18 +338,24 @@ class SmartphoneRobot(embodied.Env):
                0.5 * (float(sensors['wheel_speed_l'])
                       + float(sensors['wheel_speed_r'])) * self.speed_scale),
             flush=True)
+    # Note `self.onboard`, not `self._onboard`: a phone that came up without
+    # a policy negotiates onboard=False, and pushing to it anyway is exactly
+    # how it bootstraps into running its own.
+    if self.onboard:
+      self._maybe_push_weights()
     reward, terminal = self._evaluate(sensors)
+    self._reward = reward
     self._done = terminal or self._step >= self.length
     return self._obs(
         sensors, latency, reward, is_last=self._done, is_terminal=terminal)
 
   def close(self):
-    for handle in (self._file, self._sock, self._listener):
+    for handle in (self._sock, self._listener):
       try:
         handle and handle.close()
       except OSError:
         pass
-    self._file = self._sock = self._listener = None
+    self._sock = self._listener = None
 
   def _decode(self, action):
     if self.discrete:
@@ -310,7 +393,8 @@ class SmartphoneRobot(embodied.Env):
           0.5 * linear + 0.5 * bonus
           - self.rate_penalty * abs(rate)
           - self.drift_penalty * min(
-              abs(0.5 * (speed_l + speed_r)), self.drift_clip))
+              abs(0.5 * (speed_l + speed_r)), self.drift_clip)
+          - self.wheel_penalty * self._wheel_effort(speed_l, speed_r))
     elif self.task == 'balance':
       # cos(theta) is second-order flat at upright, so on a rig whose tilt only
       # spans a few degrees it delivers almost no gradient. Instead combine a
@@ -333,10 +417,15 @@ class SmartphoneRobot(embodied.Env):
       reward = (
           0.5 * linear + 0.5 * bonus
           - self.rate_penalty * abs(rate)
-          - self.drift_penalty * drift)
+          - self.drift_penalty * drift
+          - self.wheel_penalty * self._wheel_effort(speed_l, speed_r))
     else:
       reward = float(sensors.get('reward', 0.0))
     return float(reward), fallen
+
+  def _wheel_effort(self, speed_l, speed_r):
+    return 0.5 * (
+        min(abs(speed_l), self.drift_clip) + min(abs(speed_r), self.drift_clip))
 
   def _obs(self, sensors, latency, reward, is_first=False, is_last=False,
            is_terminal=False):
@@ -356,6 +445,11 @@ class SmartphoneRobot(embodied.Env):
         is_first=is_first,
         is_last=is_last,
         is_terminal=is_terminal,
+        # Only in onboard mode: the action the phone already applied for this
+        # observation. The driver lifts 'executed/' keys over the actor's own
+        # action when it builds the transition.
+        **({'executed/drive': np.asarray(self._onboard_act, np.float32)}
+           if self._onboard and self._onboard_act is not None else {}),
         **{
             'log/theta_deg': np.float32(np.degrees(theta)),
             'log/distance_l': np.float32(sensors.get('wheel_distance_l', 0.0)),
@@ -368,6 +462,7 @@ class SmartphoneRobot(embodied.Env):
             'log/phone_work_ms': np.float32(self._timing[1]),
             'log/imu_age_ms': np.float32(self._timing[2]),
             'log/imu_stale_ms': np.float32(self._timing[3]),
+            'log/dropped': np.float32(self._dropped),
         },
     )
 
@@ -387,41 +482,124 @@ class SmartphoneRobot(embodied.Env):
     self._sock, address = self._listener.accept()
     self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     self._sock.settimeout(self.timeout)
-    self._file = self._sock.makefile('rb')
+    self._buffer.clear()
     hello, _ = self._read()
     if hello.get('type') != 'hello' or hello.get('protocol') != PROTOCOL:
       raise ValueError(f'Unexpected handshake {hello!r}')
     print(f'Robot connected from {address[0]}:{address[1]}: {hello}')
-    self._write(dict(type='hello', protocol=PROTOCOL, discrete=self.discrete))
+    # The phone follows whichever mode we ask for, so a fallback to lock-step
+    # needs no reinstall.
+    self._onboard = bool(self.onboard and hello.get('onboard', False))
+    if self._onboard:
+      print(f'[robot] phone is running the policy (weights {hello.get("policy_stamp")});'
+            ' recording its actions rather than sending our own')
+    self._write(dict(
+        type='hello', protocol=PROTOCOL, discrete=self.discrete,
+        pipeline=self.pipeline, onboard=self._onboard,
+        **({'pace': self.pace} if self.pace else {})))
+
+  def _maybe_push_weights(self):
+    """Send the phone the newest policy, if there is one it has not got.
+
+    Only ever called in onboard mode, where the phone is free-running on its
+    own policy and is not waiting for us -- so a multi-megabyte sendall here
+    costs the trainer time, not robot control. That is precisely the property
+    that made moving the policy onto the phone worth doing.
+    """
+    now = time.time()
+    if now - self._weights_check < self._weights_every:
+      return
+    self._weights_check = now
+    if self._config is None or self._policy_dir is None:
+      return
+    try:
+      latest = self._policy_dir / 'policy' / 'latest'
+      if not latest.exists():
+        return
+      stamp = latest.read().strip()
+      if not stamp or stamp == self._weights_stamp:
+        return
+      path = self._policy_dir / 'policy' / f'policy_{stamp}.pkl'
+      if not path.exists():
+        return
+      from dreamerv3.deploy import export as exportlib
+      data = _load_policy_pickle(path.read_bytes())
+      params = data['params'] if isinstance(data, dict) and 'params' in data \
+          else data
+      blob, _ = exportlib.pack(self._config, params)
+      self._write(dict(type='weights', stamp=stamp), blob)
+      self._weights_stamp = stamp
+      print(f'[robot] pushed policy {stamp} to the phone '
+            f'({len(blob) / 1e6:.1f} MB)', flush=True)
+    except LINKLOST:
+      raise
+    except Exception as e:
+      # A failed export must never take the robot down; it just means the
+      # phone keeps acting on the weights it already has, which is the whole
+      # point of it holding them.
+      print(f'[robot] could not push weights: {e}', flush=True)
 
   def _record(self, latency):
     if not self._timing_path:
       return
     if self._timing_file is None:
       self._timing_file = open(self._timing_path, 'a', buffering=1)
-      self._timing_file.write('t,latency_ms,wait_ms,work_ms\n')
-    self._timing_file.write('%.6f,%.3f,%.3f,%.3f\n' % (
-        time.time(), latency * 1e3, self._timing[0], self._timing[1]))
+      self._timing_file.write('t,latency_ms,wait_ms,work_ms,dropped\n')
+    self._timing_file.write('%.6f,%.3f,%.3f,%.3f,%d\n' % (
+        time.time(), latency * 1e3, self._timing[0], self._timing[1],
+        self._dropped))
 
   def _drop(self):
     """Close the client socket but keep listening, so the robot can return."""
-    for handle in (self._file, self._sock):
-      try:
-        handle and handle.close()
-      except OSError:
-        pass
-    self._file = self._sock = None
+    try:
+      self._sock and self._sock.close()
+    except OSError:
+      pass
+    self._sock = None
+    self._buffer.clear()
 
   def _send(self, left, right, reset):
     self._sent = time.time()
+    if self._onboard:
+      # The phone has already decided and driven. All that is left to send is
+      # the episode boundary and the reward for the step it just reported --
+      # neither is latency critical, which is exactly why they can stay here
+      # while the action moved to the phone.
+      self._write(dict(
+          type='ctrl', reset=bool(reset), reward=float(self._reward),
+          seq=self._seq))
+      return
+    # `seq` lets a serial-paced phone tell the answer to its newest
+    # observation from a late answer to the previous one.
     self._write(dict(
-        type='act', left=float(left), right=float(right), reset=bool(reset)))
+        type='act', left=float(left), right=float(right), reset=bool(reset),
+        reward=float(self._reward), seq=self._seq))
 
   def _recv(self):
     header, _ = self._read()
+    self._dropped = 0
+    if self.pipeline:
+      # The phone reports every tick whether or not we asked, so anything still
+      # queued behind this frame is staler than what is on the wire now. Acting
+      # on a stale reading is worse than skipping it, so keep only the newest
+      # and count the rest.
+      while True:
+        newer = self._read_nowait()
+        if newer is None:
+          break
+        header = newer[0]
+        self._dropped += 1
     if header.get('type') != 'obs':
       raise ValueError(f'Expected an obs message, got {header!r}')
     self._last = header['sensors']
+    self._seq = header.get('seq')
+    if self._onboard:
+      act = header.get('act')
+      if act is None:
+        raise ValueError(
+            'Onboard mode negotiated but the phone sent no action; refusing '
+            'to record a transition whose action we would have to invent')
+      self._onboard_act = np.asarray(act, np.float32)
     self._timing = (
         float(header.get('wait_ms', 0.0)), float(header.get('work_ms', 0.0)),
         float(header.get('imu_age_ms', 0.0)),
@@ -434,16 +612,49 @@ class SmartphoneRobot(embodied.Env):
     self._sock.sendall(struct.pack('>I', len(payload)) + payload + blob)
 
   def _read(self):
-    length, = struct.unpack('>I', self._readexactly(4))
-    header = json.loads(self._readexactly(length).decode('utf-8'))
-    return header, self._readexactly(header.get('blob_len', 0))
+    """Block for the next complete frame."""
+    while True:
+      frame = self._parse()
+      if frame is not None:
+        return frame
+      self._fill(block=True)
 
-  def _readexactly(self, amount):
-    if not amount:
-      return b''
-    data = self._file.read(amount)
-    if data is None or len(data) < amount:
+  def _read_nowait(self):
+    """Return the next complete frame if one is already here, else None."""
+    frame = self._parse()
+    if frame is not None:
+      return frame
+    if not self._fill(block=False):
+      return None
+    return self._parse()
+
+  def _parse(self):
+    """Pull one frame out of the buffer, leaving a partial one in place."""
+    if len(self._buffer) < 4:
+      return None
+    length, = struct.unpack('>I', self._buffer[:4])
+    if len(self._buffer) < 4 + length:
+      return None
+    header = json.loads(bytes(self._buffer[4:4 + length]).decode('utf-8'))
+    total = 4 + length + header.get('blob_len', 0)
+    if len(self._buffer) < total:
+      return None
+    blob = bytes(self._buffer[4 + length:total])
+    del self._buffer[:total]
+    return header, blob
+
+  def _fill(self, block):
+    """Read whatever the socket has; True if any bytes arrived."""
+    self._sock.settimeout(self.timeout if block else 0.0)
+    try:
+      chunk = self._sock.recv(65536)
+    except (BlockingIOError, InterruptedError):
+      return False
+    finally:
+      self._sock.settimeout(self.timeout)
+    if not chunk:
       raise ConnectionError(
-          f'Robot closed the connection after {len(data or b"")}/{amount} '
-          f'bytes; check that the phone app is still running.')
-    return data
+          'Robot closed the connection; check that the phone app is still '
+          'running.')
+    self._buffer.extend(chunk)
+    return True

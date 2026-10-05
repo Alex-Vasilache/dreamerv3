@@ -20,6 +20,10 @@ defaults:
   online_actor_replay_size: 250000
   online_sync_every: 180
   online_replay_sync_interval: 5
+  # Ceiling on train steps per learner iteration. Publishing weights,
+  # logging and checkpointing all happen after that loop, so an
+  # uncapped batch starves them exactly when the learner is behind.
+  online_max_train_repeats: 32
   clock_addr: ''
   clock_port: ''
   ipv6: False
@@ -67,11 +71,19 @@ defaults:
     # backlog fix, so the wheel figures are sound but were logged alongside
     # 8.5s-stale tilt.
     #
+    # symmetric False gives the policy one command per wheel. Symmetric drive
+    # was a guard against differential turning stressing the wheels, but the
+    # phone's own output layer already caps every wheel change at 0.4 PWM per
+    # command, so the rig's protection does not depend on the action space.
+    #
     # theta_lo/theta_hi are the bumper stops relative to upright, which the
     # user set to 0 by eye. The tilt term is normalised per side so both stops
     # score 0; fall_angle 0 disables termination, since the body cannot
     # self-right and terminating would collapse the run into 1-step episodes.
-    robot: {host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: True, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True}
+    # pipeline True lets the phone free-run on its own clock instead of
+    # blocking on us for every action; see embodied/envs/robot.py. False falls
+    # back to the lock-step protocol without reinstalling the phone app.
+    robot: {pipeline: True, host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True, onboard: False}
 
   replay:
     size: 5e6
@@ -1374,45 +1386,74 @@ robot_daydreamer:
   # action repeat 50, train_every 4 and batch 32x32, giving 0.25 gradient steps
   # per agent step and an effective train_ratio of 256.
   #
-  # train_ratio is spent per AGENT step, so repeat is what buys the ratio: at
-  # 48Hz with repeat 4 the agent decides 12 times a second while this Mac
-  # sustains ~6 gradient steps/s, which lands the achieved ratio near 256
-  # instead of the ~64 measured at repeat 1. The phone keeps sensing at 48Hz
-  # either way, so control authority is unaffected between decisions.
+  # train_ratio is spent per AGENT step, so action repeat trades control rate
+  # against gradient steps per decision. See env.robot.repeat below.
   # Continuous action: five discrete levels is too coarse for balancing, where
   # the correction needed near upright is much finer than the 0.5 PWM step.
-  # With symmetric drive this is a single value applied to both wheels.
+  # Two values, one per wheel (env.robot.symmetric is False).
   env.robot.discrete: False
-  # repeat 2 rather than 4: reacting at ~22Hz instead of ~11Hz. Costs half the
-  # train ratio, from ~470 to ~235, which is still close to DayDreamer's 256.
-  env.robot.repeat: 2
-  # 1000 underlying steps is 250 agent decisions, matching their env.length.
-  env.robot.length: 1000
+  # repeat 1: every tick is a decision, so the agent controls at the phone's
+  # full rate. The old ~9.6Hz was not the phone -- it ticked at 50Hz and spent a
+  # median 36ms (p90 260ms) blocked on us, because the protocol was lock-step.
+  # Pipelined, the round trip hides inside the control period.
+  #
+  # The cost is the train ratio: train_ratio 512 asks for 25.6k samples/s per
+  # agent step at 50Hz, against a learner that tops out near 2.3k, so the
+  # achieved ratio lands near 45 rather than the target. Action repeat is the
+  # dial that buys it back (repeat 4 would be ~185) at the price of deciding
+  # only every 80ms.
+  env.robot.repeat: 1
+  # Underlying steps, which at repeat 1 are also decisions: 20s of wall clock
+  # at the phone's current 10Hz.
+  env.robot.length: 200
+  # Penalise each wheel's speed, not just the net drift, so the policy pays for
+  # spinning the wheels against each other or chattering around zero.
+  env.robot.wheel_penalty: 0.3
   # No terminations: the quadruped learned to roll over and stand up without
   # resets, which is the same answer as ours since the body cannot self-right
   # under proportional drive.
   env.robot.fall_angle: 0.0
-  # Keep size1m's 3x64 MLPs and only shrink the RSSM. DayDreamer instead left
-  # actor/critic/encoder/decoder at 4x512 and shrank just the RSSM, so our
-  # policy is ~8x narrower than the one that learned to walk -- worth revisiting
-  # if learning stalls for want of capacity rather than data.
+  # 3x256 MLPs everywhere (actor, critic, encoder, decoder, reward and cont
+  # heads) with size1m's deter 512 restored: 3.00M params. DayDreamer used 4x512
+  # for the same parts, so this is still narrower than the network that learned
+  # to walk, but 7x wider than the 3x64 it replaces.
   #
-  # Measured on this Mac 2026-09-02, throughput against network shape, all at
-  # repeat 4 and batch 16x32 unless noted (train_ratio counts SAMPLES per agent
-  # step, so batch size matters as much as width):
+  # batch_size 256 rather than 16, because the learner now runs on a Saion V100
+  # (sbatch/run_robot_v100.sbatch) and that machine is launch-bound at this
+  # size, not FLOP-bound. Measured on a V100 2026-09-03, samples/s and the
+  # train ratio they buy against a 40Hz actor:
   #
-  #   shape                deter  samples/s  achieved ratio
-  #   3x64  (size1m)         256       3011             336
-  #   4x256                  256       1613             178
-  #   4x512 (DayDreamer)     256       1193             134
-  #   3x1024                 256        594              67
-  #   size6m (batch 4x32)   1024        603              67
+  #   shape                params   b16    b64   b256   b1024
+  #   deter 256 units 256   2.11M   546   1033   1479    OOM
+  #   deter 512 units 256   3.00M   478    883   1223    OOM
+  #   deter 256 units 512   5.77M   357    587    730    OOM
+  #   deter 512 units 512   7.44M   325    509    635    OOM
   #
-  # Only 3x64 and 4x256 are on the Pareto frontier; size6m does plenty of
-  # gradient steps but starves the ratio because batch_size 4 exists to fit
-  # deter 1024. A real GPU would remove the trade-off entirely.
+  # Batch 256 is worth 2.7x over batch 16 and batch 1024 exhausts the 16GB
+  # card. Note this is the opposite of the MacBook, where the same sweep bought
+  # only 12% because the M5 is FLOP-bound -- so a local fallback run is no
+  # worse at 256 either, it just does not gain.
+  #
+  # The actor is not a constraint at any of these: measured on the MacBook CPU,
+  # one policy call costs 0.38ms at this shape, 1.9% of the 20ms control
+  # period, and even a 21M-param network costs under 1ms.
+  #
+  # Measured on this Mac 2026-09-03, learner on Metal and actor on CPU, against
+  # the fake phone at the robot's 10Hz, batch 16x32, train_ratio target 512.
+  # The learner throttles to the target, so the achieved ratio is what says
+  # whether a shape still keeps up:
+  #
+  #   shape        deter  params  achieved ratio
+  #   3x64           256   0.36M             511
+  #   3x256          512   2.64M             489
+  #   3x512          512   6.45M             391
+  #
+  # 7.4x the parameters costs 4% of the ratio; 512-wide is where the learner
+  # starts falling behind. Widen further only on a machine with a real GPU.
+  .*\.units: 256
+  batch_size: 256
   agent:
-    .*\.rssm: {deter: 256, hidden: 64, classes: 4}
+    .*\.rssm: {deter: 512, hidden: 256, classes: 4}
 
 robot_balance:
   <<: *robot

@@ -6,6 +6,12 @@ a 4-byte big-endian header length, a UTF-8 JSON header, then `blob_len` bytes
 of binary payload. The phone owns the control clock -- it applies the action it
 is given, waits out the control period, then reports sensors.
 
+The trainer's handshake reply picks the timing mode. Pipelined (the default) is
+the one that reaches 50Hz: we tick on our own clock, apply whatever action has
+arrived by then, and report every tick without ever blocking on the trainer.
+With `pipeline` false we fall back to lock-step, blocking for an action before
+each tick.
+
   .venv/bin/python tools/fake_robot_phone.py --host 127.0.0.1 --port 3000
 """
 
@@ -17,7 +23,7 @@ import struct
 import sys
 import time
 
-PROTOCOL = 1
+PROTOCOL = 2
 
 # The real robot reports encoder speeds of order 1e3 at full PWM, not 1.
 # Match that so rewards here mean the same as rewards on hardware.
@@ -25,10 +31,11 @@ COUNTS_PER_PWM = 1000.0
 
 
 class Connection:
+  """Framed JSON over TCP, with a non-blocking read for the pipelined mode."""
 
   def __init__(self, sock):
     self.sock = sock
-    self.file = sock.makefile('rb')
+    self.buffer = bytearray()
 
   def write(self, header, blob=b''):
     header = dict(header, blob_len=len(blob))
@@ -36,17 +43,46 @@ class Connection:
     self.sock.sendall(struct.pack('>I', len(payload)) + payload + blob)
 
   def read(self):
-    length, = struct.unpack('>I', self._exactly(4))
-    header = json.loads(self._exactly(length).decode('utf-8'))
-    return header, self._exactly(header.get('blob_len', 0))
+    while True:
+      frame = self._parse()
+      if frame is not None:
+        return frame
+      self._fill(block=True)
 
-  def _exactly(self, amount):
-    if not amount:
-      return b''
-    data = self.file.read(amount)
-    if data is None or len(data) < amount:
+  def read_nowait(self):
+    frame = self._parse()
+    if frame is not None:
+      return frame
+    if not self._fill(block=False):
+      return None
+    return self._parse()
+
+  def _parse(self):
+    if len(self.buffer) < 4:
+      return None
+    length, = struct.unpack('>I', self.buffer[:4])
+    if len(self.buffer) < 4 + length:
+      return None
+    header = json.loads(bytes(self.buffer[4:4 + length]).decode('utf-8'))
+    total = 4 + length + header.get('blob_len', 0)
+    if len(self.buffer) < total:
+      return None
+    blob = bytes(self.buffer[4 + length:total])
+    del self.buffer[:total]
+    return header, blob
+
+  def _fill(self, block):
+    self.sock.settimeout(30.0 if block else 0.0)
+    try:
+      chunk = self.sock.recv(65536)
+    except (BlockingIOError, InterruptedError):
+      return False
+    finally:
+      self.sock.settimeout(30.0)
+    if not chunk:
       raise ConnectionError('Trainer closed the connection.')
-    return data
+    self.buffer.extend(chunk)
+    return True
 
 
 class Robot:
@@ -120,17 +156,35 @@ def main(argv=None):
   assert hello['type'] == 'hello' and hello['protocol'] == PROTOCOL, hello
   print(f'Connected to trainer at {args.host}:{args.port}: {hello}')
 
+  pipeline = bool(hello.get('pipeline', True))
+  print(f'Timing mode: {"pipelined" if pipeline else "lock-step"}')
+
   robot = Robot(dt)
   step = 0
+  next_tick = time.monotonic()
   try:
     while not args.steps or step < args.steps:
-      act, _ = conn.read()
-      assert act['type'] == 'act', act
-      if act['reset']:
-        robot.reset()
+      if pipeline:
+        # Never block on the trainer: take the newest action that has arrived,
+        # keep the last one otherwise, and hold the tick.
+        act = None
+        while True:
+          frame = conn.read_nowait()
+          if frame is None:
+            break
+          act = frame[0]
       else:
-        robot.apply(act['left'], act['right'])
-      time.sleep(dt)
+        act, _ = conn.read()
+      if act is not None:
+        assert act['type'] == 'act', act
+        if act['reset']:
+          robot.reset()
+        else:
+          robot.apply(act['left'], act['right'])
+      next_tick = max(next_tick + dt, time.monotonic()) if pipeline else (
+          time.monotonic() + dt)
+      remaining = next_tick - time.monotonic()
+      remaining > 0 and time.sleep(remaining)
       conn.write(dict(type='obs', step=step, t=time.time(),
                       sensors=robot.sensors()))
       step += 1

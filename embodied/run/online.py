@@ -1,5 +1,6 @@
 import collections
 import concurrent.futures
+import io
 import multiprocessing as mp
 import os
 import pickle
@@ -12,6 +13,36 @@ import elements
 import embodied
 import numpy as np
 import portal
+
+
+
+class _NumpyCompatUnpickler(pickle.Unpickler):
+  """Unpickle weights written by a different numpy major version.
+
+  The learner and the actor sit on different machines -- Saion carries numpy 2,
+  the MacBook numpy 1 -- and numpy moved its internals from `numpy.core` to
+  `numpy._core` in 2.0. Nothing about the payload is incompatible; only the
+  module path recorded in the pickle is, so a `ModuleNotFoundError` for
+  `numpy._core.numeric` is all that stands between the two halves. Remapping on
+  lookup lets either side read the other without pinning both environments to
+  one numpy.
+  """
+
+  def find_class(self, module, name):
+    try:
+      return super().find_class(module, name)
+    except (ModuleNotFoundError, AttributeError):
+      if module.startswith('numpy._core'):
+        module = 'numpy.core' + module[len('numpy._core'):]
+      elif module.startswith('numpy.core'):
+        module = 'numpy._core' + module[len('numpy.core'):]
+      else:
+        raise
+      return super().find_class(module, name)
+
+
+def _compat_loads(payload):
+  return _NumpyCompatUnpickler(io.BytesIO(payload)).load()
 
 
 @dataclass(frozen=True)
@@ -139,6 +170,22 @@ class SharedPolicyWeights:
 
   def publish(self, agent):
     data = agent.save()
+    # Ship only what the actor will actually install. `apply_to_agent` loads
+    # with regex=policy_keys, so the optimizer moments, the critic and the
+    # reward head in a full save are discarded on arrival -- four fifths of a
+    # 33MB file. That is free on a local socket and expensive over the Saion
+    # bridge, where it was measured at ~13s of every ~47s sync cycle spent
+    # moving bytes that get thrown away, starving the chunk upload behind it.
+    #
+    # Publishing a subset is safe in both directions: an old actor filters the
+    # same keys out anyway, and a new actor asks for exactly this set.
+    keys = getattr(agent, 'policy_keys', None)
+    if keys:
+      params = {k: v for k, v in data['params'].items() if k in set(keys)}
+      assert params, (
+          'policy_keys matched nothing in the saved params; publishing an '
+          'empty weight set would silently freeze the actor')
+      data = dict(data, params=params)
     payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
     stamp = str(time.time_ns())
     path = self.directory / f'policy_{stamp}.pkl'
@@ -146,19 +193,34 @@ class SharedPolicyWeights:
     _atomic_write(self.latest, stamp.encode('utf-8'))
     self._stamp = stamp
 
-  def load_into_agent(self, agent):
+  def fetch(self):
+    """Read and unpickle the newest weights, or None if they are unchanged.
+
+    Pure I/O, so the actor can run this on a worker thread while the policy
+    keeps stepping the robot. Returns what apply_to_agent expects.
+    """
     if not self.latest.exists():
-      return False
+      return None
     stamp = self.latest.read_text().strip()
     if stamp == self._stamp:
-      return False
+      return None
     path = self.directory / f'policy_{stamp}.pkl'
     if not path.exists():
-      return False
-    data = pickle.loads(path.read_bytes())
+      return None
+    return stamp, _compat_loads(path.read_bytes())
+
+  def apply_to_agent(self, agent, pending):
+    """Install fetched weights. Touches the agent, so keep it on one thread."""
+    stamp, data = pending
     agent.load(data, regex=agent.model.policy_keys)
     self._stamp = stamp
     return True
+
+  def load_into_agent(self, agent):
+    pending = self.fetch()
+    if pending is None:
+      return False
+    return self.apply_to_agent(agent, pending)
 
 
 def _shared_paths(logdir):
@@ -327,6 +389,18 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   log_lock = threading.Lock()
   log_future = None
 
+  # Everything else that used to sit between two policy calls also has to go:
+  # at a 20ms control period a replay flush or a weight load is several control
+  # steps of stall, which the robot feels directly. Both run on their own
+  # worker and are skipped, never queued, if the previous round is still going.
+  io_pool = concurrent.futures.ThreadPoolExecutor(1, 'actor_io')
+  io_future = None
+  # Reading and unpickling the learner's weights is the slow half and is pure
+  # I/O, so it happens on the worker; applying them touches the agent and so
+  # stays on the policy thread, where it is a device transfer and no more.
+  sync_pool = concurrent.futures.ThreadPoolExecutor(1, 'actor_sync')
+  sync_future = None
+
   def write_logs():
     with log_lock:
       # Gathered here rather than on the policy thread because psutil is itself
@@ -350,26 +424,49 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   flush_pending = 0
   flush_every = max(1, int(args.online_actor_flush_steps))
   while step < args.steps:
-    if should_sync_policy(step):
-      shared_policy.load_into_agent(agent)
+    if sync_future is not None and sync_future.done():
+      pending = sync_future.result()
+      sync_future = None
+      if pending is not None:
+        # Say so out loud. With the learner on another machine this is the only
+        # evidence that the robot is driving on fresh weights rather than the
+        # ones it booted with, and the age is the number that matters: a stamp
+        # that stops advancing means the far side died while everything local
+        # keeps looking healthy.
+        stamp = pending[0]
+        shared_policy.apply_to_agent(agent, pending)
+        age = time.time() - int(stamp) / 1e9
+        print(f'Policy updated: stamp={stamp} age={age:.1f}s', flush=True)
+    if should_sync_policy(step) and sync_future is None:
+      sync_future = sync_pool.submit(shared_policy.fetch)
     driver(policy, steps=100)
-    _write_actor_step(paths.actor_step, step)
     flush_pending += 100 * args.envs
-    if flush_pending >= flush_every:
-      shared_buffer.flush()
-      flush_pending = 0
+    if io_future is None or io_future.done():
+      due = flush_pending >= flush_every
+      flush_pending = 0 if due else flush_pending
+      io_future = io_pool.submit(_actor_io, paths, int(step), shared_buffer, due)
     if should_log(step) and (log_future is None or log_future.done()):
       with log_lock:
         logger.add(epstats.result(), prefix='epstats')
         logger.add(shared_buffer.stats(), prefix='replay')
         logger.add({'fps/policy': policy_fps.result()})
       log_future = log_pool.submit(write_logs)
+  if io_future is not None:
+    io_future.result()
   shared_buffer.flush()
   _write_actor_step(paths.actor_step, step)
   if log_future is not None:
     log_future.result()
-  log_pool.shutdown(wait=True)
+  for pool in (io_pool, sync_pool, log_pool):
+    pool.shutdown(wait=True)
   logger.close()
+
+
+def _actor_io(paths, step, shared_buffer, flush):
+  """Off-thread disk work for the actor: step marker and replay chunks."""
+  _write_actor_step(paths.actor_step, step)
+  if flush:
+    shared_buffer.flush()
 
 
 def _log_learner(logdir, message):
@@ -456,6 +553,15 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
     if repeats <= 0:
       time.sleep(0.001)
       continue
+    # Chunk the batch. elements.when.Ratio never forgives debt, so a learner
+    # that cannot sustain train_ratio grows `repeats` without bound, and since
+    # publish/log/save all sit after this loop the actor's weights go stale for
+    # longer and longer precisely when the learner is struggling -- measured
+    # 2026-09-03 with a V100 learner at train_ratio 512, a 5573-step backlog
+    # meant ~30 minutes between policy publishes and still widening. Capping
+    # costs no training throughput (the debt is still owed and still worked
+    # off, just in slices) and puts a floor under the weight-refresh cadence.
+    repeats = min(repeats, args.online_max_train_repeats)
     for _ in range(repeats):
       if _actor_finished(paths, args, coordination):
         break

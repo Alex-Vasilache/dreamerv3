@@ -155,6 +155,7 @@ def main(argv=None):
       online_actor_flush_steps=config.online_actor_flush_steps,
       online_sync_every=config.online_sync_every,
       online_replay_sync_interval=config.online_replay_sync_interval,
+      online_max_train_repeats=config.online_max_train_repeats,
   )
 
   if config.script == 'train':
@@ -255,7 +256,12 @@ def main(argv=None):
 def make_agent(config):
   from .agent import Agent
   env = make_env(config, 0)
-  notlog = lambda k: not k.startswith('log/')
+  # 'log/' is diagnostics; 'executed/' is the action an env with its own
+  # controller reports back (see embodied/core/driver.py). Neither is an
+  # observation, so neither belongs in the agent's spaces -- a decoder head
+  # would otherwise be built for it and the RSSM asked to predict it.
+  internal = ('log/', 'executed/')
+  notlog = lambda k: not k.startswith(internal)
   obs_space = {k: v for k, v in env.obs_space.items() if notlog(k)}
   act_space = {k: v for k, v in env.act_space.items() if k != 'reset'}
   env.close()
@@ -293,7 +299,14 @@ def make_logger(config):
       outputs.append(elements.logger.JSONLOutput(
           logdir, 'scores.jsonl', 'episode/score'))
     elif output == 'tensorboard':
-      outputs.append(TorchTensorBoardOutput(logdir, config.logger.fps))
+      # torch is in the MacBook venv but not in the Saion dreamerv3 env, and a
+      # missing scalar writer is no reason to lose a robot run: skip it the way
+      # a missing WandB key is skipped. metrics.jsonl still has everything, and
+      # tools/jsonl_to_tensorboard.py backfills the event files.
+      try:
+        outputs.append(TorchTensorBoardOutput(logdir, config.logger.fps))
+      except ImportError as e:
+        print(f'TensorBoard output needs torch ({e}), skipping it')
     elif output == 'expa':
       exp = logdir.split('/')[-4]
       run = '/'.join(logdir.split('/')[-3:])
@@ -436,6 +449,13 @@ def make_env(config, index, **overrides):
     kwargs['seed'] = hash((config.seed, index)) % (2 ** 32 - 1)
   if kwargs.pop('use_logdir', False):
     kwargs['logdir'] = elements.Path(config.logdir) / f'env{index}'
+  if suite == 'robot' and kwargs.get('onboard'):
+    # The env pushes policy weights to the phone, so it has to be able to build
+    # the on-device .npz -- which needs the agent config, not just env.robot.
+    # Passed as a whole rather than picked apart so the manifest stays a single
+    # source of truth in dreamerv3/deploy/export.py.
+    kwargs['config'] = config
+    kwargs['policy_dir'] = elements.Path(config.logdir) / 'online_shared'
   # Other suites apply action repeat inside their own constructor; the robot
   # cannot, because the phone owns the control clock and must keep sensing at
   # full rate while the agent decides less often.

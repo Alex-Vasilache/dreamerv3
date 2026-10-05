@@ -184,11 +184,20 @@ class Replay:
     del self.sampler[itemid]
     chunkid, index = self.items.pop(itemid)
     with self.refs_lock:
+      if chunkid not in self.refs:
+        # The chunk this item lived in has already been dropped. `load()`
+        # walks a snapshot of self.chunks and calls _insert() as it goes, and
+        # _insert() evicts when at capacity, so a load that fills the buffer
+        # can retire a chunk while items pointing into it are still queued.
+        # Discarding the item is what _sample() already does on exactly this
+        # condition; raising here instead killed the robot learner 1.5h into
+        # the 2026-09-07 session and cost 75 minutes of robot time.
+        return
       self.refs[chunkid] -= 1
       if self.refs[chunkid] < 1:
         del self.refs[chunkid]
-        chunk = self.chunks.pop(chunkid)
-        if chunk.succ in self.refs:
+        chunk = self.chunks.pop(chunkid, None)
+        if chunk is not None and chunk.succ in self.refs:
           self.refs[chunk.succ] -= 1
 
   def _getseq(self, chunkid, index, keys=None, concat=True):

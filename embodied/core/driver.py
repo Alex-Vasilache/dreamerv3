@@ -65,7 +65,17 @@ class Driver:
       obs = [env.step(act) for env, act in zip(self.envs, acts)]
     obs = {k: np.stack([x[k] for x in obs]) for k in obs[0].keys()}
     logs = {k: v for k, v in obs.items() if k.startswith('log/')}
-    obs = {k: v for k, v in obs.items() if not k.startswith('log/')}
+    # An env may report the action it actually executed, under 'executed/<key>'.
+    # A robot with an onboard controller decides for itself and tells us after
+    # the fact; what the world model must learn from is what the wheels did,
+    # not what we asked for. Stripped from obs like log/ so the policy never
+    # sees it, and re-applied over `acts` when the transition is assembled.
+    executed = {
+        k[len('executed/'):]: v for k, v in obs.items()
+        if k.startswith('executed/')}
+    obs = {
+        k: v for k, v in obs.items()
+        if not k.startswith(('log/', 'executed/'))}
     assert all(len(x) == self.length for x in obs.values()), obs
     self.carry, acts, outs = policy(self.carry, obs, **self.kwargs)
     assert all(k not in acts for k in outs), (
@@ -73,8 +83,9 @@ class Driver:
     if obs['is_last'].any():
       mask = ~obs['is_last']
       acts = {k: self._mask(v, mask) for k, v in acts.items()}
+      executed = {k: self._mask(v, mask) for k, v in executed.items()}
     self.acts = {**acts, 'reset': obs['is_last'].copy()}
-    trans = {**obs, **acts, **outs, **logs}
+    trans = {**obs, **acts, **outs, **logs, **executed}
     for i in range(self.length):
       trn = elements.tree.map(lambda x: x[i], trans)
       [fn(trn, i, **self.kwargs) for fn in self.callbacks]
