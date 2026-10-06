@@ -39,9 +39,12 @@ echo "== pointing the phone at it"
 tmp=$(mktemp -d)
 echo "{\"ip\": \"$IP\", \"port\": $PORT, \"max_hz\": $HZ}" > "$tmp/trainer.json"
 adb push "$tmp/trainer.json" /sdcard/Android/data/$APP/files/ >/dev/null
-adb shell am force-stop $APP
-adb shell monkey -p $APP -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-"$HERE/phone_allow_usb.sh" 10
+# A running app rereads trainer.json on every reconnect attempt, so leave it
+# be: killing it can make the phone stop powering the base (a replug fixes it).
+if ! adb shell pidof $APP >/dev/null; then
+  adb shell monkey -p $APP -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+  "$HERE/phone_allow_usb.sh" 10
+fi
 
 echo "== waiting for the phone to connect (the trainer takes ~1 min to start)"
 until adb logcat -d | grep -q "dreamerBridge: connected to $IP:$PORT"; do sleep 5; done

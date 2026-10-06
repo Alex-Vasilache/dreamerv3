@@ -101,7 +101,8 @@ class SmartphoneRobot(embodied.Env):
       discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
-      drift_clip=1.0, wheel_penalty=0.0, symmetric=True,
+      drift_clip=1.0, wheel_penalty=0.0, action_rate_penalty=0.0,
+      command_scale=1.0, symmetric=True,
       obs_theta_scale=0.18, obs_rate_scale=3.0, obs_wheel_scale=3.3e-4,
       obs_clip=3.0,
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
@@ -156,6 +157,16 @@ class SmartphoneRobot(embodied.Env):
     # around zero mean, cost nothing there. Clipped like drift per wheel.
     self.wheel_penalty = float(wheel_penalty)
     self.symmetric = bool(symmetric)
+    # Cost on the change in each wheel's command between steps, mean over the
+    # wheels, in the policy's [-1, 1] units. At 50 Hz an exploring policy
+    # chatters the wheels every 20 ms and nothing else in the reward minds.
+    # A penalty, not a low-pass filter, so no delay is added to the loop.
+    self.action_rate_penalty = float(action_rate_penalty)
+    self._prev_act = np.zeros(2, np.float32)
+    # The phone multiplies every wheel command by this before driving, so the
+    # policy keeps its whole [-1, 1] range while the motors stay off full
+    # power, the only regime where a driver was seen to cut out under load.
+    self.command_scale = float(command_scale)
     # Observation normalisation. Raw units put wheel speed ~70x above tilt
     # once symlog is applied (std 6.4 against 0.09), so the encoder saw
     # encoder counts and barely saw the angle the reward depends on.
@@ -287,6 +298,7 @@ class SmartphoneRobot(embodied.Env):
         self._done = False
         self._reward = 0.0
         self._ref = float(self.theta_zero)
+        self._prev_act = np.zeros(2, np.float32)
         return self._obs(sensors, latency, 0.0, is_first=True)
       except LINKLOST as e:
         if not self.reconnect:
@@ -344,6 +356,12 @@ class SmartphoneRobot(embodied.Env):
     if self.onboard:
       self._maybe_push_weights()
     reward, terminal = self._evaluate(sensors)
+    if self.action_rate_penalty:
+      act = (np.resize(self._onboard_act, 2)
+             if self._onboard and self._onboard_act is not None
+             else np.array([left, right], np.float32))
+      reward -= self.action_rate_penalty * float(np.mean(np.abs(act - self._prev_act)))
+      self._prev_act = act
     self._reward = reward
     self._done = terminal or self._step >= self.length
     return self._obs(
@@ -496,6 +514,7 @@ class SmartphoneRobot(embodied.Env):
     self._write(dict(
         type='hello', protocol=PROTOCOL, discrete=self.discrete,
         pipeline=self.pipeline, onboard=self._onboard,
+        cmd_scale=self.command_scale,
         **({'pace': self.pace} if self.pace else {})))
 
   def _maybe_push_weights(self):

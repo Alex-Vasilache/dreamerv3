@@ -87,7 +87,7 @@ defaults:
     # pipeline True lets the phone free-run on its own clock instead of
     # blocking on us for every action; see embodied/envs/robot.py. False falls
     # back to the lock-step protocol without reinstalling the phone app.
-    robot: {pipeline: True, host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True, onboard: False}
+    robot: {pipeline: True, host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, action_rate_penalty: 0.0, command_scale: 1.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, repeat: 1, use_logdir: True, onboard: False}
 
   replay:
     size: 5e6
@@ -1602,3 +1602,12 @@ robot_fast:
 robot_25hz:
   agent.horizon: 50
   env.robot.length: 500
+
+# robot_fast at 50 Hz, with the wheel chatter of an exploring 50 Hz policy
+# priced in (0.1 * mean |change in command| per step) and the motors capped at
+# 70% of full power. CONFIGS="robot_daydreamer robot_fast robot_50hz", HZ=50.
+robot_50hz:
+  agent.horizon: 100
+  env.robot.length: 1000
+  env.robot.action_rate_penalty: 0.1
+  env.robot.command_scale: 0.7
