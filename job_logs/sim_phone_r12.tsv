@@ -1,0 +1,4 @@
+e1190_pendulumswingup_rt25_recipe	4744445	--task dmc_pendulum_swingup --env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50
+e1191_cartpolebalance_rt25_recipe	4744446	--task dmc_cartpole_balance --env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50
+e1192_reachereasy_rt25_recipe_seed1	4744447	--task dmc_reacher_easy --env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50 --seed 1
+e1193_cartpole_rt25_recipe_seed2	4744448	--task dmc_cartpole_swingup --env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50 --seed 2

@@ -1,0 +1,4 @@
+e1186_reachereasy_rt50_knobs	4744425	sim_phone --task dmc_reacher_easy --run.train_ratio 8192 --batch_size 32 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4 --.*\.units 256 --agent.horizon 100
+e1187_reachereasy_rt25_knobs	4744426	sim_phone --task dmc_reacher_easy --run.train_ratio 8192 --batch_size 32 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4 --.*\.units 256 --agent.horizon 50 --env.dmc.repeat 4 --env.realtime_hz 25
+e1188_reachereasy_rt12_defaultknobs	4744427	sim_phone --task dmc_reacher_easy --env.dmc.repeat 8 --env.realtime_hz 12.5
+e1189_reachereasy_rt12_recipe_seed1	4744428	sim_phone sim_phone_fast --task dmc_reacher_easy --seed 1

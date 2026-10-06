@@ -1,0 +1,6 @@
+e1180_pendulumswingup_rt50_base	4744384	sim_phone --task dmc_pendulum_swingup
+e1181_pendulumswingup_rt12_recipe	4744385	sim_phone sim_phone_fast --task dmc_pendulum_swingup
+e1182_cartpolebalance_rt50_base	4744386	sim_phone --task dmc_cartpole_balance
+e1183_cartpolebalance_rt12_recipe	4744387	sim_phone sim_phone_fast --task dmc_cartpole_balance
+e1184_reachereasy_rt50_base	4744388	sim_phone --task dmc_reacher_easy
+e1185_reachereasy_rt12_recipe	4744389	sim_phone sim_phone_fast --task dmc_reacher_easy

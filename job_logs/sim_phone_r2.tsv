@@ -1,0 +1,8 @@
+e1121_cartpole_rt50_seed1	4744148	--seed 1
+e1122_cartpole_rt50_lr3e4	4744149	--agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4
+e1123_cartpole_rt50_b16x32	4744150	--batch_length 32
+e1124_cartpole_rt50_b8x64	4744151	--batch_size 8
+e1125_cartpole_rt50_deter256	4744152	--agent.dyn.rssm.deter 256
+e1126_cartpole_rt50_h100	4744153	--agent.horizon 100
+e1127_cartpole_rt50_lr3e4_b16x32	4744154	--agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4 --batch_length 32
+e1128_cartpole_rt50_seed2	4744155	--seed 2

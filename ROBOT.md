@@ -1,5 +1,7 @@
 # Robot training quickstart
 
+> **Latest state and next steps:** `docs/HANDOFF_2026-10-06.md` (robot work moved back to the Mac; policy on the phone, training on Saion).
+
 ## 1. Phone
 
 Set the Mac's IP in `~/StudioProjects/smartphone-robot-android/config.json`
@@ -69,7 +71,7 @@ one:
 
 ```bash
 # 1. the learner (8h wall limit; note the job id it prints)
-ssh saion 'cd /work/DoyaU/vasilache/work/dreamerv3_robot && \
+ssh saion 'cd /apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3 && \
   CODE=$PWD SCRIPT=online_learner CONFIGS=robot_daydreamer \
   sbatch sbatch/run_robot_v100.sbatch'
 
@@ -93,15 +95,12 @@ Watch it with `tail -f ~/logdir/latest/train.log` (actor),
 `tail -f ~/logdir/.robot_session/bridge.log` (a `sent N/M` line per 8s cycle),
 and http://localhost:6006.
 
-The code the job runs is the staged copy at
-`/work/DoyaU/vasilache/work/dreamerv3_robot`, not the shared checkout under
-`/apps/unit/`, which does not carry the robot code at all. Sync it after
-changing anything in `dreamerv3/` or `embodied/`:
-
-```bash
-rsync -a --exclude .git --exclude .venv --exclude logdir --exclude paper \
-  ./ saion:/work/DoyaU/vasilache/work/dreamerv3_robot/
-```
+The job runs the git checkout of this branch at
+`/apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3`, not the shared checkout under `/apps/unit/.../code/dreamerv3`, which is
+on `main` and does not carry the robot code. Push from the Mac and
+`git pull` there after changing anything in `dreamerv3/` or `embodied/`.
+(The old rsync'd copy at `/work/DoyaU/vasilache/work/dreamerv3_robot` is
+retired; it was identical to commit f081b4e.)
 
 **Tunnelling the robot to the compute node instead** (`SCRIPT=train` plus
 `tools/robot_tunnel.sh`) is the other shape, and it was measured at 0.45Hz with
@@ -126,7 +125,7 @@ RUN=/work/DoyaU/vasilache/work/robot_v100_20260903_152855_xZnLLD
 # The learner reloads ckpt/latest and the existing replay, so it does not
 # re-prefill from nothing. train_ratio 384 rather than the block's 512: see
 # docs/SAION_BRIDGE_FINDINGS.md, 512 sits exactly at what the V100 sustains.
-ssh saion "cd /work/DoyaU/vasilache/work/dreamerv3_robot && \
+ssh saion "cd /apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3 && \
   CODE=\$PWD SCRIPT=online_learner CONFIGS=robot_daydreamer STEPS=1000000 \
   RUN_DIR=$RUN sbatch sbatch/run_robot_v100.sbatch --run.train_ratio 384"
 
@@ -140,13 +139,8 @@ the learner is set from the first value it reads and never moves backwards -- a
 leftover high `actor_step` makes the learner wait until the robot has climbed
 all the way back past it, which looks exactly like the learner being hung.
 
-Sync the code first if `dreamerv3/` or `embodied/` changed since; the job runs
-the staged copy, not this working tree:
-
-```bash
-rsync -a --exclude .git --exclude .venv --exclude logdir --exclude paper \
-  ./ saion:/work/DoyaU/vasilache/work/dreamerv3_robot/
-```
+`git pull` the Saion checkout first if `dreamerv3/` or `embodied/` changed
+since (see §4).
 
 **Health check while it runs:** `online_shared/policy/latest` must keep
 advancing. Job state, GPU use and chunk flow all stay green while the learner
@@ -234,6 +228,16 @@ If the Pico is attaching and vanishing every second (`adb logcat | grep
 UsbHostManager`), the phone has stopped sourcing power on the port; reinstall
 the app (`./app run --app dreamerBridge`) to re-run the USB permission grant.
 
+## 4e. No robot? Real-time cartpole (2026-10-05)
+
+`sim_phone` trains one cartpole swingup paced to wall-clock time through the
+same actor/learner split. `sbatch sbatch/run_sim_phone.sbatch`, then
+`python tools/sim_curve.py <run>` for minutes to hold a score. An overnight
+sweep found a 2.4x faster setup (`sim_phone_fast`), and its robot translation
+is the opt-in block `robot_fast`. Findings and caveats are in
+`docs/SIM_PHONE.md`. The "200 Hz PID" question is answered at the end of
+`docs/ROBOT_BRIDGE_FINDINGS.md`: firmware branch `RTT-LoopReduction`.
+
 ## 5. When the rate is below 50 Hz
 
 `log/dropped` above zero means the phone produced observations we did not
@@ -256,10 +260,3 @@ Full numbers, and what was ruled out, in `docs/ROBOT_BRIDGE_FINDINGS.md`.
 .venv/bin/python tools/did_it_learn.py ~/logdir/latest
 tools/tensorboard.sh ~/logdir            # http://localhost:6006
 ```
-
-
-Fixed. run.online_max_train_repeats: 32 caps the inner batch so weight publishing keeps a floor cadence regardless of how far behind the learner is; throughput is unchanged since the debt is still worked off, just in slices. Verifying rather than assuming caught a near-miss here: the online_* keys are passed into args explicitly, not via **config.run, so adding the config key alone would have crashed the learner with AttributeError on resume. dreamerv3/main.py:157 now wires it through, and both it and the --run.train_ratio 384 override are verified to resolve. Synced to Saion's staging copy.
-
-Saved. Checkpoint 20260903T163052F054241 and all 1232 replay chunks are intact in the run dir, with the durable copy in /bucket/DoyaU/vasilache/robot_checkpoints/20260903T164143_balancing. I also cleared online_shared/actor_step, because a fresh actor counts from 0 while the learner's Ratio._prev never moves backwards — leaving it would have stalled the resume in a way that looks exactly like a hang.
-
-Documented. ROBOT.md §4b has the resume procedure with the concrete paths and the one-command relaunch; docs/SAION_BRIDGE_FINDINGS.md has the train-ratio debt mechanism, including that online_shared/policy/latest is the health check that matters — job state, GPU use and chunk flow all stay green while the learner silently stops publishing.

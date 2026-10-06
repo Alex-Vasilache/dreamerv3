@@ -1,0 +1,8 @@
+e1129_cartpole_rt50_h100_seed1	4744167	--agent.horizon 100 --seed 1
+e1130_cartpole_rt50_h100_seed2	4744168	--agent.horizon 100 --seed 2
+e1131_cartpole_rt50_b32x64	4744169	--batch_size 32
+e1132_cartpole_rt50_b64x64	4744170	--batch_size 64
+e1133_cartpole_rt50_h100_b32x64	4744171	--agent.horizon 100 --batch_size 32
+e1134_cartpole_rt50_h50	4744172	--agent.horizon 50
+e1135_cartpole_rt50_h100_lr3e4	4744173	--agent.horizon 100 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4
+e1136_cartpole_rt50_h100_b32x64_lr3e4	4744174	--agent.horizon 100 --batch_size 32 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4

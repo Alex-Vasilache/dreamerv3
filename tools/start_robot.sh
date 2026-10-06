@@ -75,7 +75,7 @@ if [ -n "$REMOTE_DIR" ]; then
     > "$LOGS/bridge.log" 2>&1 &
 elif [ "$MODE" = saion ]; then
   echo "No running Saion learner job. Submit one with:" >&2
-  echo "  ssh $REMOTE 'cd /work/DoyaU/vasilache/work/dreamerv3_robot && \\" >&2
+  echo "  ssh $REMOTE 'cd /apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3 && \\" >&2
   echo "    CODE=\$PWD SCRIPT=online_learner sbatch sbatch/run_robot_v100.sbatch'" >&2
   exit 1
 else

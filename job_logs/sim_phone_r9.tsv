@@ -1,0 +1,6 @@
+e1174_cartpole_rt12_recipe_sync5	4744375	--online_sync_every 5
+e1175_cartpole_rt12_recipe_sync10	4744376	--online_sync_every 10
+e1176_cartpole_rt12_recipe_sync60	4744377	--online_sync_every 60
+e1177_cartpole_rt12_recipe_long_seed3	4744378	--seed 3
+e1178_cartpole_rt10_recipe_seed1	4744379	--env.dmc.repeat 10 --env.realtime_hz 10 --agent.horizon 20 --seed 1
+e1179_cartpole_rt12_recipe_b16x64	4744380	--batch_size 16

@@ -1,0 +1,5 @@
+e1146_cartpole_rt50_h100_b64x64_seed1	4744240	--batch_size 64 --seed 1
+e1147_cartpole_rt50_h100_b64x64_seed2	4744241	--batch_size 64 --seed 2
+e1148_cartpole_rt50_h100_b32x64_imag32	4744242	--batch_size 32 --agent.imag_length 32
+e1149_cartpole_rt50_h150_b32x64	4744243	--batch_size 32 --agent.horizon 150
+e1150_cartpole_rt50_h100_b32x64_units128	4744244	--batch_size 32 --.*\.units 128

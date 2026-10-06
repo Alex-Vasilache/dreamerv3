@@ -1,0 +1,8 @@
+e1215_cartpole_rt12_recipe_delay1	4744975	--env.action_delay 1
+e1216_cartpole_rt25_recipe_delay1	4744976	--env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50 --env.action_delay 1
+e1217_cartpole_rt12_recipe_u512	4744977	--.*.units 512
+e1218_cartpole_rt12_recipe_lrmodelonly	4744978	--agent.ac_opt.lr 1e-4
+e1219_cartpole_rt12_recipe_lraconly	4744979	--agent.opt.lr 1e-4
+e1220_cartpole_rt25_recipe_seed3	4744980	--env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50 --seed 3
+e1221_cartpole_rt12_recipe_actent1e3	4744981	--agent.imag_loss.actent 1e-3
+e1222_cartpole_rt50_recipe_h100	4744982	--env.dmc.repeat 2 --env.realtime_hz 50 --agent.horizon 100

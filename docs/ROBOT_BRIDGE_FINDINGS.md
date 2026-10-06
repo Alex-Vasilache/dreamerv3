@@ -541,3 +541,51 @@ for experiments and are off. All are overridable per frame by the trainer
 Validation, pure defaults, 30 s each: onboard cycle 92.8 p95 94.6, first byte
 p90 74.6, 0 stalls; trainer-driven PRBS ±0.4 cycle 91.7, 334/334 applied,
 0 stalls.
+
+---
+
+# "A colleague balances at 200 Hz with PID" -- what that means, 2026-10-05
+
+Checked from the code, without the robot (it was off the base). Short answer:
+our 10.8 Hz ceiling is real **for the firmware we run**, it is not the motors,
+and the fix exists upstream but is not on `main` of the firmware.
+
+## 1. The 200 Hz is the controller's loop rate
+
+`apps/pidBalancer` on the `tutorial` branch runs `BalancePIDController` with
+`setTimestep(5)` ms -- 200 Hz -- and drives through `setWheelOutput`, i.e. the
+same one-slot `SerialCommManager` mailbox measured above. The controller can
+*compute* at 200 Hz on any firmware; how many of those commands reach the
+wheels is set by the RP2040 round trip. On our firmware that is one per
+~92 ms, so ~95% of a 200 Hz PID's outputs would be overwritten. A PID tolerates
+that far better than our policy did: every command that does go out is the
+freshest one, and its gains can be tuned inside the delay margin. A sim run at
+200 Hz with no actuation delay says nothing about this either way.
+
+## 2. The firmware fix exists: `RTT-LoopReduction`
+
+The ~75 ms is the firmware doing a full `get_state()` dump (charger, fuel
+gauge, ADCs, faults, dozens of log calls) on every `SET_MOTOR_LEVEL`, plus a
+10 ms idle sleep in the main loop (§"The firmware explains both numbers").
+The maintainer fixed exactly that on 2026-06-22, on firmware branch
+`RTT-LoopReduction` (commit `7bb9193` "Reduce motor command response latency":
+`SET_MOTOR_LEVEL` replies with encoder counts only, up to 8 packets drained per
+pass, 1 ms sleep only when idle). It is **not merged to firmware `main`**; it
+has since been rebased as `split/rtt-loop-reduction` and, with a cached
+telemetry refresh, `split/telemetry-cache` (2026-07-30) on the `tekkura/`
+remote. The Android half of the same change (no background `GET_STATE`
+polling, commit `9373a1ae` on `tutorial`) is already in `dreamer-bridge`.
+
+The firmware repo's own RTT benchmark quotes 8-26 ms, 14.8 ms mean, host to
+Pico -- i.e. ~50-120 Hz deliverable, not 200, but 5-10x what we have.
+
+## 3. So, were we wrong?
+
+The measurement was right and the attribution (firmware, not motors) was
+right. What was wrong was treating it as a fixed ceiling: a newer firmware
+build than ours removes most of it. To confirm, ask the colleague which
+firmware is flashed and look at `BasicAssemblerTrace SERIAL_RX ... rttMs=` in
+their logcat. Then: build `split/telemetry-cache` (Docker image
+`topher217/smartphone-robot-firmware`, `make firmware`), flash it on the Mac
+(BOOTSEL), and re-run `tools/robot_latency_probe.py`; `PACE='serial'` on the
+phone will follow the faster cycle automatically.

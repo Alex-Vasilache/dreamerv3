@@ -1,0 +1,3 @@
+e1194_pendulumswingup_rt50_base_seed1	4744457	sim_phone --task dmc_pendulum_swingup --seed 1
+e1195_pendulumswingup_rt12_recipe_seed1	4744458	sim_phone sim_phone_fast --task dmc_pendulum_swingup --seed 1
+e1196_pendulumswingup_rt25_recipe_seed1	4744459	sim_phone sim_phone_fast --task dmc_pendulum_swingup --seed 1 --env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50

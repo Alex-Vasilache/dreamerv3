@@ -36,7 +36,7 @@ source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 
 # Overridable so a working copy can be staged under /work without touching the
 # shared checkout or pushing a branch first:
-#   CODE=/work/DoyaU/vasilache/work/dreamerv3_robot sbatch ...
+#   CODE=/apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3 sbatch ...
 CODE="${CODE:-/apps/unit/DoyaU/vasilache/apps/code/dreamerv3}"
 CONFIGS="${CONFIGS:-robot_daydreamer}"
 # `train` runs both halves here and expects the robot to reach this node, which

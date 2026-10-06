@@ -43,13 +43,17 @@ defaults:
     wandb_mode: online
 
   env:
+    # Pace every env step to wall-clock time (0 = off). See wrappers.RealTime.
+    realtime_hz: 0.0
+    # Apply each action this many env steps late (0 = off). See wrappers.ActionDelay.
+    action_delay: 0
     atari: {size: [96, 96], repeat: 4, sticky: True, gray: True, actions: all, lives: unused, noops: 30, autostart: False, pooling: 2, aggregate: max, resize: pillow, clip_reward: False}
     procgen: {size: [96, 96], resize: pillow}
     crafter: {size: [64, 64], logs: False}
     atari100k: {size: [64, 64], repeat: 4, sticky: False, gray: False, actions: needed, lives: unused, noops: 30, autostart: False, resize: pillow, clip_reward: False}
     dmlab: {size: [64, 64], repeat: 4, episodic: True, use_seed: True}
     minecraft: {size: [64, 64], break_speed: 100.0, logs: False, length: 36000}
-    dmc: {size: [64, 64], repeat: 1, proprio: True, image: True, camera: -1}
+    dmc: {size: [64, 64], repeat: 1, proprio: True, image: True, camera: -1, render: True}
     loconav: {size: [64, 64], repeat: 1, camera: -1, image: True}
     # Director paper, Sec. 3.1: "Episodes last for 2000 steps and there are
     # no intermediate rewards for activating the pads." Both our pinpad.py
@@ -1515,3 +1519,78 @@ debug:
     .*\.hidden: 3
     .*\.blocks: 4
     .*\.depth: 2
+
+# Stand-in for the phone robot with no hardware: one DMC cartpole swingup,
+# proprio only, paced to wall-clock time, trained through the same actor /
+# learner split the robot uses. The actor plays the phone (policy on CPU,
+# weights refreshed every online_sync_every seconds, like env.robot.
+# weights_every); the learner trains on the GPU as fast as it can. The goal is
+# reward per second of real time, so env steps are deliberately scarce.
+# Control rate = 100 Hz physics / env.dmc.repeat; keep env.realtime_hz equal
+# to it (repeat 2 -> 50, 4 -> 25, 8 -> 12.5). An episode is 10 s whatever
+# the rate.
+sim_phone:
+  <<: *size1m
+  task: dmc_cartpole_swingup
+  agent.use_hrl: False
+  env.dmc.image: False
+  env.dmc.render: False
+  env.dmc.repeat: 2
+  env.realtime_hz: 50.0
+  online_learning: True
+  online_sync_every: 30
+  online_actor_replay_size: 1000000
+  replay: {size: 1e6}
+  run:
+    steps: 1e6
+    envs: 1
+    train_ratio: 512
+    log_every: 10
+    report_every: 300
+    save_every: 600
+    log_video: False
+  jax: {prealloc: False}
+  logger: {outputs: [jsonl, scope]}
+
+# The fastest `sim_phone` recipe in wall-clock time (docs/SIM_PHONE.md, rounds
+# 1-8): 12.5 Hz control, a 2 s return horizon, lr 3e-4, wider MLPs and a 32x64
+# batch hold cartpole swingup >= 800 after ~10.5 min of real time (3 seeds),
+# against ~25.5 for `sim_phone`. At a low control rate the learner does several
+# times more updates per real sample, and a faster lr plus more capacity is
+# what turns those updates into progress. train_ratio is set out of reach so
+# the learner never waits.
+sim_phone_fast:
+  env.dmc.repeat: 8
+  env.realtime_hz: 12.5
+  agent.horizon: 25
+  agent.opt.lr: 3e-4
+  agent.ac_opt.lr: 3e-4
+  .*\.units: 256
+  batch_size: 32
+  run.train_ratio: 8192
+
+# What the real-time cartpole sweep (docs/SIM_PHONE.md, e1113-e1196) says to
+# change on the robot. Opt-in on top of `robot_daydreamer`; untested on the
+# robot itself:
+#   CONFIGS="robot_daydreamer robot_fast"
+# - horizon: the default 333 steps is 31 s at the robot's 10.8 Hz. A ~2 s
+#   return horizon was the largest single gain in the sim, at every rate.
+#   22 steps ~ 2 s at 10.8 Hz; scale it with the rate (2 s * Hz) after the
+#   firmware fix.
+# - lr 3e-4: at a low control rate the learner does many updates per real
+#   sample, and a faster lr (with the 256-wide MLPs robot_daydreamer already
+#   has) is what turned them into progress (12.6 -> ~10.5 min at 12.5 Hz).
+# - batch 32x64: in the sim the learner is bound by host-side overhead at
+#   small batches and by the GPU at large ones; 32x64 was the free point on a
+#   P100. 256x32 is 4x the samples per update and costs updates/s; check with
+#   tools/bench_learner.py on the learner's GPU before trusting either.
+# - train_ratio out of reach: the learner should never wait for the robot.
+# The weight push interval (env.robot.weights_every, 30 s) did not matter
+# between 5 and 60 s in the sim.
+robot_fast:
+  agent.horizon: 22
+  agent.opt.lr: 3e-4
+  agent.ac_opt.lr: 3e-4
+  batch_size: 32
+  batch_length: 64
+  run.train_ratio: 8192

@@ -73,6 +73,68 @@ class ActionRepeat(Wrapper):
     return obs
 
 
+class ActionDelay(Wrapper):
+  """Applies the action chosen `steps` env steps earlier.
+
+  Stands in for actuation latency on the robot (sensor-to-torque ~15 ms
+  onboard, more when the trainer drives). The first `steps` steps of an
+  episode replay the reset action. Replay still records the action the policy
+  chose, as it does on the robot unless the phone reports `executed/` actions.
+  """
+
+  def __init__(self, env, steps):
+    super().__init__(env)
+    self._steps = int(steps)
+    self._queue = []
+
+  def step(self, action):
+    if action['reset']:
+      self._queue = [action] * self._steps
+      return self.env.step(action)
+    self._queue.append(action)
+    delayed = self._queue.pop(0)
+    return self.env.step({**delayed, 'reset': False})
+
+
+class RealTime(Wrapper):
+  """Paces a simulator to wall-clock time, one step per `1 / hz` seconds.
+
+  Stands in for a physical robot: the policy cannot collect experience faster
+  than the world produces it, so training speed is measured in seconds, not
+  env steps. Steps are scheduled against absolute deadlines so per-step jitter
+  does not accumulate; a step that misses its deadline by more than a period
+  resynchronises instead of bursting to catch up, as a real control loop
+  would. `log/rt_lag_ms` reports how late each step started, which is the
+  check that real time was actually held.
+  """
+
+  def __init__(self, env, hz):
+    super().__init__(env)
+    self._period = 1.0 / float(hz)
+    self._deadline = None
+
+  @functools.cached_property
+  def obs_space(self):
+    return {
+        **self.env.obs_space,
+        'log/rt_lag_ms': elements.Space(np.float32),
+    }
+
+  def step(self, action):
+    now = time.perf_counter()
+    if self._deadline is None or action['reset']:
+      self._deadline = now
+    lag = now - self._deadline
+    if lag < 0:
+      time.sleep(-lag)
+      lag = 0.0
+    elif lag > self._period:
+      self._deadline = time.perf_counter()
+    self._deadline += self._period
+    obs = self.env.step(action)
+    return {**obs, 'log/rt_lag_ms': np.float32(1000 * lag)}
+
+
 class ClipAction(Wrapper):
 
   def __init__(self, env, key='action', low=-1, high=1):

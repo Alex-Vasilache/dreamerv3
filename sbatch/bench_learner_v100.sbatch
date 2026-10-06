@@ -16,7 +16,7 @@
 # parallel headroom that it may well be launch-bound instead.
 set -uo pipefail
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
-CODE="${CODE:-/work/DoyaU/vasilache/work/dreamerv3_robot}"
+CODE="${CODE:-/apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3}"
 OUT="${OUT:-/work/DoyaU/vasilache/work/bench_learner_v100.txt}"
 cd "$CODE"
 {

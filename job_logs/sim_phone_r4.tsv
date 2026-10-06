@@ -1,0 +1,9 @@
+e1137_cartpole_rt50_h100_b32x64_seed1	4744219	--agent.horizon 100 --batch_size 32 --seed 1
+e1138_cartpole_rt50_h100_b32x64_seed2	4744220	--agent.horizon 100 --batch_size 32 --seed 2
+e1139_cartpole_rt50_h100_lr3e4_seed1	4744221	--agent.horizon 100 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4 --seed 1
+e1140_cartpole_rt50_h100_lr3e4_seed2	4744222	--agent.horizon 100 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4 --seed 2
+e1141_cartpole_rt50_h100_b32x64_lr3e4_seed1	4744223	--agent.horizon 100 --batch_size 32 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4 --seed 1
+e1142_cartpole_rt50_h100_b64x64	4744224	--agent.horizon 100 --batch_size 64
+e1143_cartpole_rt100_h200_b32x64	4744225	--env.dmc.repeat 1 --env.realtime_hz 100 --agent.horizon 200 --batch_size 32
+e1144_cartpole_rt25_h50_b32x64	4744226	--env.dmc.repeat 4 --env.realtime_hz 25 --agent.horizon 50 --batch_size 32
+e1145_cartpole_rt12_h25_b32x64	4744227	--env.dmc.repeat 8 --env.realtime_hz 12.5 --agent.horizon 25 --batch_size 32

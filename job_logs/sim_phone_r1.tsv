@@ -1,0 +1,8 @@
+e1113_cartpole_rt50	4743985	
+e1114_cartpole_rt50_sync5	4743986	--online_sync_every 5
+e1115_cartpole_rt25	4743987	--env.dmc.repeat 4 --env.realtime_hz 25
+e1116_cartpole_rt12	4743994	--env.dmc.repeat 8 --env.realtime_hz 12.5
+e1117_cartpole_rt100	4743989	--env.dmc.repeat 1 --env.realtime_hz 100
+e1118_cartpole_rt50_tr2048	4743990	--run.train_ratio 2048
+e1119_cartpole_rt50_tr128	4743991	--run.train_ratio 128
+e1120_cartpole_rt12_sync5	4743995	--env.dmc.repeat 8 --env.realtime_hz 12.5 --online_sync_every 5

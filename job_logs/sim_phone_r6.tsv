@@ -1,0 +1,7 @@
+e1151_cartpole_rt12_h25_b32x64_seed1	4744263	--run.train_ratio 8192 --env.dmc.repeat 8 --env.realtime_hz 12.5 --batch_size 32 --agent.horizon 25 --seed 1
+e1152_cartpole_rt12_h12_b32x64	4744264	--run.train_ratio 8192 --env.dmc.repeat 8 --env.realtime_hz 12.5 --batch_size 32 --agent.horizon 12
+e1153_cartpole_rt12_h50_b32x64	4744265	--run.train_ratio 8192 --env.dmc.repeat 8 --env.realtime_hz 12.5 --batch_size 32 --agent.horizon 50
+e1154_cartpole_rt12_h25_b32x64_imag32	4744266	--run.train_ratio 8192 --env.dmc.repeat 8 --env.realtime_hz 12.5 --batch_size 32 --agent.horizon 25 --agent.imag_length 32
+e1155_cartpole_rt12_h25_b32x64_units128	4744267	--run.train_ratio 8192 --env.dmc.repeat 8 --env.realtime_hz 12.5 --batch_size 32 --agent.horizon 25 --.*\.units 128
+e1156_cartpole_rt12_h25_b32x64_lr3e4	4744268	--run.train_ratio 8192 --env.dmc.repeat 8 --env.realtime_hz 12.5 --batch_size 32 --agent.horizon 25 --agent.opt.lr 3e-4 --agent.ac_opt.lr 3e-4
+e1157_cartpole_rt25_h50_b32x64_seed1	4744269	--run.train_ratio 8192 --env.dmc.repeat 4 --env.realtime_hz 25 --batch_size 32 --agent.horizon 50 --seed 1

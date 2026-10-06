@@ -475,6 +475,10 @@ def wrap_env(env, config):
   for name, space in env.act_space.items():
     if not space.discrete:
       env = embodied.wrappers.ClipAction(env, name)
+  if config.env.get('action_delay', 0):
+    env = embodied.wrappers.ActionDelay(env, config.env.action_delay)
+  if config.env.get('realtime_hz', 0):
+    env = embodied.wrappers.RealTime(env, config.env.realtime_hz)
   return env
 
 
