@@ -2,7 +2,7 @@
 # Resubmit runs that stopped before their target step (e.g. host OOM at 64G:
 # the in-RAM replay passes 64G near 3.6M pinpad steps). Resumes from the run's
 # own RUN_DIR with more memory, on gpu-a100 if a slot is free, else P100/V100.
-# Usage: nohup keep_alive.sh <target_step> <exp> [...] &
+# Usage: [KEEP_MATCH=<dir substring>] nohup keep_alive.sh <target_step> <exp> [...] &
 cd /apps/unit/DoyaU/vasilache/apps/code/dreamerv3
 TARGET=$1; shift
 STATE=job_logs/keep_alive_state.tsv; touch "$STATE"
@@ -17,7 +17,9 @@ while :; do
   fi
   pending=0
   for e in "$@"; do
-    d=$(ls -d /work/DoyaU/vasilache/work/${e}_* 2>/dev/null | head -1); [ -n "$d" ] || continue
+    # KEEP_MATCH narrows the run dir when an experiment number is shared
+    # (e1197-e1204 collided with another session's cartpole runs on 2026-10-06).
+    d=$(ls -d /work/DoyaU/vasilache/work/${e}_* 2>/dev/null | grep -e "${KEEP_MATCH:-.}" | head -1); [ -n "$d" ] || continue
     step=$(tail -1 "$d/logdir/metrics.jsonl" 2>/dev/null | python3 -c 'import sys,json;print(int(json.loads(sys.stdin.read())["step"]))' 2>/dev/null || echo 0)
     [ "$step" -ge "$TARGET" ] && continue
     pending=1
