@@ -494,6 +494,30 @@ HRL replay value gradient into enc/RSSM; flat runs keep `repval_grad: True`.
 Add `wm_oldgrad` last to reproduce any HRL run up to e1079 (except the
 `wm_norepgrad` arms). Pinned by `embodied/tests/test_hrl_repval_grad.py`.
 
+### Result, e1197–e1214 (2026-10-07 04:45): Director's 16x64 update shape
+
+Mean return over 3–4M (3 seeds), vs the same config at 4x32 (e1071–e1094):
+
+| task | 4x32 | 16x64 | sustained-50 crossing (16x64) |
+|---|---|---|---|
+| Pin Pad Four | 278 ± 11 | 274 ± 3 | 0.15M x3 (4x32: 0.05M) |
+| Pin Pad Five | 236 ± 8 | 216 ± 2 | 0.40–1.05M (4x32: 0.05–0.35M) |
+| Pin Pad Six | 65 ± 91 | 0 ± 0 | never (4x32: 1/3 at 1.7M) |
+| cartpole swingup | 692 ± 27 | 716 ± 28 | |
+| cheetah run | 433 ± 6 | 467 ± 3 | |
+| hopper hop | 322 ± 67 | 266 ± 53 | |
+
+**Reading.** With the published Director's update shape the fix still holds
+the sequence on Pin Pad Four/Five (6/6 seeds to 4M); discovery is slower on
+Five, and no seed solves Six. Control Suite within seed noise of 4x32
+(cheetah slightly up, hopper slightly down). Runs are ~2.4x faster in wall
+time (~5 h per 4M on A100: training is ~21% of wall time vs ~85% at 4x32).
+At equal gradient updates (0.25M) our 4.2M-param Director matches or beats
+the 53M-param published Director on Pin Pad Four/Five and cartpole.
+Figures: `26_04_HRL-paper/figures/motivation/size6m_vs_published{,_samples}.png`
+(also in `collapse_figs/`). Note: e1197–e1204 also name another session's
+`cartpole_rt` runs; ours are the `*_director-director_og_s*` dirs.
+
 ### e1197–e1214: director_og with TF Director's update shape (launched 2026-10-06, array 4744957)
 
 To compare like for like with the published Director curves, `director_og`
