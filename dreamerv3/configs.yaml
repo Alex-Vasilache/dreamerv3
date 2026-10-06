@@ -1594,3 +1594,11 @@ robot_fast:
   batch_size: 32
   batch_length: 64
   run.train_ratio: 8192
+
+# robot_fast at 25 Hz, the rate the phone runs at on the fast RP2040 firmware
+# (MAX_HZ in dreamerBridge; 8 ms serial round trip, measured 2026-10-06). The
+# 2 s return horizon is 50 steps there, and 500 steps keeps a 20 s episode.
+#   CONFIGS="robot_daydreamer robot_fast robot_25hz"
+robot_25hz:
+  agent.horizon: 50
+  env.robot.length: 500
