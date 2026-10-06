@@ -15,15 +15,18 @@ import matplotlib.pyplot as plt
 
 W = '/work/DoyaU/vasilache/work'
 B = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
-OUT = '/work/DoyaU/vasilache/work/collapse_figs/b64_vs_b32.png'
+OUT = '/work/DoyaU/vasilache/work/collapse_figs/b64_vs_b32.png'  # + .pdf
 TASKS = [('pinpad_four', 'Pin Pad Four', [1071, 1072, 1073], 1101),
          ('pinpad_five', 'Pin Pad Five', [1080, 1081, 1082], 1098),
          ('pinpad_six', 'Pin Pad Six', [1083, 1084, 1085], 1095),
          ('dmc_cartpole_swingup', 'Cartpole swingup', [1086, 1087, 1088], 1104),
          ('dmc_cheetah_run', 'Cheetah run', [1089, 1090, 1091], 1107),
          ('dmc_hopper_hop', 'Hopper hop', [1092, 1093, 1094], 1110)]
-GRAY, BLUE, ORANGE = '#9a998f', '#2a78d6', '#d9711c'
-INK, MUTED, GRID = '#1f1f1e', '#6b6a63', '#e4e3dc'
+# Okabe-Ito, as in the paper's size6m_vs_published figure: orange = before the
+# WM fix, green = fix at 4x32, blue = fix at 4x64. Minimum pairwise separation
+# under severity-1.0 deuteranopia (Machado 2009) is 18.1 OKLab dE*100.
+OLD_C, FIX_C, B64_C = '#E69F00', '#009E73', '#0072B2'
+GRID = '#d5d5d2'
 BW, XMAX = 1e5, 4e6
 
 
@@ -57,48 +60,48 @@ def late(a, lo=3e6, hi=4e6):
   return w.mean() if len(w) > 20 else np.nan
 
 
-plt.rcParams.update({'font.size': 10, 'axes.edgecolor': GRID, 'axes.labelcolor': MUTED,
-                     'xtick.color': MUTED, 'ytick.color': MUTED})
-fig, axes = plt.subplots(1, 6, figsize=(26, 4.4))
+fig, axes = plt.subplots(2, 3, figsize=(13, 8.2))
+axes = axes.ravel()
 rows = []
 for ax, (task, title, b32, b64_0) in zip(axes, TASKS):
-  ax.grid(axis='y', color=GRID, lw=0.8); ax.set_axisbelow(True)
-  for s in ('top', 'right'):
-    ax.spines[s].set_visible(False)
   row = [title]
-  for label, exps, color in [('director_og baseline', 'base', GRAY),
-                             ('fix, batch length 32', b32, BLUE),
-                             ('fix, batch length 64', [b64_0 + k for k in range(3)], ORANGE)]:
-    ds = runs(task, exps)
+  for label, exps, color in [('Director, before the WM fix', 'base', OLD_C),
+                             ('Director, WM fix, batch 4x32', b32, FIX_C),
+                             ('Director, WM fix, batch 4x64', [b64_0 + k for k in range(3)], B64_C)]:
     curves, lates, reach = [], [], []
-    for d in ds:
+    for d in runs(task, exps):
       a = scores(d)
       if not len(a):
         continue
       x, y = binned(a)
       curves.append(y)
-      ax.plot(x, y, color=color, lw=0.7, alpha=0.35)
       lates.append(late(a)); reach.append(a[:, 0].max() / 1e6)
     if curves:
       st = np.stack(curves)
       with np.errstate(all='ignore'):
-        m = np.where((~np.isnan(st)).sum(0) >= 2, np.nanmean(st, 0), np.nan)
-      ax.plot(x, m, color=color, lw=2.2, label=label)
+        n_ok = (~np.isnan(st)).sum(0)
+        m = np.where(n_ok >= 2, np.nanmean(st, 0), np.nan)
+        sd = np.where(n_ok >= 2, np.nanstd(st, 0, ddof=1), np.nan)
+      ax.fill_between(x, m - sd, m + sd, color=color, lw=0, alpha=0.15)
+      ax.plot(x, m, color=color, lw=2.4, label=label)
     done = [v for v in lates if not np.isnan(v)]
     row.append(f'{np.mean(done):.0f} ± {np.std(done):.0f} (n={len(done)})' if done else
                f'running, at {min(reach):.1f}-{max(reach):.1f}M')
   rows.append(row)
-  ax.set_title(title, fontsize=11, color=INK, loc='left', fontweight='bold')
-  ax.set_xlabel('env steps (M)'); ax.set_xlim(0, 4); ax.set_ylim(bottom=0)
-axes[0].set_ylabel('episode score (100k-step bins)')
+  ax.set_title(title, fontsize=17)
+  ax.set_xlim(0, 4); ax.set_ylim(bottom=0)
+  ax.tick_params(labelsize=13, direction='out', length=3)
+  ax.grid(True, color=GRID, lw=0.7); ax.set_axisbelow(True)
+  for sp in ax.spines.values():
+    sp.set_color('#333333'); sp.set_linewidth(0.8)
+for ax in (axes[0], axes[3]):
+  ax.set_ylabel('episode return', fontsize=15)
 h, l = axes[0].get_legend_handles_labels()
-fig.legend(h, l, loc='upper right', ncol=3, frameon=False, fontsize=10, bbox_to_anchor=(0.995, 1.0))
-fig.suptitle('Batch length 64 vs 32 with the world-model fix (director_og, size6m, 3 seeds, 4M)',
-             x=0.01, ha='left', fontsize=13, color=INK, fontweight='bold')
-fig.text(0.01, 0.905, 'Thick: mean where at least 2 seeds have data. Thin: single seeds. '
-         'Batch-64 runs still in progress end early.', fontsize=9.5, color=MUTED)
-fig.tight_layout(rect=(0, 0, 1, 0.86))
-fig.savefig(OUT, dpi=120, facecolor='white')
+fig.legend(h, l, loc='lower center', ncol=3, fontsize=14, frameon=False, bbox_to_anchor=(0.5, 0.0))
+fig.text(0.5, 0.075, 'environment steps (M)', ha='center', fontsize=15)
+fig.tight_layout(rect=(0, 0.1, 1, 1), h_pad=2.0)
+fig.savefig(OUT, dpi=200, facecolor='white')
+fig.savefig(OUT.replace('.png', '.pdf'))
 print(OUT)
 print(f'{"task":18s} | {"baseline 3-4M":20s} | {"fix b32 3-4M":20s} | {"fix b64 3-4M":20s}')
 for r in rows:
