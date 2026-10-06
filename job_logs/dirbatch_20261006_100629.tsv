@@ -1,0 +1,19 @@
+array_job	task_idx	exp	config	task	seed
+4744957	0	e1197	director director_og	pinpad_six	0
+4744957	1	e1198	director director_og	pinpad_six	1
+4744957	2	e1199	director director_og	pinpad_six	2
+4744957	3	e1200	director director_og	pinpad_five	0
+4744957	4	e1201	director director_og	pinpad_five	1
+4744957	5	e1202	director director_og	pinpad_five	2
+4744957	6	e1203	director director_og	pinpad_four	0
+4744957	7	e1204	director director_og	pinpad_four	1
+4744957	8	e1205	director director_og	pinpad_four	2
+4744957	9	e1206	director director_og	dmc_cartpole_swingup	0
+4744957	10	e1207	director director_og	dmc_cartpole_swingup	1
+4744957	11	e1208	director director_og	dmc_cartpole_swingup	2
+4744957	12	e1209	director director_og	dmc_cheetah_run	0
+4744957	13	e1210	director director_og	dmc_cheetah_run	1
+4744957	14	e1211	director director_og	dmc_cheetah_run	2
+4744957	15	e1212	director director_og	dmc_hopper_hop	0
+4744957	16	e1213	director director_og	dmc_hopper_hop	1
+4744957	17	e1214	director director_og	dmc_hopper_hop	2

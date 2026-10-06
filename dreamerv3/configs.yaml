@@ -899,6 +899,13 @@ director_og:
   # ratio 256 -- 4e6 x 64 = 2.6e8 replayed steps against 1.1e6 x 256 = 2.8e8 --
   # so matching Director's protocol here is free in wall-clock.
   run: {steps: 4e6, train_ratio: 64}
+  # Director's update shape too (since 2026-10-06, e1197+): 16x64 = 1024
+  # samples per update, so ratio 64 gives one update per 16 env steps (0.25M
+  # updates over 4M), as TF Director's train_every 16 / batch 16 / chunk 64.
+  # Runs before e1197 used size6m's 4x32 (one update per 2 env steps); add
+  # `bs4x32` last to reproduce them.
+  batch_size: 16
+  batch_length: 64
 
 # Flat DreamerV3: no hierarchy, single actor-critic over world-model features.
 # The control for every HRL claim.
@@ -1743,3 +1750,9 @@ steps4m:
 # longer context helps Pin Pad Six discovery. Layer after director_og.
 b64:
   batch_length: 64
+
+# The size6m update shape (4x32 = 128 samples per update), which director_og
+# used before it moved to TF Director's 16x64 on 2026-10-06. Layer last.
+bs4x32:
+  batch_size: 4
+  batch_length: 32

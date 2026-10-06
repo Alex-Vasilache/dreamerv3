@@ -494,6 +494,20 @@ HRL replay value gradient into enc/RSSM; flat runs keep `repval_grad: True`.
 Add `wm_oldgrad` last to reproduce any HRL run up to e1079 (except the
 `wm_norepgrad` arms). Pinned by `embodied/tests/test_hrl_repval_grad.py`.
 
+### e1197–e1214: director_og with TF Director's update shape (launched 2026-10-06, array 4744957)
+
+To compare like for like with the published Director curves, `director_og`
+now trains on 16x64 = 1024 samples per update at replay ratio 64, i.e. one
+update per 16 env steps (0.25M updates over 4M), exactly TF Director's
+`train_every 16 / batch_size 16 / replay_chunk 64`. Everything else unchanged:
+size6m networks, 4M steps, lr 1e-4, `hrl_repval_grad False` (the WM fix),
+real replay rewards. `bs4x32` (layer last) reproduces the earlier 4x32 runs.
+All six tasks x 3 seeds, A100, 128G (`job_logs/dirbatch_*.tsv`): e1197–99
+pinpad_six, e1200–02 pinpad_five, e1203–05 pinpad_four, e1206–08 cartpole,
+e1209–11 cheetah, e1212–14 hopper. Compare against e1071–e1094 (same at 4x32)
+and the published Director. The batch-length-64 study e1095–e1112 was stopped
+here with e1111/e1112 (hopper s1/s2) unfinished at 0.96M / 0.58M.
+
 ### Result, e1080–e1094 (2026-10-04 02:30): the fix on the other benchmark tasks
 
 `wm_norepgrad steps4m` vs the benchmark's `director_og` baselines e919–e936,
