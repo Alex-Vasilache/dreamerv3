@@ -4,6 +4,7 @@
 #   tools/robot_train.sh e1224_robot_25hz                     # default configs
 #   CONFIGS="robot_daydreamer robot_fast robot_25hz" STEPS=100000 \
 #     tools/robot_train.sh e1224_robot_25hz [extra main.py flags]
+#   RUN_DIR=<a previous run dir on /work> tools/robot_train.sh e1225_...   # resume it
 #
 # Needs: `ssh saion` working, the phone on adb, a base on the phone.
 # Stop with:  ssh saion scancel <job>; adb shell am force-stop jp.oist.abcvlib.dreamerBridge
@@ -12,6 +13,7 @@ NAME=${1:?usage: tools/robot_train.sh e<N>_<name> [flags]}; shift
 CONFIGS=${CONFIGS:-robot_daydreamer robot_fast robot_25hz}
 STEPS=${STEPS:-100000}
 HZ=${HZ:-25}
+RUN_DIR_ENV=${RUN_DIR:+RUN_DIR=$RUN_DIR}
 CODE=/apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3
 APP=jp.oist.abcvlib.dreamerBridge
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -21,7 +23,8 @@ adb shell dumpsys usb | grep -q 'host_connected=true' \
 
 echo "== submitting $NAME"
 JOB=$(ssh saion "cd $CODE && git pull -q && \
-  CODE=$CODE SCRIPT=train STEPS=$STEPS CONFIGS='$CONFIGS' \
+  ${RUN_DIR:+rm -f $RUN_DIR/logdir/error_learner $RUN_DIR/logdir/online_shared/actor_step;} \
+  CODE=$CODE SCRIPT=train STEPS=$STEPS CONFIGS='$CONFIGS' $RUN_DIR_ENV \
   sbatch --parsable -J $NAME sbatch/run_robot_v100.sbatch --env.robot.onboard True $*")
 echo "job $JOB"
 

@@ -69,6 +69,9 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
    wheels by itself 250 ms after the commands stop.
 5. Log the run in `EXPERIMENTS.md` on Saion.
 
+To resume an earlier run (same configs, same rate), pass its run dir:
+`RUN_DIR=/work/DoyaU/vasilache/work/robot_v100_<…> tools/robot_train.sh e<N>_robot_25hz_resume`.
+
 Settings: `CONFIGS` (default `robot_daydreamer robot_fast robot_25hz`),
 `STEPS` (default 100000 ≈ 67 min at 25 Hz), `HZ` (default 25). For 50 Hz:
 `HZ=50 tools/robot_train.sh e<N>_robot_50hz --agent.horizon 100 --env.robot.length 1000`.
