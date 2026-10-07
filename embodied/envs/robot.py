@@ -1,6 +1,7 @@
 import collections
 import io
 import json
+import os
 import pickle
 import queue
 import socket
@@ -716,6 +717,9 @@ class SmartphoneRobot(embodied.Env):
         type='hello', protocol=PROTOCOL, discrete=self.discrete,
         pipeline=self.pipeline, onboard=self._onboard,
         cmd_scale=self.command_scale,
+        # The phone keeps this run's latest weights under `run`, with these
+        # settings beside them, so it can replay the policy later on its own.
+        run=self._run_name(), settings=self._settings(),
         **({'pace': self.pace} if self.pace else {})))
     self._link = link
     # Note `self.onboard`, not `self._onboard`: a phone that came up without
@@ -725,6 +729,28 @@ class SmartphoneRobot(embodied.Env):
       self._pusher = threading.Thread(
           target=self._push_loop, name='robot_pusher', daemon=True)
       self._pusher.start()
+
+  def _run_name(self):
+    """The Slurm job name (e1293_robot_25hz) or, outside Slurm, the run dir."""
+    name = os.environ.get('SLURM_JOB_NAME')
+    if name:
+      return name
+    if self._policy_dir is not None:
+      logdir = self._policy_dir.parent   # <logdir>/online_shared
+      # Saion runs live in <run dir>/logdir; local ones are the logdir itself.
+      return logdir.parent.name if logdir.name == 'logdir' else logdir.name
+    return 'robot'
+
+  def _settings(self):
+    """What a player needs to pace and score steps the way training did."""
+    return dict(
+        task=self.task, length=self.length, theta_zero=self.theta_zero,
+        theta_lo=self.theta_lo, theta_hi=self.theta_hi,
+        theta_sigma=self.theta_sigma, speed_scale=self.speed_scale,
+        drift_penalty=self.drift_penalty, drift_clip=self.drift_clip,
+        wheel_penalty=self.wheel_penalty, rate_penalty=self.rate_penalty,
+        action_rate_penalty=self.action_rate_penalty,
+        command_scale=self.command_scale)
 
   def _push_loop(self):
     """Send the phone each new policy as soon as the learner publishes it.

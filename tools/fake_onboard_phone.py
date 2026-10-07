@@ -58,7 +58,8 @@ def connect(args, runner, directory):
                    robot_id=1, onboard=runner.ready, policy_stamp=runner.stamp,
                    pace='clock', max_hz=args.hz, wchunk=True))
   receiver = bridge_link.Receiver(
-      sock, build=lambda blob: PolicyRunner.build_blob(blob, directory))
+      sock, build=lambda blob, header: PolicyRunner.build_blob(
+          blob, directory + '/policy.npz'))
   hello, _ = receiver.get(timeout=60.0)
   assert hello['type'] == 'hello', hello
   onboard = bool(hello.get('onboard')) and runner.ready
