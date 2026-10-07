@@ -62,39 +62,41 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
 
 ## 3. Start a training
 
-1. Pick the next experiment number: highest `e<N>` in `EXPERIMENTS.md` on Saion
-   (`/apps/unit/DoyaU/vasilache/apps/code/dreamerv3`), plus one.
-2. Robot upright on the floor with room to move, then one of:
+1. Robot upright on the floor with room to move, then one of. The experiment
+   number is picked for you: the highest `e<N>` on Saion (`EXPERIMENTS*.md`,
+   slurm log names, the last month's job names) plus one, printed as
+   `== submitting e<N>_…`. A name that already starts with `e<N>_` is kept.
    ```bash
    # 25 Hz: 2 s horizon = 50 steps, 20 s episodes
-   tools/robot_train.sh e<N>_robot_25hz
+   tools/robot_train.sh                      # e<N>_robot_25hz
 
    # 50 Hz: wheel-chatter penalty and motors capped at 70%
    HZ=50 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
-     tools/robot_train.sh e<N>_robot_50hz
+     tools/robot_train.sh                    # e<N>_robot_50hz
 
    # 100 Hz: robot_50hz with the horizon and episode doubled to keep 2 s / 20 s
    HZ=100 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
-     tools/robot_train.sh e<N>_robot_100hz --agent.horizon 200 --env.robot.length 2000
+     tools/robot_train.sh --agent.horizon 200 --env.robot.length 2000   # e<N>_robot_100hz
    ```
    It wakes the phone (a dozing phone has no network for the app), submits the
    job, waits for a node, writes the node's address to the phone
    (`trainer.json`), starts the app, taps the USB prompt, and waits until the
-   phone is connected (~1-2 min).
-3. Watch: the phone screen (reward on top, ~1.0 per step is perfect; the
+   phone is connected (~1-2 min). Add a word to tell runs apart:
+   `tools/robot_train.sh robot_50hz_newbase` gives `e<N>_robot_50hz_newbase`.
+2. Watch: the phone screen (reward on top, ~1.0 per step is perfect; the
    `policy` number changes every ~2 s), and on Saion
    `tail -f <run dir>/logdir/scores.jsonl` and the job's `.out` file, which logs
    every push (`pushed policy … send 0.5s, age 0.6s`).
-4. Check the link in `<run dir>/logdir/metrics.jsonl`: `fps/policy` at the
+3. Check the link in `<run dir>/logdir/metrics.jsonl`: `fps/policy` at the
    rate you chose, `epstats/log/dropped/sum` 0, `epstats/log/policy_age_s/avg`
    ~2-3 s.
-5. Stop: `ssh saion scancel <job>` and
+4. Stop: `ssh saion scancel <job>` and
    `adb shell am force-stop jp.oist.abcvlib.dreamerBridge`. The base stops the
    wheels by itself 250 ms after the commands stop.
-6. Log the run in `EXPERIMENTS.md` on Saion.
+5. Log the run in `EXPERIMENTS.md` on Saion.
 
 To resume an earlier run (same configs, same rate), pass its run dir:
-`RUN_DIR=/work/DoyaU/vasilache/work/robot_v100_<…> tools/robot_train.sh e<N>_robot_25hz_resume`.
+`RUN_DIR=/work/DoyaU/vasilache/work/robot_v100_<…> tools/robot_train.sh robot_25hz_resume`.
 
 Settings: `CONFIGS` (default `robot_daydreamer robot_fast robot_25hz`),
 `STEPS` (default 100000: ~67 min at 25 Hz, ~33 at 50, ~17 at 100), `HZ`
