@@ -96,6 +96,9 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
    `policy` number changes every ~2 s), and on Saion
    `tail -f <run dir>/logdir/scores.jsonl` and the job's `.out` file, which logs
    every push (`pushed policy … send 0.5s, age 0.6s`).
+   For plots, `tools/saion_tensorboard.sh` mirrors the latest robot job's
+   metrics every 20 s and serves TensorBoard on the first free port from 6006
+   (Cursor holds 6006): `actor` has episodes and the link, `learner` the losses.
 3. Check the link in `<run dir>/logdir/metrics.jsonl`: `fps/policy` at the
    rate you chose, `epstats/log/dropped/sum` 0, `epstats/log/policy_age_s/avg`
    ~2-3 s.
