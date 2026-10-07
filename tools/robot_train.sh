@@ -5,6 +5,7 @@
 #   CONFIGS="robot_daydreamer robot_fast robot_25hz" STEPS=100000 \
 #     tools/robot_train.sh e1224_robot_25hz [extra main.py flags]
 #   RUN_DIR=<a previous run dir on /work> tools/robot_train.sh e1225_...   # resume it
+#   NO_BASE=1 HZ=100 tools/robot_train.sh linktest_100hz    # phone alone, link test
 #
 # Needs: `ssh saion` working, the phone on adb, a base on the phone.
 # Stop with:  ssh saion scancel <job>; adb shell am force-stop jp.oist.abcvlib.dreamerBridge
@@ -18,8 +19,13 @@ CODE=/apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3
 APP=jp.oist.abcvlib.dreamerBridge
 HERE=$(cd "$(dirname "$0")" && pwd)
 
-adb shell dumpsys usb | grep -q 'host_connected=true' \
-  || { echo "no base on the phone (or adb not connected)"; exit 1; }
+NO_BASE=${NO_BASE:-}
+if [ -z "$NO_BASE" ]; then
+  adb shell dumpsys usb | grep -q 'host_connected=true' \
+    || { echo "no base on the phone (or adb not connected)"; exit 1; }
+fi
+# A dozing phone blocks the app's network even with the app on screen.
+adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard
 
 echo "== submitting $NAME"
 JOB=$(ssh saion "cd $CODE && git pull -q && \
@@ -37,13 +43,14 @@ echo "node $NODE ($IP), port $PORT, run dir $RUN_DIR"
 
 echo "== pointing the phone at it"
 tmp=$(mktemp -d)
-echo "{\"ip\": \"$IP\", \"port\": $PORT, \"max_hz\": $HZ}" > "$tmp/trainer.json"
+echo "{\"ip\": \"$IP\", \"port\": $PORT, \"max_hz\": $HZ${NO_BASE:+, \"no_base\": true}}" \
+  > "$tmp/trainer.json"
 adb push "$tmp/trainer.json" /sdcard/Android/data/$APP/files/ >/dev/null
 # A running app rereads trainer.json on every reconnect attempt, so leave it
 # be: killing it can make the phone stop powering the base (a replug fixes it).
 if ! adb shell pidof $APP >/dev/null; then
   adb shell monkey -p $APP -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-  "$HERE/phone_allow_usb.sh" 10
+  [ -n "$NO_BASE" ] || "$HERE/phone_allow_usb.sh" 10
 fi
 
 echo "== waiting for the phone to connect (the trainer takes ~1 min to start)"
