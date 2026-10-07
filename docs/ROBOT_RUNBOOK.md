@@ -19,10 +19,10 @@ the phone's weights were at each step: it sawtooths between ~0.6 and ~2.6 s.
 
 ## 0. One-time setup (Mac)
 
-Run everything from `~/work/research/dreamerv3`. No venv is needed for the
-tools in this runbook: they are bash plus the system `python3`, and the
-training runs on Saion. The repo's `.venv` is only for a trainer on the Mac
-(section 4). In zsh, paste commands without their trailing `# comments`: zsh
+Run everything from `~/work/research/dreamerv3`. No venv needs activating:
+the tools are bash plus the system `python3`, and the training runs on Saion.
+The repo's `.venv` is used only by `tools/saion_tensorboard.sh` (which calls it
+directly) and by a trainer on the Mac (section 4). In zsh, paste commands without their trailing `# comments`: zsh
 passes them on as arguments unless `setopt interactivecomments` is set.
 
 ```bash
@@ -96,9 +96,7 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
    `policy` number changes every ~2 s), and on Saion
    `tail -f <run dir>/logdir/scores.jsonl` and the job's `.out` file, which logs
    every push (`pushed policy … send 0.5s, age 0.6s`).
-   For plots, `tools/saion_tensorboard.sh` mirrors the latest robot job's
-   metrics every 20 s and serves TensorBoard on the first free port from 6006
-   (Cursor holds 6006): `actor` has episodes and the link, `learner` the losses.
+   For plots, see *TensorBoard* below.
 3. Check the link in `<run dir>/logdir/metrics.jsonl`: `fps/policy` at the
    rate you chose, `epstats/log/dropped/sum` 0, `epstats/log/policy_age_s/avg`
    ~2-3 s.
@@ -115,6 +113,32 @@ Settings: `CONFIGS` (default `robot_daydreamer robot_fast robot_25hz`),
 (default 25). Weight pushes: `online_publish_every` (2 s in the robot configs)
 sets the cadence; `--env.robot.weights_every <s>` adds a floor between pushes,
 and `1e9` turns them off after the first.
+
+### TensorBoard
+
+Saion has no tensorboard; the runs there write only `metrics.jsonl` and
+`scores.jsonl`. `tools/saion_tensorboard.sh` copies those to the Mac every
+20 s, converts them to event files under `~/logdir/saion_tb/`, and serves them:
+
+```bash
+tools/saion_tensorboard.sh
+```
+
+That follows the latest robot job. To compare runs, pass their run dirs:
+
+```bash
+tools/saion_tensorboard.sh /work/DoyaU/vasilache/work/robot_v100_<a> /work/DoyaU/vasilache/work/robot_v100_<b>
+```
+
+It prints the address: the first free port from 6006 up, usually
+http://localhost:6007 because Cursor holds 6006. Each run shows as two:
+`<run>/actor` (x = robot steps: `episode/score`, `fps/policy`,
+`epstats/log/dropped/sum`, `epstats/log/policy_age_s/avg`, the sensors) and
+`<run>/learner` (x = trained samples: losses, `fps/train`). Ctrl-C stops it.
+Needs the repo's `.venv` with tensorboard and torch, once:
+`.venv/bin/pip install tensorboard torch`.
+
+### Reward and motor settings
 
 Reward and motor settings, passed as flags to `tools/robot_train.sh` (e.g.
 `tools/robot_train.sh --env.robot.action_rate_penalty 0.1`):
