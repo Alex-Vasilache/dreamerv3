@@ -116,6 +116,20 @@ Settings: `CONFIGS` (default `robot_daydreamer robot_fast robot_25hz`),
 sets the cadence; `--env.robot.weights_every <s>` adds a floor between pushes,
 and `1e9` turns them off after the first.
 
+Reward and motor settings, passed as flags to `tools/robot_train.sh` (e.g.
+`tools/robot_train.sh --env.robot.action_rate_penalty 0.1`):
+
+| flag | 25 Hz | 50/100 Hz | what it does |
+|---|---|---|---|
+| `env.robot.action_rate_penalty` | 0 | 0.1 | chatter cost: this × mean over both wheels of \|aₜ − aₜ₋₁\|, the command in the policy's [−1, 1] units (the action the phone applied; aₜ₋₁ = 0 at episode start). At most 2× per step. A cost, not a filter, so the loop gets no delay |
+| `env.robot.command_scale` | 1.0 | 0.7 | the phone multiplies every wheel command by this, capping motor power while the policy keeps its full range |
+| `env.robot.wheel_penalty` | 0.3 | 0.3 | effort cost: this × mean of \|wheel speed\| (counts × 1e-4, clipped at 1 per wheel); at most 0.3 per step |
+| `env.robot.drift_penalty` | 0.1 | 0.1 | cost on net forward speed, same units and clip |
+| `env.robot.rate_penalty` | 0.05 | 0.05 | cost on \|tilt rate\| |
+
+The reward is at most 1.0 per step (tilt near upright), so a 20 s episode
+scores at most ~500 at 25 Hz, ~1000 at 50 Hz and ~2000 at 100 Hz.
+
 ## 4. Test the link without a base
 
 `NO_BASE=1` puts `"no_base": true` in `trainer.json`: the app starts without
