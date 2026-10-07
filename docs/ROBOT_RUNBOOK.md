@@ -19,8 +19,15 @@ the phone's weights were at each step: it sawtooths between ~0.6 and ~2.6 s.
 
 ## 0. One-time setup (Mac)
 
+Run everything from `~/work/research/dreamerv3`. No venv is needed for the
+tools in this runbook: they are bash plus the system `python3`, and the
+training runs on Saion. The repo's `.venv` is only for a trainer on the Mac
+(section 4). In zsh, paste commands without their trailing `# comments`: zsh
+passes them on as arguments unless `setopt interactivecomments` is set.
+
 ```bash
-brew install colima docker picotool   # build image runs in colima; picotool flashes
+# build image runs in colima; picotool flashes
+brew install colima docker picotool
 ```
 
 ## 1. Flash a base
@@ -30,7 +37,8 @@ brew install colima docker picotool   # build image runs in colima; picotool fla
    phone connector).
 3. Run (from `~/work/research/dreamerv3`):
    ```bash
-   tools/flash_base.sh            # add --build after changing the firmware
+   # add --build after changing the firmware
+   tools/flash_base.sh
    ```
    It must end with `OK: base answers`. A running base is put into its
    bootloader automatically. If nothing is detected at all, unplug, hold
@@ -43,11 +51,13 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
 
 1. Phone: Settings → Developer options → **Wireless debugging** on. Then
    ```bash
-   tools/phone_adb_connect.sh        # finds the port (it changes) and connects
+   # finds the port (it changes) and connects
+   tools/phone_adb_connect.sh
    ```
 2. Put the phone on the base. Check it powers the base:
    ```bash
-   adb shell dumpsys usb | grep -E 'host_connected|source_power'   # both true
+   # both true
+   adb shell dumpsys usb | grep -E 'host_connected|source_power'
    ```
 3. Only after changing the app:
    ```bash
@@ -67,16 +77,15 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
    slurm log names, the last month's job names) plus one, printed as
    `== submitting e<N>_…`. A name that already starts with `e<N>_` is kept.
    ```bash
-   # 25 Hz: 2 s horizon = 50 steps, 20 s episodes
-   tools/robot_train.sh                      # e<N>_robot_25hz
+   # 25 Hz -> e<N>_robot_25hz: 2 s horizon = 50 steps, 20 s episodes
+   tools/robot_train.sh
 
-   # 50 Hz: wheel-chatter penalty and motors capped at 70%
-   HZ=50 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
-     tools/robot_train.sh                    # e<N>_robot_50hz
+   # 50 Hz -> e<N>_robot_50hz: wheel-chatter penalty, motors capped at 70%
+   HZ=50 CONFIGS="robot_daydreamer robot_fast robot_50hz" tools/robot_train.sh
 
-   # 100 Hz: robot_50hz with the horizon and episode doubled to keep 2 s / 20 s
-   HZ=100 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
-     tools/robot_train.sh --agent.horizon 200 --env.robot.length 2000   # e<N>_robot_100hz
+   # 100 Hz -> e<N>_robot_100hz: robot_50hz with horizon and episode doubled
+   HZ=100 CONFIGS="robot_daydreamer robot_fast robot_50hz" tools/robot_train.sh \
+     --agent.horizon 200 --env.robot.length 2000
    ```
    It wakes the phone (a dozing phone has no network for the app), submits the
    job, waits for a node, writes the node's address to the phone
