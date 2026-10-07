@@ -494,6 +494,20 @@ HRL replay value gradient into enc/RSSM; flat runs keep `repval_grad: True`.
 Add `wm_oldgrad` last to reproduce any HRL run up to e1079 (except the
 `wm_norepgrad` arms). Pinned by `embodied/tests/test_hrl_repval_grad.py`.
 
+### e1230–e1289: protocol matched to the published Director (launched 2026-10-07, array 4745769)
+
+Fair comparison with Hafner et al. 2022: images only (DMC joint state dropped;
+all earlier DMC runs had `--env.dmc.proprio True`, i.e. image + joint state,
+which the published `dmc_vision` agent never saw), action repeat 1, 4M env
+steps, 16x64 batches at replay ratio 64 (one update per 16 env steps), 4
+parallel envs (was 8), 5 seeds. Both our agents:
+`director director_og pubmatch` (WM fix on, size6m, 4.2M params) and
+`dreamerv3 pubmatch` (flat, 2.9M params; NB this puts DreamerV3 off its own
+1.1M @ ratio 256 recipe). 6 tasks x 5 seeds x 2 agents; ordered seed by seed
+(e1230-41 seed 0, Director then DreamerV3, tasks pinpad_four/five/six,
+cartpole, cheetah, hopper; +12 per seed). Launcher: `RUN_ENVS=4
+DMC_PROPRIO=False`. A100, 128G (`job_logs/pubmatch_*.tsv`).
+
 ### Result, e1197–e1214 (2026-10-07 04:45): Director's 16x64 update shape
 
 Mean return over 3–4M (3 seeds), vs the same config at 4x32 (e1071–e1094):

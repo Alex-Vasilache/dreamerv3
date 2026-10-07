@@ -1756,3 +1756,12 @@ b64:
 bs4x32:
   batch_size: 4
   batch_length: 32
+
+# Protocol matched to the published Director (e1230-e1289, 2026-10-07): 4M env
+# steps, 16x64 batches at replay ratio 64 (one update per 16 env steps). Layer
+# last onto `director director_og` (a no-op there) or `dreamerv3`. Launch with
+# RUN_ENVS=4 and, for DMC, DMC_PROPRIO=False (image-only observations).
+pubmatch:
+  run: {steps: 4e6, train_ratio: 64}
+  batch_size: 16
+  batch_length: 64

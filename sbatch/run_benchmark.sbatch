@@ -126,7 +126,9 @@ trap on_usr1 USR1
 # the dmc.* flags, so they are only added for dmc_* tasks.
 ENV_FLAGS=()
 case "$TASK" in
-  dmc_*) ENV_FLAGS=(--env.dmc.image True --env.dmc.proprio True --env.dmc.size 64 64) ;;
+  # DMC_PROPRIO=False gives image-only observations, as published Director's
+  # dmc_vision (e1230+). Default True keeps every earlier launch unchanged.
+  dmc_*) ENV_FLAGS=(--env.dmc.image True --env.dmc.proprio "${DMC_PROPRIO:-True}" --env.dmc.size 64 64) ;;
 esac
 
 run_training() {

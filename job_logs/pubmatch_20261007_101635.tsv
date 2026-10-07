@@ -1,0 +1,61 @@
+array_job	task_idx	exp	config	task	seed
+4745769	0	e1230	director director_og pubmatch	pinpad_four	0
+4745769	1	e1231	director director_og pubmatch	pinpad_five	0
+4745769	2	e1232	director director_og pubmatch	pinpad_six	0
+4745769	3	e1233	director director_og pubmatch	dmc_cartpole_swingup	0
+4745769	4	e1234	director director_og pubmatch	dmc_cheetah_run	0
+4745769	5	e1235	director director_og pubmatch	dmc_hopper_hop	0
+4745769	6	e1236	dreamerv3 pubmatch	pinpad_four	0
+4745769	7	e1237	dreamerv3 pubmatch	pinpad_five	0
+4745769	8	e1238	dreamerv3 pubmatch	pinpad_six	0
+4745769	9	e1239	dreamerv3 pubmatch	dmc_cartpole_swingup	0
+4745769	10	e1240	dreamerv3 pubmatch	dmc_cheetah_run	0
+4745769	11	e1241	dreamerv3 pubmatch	dmc_hopper_hop	0
+4745769	12	e1242	director director_og pubmatch	pinpad_four	1
+4745769	13	e1243	director director_og pubmatch	pinpad_five	1
+4745769	14	e1244	director director_og pubmatch	pinpad_six	1
+4745769	15	e1245	director director_og pubmatch	dmc_cartpole_swingup	1
+4745769	16	e1246	director director_og pubmatch	dmc_cheetah_run	1
+4745769	17	e1247	director director_og pubmatch	dmc_hopper_hop	1
+4745769	18	e1248	dreamerv3 pubmatch	pinpad_four	1
+4745769	19	e1249	dreamerv3 pubmatch	pinpad_five	1
+4745769	20	e1250	dreamerv3 pubmatch	pinpad_six	1
+4745769	21	e1251	dreamerv3 pubmatch	dmc_cartpole_swingup	1
+4745769	22	e1252	dreamerv3 pubmatch	dmc_cheetah_run	1
+4745769	23	e1253	dreamerv3 pubmatch	dmc_hopper_hop	1
+4745769	24	e1254	director director_og pubmatch	pinpad_four	2
+4745769	25	e1255	director director_og pubmatch	pinpad_five	2
+4745769	26	e1256	director director_og pubmatch	pinpad_six	2
+4745769	27	e1257	director director_og pubmatch	dmc_cartpole_swingup	2
+4745769	28	e1258	director director_og pubmatch	dmc_cheetah_run	2
+4745769	29	e1259	director director_og pubmatch	dmc_hopper_hop	2
+4745769	30	e1260	dreamerv3 pubmatch	pinpad_four	2
+4745769	31	e1261	dreamerv3 pubmatch	pinpad_five	2
+4745769	32	e1262	dreamerv3 pubmatch	pinpad_six	2
+4745769	33	e1263	dreamerv3 pubmatch	dmc_cartpole_swingup	2
+4745769	34	e1264	dreamerv3 pubmatch	dmc_cheetah_run	2
+4745769	35	e1265	dreamerv3 pubmatch	dmc_hopper_hop	2
+4745769	36	e1266	director director_og pubmatch	pinpad_four	3
+4745769	37	e1267	director director_og pubmatch	pinpad_five	3
+4745769	38	e1268	director director_og pubmatch	pinpad_six	3
+4745769	39	e1269	director director_og pubmatch	dmc_cartpole_swingup	3
+4745769	40	e1270	director director_og pubmatch	dmc_cheetah_run	3
+4745769	41	e1271	director director_og pubmatch	dmc_hopper_hop	3
+4745769	42	e1272	dreamerv3 pubmatch	pinpad_four	3
+4745769	43	e1273	dreamerv3 pubmatch	pinpad_five	3
+4745769	44	e1274	dreamerv3 pubmatch	pinpad_six	3
+4745769	45	e1275	dreamerv3 pubmatch	dmc_cartpole_swingup	3
+4745769	46	e1276	dreamerv3 pubmatch	dmc_cheetah_run	3
+4745769	47	e1277	dreamerv3 pubmatch	dmc_hopper_hop	3
+4745769	48	e1278	director director_og pubmatch	pinpad_four	4
+4745769	49	e1279	director director_og pubmatch	pinpad_five	4
+4745769	50	e1280	director director_og pubmatch	pinpad_six	4
+4745769	51	e1281	director director_og pubmatch	dmc_cartpole_swingup	4
+4745769	52	e1282	director director_og pubmatch	dmc_cheetah_run	4
+4745769	53	e1283	director director_og pubmatch	dmc_hopper_hop	4
+4745769	54	e1284	dreamerv3 pubmatch	pinpad_four	4
+4745769	55	e1285	dreamerv3 pubmatch	pinpad_five	4
+4745769	56	e1286	dreamerv3 pubmatch	pinpad_six	4
+4745769	57	e1287	dreamerv3 pubmatch	dmc_cartpole_swingup	4
+4745769	58	e1288	dreamerv3 pubmatch	dmc_cheetah_run	4
+4745769	59	e1289	dreamerv3 pubmatch	dmc_hopper_hop	4
