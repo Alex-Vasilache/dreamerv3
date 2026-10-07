@@ -2,8 +2,8 @@
 # Start a robot training run on Saion and point the phone at it.
 #
 #   tools/robot_train.sh                                # -> e<next>_robot_25hz
-#   HZ=50 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
-#     tools/robot_train.sh [name] [extra main.py flags]  # -> e<next>_<name>
+#   HZ=50 tools/robot_train.sh [name] [extra main.py flags]  # -> e<next>_<name>
+#   (HZ 25, 50 or 100 picks the robot_<HZ>hz preset; CONFIGS overrides it)
 #   tools/robot_train.sh e1300_mine ...                 # an explicit number is kept
 #   RUN_DIR=<a previous run dir on /work> tools/robot_train.sh resume   # resume it
 #   NO_BASE=1 HZ=100 tools/robot_train.sh linktest_100hz    # phone alone, no number
@@ -15,9 +15,9 @@
 # Needs: `ssh saion` working, the phone on adb, a base on the phone.
 # Stop with:  ssh saion scancel <job>; adb shell am force-stop jp.oist.abcvlib.dreamerBridge
 set -euo pipefail
-CONFIGS=${CONFIGS:-robot_daydreamer robot_fast robot_25hz}
-STEPS=${STEPS:-100000}
 HZ=${HZ:-25}
+CONFIGS=${CONFIGS:-robot_daydreamer robot_fast robot_${HZ}hz}
+STEPS=${STEPS:-100000}
 NAME=robot_${HZ}hz
 if [ $# -gt 0 ] && [[ $1 != -* ]]; then NAME=$1; shift; fi
 if [[ ! $NAME =~ ^e[0-9]+_ ]] && [ -z "${NO_BASE:-}" ]; then

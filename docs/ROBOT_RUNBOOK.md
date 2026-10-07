@@ -29,8 +29,8 @@ Code blocks hold commands only, so they paste cleanly into zsh.
    | rate | command |
    |---|---|
    | 25 Hz | `tools/robot_train.sh` |
-   | 50 Hz | `HZ=50 CONFIGS="robot_daydreamer robot_fast robot_50hz" tools/robot_train.sh` |
-   | 100 Hz | `HZ=100 CONFIGS="robot_daydreamer robot_fast robot_50hz" tools/robot_train.sh --agent.horizon 200 --env.robot.length 2000` |
+   | 50 Hz | `HZ=50 tools/robot_train.sh` |
+   | 100 Hz | `HZ=100 tools/robot_train.sh` |
 
    It picks the next experiment number (prints `== submitting e<N>_robot_50hz`),
    submits the job, points the phone at the node and starts the app; the phone
@@ -50,8 +50,9 @@ Code blocks hold commands only, so they paste cleanly into zsh.
 **Resume** a stopped run with the same rate and configs:
 `RUN_DIR=/work/DoyaU/vasilache/work/robot_v100_<…> tools/robot_train.sh robot_25hz_resume`.
 
-**Script settings**: `HZ` (default 25), `CONFIGS` (default
-`robot_daydreamer robot_fast robot_25hz`), `STEPS` (default 100000: ~67 min at
+**Script settings**: `HZ` (default 25; picks the preset), `CONFIGS` (default
+`robot_daydreamer robot_fast robot_<HZ>hz`: same reward at every rate, 2 s
+horizon, 20 s episodes), `STEPS` (default 100000: ~67 min at
 25 Hz, ~33 at 50, ~17 at 100). Anything after the name goes to `main.py`.
 
 ## TensorBoard
@@ -77,14 +78,16 @@ A healthy run has `fps/policy` at the chosen rate, `dropped/sum` 0, and
 Pass as extra arguments, e.g.
 `tools/robot_train.sh --env.robot.action_rate_penalty 0.1`.
 
-| flag | 25 Hz | 50/100 Hz | meaning |
-|---|---|---|---|
-| `env.robot.action_rate_penalty` | 0 | 0.1 | chatter cost per step: flag × mean over wheels of \|aₜ − aₜ₋₁\| (commands in [−1, 1]; at most 2 × flag) |
-| `env.robot.command_scale` | 1.0 | 0.7 | phone multiplies every wheel command by this: caps motor power |
-| `env.robot.wheel_penalty` | 0.3 | 0.3 | cost on wheel speed (at most 0.3 per step) |
-| `env.robot.drift_penalty` | 0.1 | 0.1 | cost on net forward speed |
-| `env.robot.rate_penalty` | 0.05 | 0.05 | cost on tilt rate |
-| `env.robot.weights_every` | 0 | 0 | minimum seconds between weight pushes; `1e9` stops them |
+All three rates use the same reward by default:
+
+| flag | default | meaning |
+|---|---|---|
+| `env.robot.action_rate_penalty` | 0 | chatter cost per step: flag × mean over wheels of \|aₜ − aₜ₋₁\| (commands in [−1, 1]; at most 2 × flag) |
+| `env.robot.command_scale` | 1.0 | phone multiplies every wheel command by this: caps motor power |
+| `env.robot.wheel_penalty` | 0.3 | cost on wheel speed (at most 0.3 per step) |
+| `env.robot.drift_penalty` | 0.1 | cost on net forward speed |
+| `env.robot.rate_penalty` | 0.05 | cost on tilt rate |
+| `env.robot.weights_every` | 0 | minimum seconds between weight pushes; `1e9` stops them |
 
 The reward peaks at 1.0 per step, so a 20 s episode scores at most ~500 at
 25 Hz, ~1000 at 50 Hz and ~2000 at 100 Hz.
@@ -135,7 +138,7 @@ The bases should run `ae3b2ba` or later:
 `NO_BASE=1` starts the app without the base (no wheels, paced by `HZ` alone).
 Use a non-experiment name:
 ```bash
-NO_BASE=1 HZ=100 STEPS=30000 CONFIGS="robot_daydreamer robot_fast robot_50hz" tools/robot_train.sh linktest_100hz --agent.horizon 200 --env.robot.length 2000
+NO_BASE=1 HZ=100 STEPS=30000 tools/robot_train.sh linktest_100hz
 ```
 Without a phone, `tools/fake_onboard_phone.py --hz 50` stands in for it against
 a trainer on the Mac.

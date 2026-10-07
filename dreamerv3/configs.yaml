@@ -1611,11 +1611,16 @@ robot_25hz:
   agent.horizon: 50
   env.robot.length: 500
 
-# robot_fast at 50 Hz, with the wheel chatter of an exploring 50 Hz policy
-# priced in (0.1 * mean |change in command| per step) and the motors capped at
-# 70% of full power. CONFIGS="robot_daydreamer robot_fast robot_50hz", HZ=50.
+# robot_fast at 50 and 100 Hz: the same 2 s horizon and 20 s episodes as
+# robot_25hz, and the same reward (no chatter penalty, full motor power; until
+# 2026-10-07 robot_50hz also set env.robot.action_rate_penalty 0.1 and
+# env.robot.command_scale 0.7 -- pass those to get it back).
+#   CONFIGS="robot_daydreamer robot_fast robot_50hz", HZ=50
 robot_50hz:
   agent.horizon: 100
   env.robot.length: 1000
-  env.robot.action_rate_penalty: 0.1
-  env.robot.command_scale: 0.7
+
+#   CONFIGS="robot_daydreamer robot_fast robot_100hz", HZ=100
+robot_100hz:
+  agent.horizon: 200
+  env.robot.length: 2000
