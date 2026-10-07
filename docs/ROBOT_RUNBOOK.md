@@ -1,13 +1,15 @@
 # Robot runbook: flash a base, start a training
 
-The phone runs the policy at 25 Hz; Saion trains it and pushes new weights to
-the phone every ~3 s (`online_publish_every: 2` plus up to one train step).
-Both ends move the socket I/O off the control path: the trainer keeps every
-observation the phone sends (`log/dropped` 0, `log/backlog` ~0) and pushes
-weights in 32 KB slices from a thread; the phone parses them on a receiver
-thread and swaps them in between two steps. `log/policy_age_s` is how old the
-phone's weights were at each step. The base (RP2040) runs the fast firmware, which answers a
-wheel command in ~8 ms.
+The phone runs the policy itself (onboard mode) at 25, 50 or 100 Hz; Saion
+trains on what it records and pushes new weights to the phone every ~2 s. The
+base (RP2040) runs the fast firmware, which answers a wheel command in ~8 ms.
+
+How the link stays out of the control loop (2026-10-07): the trainer reads the
+socket on its own thread and keeps every observation (`log/dropped` is 0
+onboard; `log/backlog` is how many are still queued), and sends weights in
+32 KB slices from another thread. The phone receives and parses them on a
+thread too, and swaps them in between two steps. `log/policy_age_s` is how old
+the phone's weights were at each step: it sawtooths between ~0.6 and ~2.6 s.
 
 | repo (on the Mac) | branch | what |
 |---|---|---|
@@ -39,9 +41,9 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
 
 ## 2. Connect the phone (each session)
 
-1. Phone: Settings → Developer options → **Wireless debugging** → note IP:port.
+1. Phone: Settings → Developer options → **Wireless debugging** on. Then
    ```bash
-   adb connect 10.13.64.55:<port>
+   tools/phone_adb_connect.sh        # finds the port (it changes) and connects
    ```
 2. Put the phone on the base. Check it powers the base:
    ```bash
@@ -54,47 +56,83 @@ All three bases run `1fd6c67`; check with `git -C ~/StudioProjects/smartphone-ro
      ./gradlew :dreamerBridge:assembleDebug
    adb install -r apps/dreamerBridge/build/outputs/apk/debug/dreamerBridge-debug.apk
    ```
+   Then `adb shell run-as jp.oist.abcvlib.dreamerBridge ls files/dreamer_policy`
+   should list `policy.npz`: a phone without weights starts on the trainer's
+   policy and switches to its own at the first push.
 
 ## 3. Start a training
 
 1. Pick the next experiment number: highest `e<N>` in `EXPERIMENTS.md` on Saion
    (`/apps/unit/DoyaU/vasilache/apps/code/dreamerv3`), plus one.
-2. Robot upright on the floor with room to move, then:
+2. Robot upright on the floor with room to move, then one of:
    ```bash
-   tools/robot_train.sh e1224_robot_25hz
+   # 25 Hz: 2 s horizon = 50 steps, 20 s episodes
+   tools/robot_train.sh e<N>_robot_25hz
+
+   # 50 Hz: wheel-chatter penalty and motors capped at 70%
+   HZ=50 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
+     tools/robot_train.sh e<N>_robot_50hz
+
+   # 100 Hz: robot_50hz with the horizon and episode doubled to keep 2 s / 20 s
+   HZ=100 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
+     tools/robot_train.sh e<N>_robot_100hz --agent.horizon 200 --env.robot.length 2000
    ```
-   It submits the job, waits for a node, writes the node's address to the
-   phone (`trainer.json`), starts the app, taps the USB prompt, and waits until
-   the phone is connected (~1-2 min).
-3. Watch: the phone screen (reward on top, ~1.0 per step is perfect), and
-   `ssh saion tail -f <run dir>/logdir/scores.jsonl` (max ~500 per 20 s
-   episode). A healthy learner keeps changing the `policy` number on the phone.
-4. Stop: `ssh saion scancel <job>` and
+   It wakes the phone (a dozing phone has no network for the app), submits the
+   job, waits for a node, writes the node's address to the phone
+   (`trainer.json`), starts the app, taps the USB prompt, and waits until the
+   phone is connected (~1-2 min).
+3. Watch: the phone screen (reward on top, ~1.0 per step is perfect; the
+   `policy` number changes every ~2 s), and on Saion
+   `tail -f <run dir>/logdir/scores.jsonl` and the job's `.out` file, which logs
+   every push (`pushed policy … send 0.5s, age 0.6s`).
+4. Check the link in `<run dir>/logdir/metrics.jsonl`: `fps/policy` at the
+   rate you chose, `epstats/log/dropped/sum` 0, `epstats/log/policy_age_s/avg`
+   ~2-3 s.
+5. Stop: `ssh saion scancel <job>` and
    `adb shell am force-stop jp.oist.abcvlib.dreamerBridge`. The base stops the
    wheels by itself 250 ms after the commands stop.
-5. Log the run in `EXPERIMENTS.md` on Saion.
+6. Log the run in `EXPERIMENTS.md` on Saion.
 
 To resume an earlier run (same configs, same rate), pass its run dir:
 `RUN_DIR=/work/DoyaU/vasilache/work/robot_v100_<…> tools/robot_train.sh e<N>_robot_25hz_resume`.
 
 Settings: `CONFIGS` (default `robot_daydreamer robot_fast robot_25hz`),
-`STEPS` (default 100000 ≈ 67 min at 25 Hz), `HZ` (default 25). For 50 Hz:
-`HZ=50 tools/robot_train.sh e<N>_robot_50hz --agent.horizon 100 --env.robot.length 1000`.
+`STEPS` (default 100000: ~67 min at 25 Hz, ~33 at 50, ~17 at 100), `HZ`
+(default 25). Weight pushes: `online_publish_every` (2 s in the robot configs)
+sets the cadence; `--env.robot.weights_every <s>` adds a floor between pushes,
+and `1e9` turns them off after the first.
 
-## Test the link without a base
+## 4. Test the link without a base
 
-Put `"no_base": true` in `trainer.json`: the app then starts without USB, skips
-the serial link and the wheels, and paces on `max_hz` alone. A local trainer:
+`NO_BASE=1` puts `"no_base": true` in `trainer.json`: the app starts without
+USB, skips the serial link and the wheels, and paces on `max_hz` alone. Use a
+non-experiment name, it is a smoke test:
 
 ```bash
-echo '{"ip": "<Mac IP>", "port": 3000, "max_hz": 50, "no_base": true}' > /tmp/trainer.json
-adb push /tmp/trainer.json /sdcard/Android/data/jp.oist.abcvlib.dreamerBridge/files/
-.venv/bin/python -u dreamerv3/main.py --logdir ~/logdir/link50 --script train \
-  --configs robot_daydreamer robot_fast robot_50hz --env.robot.onboard True
+NO_BASE=1 HZ=100 STEPS=30000 CONFIGS="robot_daydreamer robot_fast robot_50hz" \
+  tools/robot_train.sh linktest_100hz --agent.horizon 200 --env.robot.length 2000
 ```
 
+A trainer on the Mac works the same way: push `{"ip": "<Mac IP>", "port": 3000,
+"max_hz": 50, "no_base": true}` as `trainer.json` and run
+`.venv/bin/python -u dreamerv3/main.py --logdir ~/logdir/link50 --script train
+--configs robot_daydreamer robot_fast robot_50hz --env.robot.onboard True`.
 Without a phone at all, `tools/fake_onboard_phone.py --hz 50` plays it with the
 app's own PolicyRunner and receiver.
+
+Measured 2026-10-07, phone alone, trainer on the Mac (~4 min each):
+
+| rate | recorded | dropped | pushes | phone sample→drive p50 / p99 / max |
+|---|---|---|---|---|
+| 25 Hz | 25.0 | 0 | 89 | 6.1 / 11.4 / 17.8 ms |
+| 50 Hz | 50.0 | 0 | 88 | 4.0 / 5.7 / 15.0 ms |
+| 100 Hz | 99.7 | 0 | 93 | 2.6 / 4.2 / 8.5 ms |
+| 100 Hz, no pushes | 100.0 | 0 | 1 | 2.5 / 3.1 / 4.0 ms |
+
+On Saion (gpu19, 50 Hz, same configs): 50.0 recorded, 0 dropped, a push every
+~2 s taking 0.02 s to pack and ~0.5 s on the WiFi, phone sample→drive p99
+5.6 ms. A push costs the phone ~1 ms at p99. Pinning the receiver thread to the little
+cores made it worse (93 Hz, p99 6.6 ms), so it is not pinned.
 
 ## Troubleshooting
 
@@ -104,6 +142,8 @@ app's own PolicyRunner and receiver.
 | "Robot not properly attached" | base not on the phone, or `source_power=false`: replug the base |
 | Pico appears/disappears every second (`adb logcat \| grep UsbHostManager`) | reinstall the app (step 2.3) |
 | phone shows `no trainer at …` | job not started yet, or wrong `trainer.json`; rerun `tools/robot_train.sh` |
+| `cannot reach …: timed out` in logcat although the trainer listens | the phone is dozing (`adb shell dumpsys power \| grep mWakefulness`): `adb shell input keyevent KEYCODE_WAKEUP` |
+| `adb devices` empty, phone pings | Wireless debugging switched itself off: turn it on, `tools/phone_adb_connect.sh` |
 | a wheel spins at power-up | base has old firmware: flash it (step 1) |
 | `RPI-RP2` drive won't mount on the Mac | ignore it, `tools/flash_base.sh` uses picotool instead |
 | a job exits after ~30 s | stale `logdir/error_learner` in the run dir: delete it |
