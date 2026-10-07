@@ -89,19 +89,20 @@ Pass as extra arguments, e.g.
 The reward peaks at 1.0 per step, so a 20 s episode scores at most ~500 at
 25 Hz, ~1000 at 50 Hz and ~2000 at 100 Hz.
 
-## Run a saved policy (Dreamer Player)
+## Run a saved policy
 
-Save a run's current weights under a name (default: the latest robot job):
+The app opens in training. **Back** ends training and opens the policy list:
+the top row returns to training, tapping a policy runs it with no trainer
+(STOP at the bottom returns to the list), long-press renames or deletes it.
+Actions are the policy's most likely ones; the switch samples them instead.
+
+Every training run keeps its latest weights in the list under its job name
+(`e1294_robot_25hz`), updated with every push; rename the ones worth keeping.
+Runs submitted before 2026-10-07 17:00 do not, nor does any older trainer:
+save those by hand (default: the latest robot job):
 ```bash
 tools/save_policy.sh balance_table
-tools/save_policy.sh balance_carpet /work/DoyaU/vasilache/work/robot_v100_<…>
 ```
-It keeps a copy in `~/logdir/robot_policies/` and puts it on the phone. On the
-phone, open **Dreamer Player** (a second icon of the same app), tap a policy:
-the usual robot screen runs it with no trainer, at its training rate, scoring
-steps with the training reward. Back returns to the list. Actions are the
-policy's most likely ones; the switch on the list samples them as in training.
-Stop the bridge app (or its training) first: both drive the same base.
 
 ## Update the phone app
 
