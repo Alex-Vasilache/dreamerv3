@@ -57,12 +57,22 @@ IP=$(ssh saion "getent hosts $NODE" | awk '{print $1}')
 echo "node $NODE ($IP), port $PORT, run dir $RUN_DIR"
 
 echo "== pointing the phone at it"
+# What the running app (if any) was started with, read before it is replaced.
+OLD=$(adb shell cat /sdcard/Android/data/$APP/files/trainer.json 2>/dev/null || true)
 tmp=$(mktemp -d)
 echo "{\"ip\": \"$IP\", \"port\": $PORT, \"max_hz\": $HZ${NO_BASE:+, \"no_base\": true}}" \
   > "$tmp/trainer.json"
 adb push "$tmp/trainer.json" /sdcard/Android/data/$APP/files/ >/dev/null
 # A running app rereads trainer.json on every reconnect attempt, so leave it
 # be: killing it can make the phone stop powering the base (a replug fixes it).
+# Except across a no_base change, which the app reads only at start: one left
+# in a link test's no-base mode never drives the wheels (e1290 sat still until
+# it was restarted).
+old_nobase=; [[ $OLD == *'"no_base": true'* ]] && old_nobase=1
+if adb shell pidof $APP >/dev/null && [ "$old_nobase" != "$NO_BASE" ]; then
+  echo "restarting the app: it is in the other base mode (no_base=${old_nobase:-0})"
+  adb shell am force-stop $APP
+fi
 if ! adb shell pidof $APP >/dev/null; then
   adb shell monkey -p $APP -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
   [ -n "$NO_BASE" ] || "$HERE/phone_allow_usb.sh" 10
