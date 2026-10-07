@@ -19,6 +19,10 @@ defaults:
   online_actor_flush_steps: 128
   online_actor_replay_size: 250000
   online_sync_every: 180
+  # How often the learner publishes weights, in seconds; 0 means
+  # online_sync_every. Separate because a robot that runs the policy on the
+  # phone wants fresh weights there far more often than the actor needs them.
+  online_publish_every: 0
   online_replay_sync_interval: 5
   # Ceiling on train steps per learner iteration. Publishing weights,
   # logging and checkpointing all happen after that loop, so an
@@ -1376,6 +1380,10 @@ robot: &robot
   replay: {size: 1e5}
   online_actor_replay_size: 100000
   online_sync_every: 30
+  # The phone runs the policy and gets each publish pushed to it in the
+  # background (embodied/envs/robot.py:_push_loop), so publish often. The actor
+  # still refreshes its own copy, which only feeds replay context, every 30 s.
+  online_publish_every: 2
   # No platform pin: embodied/jax/internal.py:resolve_platform already maps
   # the configured platform onto whatever this machine has, and pinning cpu
   # here would only bite on Linux while being ignored on macOS anyway.

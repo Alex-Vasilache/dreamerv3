@@ -162,13 +162,28 @@ class SharedExperienceBuffer:
 class SharedPolicyWeights:
   """Synchronized policy weights shared between learner and actor."""
 
+  # Published files kept on disk. Readers take `latest` and then open the file
+  # it names, so the newest few must survive a publish; the rest only fill the
+  # disk -- ~7 MB each, which at a 2 s cadence is 100 GB over an 8 h job.
+  KEEP = 8
+
   def __init__(self, directory):
     self.directory = elements.Path(directory)
     self.directory.mkdir(parents=True, exist_ok=True)
     self.latest = self.directory / 'latest'
     self._stamp = None
+    self._pool = None
+    self._future = None
 
-  def publish(self, agent):
+  def publish(self, agent, background=False):
+    """Write the agent's policy weights for the actor and the phone.
+
+    With `background`, only the device-to-host copy happens on the calling
+    thread; pickling and writing go to a worker, and a publish that finds the
+    previous one still writing is skipped rather than queued.
+    """
+    if background and self._future is not None and not self._future.done():
+      return False
     data = agent.save()
     # Ship only what the actor will actually install. `apply_to_agent` loads
     # with regex=policy_keys, so the optimizer moments, the critic and the
@@ -186,12 +201,40 @@ class SharedPolicyWeights:
           'policy_keys matched nothing in the saved params; publishing an '
           'empty weight set would silently freeze the actor')
       data = dict(data, params=params)
-    payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+    # Stamped at the copy, not at the write: it is the weights' age that the
+    # phone reports back, and this is when they were current.
     stamp = str(time.time_ns())
+    if not background:
+      self._write(data, stamp)
+      return True
+    if self._pool is None:
+      self._pool = concurrent.futures.ThreadPoolExecutor(1, 'policy_publish')
+    if self._future is not None:
+      self._future.result()  # surface a failed write rather than drop it
+    self._future = self._pool.submit(self._write, data, stamp)
+    return True
+
+  def _write(self, data, stamp):
+    payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
     path = self.directory / f'policy_{stamp}.pkl'
     _atomic_write(path, payload)
     _atomic_write(self.latest, stamp.encode('utf-8'))
     self._stamp = stamp
+    self._prune()
+
+  def _prune(self):
+    files = sorted(
+        self.directory.glob('policy_*.pkl'),
+        key=lambda p: int(p.name[len('policy_'):-len('.pkl')]))
+    for old in files[:-self.KEEP]:
+      try:
+        old.remove()
+      except OSError:
+        pass  # a reader holding it, or already gone; next prune retries
+
+  def flush(self):
+    if self._future is not None:
+      self._future.result()
 
   def fetch(self):
     """Read and unpickle the newest weights, or None if they are unchanged.
@@ -494,7 +537,8 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   should_log = embodied.LocalClock(args.log_every)
   should_report = embodied.LocalClock(args.report_every)
   should_save = embodied.LocalClock(args.save_every)
-  should_sync_policy = embodied.LocalClock(args.online_sync_every)
+  should_sync_policy = embodied.LocalClock(
+      getattr(args, 'online_publish_every', 0) or args.online_sync_every)
   should_sync_replay = embodied.LocalClock(args.online_replay_sync_interval)
   carry_train = agent.init_train(args.batch_size)
   last_actor_step = -1
@@ -576,6 +620,12 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       if 'replay' in outs:
         replay.update(outs['replay'])
       train_agg.add(mets, prefix='train')
+      # Checked per train step, not per chunk: a chunk is up to
+      # online_max_train_repeats steps, ~30 s at robot_fast's batch on a V100,
+      # which would floor the publish cadence there whatever it is set to.
+      if should_sync_policy(step):
+        with elements.timer.section('publish'):
+          shared_policy.publish(agent, background=True)
       if should_report(step) and len(replay):
         agg = elements.Agg()
         for _ in range(args.consec_report * args.report_batches):
@@ -583,7 +633,8 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
           agg.add(mets)
         logger.add(agg.result(), prefix='report')
     if should_sync_policy(step):
-      shared_policy.publish(agent)
+      with elements.timer.section('publish'):
+        shared_policy.publish(agent, background=True)
     if should_log(step):
       logger.add(train_agg.result())
       logger.add(replay.stats(), prefix='replay')
@@ -596,4 +647,5 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   _log_learner(
       logdir,
       f'learner stop step={int(step)} actor_step={_read_actor_step(paths.actor_step)}')
+  shared_policy.flush()
   logger.close()

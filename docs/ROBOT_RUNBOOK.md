@@ -1,7 +1,12 @@
 # Robot runbook: flash a base, start a training
 
 The phone runs the policy at 25 Hz; Saion trains it and pushes new weights to
-the phone every 30 s. The base (RP2040) runs the fast firmware, which answers a
+the phone every ~3 s (`online_publish_every: 2` plus up to one train step).
+Both ends move the socket I/O off the control path: the trainer keeps every
+observation the phone sends (`log/dropped` 0, `log/backlog` ~0) and pushes
+weights in 32 KB slices from a thread; the phone parses them on a receiver
+thread and swaps them in between two steps. `log/policy_age_s` is how old the
+phone's weights were at each step. The base (RP2040) runs the fast firmware, which answers a
 wheel command in ~8 ms.
 
 | repo (on the Mac) | branch | what |
@@ -75,6 +80,21 @@ To resume an earlier run (same configs, same rate), pass its run dir:
 Settings: `CONFIGS` (default `robot_daydreamer robot_fast robot_25hz`),
 `STEPS` (default 100000 ≈ 67 min at 25 Hz), `HZ` (default 25). For 50 Hz:
 `HZ=50 tools/robot_train.sh e<N>_robot_50hz --agent.horizon 100 --env.robot.length 1000`.
+
+## Test the link without a base
+
+Put `"no_base": true` in `trainer.json`: the app then starts without USB, skips
+the serial link and the wheels, and paces on `max_hz` alone. A local trainer:
+
+```bash
+echo '{"ip": "<Mac IP>", "port": 3000, "max_hz": 50, "no_base": true}' > /tmp/trainer.json
+adb push /tmp/trainer.json /sdcard/Android/data/jp.oist.abcvlib.dreamerBridge/files/
+.venv/bin/python -u dreamerv3/main.py --logdir ~/logdir/link50 --script train \
+  --configs robot_daydreamer robot_fast robot_50hz --env.robot.onboard True
+```
+
+Without a phone at all, `tools/fake_onboard_phone.py --hz 50` plays it with the
+app's own PolicyRunner and receiver.
 
 ## Troubleshooting
 
