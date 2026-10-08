@@ -284,7 +284,9 @@ class SmartphoneRobot(embodied.Env):
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
-      command_sigma=0.5, command_reward='product', command_mode='auto', command_hold_min=2.0,
+      command_sigma=0.5, command_reward='product', command_track_weight=2.0,
+      command_zeta_steps=40000, turn_source='wheels', yaw_rate_max=1.5,
+      yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
@@ -396,8 +398,33 @@ class SmartphoneRobot(embodied.Env):
     self.command_speed = float(command_speed)
     self.command_turn = float(command_turn)
     self.command_sigma = float(command_sigma)
-    assert command_reward in ('product', 'sum'), command_reward
+    assert command_reward in ('product', 'sum', 'curriculum'), command_reward
     self.command_reward = command_reward
+    # 'curriculum' (arXiv 2409.09845, a wheel-legged robot balancing on its
+    # wheels): balance + zeta * track_weight * tracking - penalties, with
+    # zeta = (tanh(8 s / zeta_steps - 3) + 1) / 2 rising from ~0 to ~1 over
+    # zeta_steps recorded steps, so balance is learned first and tracking
+    # then takes over. The paper ramps zeta with episode length; nothing ends
+    # an episode here, so it ramps with steps (this process's: a resumed run
+    # starts the ramp again).
+    self.command_track_weight = float(command_track_weight)
+    self.command_zeta_steps = float(command_zeta_steps)
+    self._total_steps = 0
+    # Turn rate from the wheels (half the speed difference / command_turn) or
+    # from the phone's raw gyroscope: the body's true yaw rate, which wheel
+    # slip cannot fake. The phone stands upright, so yaw is about its long
+    # axis (gyro_y, rad/s, counter-clockwise from above positive); yaw_sign
+    # -1 makes a right turn positive, matching the joystick. Turn 1.0 asks
+    # for yaw_rate_max rad/s.
+    assert turn_source in ('wheels', 'gyro'), turn_source
+    self.turn_source = turn_source
+    self.yaw_rate_max = float(yaw_rate_max)
+    self.yaw_axis = str(yaw_axis)
+    self.yaw_sign = float(yaw_sign)
+    self._yaw_rate = 0.0
+    # The axis and sign are set from how the phone sits in the cradle, which
+    # nothing here can see; checked against the wheels every 500 steps.
+    self._yaw_check = []
     # How the phone picks commands nobody is steering ('auto': hold a random
     # one for hold_min..hold_max s, zero with p_zero, one axis only with
     # p_axis; 'manual': zero, i.e. balance in place). Sent in the handshake.
@@ -476,7 +503,8 @@ class SmartphoneRobot(embodied.Env):
         'log/policy_age_s': elements.Space(np.float32),
         **({k: elements.Space(np.float32) for k in (
             'log/cmd_forward', 'log/cmd_turn', 'log/cmd_joystick',
-            'log/forward', 'log/turn')} if self.task == 'command' else {}),
+            'log/forward', 'log/turn', 'log/turn_wheels', 'log/yaw_rate',
+            'log/zeta')} if self.task == 'command' else {}),
         **({'executed/drive': elements.Space(np.float32, (2,), -1.0, 1.0)}
            if self.onboard and not self.discrete else {}),
     }
@@ -565,6 +593,7 @@ class SmartphoneRobot(embodied.Env):
     self._send(left, right, reset=False)
     sensors, latency = self._recv()
     self._step += 1
+    self._total_steps += 1
     self._record(latency)
     if self.status_every and self._step % self.status_every == 0:
       ref = ('  ref %+5.1f' % np.degrees(self._ref)) if self.task == 'track' else ''
@@ -576,6 +605,8 @@ class SmartphoneRobot(embodied.Env):
                0.5 * (float(sensors['wheel_speed_l'])
                       + float(sensors['wheel_speed_r'])) * self.speed_scale),
             flush=True)
+    if self.task == 'command' and self.turn_source == 'gyro':
+      self._check_yaw(sensors)
     reward, terminal = self._evaluate(sensors)
     if self.action_rate_penalty:
       act = (np.resize(self._onboard_act, 2)
@@ -670,8 +701,37 @@ class SmartphoneRobot(embodied.Env):
     left = float(sensors['wheel_speed_l'])
     right = float(sensors['wheel_speed_r'])
     forward = 0.5 * (left + right) / self.command_speed
-    turn = 0.5 * (left - right) / self.command_turn
+    if self.turn_source == 'gyro':
+      turn = self._yaw_rate / self.yaw_rate_max
+    else:
+      turn = 0.5 * (left - right) / self.command_turn
     return forward, turn
+
+  def _check_yaw(self, sensors):
+    """Print how well the gyro's turn rate agrees with the wheels'.
+
+    Strongly positive: axis and sign are right. Negative: flip yaw_sign. Near
+    zero while the wheels do turn: wrong yaw_axis. The slope is the yaw rate
+    one unit of wheel turn gives, for choosing yaw_rate_max.
+    """
+    wheels = 0.5 * (float(sensors['wheel_speed_l'])
+                    - float(sensors['wheel_speed_r'])) / self.command_turn
+    self._yaw_check.append((wheels, self._yaw_rate))
+    if len(self._yaw_check) < 500:
+      return
+    w, g = np.array(self._yaw_check).T
+    self._yaw_check = []
+    if w.std() < 1e-6 or g.std() < 1e-6:
+      return
+    corr = float(np.corrcoef(w, g)[0, 1])
+    slope = float(np.polyfit(w, g, 1)[0])
+    print(f'[robot] gyro vs wheel turn over 500 steps: corr {corr:+.2f}, '
+          f'{slope:+.2f} rad/s per wheel-turn unit, |yaw| p90 '
+          f'{np.percentile(np.abs(g), 90):.2f} rad/s', flush=True)
+
+  def _zeta(self):
+    return 0.5 * (np.tanh(
+        8.0 * self._total_steps / max(self.command_zeta_steps, 1.0) - 3.0) + 1.0)
 
   def _command_reward(self, sensors):
     """Balance times tracking the commanded forward speed and turn.
@@ -710,7 +770,9 @@ class SmartphoneRobot(embodied.Env):
     err_r = (float(sensors['wheel_speed_r']) - want_r) * self.speed_scale
     drift = min(abs(0.5 * (err_l + err_r)), self.drift_clip)
     balance = 0.5 * linear + 0.5 * bonus
-    if self.command_reward == 'product':
+    if self.command_reward == 'curriculum':
+      score = balance + self._zeta() * self.command_track_weight * track
+    elif self.command_reward == 'product':
       score = balance * track
     else:
       score = 0.5 * balance + 0.5 * track
@@ -779,6 +841,11 @@ class SmartphoneRobot(embodied.Env):
         'log/cmd_joystick': np.float32(self._cmd_src),
         'log/forward': np.float32(forward),
         'log/turn': np.float32(turn),
+        'log/turn_wheels': np.float32(0.5 * (
+            float(sensors['wheel_speed_l']) - float(sensors['wheel_speed_r']))
+            / self.command_turn),
+        'log/yaw_rate': np.float32(self._yaw_rate),
+        'log/zeta': np.float32(self._zeta()),
     }
 
   # The socket itself is owned by a `_Link`, which reads and writes it on
@@ -855,7 +922,9 @@ class SmartphoneRobot(embodied.Env):
         action_rate_penalty=self.action_rate_penalty,
         command_scale=self.command_scale,
         command_speed=self.command_speed, command_turn=self.command_turn,
-        command_sigma=self.command_sigma, command_reward=self.command_reward)
+        command_sigma=self.command_sigma, command_reward=self.command_reward,
+        command_track_weight=self.command_track_weight,
+        turn_source=self.turn_source, yaw_rate_max=self.yaw_rate_max)
 
   def _push_loop(self):
     """Send the phone each new policy as soon as the learner publishes it.
@@ -992,6 +1061,8 @@ class SmartphoneRobot(embodied.Env):
     cmd = header.get('cmd') or (0.0, 0.0)
     self._cmd = (float(np.clip(cmd[0], -1, 1)), float(np.clip(cmd[1], -1, 1)))
     self._cmd_src = float(header.get('cmd_src') == 'joystick')
+    self._yaw_rate = self.yaw_sign * float(
+        header.get('gyro_' + self.yaw_axis, 0.0) or 0.0)
     if self._onboard:
       act = header.get('act')
       if act is None:

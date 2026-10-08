@@ -117,6 +117,13 @@ drift penalties measured from the commanded wheel speeds (`env.robot.command_*`;
 them). TensorBoard: `epstats/log/cmd_forward` against `epstats/log/forward`,
 the same for `turn`.
 
+`robot_command_cur` (add it after `robot_command`) uses instead the reward of a
+wheel-legged robot balancing on its wheels (arXiv 2409.09845): balance +
+zeta x 2 x tracking, zeta rising 0 -> 1 over the first 40k steps, and the turn
+rate from the phone's gyroscope. The job log prints
+`[robot] gyro vs wheel turn ...` every 500 steps: the correlation must be
+clearly positive, else flip `--env.robot.yaw_sign`.
+
 ## Run a saved policy
 
 The app opens in training. **Back** ends training and opens the policy list:
