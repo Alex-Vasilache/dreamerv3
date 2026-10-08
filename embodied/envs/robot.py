@@ -285,6 +285,7 @@ class SmartphoneRobot(embodied.Env):
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
       command_sigma=0.5, command_reward='product', command_track_weight=2.0,
+      command_balance_weight=1.0, forward_sign=1.0, command_step=0.0,
       command_zeta_steps=40000, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
@@ -408,6 +409,14 @@ class SmartphoneRobot(embodied.Env):
     # an episode here, so it ramps with steps (this process's: a resumed run
     # starts the ramp again).
     self.command_track_weight = float(command_track_weight)
+    self.command_balance_weight = float(command_balance_weight)
+    # Which way forward 1.0 drives the wheels. +1: positive wheel speed is
+    # forward. e1302 showed the robot's positive direction is what a person
+    # at the joystick calls backward (it leaned and rolled backward on a
+    # forward command), hence -1 in robot_command_cur. Turning is measured
+    # by the gyro, clockwise from above, which is a right turn whichever way
+    # the front faces, so it needs no sign.
+    self.forward_sign = float(forward_sign)
     self.command_zeta_steps = float(command_zeta_steps)
     self._total_steps = 0
     # Turn rate from the wheels (half the speed difference / command_turn) or
@@ -428,10 +437,13 @@ class SmartphoneRobot(embodied.Env):
     # How the phone picks commands nobody is steering ('auto': hold a random
     # one for hold_min..hold_max s, zero with p_zero, one axis only with
     # p_axis; 'manual': zero, i.e. balance in place). Sent in the handshake.
+    # step: random commands are multiples of it, e.g. 0.5 for -1, -0.5, 0,
+    # 0.5, 1 on each axis; 0 means continuous.
     self.command_sampler = dict(
         mode=str(command_mode), hold_min=float(command_hold_min),
         hold_max=float(command_hold_max), p_zero=float(command_p_zero),
-        p_axis=float(command_p_axis))
+        p_axis=float(command_p_axis),
+        step=float(command_step))
     self._cmd = (0.0, 0.0)
     self._cmd_src = 0.0
     self.reconnect = bool(reconnect)
@@ -700,7 +712,7 @@ class SmartphoneRobot(embodied.Env):
     """(forward, turn) the wheels are doing, in command units."""
     left = float(sensors['wheel_speed_l'])
     right = float(sensors['wheel_speed_r'])
-    forward = 0.5 * (left + right) / self.command_speed
+    forward = self.forward_sign * 0.5 * (left + right) / self.command_speed
     if self.turn_source == 'gyro':
       turn = self._yaw_rate / self.yaw_rate_max
     else:
@@ -764,14 +776,16 @@ class SmartphoneRobot(embodied.Env):
     forward, turn = self._measured(sensors)
     track = 0.5 * (np.exp(-(((forward - cmd_f) / self.command_sigma) ** 2))
                    + np.exp(-(((turn - cmd_t) / self.command_sigma) ** 2)))
-    want_l = cmd_f * self.command_speed + cmd_t * self.command_turn
-    want_r = cmd_f * self.command_speed - cmd_t * self.command_turn
+    drive = self.forward_sign * cmd_f * self.command_speed
+    want_l = drive + cmd_t * self.command_turn
+    want_r = drive - cmd_t * self.command_turn
     err_l = (float(sensors['wheel_speed_l']) - want_l) * self.speed_scale
     err_r = (float(sensors['wheel_speed_r']) - want_r) * self.speed_scale
     drift = min(abs(0.5 * (err_l + err_r)), self.drift_clip)
     balance = 0.5 * linear + 0.5 * bonus
     if self.command_reward == 'curriculum':
-      score = balance + self._zeta() * self.command_track_weight * track
+      score = (self.command_balance_weight * balance
+               + self._zeta() * self.command_track_weight * track)
     elif self.command_reward == 'product':
       score = balance * track
     else:
@@ -924,6 +938,8 @@ class SmartphoneRobot(embodied.Env):
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,
+        command_balance_weight=self.command_balance_weight,
+        forward_sign=self.forward_sign,
         turn_source=self.turn_source, yaw_rate_max=self.yaw_rate_max)
 
   def _push_loop(self):

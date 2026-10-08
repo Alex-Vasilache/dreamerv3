@@ -91,7 +91,7 @@ defaults:
     # pipeline True lets the phone free-run on its own clock instead of
     # blocking on us for every action; see embodied/envs/robot.py. False falls
     # back to the lock-step protocol without reinstalling the phone app.
-    robot: {pipeline: True, host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, action_rate_penalty: 0.0, command_scale: 1.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, command_speed: 1500.0, command_turn: 1000.0, command_sigma: 0.5, command_reward: product, command_track_weight: 2.0, command_zeta_steps: 40000, turn_source: wheels, yaw_rate_max: 1.5, yaw_axis: y, yaw_sign: -1.0, command_mode: auto, command_hold_min: 2.0, command_hold_max: 5.0, command_p_zero: 0.3, command_p_axis: 0.4, repeat: 1, use_logdir: True, onboard: False, weights_every: 0.0}
+    robot: {pipeline: True, host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, action_rate_penalty: 0.0, command_scale: 1.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, command_speed: 1500.0, command_turn: 1000.0, command_sigma: 0.5, command_reward: product, command_track_weight: 2.0, command_balance_weight: 1.0, forward_sign: 1.0, command_step: 0.0, command_zeta_steps: 40000, turn_source: wheels, yaw_rate_max: 1.5, yaw_axis: y, yaw_sign: -1.0, command_mode: auto, command_hold_min: 2.0, command_hold_max: 5.0, command_p_zero: 0.3, command_p_axis: 0.4, repeat: 1, use_logdir: True, onboard: False, weights_every: 0.0}
 
   replay:
     size: 5e6
@@ -1647,8 +1647,16 @@ robot_command:
 robot_command_cur:
   env.robot.command_reward: curriculum
   env.robot.turn_source: gyro
-  # Commands held 5-10 s (legged_gym resamples every 10 s) and zero 10% of
-  # the time: e1300's 2-5 s holds, zero 30%, left little steady driving.
+  # Commands held 5-10 s (legged_gym resamples every 10 s): e1300's 2-5 s
+  # holds left little steady driving. Five levels per axis (-1, -0.5, 0, 0.5,
+  # 1): both zero 10%, forward only 40%, turn only 40%, both nonzero 10%.
   env.robot.command_hold_min: 5.0
   env.robot.command_hold_max: 10.0
   env.robot.command_p_zero: 0.1
+  env.robot.command_p_axis: 0.8
+  env.robot.command_step: 0.5
+  # The robot's positive wheel direction is what the joystick user calls
+  # backward (e1302 leaned and rolled backward on forward commands).
+  env.robot.forward_sign: -1.0
+  env.robot.command_sigma: 0.3
+  env.robot.command_balance_weight: 0.75
