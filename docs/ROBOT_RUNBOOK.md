@@ -109,8 +109,9 @@ The policy sees a 'command' (forward, turn) in [-1, 1]. While training the
 phone holds a random one for 2-5 s (zero 30% of the time); touching the stick
 overrides it, and 0.5 s after letting go it goes back. The page's
 **Balance when idle** switch makes idle mean (0, 0) instead; the player always
-starts that way. Reward: half the balance reward, half
-exp(-(error/0.3)^2) tracking of forward speed and turn rate, with the wheel and
+starts that way. Reward: the balance score times the
+exp(-(error/0.5)^2) tracking of forward speed and turn rate (averaged), so
+standing still against a command or lying on a bumper both pay little; the wheel and
 drift penalties measured from the commanded wheel speeds (`env.robot.command_*`;
 `command_speed` 1500 / `command_turn` 1000 are wheel speeds as the screen shows
 them). TensorBoard: `epstats/log/cmd_forward` against `epstats/log/forward`,

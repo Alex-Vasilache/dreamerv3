@@ -284,7 +284,7 @@ class SmartphoneRobot(embodied.Env):
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
-      command_sigma=0.3, command_mode='auto', command_hold_min=2.0,
+      command_sigma=0.5, command_reward='product', command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
@@ -396,6 +396,8 @@ class SmartphoneRobot(embodied.Env):
     self.command_speed = float(command_speed)
     self.command_turn = float(command_turn)
     self.command_sigma = float(command_sigma)
+    assert command_reward in ('product', 'sum'), command_reward
+    self.command_reward = command_reward
     # How the phone picks commands nobody is steering ('auto': hold a random
     # one for hold_min..hold_max s, zero with p_zero, one axis only with
     # p_axis; 'manual': zero, i.e. balance in place). Sent in the handshake.
@@ -672,15 +674,26 @@ class SmartphoneRobot(embodied.Env):
     return forward, turn
 
   def _command_reward(self, sensors):
-    """Half balance, half tracking the commanded forward speed and turn.
+    """Balance times tracking the commanded forward speed and turn.
 
-    The balance half is task 'balance' unchanged. Tracking pays
-    exp(-(error / command_sigma)^2) per axis, the kernel legged-robot velocity
-    tracking uses (Rudin et al. 2022), so it saturates rather than letting one
-    spiky wheel reading dominate. The drift and wheel penalties of 'balance'
-    are kept but measured from the wheel speeds the command asks for, so a
-    centred stick (command 0, 0) reproduces the balance task's penalties
-    exactly. Still at most 1.0 per step.
+    Balance is the balance task's upright score in [0, 1]. Tracking pays
+    exp(-(error / command_sigma)^2) per axis, averaged over the two axes: the
+    kernel legged-robot velocity tracking uses (Rudin et al. 2022), so it
+    saturates rather than letting one spiky wheel reading dominate.
+
+    'product' (the default) pays balance * tracking. e1299 used 'sum',
+    0.5 * balance + 0.5 * tracking with sigma 0.3, and after 15k steps had
+    learned to balance and stand still whatever the command (reward 0.62,
+    commanded vs measured forward speed correlated -0.11): standing still kept
+    the whole balance half and part of the tracking half. Under the product,
+    ignoring the command roughly halves the reward, and lying on a bumper
+    pays ~0 whatever the wheels do -- which a pure tracking reward would not
+    ensure, since nothing ends an episode on this rig. At command (0, 0) it is
+    the balance task. sigma 0.5 (was 0.3) makes a partial attempt pay: half
+    of a 0.8 command earns 0.53 against 0.08 for standing still.
+
+    The drift and wheel penalties of 'balance' are kept, subtracted, measured
+    from the wheel speeds the command asks for. At most 1.0 per step.
     """
     theta = float(sensors['theta'])
     offset = theta - self.theta_zero
@@ -696,8 +709,13 @@ class SmartphoneRobot(embodied.Env):
     err_l = (float(sensors['wheel_speed_l']) - want_l) * self.speed_scale
     err_r = (float(sensors['wheel_speed_r']) - want_r) * self.speed_scale
     drift = min(abs(0.5 * (err_l + err_r)), self.drift_clip)
+    balance = 0.5 * linear + 0.5 * bonus
+    if self.command_reward == 'product':
+      score = balance * track
+    else:
+      score = 0.5 * balance + 0.5 * track
     return float(
-        0.25 * linear + 0.25 * bonus + 0.5 * track
+        score
         - self.rate_penalty * abs(float(sensors['angular_velocity']))
         - self.drift_penalty * drift
         - self.wheel_penalty * self._wheel_effort(err_l, err_r))
@@ -837,7 +855,7 @@ class SmartphoneRobot(embodied.Env):
         action_rate_penalty=self.action_rate_penalty,
         command_scale=self.command_scale,
         command_speed=self.command_speed, command_turn=self.command_turn,
-        command_sigma=self.command_sigma)
+        command_sigma=self.command_sigma, command_reward=self.command_reward)
 
   def _push_loop(self):
     """Send the phone each new policy as soon as the learner publishes it.
