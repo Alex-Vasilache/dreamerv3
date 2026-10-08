@@ -283,11 +283,13 @@ class SmartphoneRobot(embodied.Env):
       obs_clip=3.0,
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
-      recover_min=0.6,
+      recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
+      command_sigma=0.3, command_mode='auto', command_hold_min=2.0,
+      command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
       pace=None):
-    assert task in ('drive', 'balance', 'track', 'none'), task
+    assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
     self.port = int(port)
@@ -382,6 +384,27 @@ class SmartphoneRobot(embodied.Env):
     # Measured 2026-09-02: 0.30 PWM produced no wheel motion at all.
     self.recover_min = float(recover_min)
     self._ref = float(theta_zero)
+    # Task 'command': balance while driving at a commanded forward speed and
+    # turn rate, both in [-1, 1]. The phone owns the command -- it samples
+    # random ones while training and takes a joystick's from its web page --
+    # and reports the one its policy saw with every observation, so the policy
+    # input, the recorded observation and the reward here always agree.
+    # command_speed is the wheel speed (encoder units, as on the phone screen)
+    # that forward 1.0 asks of both wheels; command_turn is what turn 1.0 adds
+    # to the left wheel and takes from the right. A negative command_turn
+    # flips which way is right.
+    self.command_speed = float(command_speed)
+    self.command_turn = float(command_turn)
+    self.command_sigma = float(command_sigma)
+    # How the phone picks commands nobody is steering ('auto': hold a random
+    # one for hold_min..hold_max s, zero with p_zero, one axis only with
+    # p_axis; 'manual': zero, i.e. balance in place). Sent in the handshake.
+    self.command_sampler = dict(
+        mode=str(command_mode), hold_min=float(command_hold_min),
+        hold_max=float(command_hold_max), p_zero=float(command_p_zero),
+        p_axis=float(command_p_axis))
+    self._cmd = (0.0, 0.0)
+    self._cmd_src = 0.0
     self.reconnect = bool(reconnect)
     # Per-step timings, because the episode aggregates the logger keeps cannot
     # tell one long stall from many short ones.
@@ -420,6 +443,9 @@ class SmartphoneRobot(embodied.Env):
         'orientation': elements.Space(np.float32, (2,)),
         **({'target': elements.Space(np.float32, (2,))}
            if self.task == 'track' else {}),
+        # [forward, turn], each in [-1, 1].
+        **({'command': elements.Space(np.float32, (2,))}
+           if self.task == 'command' else {}),
         'reward': elements.Space(np.float32),
         'is_first': elements.Space(bool),
         'is_last': elements.Space(bool),
@@ -446,6 +472,9 @@ class SmartphoneRobot(embodied.Env):
         # acted on for this step. Sawtooths at the publish cadence when the
         # pushes keep up.
         'log/policy_age_s': elements.Space(np.float32),
+        **({k: elements.Space(np.float32) for k in (
+            'log/cmd_forward', 'log/cmd_turn', 'log/cmd_joystick',
+            'log/forward', 'log/turn')} if self.task == 'command' else {}),
         **({'executed/drive': elements.Space(np.float32, (2,), -1.0, 1.0)}
            if self.onboard and not self.discrete else {}),
     }
@@ -628,9 +657,50 @@ class SmartphoneRobot(embodied.Env):
           - self.rate_penalty * abs(rate)
           - self.drift_penalty * drift
           - self.wheel_penalty * self._wheel_effort(speed_l, speed_r))
+    elif self.task == 'command':
+      reward = self._command_reward(sensors)
     else:
       reward = float(sensors.get('reward', 0.0))
     return float(reward), fallen
+
+  def _measured(self, sensors):
+    """(forward, turn) the wheels are doing, in command units."""
+    left = float(sensors['wheel_speed_l'])
+    right = float(sensors['wheel_speed_r'])
+    forward = 0.5 * (left + right) / self.command_speed
+    turn = 0.5 * (left - right) / self.command_turn
+    return forward, turn
+
+  def _command_reward(self, sensors):
+    """Half balance, half tracking the commanded forward speed and turn.
+
+    The balance half is task 'balance' unchanged. Tracking pays
+    exp(-(error / command_sigma)^2) per axis, the kernel legged-robot velocity
+    tracking uses (Rudin et al. 2022), so it saturates rather than letting one
+    spiky wheel reading dominate. The drift and wheel penalties of 'balance'
+    are kept but measured from the wheel speeds the command asks for, so a
+    centred stick (command 0, 0) reproduces the balance task's penalties
+    exactly. Still at most 1.0 per step.
+    """
+    theta = float(sensors['theta'])
+    offset = theta - self.theta_zero
+    reach = self.theta_hi if offset > 0 else abs(self.theta_lo)
+    linear = 1.0 - min(1.0, abs(offset) / max(reach, 1e-6))
+    bonus = np.exp(-((offset / self.theta_sigma) ** 2))
+    cmd_f, cmd_t = self._cmd
+    forward, turn = self._measured(sensors)
+    track = 0.5 * (np.exp(-(((forward - cmd_f) / self.command_sigma) ** 2))
+                   + np.exp(-(((turn - cmd_t) / self.command_sigma) ** 2)))
+    want_l = cmd_f * self.command_speed + cmd_t * self.command_turn
+    want_r = cmd_f * self.command_speed - cmd_t * self.command_turn
+    err_l = (float(sensors['wheel_speed_l']) - want_l) * self.speed_scale
+    err_r = (float(sensors['wheel_speed_r']) - want_r) * self.speed_scale
+    drift = min(abs(0.5 * (err_l + err_r)), self.drift_clip)
+    return float(
+        0.25 * linear + 0.25 * bonus + 0.5 * track
+        - self.rate_penalty * abs(float(sensors['angular_velocity']))
+        - self.drift_penalty * drift
+        - self.wheel_penalty * self._wheel_effort(err_l, err_r))
 
   def _wheel_effort(self, speed_l, speed_r):
     return 0.5 * (
@@ -650,6 +720,8 @@ class SmartphoneRobot(embodied.Env):
         **({'target': np.array(
             [self._ref - self.theta_zero, theta - self._ref], np.float32)}
            if self.task == 'track' else {}),
+        **({'command': np.array(self._cmd, np.float32)}
+           if self.task == 'command' else {}),
         reward=np.float32(reward),
         is_first=is_first,
         is_last=is_last,
@@ -677,8 +749,19 @@ class SmartphoneRobot(embodied.Env):
             'log/dropped': np.float32(self._dropped),
             'log/backlog': np.float32(self._backlog),
             'log/policy_age_s': np.float32(self._policy_age()),
+            **(self._command_logs(sensors) if self.task == 'command' else {}),
         },
     )
+
+  def _command_logs(self, sensors):
+    forward, turn = self._measured(sensors)
+    return {
+        'log/cmd_forward': np.float32(self._cmd[0]),
+        'log/cmd_turn': np.float32(self._cmd[1]),
+        'log/cmd_joystick': np.float32(self._cmd_src),
+        'log/forward': np.float32(forward),
+        'log/turn': np.float32(turn),
+    }
 
   # The socket itself is owned by a `_Link`, which reads and writes it on
   # threads of its own; see that class for the wire format and why.
@@ -717,6 +800,8 @@ class SmartphoneRobot(embodied.Env):
         type='hello', protocol=PROTOCOL, discrete=self.discrete,
         pipeline=self.pipeline, onboard=self._onboard,
         cmd_scale=self.command_scale,
+        **({'command': self.command_sampler}
+           if self.task == 'command' else {}),
         # The phone keeps this run's latest weights under `run`, with these
         # settings beside them, so it can replay the policy later on its own.
         run=self._run_name(), settings=self._settings(),
@@ -750,7 +835,9 @@ class SmartphoneRobot(embodied.Env):
         drift_penalty=self.drift_penalty, drift_clip=self.drift_clip,
         wheel_penalty=self.wheel_penalty, rate_penalty=self.rate_penalty,
         action_rate_penalty=self.action_rate_penalty,
-        command_scale=self.command_scale)
+        command_scale=self.command_scale,
+        command_speed=self.command_speed, command_turn=self.command_turn,
+        command_sigma=self.command_sigma)
 
   def _push_loop(self):
     """Send the phone each new policy as soon as the learner publishes it.
@@ -882,6 +969,11 @@ class SmartphoneRobot(embodied.Env):
       raise ValueError(f'Expected an obs message, got {header!r}')
     self._last = header['sensors']
     self._seq = header.get('seq')
+    # The command the phone's policy saw for this observation. A phone that
+    # predates commands sends none, which is the same as a centred stick.
+    cmd = header.get('cmd') or (0.0, 0.0)
+    self._cmd = (float(np.clip(cmd[0], -1, 1)), float(np.clip(cmd[1], -1, 1)))
+    self._cmd_src = float(header.get('cmd_src') == 'joystick')
     if self._onboard:
       act = header.get('act')
       if act is None:

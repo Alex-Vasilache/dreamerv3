@@ -35,8 +35,12 @@ def filter_params(params):
 def veckeys(config):
   # Balance and drive are proprio-only; 'target' appears for the track task.
   keys = ['orientation', 'wheels']
-  if getattr(config.env.robot, 'task', None) == 'track':
+  # The task rides in the top-level `task: robot_<task>`; env.robot has none.
+  task = str(config.task).split('_', 1)[-1]
+  if task == 'track':
     keys.append('target')
+  if task == 'command':
+    keys.append('command')
   return keys
 
 

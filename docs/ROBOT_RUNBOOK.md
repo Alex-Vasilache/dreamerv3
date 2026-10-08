@@ -92,6 +92,30 @@ All three rates use the same reward by default:
 The reward peaks at 1.0 per step, so a 20 s episode scores at most ~500 at
 25 Hz, ~1000 at 50 Hz and ~2000 at 100 Hz.
 
+## Joystick and screen mirror
+
+The app serves a page at `http://<phone's WiFi address>:8080` (the bottom line
+of the robot's screen shows it): **DRIVE** is a joystick, up = forward, right
+= turn right; **SCREEN** mirrors the robot's display. Open it on any phone or
+computer on the same WiFi. Off that network: `adb forward tcp:8080 tcp:8080`
+and open http://localhost:8080 on the Mac.
+
+Only a policy trained on the command task follows it. Train one at 25 Hz with
+the chatter penalty:
+```bash
+CONFIGS="robot_daydreamer robot_fast robot_25hz robot_command" tools/robot_train.sh robot_25hz_cmd --env.robot.action_rate_penalty 0.05
+```
+The policy sees a 'command' (forward, turn) in [-1, 1]. While training the
+phone holds a random one for 2-5 s (zero 30% of the time); touching the stick
+overrides it, and 0.5 s after letting go it goes back. The page's
+**Balance when idle** switch makes idle mean (0, 0) instead; the player always
+starts that way. Reward: half the balance reward, half
+exp(-(error/0.3)^2) tracking of forward speed and turn rate, with the wheel and
+drift penalties measured from the commanded wheel speeds (`env.robot.command_*`;
+`command_speed` 1500 / `command_turn` 1000 are wheel speeds as the screen shows
+them). TensorBoard: `epstats/log/cmd_forward` against `epstats/log/forward`,
+the same for `turn`.
+
 ## Run a saved policy
 
 The app opens in training. **Back** ends training and opens the policy list:

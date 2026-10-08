@@ -74,20 +74,40 @@ class Body:
     self.dt = dt
     self.theta = 0.0
     self.omega = 0.0
-    self.speed = 0.0
+    self.left = 0.0
+    self.right = 0.0
 
   def step(self, left, right):
     push = 0.5 * (left + right)
     self.omega += self.dt * (8.0 * self.theta - 6.0 * push)
     self.theta = float(np.clip(self.theta + self.dt * self.omega, -0.12, 0.18))
-    self.speed = 1000.0 * push
+    self.left, self.right = 3000.0 * left, 3000.0 * right
 
   def sensors(self):
     return dict(theta=self.theta, angular_velocity=self.omega,
-                wheel_speed_l=self.speed, wheel_speed_r=self.speed,
+                wheel_speed_l=self.left, wheel_speed_r=self.right,
                 wheel_distance_l=0.0, wheel_distance_r=0.0,
                 wheel_count_l=0.0, wheel_count_r=0.0, battery_voltage=4.0,
                 charger_voltage=0.0, coil_voltage=0.0)
+
+
+class Commands:
+  """The app's 'auto' command sampler, roughly: a random (forward, turn)
+  held for 2-5 s, zero 30% of the time. Only a command-task trainer reads it."""
+
+  def __init__(self, seed=0):
+    self.rng = np.random.RandomState(seed)
+    self.cmd = [0.0, 0.0]
+    self.until = 0.0
+
+  def tick(self):
+    now = time.monotonic()
+    if now >= self.until:
+      zero = self.rng.rand() < 0.3
+      self.cmd = [0.0, 0.0] if zero else [
+          float(x) for x in self.rng.uniform(-1, 1, 2)]
+      self.until = now + self.rng.uniform(2.0, 5.0)
+    return list(self.cmd)
 
 
 def pct(values, q):
@@ -107,6 +127,7 @@ def main(argv=None):
   directory = tempfile.mkdtemp(prefix='fake_phone_weights_')
   runner = PolicyRunner()
   body = Body(1.0 / args.hz)
+  commands = Commands()
   period = 1.0 / args.hz
   sock, receiver, onboard = connect(args, runner, directory)
 
@@ -135,12 +156,14 @@ def main(argv=None):
     pushing = receiver._partial is not None
     if onboard:
       snap = body.sensors()
-      _, act = runner.act(snap)
+      cmd = commands.tick()
+      _, act = runner.act(snap, cmd)
       body.step(act[0], act[1])
       applied = time.monotonic()
       seq += 1
       write(sock, dict(type='obs', step=seq, seq=seq, t=time.time(), fresh=True,
                        pace='clock', act=act, is_first=runner.was_first,
+                       cmd=cmd, cmd_src='auto',
                        wait_ms=0.0, work_ms=(applied - tick) * 1e3,
                        policy_ms=runner.last_ms, policy_stamp=runner.stamp,
                        sensors=snap))
@@ -152,7 +175,8 @@ def main(argv=None):
     else:
       seq += 1
       write(sock, dict(type='obs', step=seq, seq=seq, t=time.time(),
-                       fresh=True, sensors=body.sensors()))
+                       fresh=True, sensors=body.sensors(),
+                       cmd=commands.tick(), cmd_src='auto'))
     # Drain what the receiver finished, as the app's drain_control does.
     while True:
       frame = receiver.get_nowait()
