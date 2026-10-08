@@ -1647,3 +1647,8 @@ robot_command:
 robot_command_cur:
   env.robot.command_reward: curriculum
   env.robot.turn_source: gyro
+  # Commands held 5-10 s (legged_gym resamples every 10 s) and zero 10% of
+  # the time: e1300's 2-5 s holds, zero 30%, left little steady driving.
+  env.robot.command_hold_min: 5.0
+  env.robot.command_hold_max: 10.0
+  env.robot.command_p_zero: 0.1

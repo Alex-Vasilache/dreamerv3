@@ -120,7 +120,8 @@ the same for `turn`.
 `robot_command_cur` (add it after `robot_command`) uses instead the reward of a
 wheel-legged robot balancing on its wheels (arXiv 2409.09845): balance +
 zeta x 2 x tracking, zeta rising 0 -> 1 over the first 40k steps, and the turn
-rate from the phone's gyroscope. The job log prints
+rate from the phone's gyroscope; commands are held 5-10 s and zero 10% of the
+time. The job log prints
 `[robot] gyro vs wheel turn ...` every 500 steps: the correlation must be
 clearly positive, else flip `--env.robot.yaw_sign`.
 
