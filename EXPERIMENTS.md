@@ -494,6 +494,25 @@ HRL replay value gradient into enc/RSSM; flat runs keep `repval_grad: True`.
 Add `wm_oldgrad` last to reproduce any HRL run up to e1079 (except the
 `wm_norepgrad` arms). Pinned by `embodied/tests/test_hrl_repval_grad.py`.
 
+### Result, e1230–e1289 (2026-10-09 19:40): matched protocol, 5 seeds
+
+Late window 3–4M, mean ± sd over 5 seeds (per-seed in brackets for the
+bimodal cells). Figure `26_04_HRL-paper/figures/motivation/pubmatch_vs_published.{pdf,png}`.
+
+| task | Director (`director_og`) | DreamerV3 | Director, published (3.87M) |
+|---|---|---|---|
+| pinpad_four | 271 ± 9 | **382 ± 1** | ~115 |
+| pinpad_five | **210 ± 12** | 161 ± 150 [316, 0, 9, 187, 291] | ~88 |
+| pinpad_six | **69 ± 94** [0, 0, 173, 0, 170] | 0 | ~0 |
+| cartpole | 692 ± 32 | **845 ± 11** | ~545 |
+| cheetah | 511 ± 38 | **728 ± 57** | ~495 |
+| hopper | **333 ± 82** | 225 ± 109 [one seed 33] | ~335 |
+
+Our Director matches or beats the published 53M Director everywhere at 3.9M
+params. It is the only agent to solve Pin Pad Six (2 of 5 seeds) and is more
+reliable on Pin Pad Five; flat DreamerV3 leads on pinpad_four, cartpole and
+cheetah.
+
 ### e1230–e1289: protocol matched to the published Director (launched 2026-10-07, array 4745769)
 
 Fair comparison with Hafner et al. 2022: images only (DMC joint state dropped;
