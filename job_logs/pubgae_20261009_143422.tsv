@@ -1,0 +1,91 @@
+array_job	task_idx	exp	config	task	seed
+4751562	0	e1330	director director_og goal_som_line pubmatch	pinpad_four	0
+4751562	1	e1331	director director_og goal_som_line pubmatch	pinpad_five	0
+4751562	2	e1332	director director_og goal_som_line pubmatch	pinpad_six	0
+4751562	3	e1333	director director_og goal_som_line pubmatch	dmc_cartpole_swingup	0
+4751562	4	e1334	director director_og goal_som_line pubmatch	dmc_cheetah_run	0
+4751562	5	e1335	director director_og goal_som_line pubmatch	dmc_hopper_hop	0
+4751562	6	e1336	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	0
+4751562	7	e1337	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	0
+4751562	8	e1338	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	0
+4751562	9	e1339	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	0
+4751562	10	e1340	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	0
+4751562	11	e1341	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	0
+4751562	12	e1342	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	0
+4751562	13	e1343	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	0
+4751562	14	e1344	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	0
+4751562	15	e1345	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	0
+4751562	16	e1346	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	0
+4751562	17	e1347	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	0
+4751562	18	e1348	director director_og goal_som_line pubmatch	pinpad_four	1
+4751562	19	e1349	director director_og goal_som_line pubmatch	pinpad_five	1
+4751562	20	e1350	director director_og goal_som_line pubmatch	pinpad_six	1
+4751562	21	e1351	director director_og goal_som_line pubmatch	dmc_cartpole_swingup	1
+4751562	22	e1352	director director_og goal_som_line pubmatch	dmc_cheetah_run	1
+4751562	23	e1353	director director_og goal_som_line pubmatch	dmc_hopper_hop	1
+4751562	24	e1354	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	1
+4751562	25	e1355	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	1
+4751562	26	e1356	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	1
+4751562	27	e1357	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	1
+4751562	28	e1358	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	1
+4751562	29	e1359	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	1
+4751562	30	e1360	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	1
+4751562	31	e1361	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	1
+4751562	32	e1362	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	1
+4751562	33	e1363	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	1
+4751562	34	e1364	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	1
+4751562	35	e1365	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	1
+4751562	36	e1366	director director_og goal_som_line pubmatch	pinpad_four	2
+4751562	37	e1367	director director_og goal_som_line pubmatch	pinpad_five	2
+4751562	38	e1368	director director_og goal_som_line pubmatch	pinpad_six	2
+4751562	39	e1369	director director_og goal_som_line pubmatch	dmc_cartpole_swingup	2
+4751562	40	e1370	director director_og goal_som_line pubmatch	dmc_cheetah_run	2
+4751562	41	e1371	director director_og goal_som_line pubmatch	dmc_hopper_hop	2
+4751562	42	e1372	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	2
+4751562	43	e1373	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	2
+4751562	44	e1374	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	2
+4751562	45	e1375	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	2
+4751562	46	e1376	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	2
+4751562	47	e1377	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	2
+4751562	48	e1378	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	2
+4751562	49	e1379	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	2
+4751562	50	e1380	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	2
+4751562	51	e1381	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	2
+4751562	52	e1382	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	2
+4751562	53	e1383	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	2
+4751562	54	e1384	director director_og goal_som_line pubmatch	pinpad_four	3
+4751562	55	e1385	director director_og goal_som_line pubmatch	pinpad_five	3
+4751562	56	e1386	director director_og goal_som_line pubmatch	pinpad_six	3
+4751562	57	e1387	director director_og goal_som_line pubmatch	dmc_cartpole_swingup	3
+4751562	58	e1388	director director_og goal_som_line pubmatch	dmc_cheetah_run	3
+4751562	59	e1389	director director_og goal_som_line pubmatch	dmc_hopper_hop	3
+4751562	60	e1390	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	3
+4751562	61	e1391	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	3
+4751562	62	e1392	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	3
+4751562	63	e1393	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	3
+4751562	64	e1394	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	3
+4751562	65	e1395	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	3
+4751562	66	e1396	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	3
+4751562	67	e1397	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	3
+4751562	68	e1398	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	3
+4751562	69	e1399	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	3
+4751562	70	e1400	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	3
+4751562	71	e1401	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	3
+4751562	72	e1402	director director_og goal_som_line pubmatch	pinpad_four	4
+4751562	73	e1403	director director_og goal_som_line pubmatch	pinpad_five	4
+4751562	74	e1404	director director_og goal_som_line pubmatch	pinpad_six	4
+4751562	75	e1405	director director_og goal_som_line pubmatch	dmc_cartpole_swingup	4
+4751562	76	e1406	director director_og goal_som_line pubmatch	dmc_cheetah_run	4
+4751562	77	e1407	director director_og goal_som_line pubmatch	dmc_hopper_hop	4
+4751562	78	e1408	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	4
+4751562	79	e1409	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	4
+4751562	80	e1410	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	4
+4751562	81	e1411	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	4
+4751562	82	e1412	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	4
+4751562	83	e1413	director director_og goal_lipvq_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	4
+4751562	84	e1414	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_four	4
+4751562	85	e1415	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_five	4
+4751562	86	e1416	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	pinpad_six	4
+4751562	87	e1417	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cartpole_swingup	4
+4751562	88	e1418	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_cheetah_run	4
+4751562	89	e1419	director director_og goal_som_lipvq_line_prod lip_relu goal_vq_f32 pubmatch	dmc_hopper_hop	4

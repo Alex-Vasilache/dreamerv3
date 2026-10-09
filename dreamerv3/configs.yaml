@@ -1439,6 +1439,14 @@ lip_relu:
     goal_vq_enc: {act: relu}
     goal_vq_dec: {act: relu}
 
+# float32 on the goal VQ trunk, as `som_lip` sets inline. Layer with every LiP
+# arm: the Lipschitz trunk runs `norm: none`, and unnormalized in bfloat16 it
+# produced non-finite activations (every som_lip task on V100 in the first
+# benchmark submission). Part of the LiP tag (2026-10-09).
+goal_vq_f32:
+  agent:
+    goal_vq: {dtype: float32}
+
 # Rao regularizer on the manager's skill head, held at a normalized Rao of 0.5
 # by an AutoAdapt Lagrange multiplier, alongside the unchanged 0.5 entropy
 # target. Distances are measured along the SOM LINE, so layer this only on a

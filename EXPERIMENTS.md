@@ -531,6 +531,20 @@ seeds; whole-curve shape and stability as secondary). Take +v3 as the base for
 the goal-AE arms only if it is better overall; equal or slightly worse -> keep
 `director_og`. Next: SOM, LiP, SOM+LiP on the chosen base, 6 tasks x 5 seeds.
 
+### e1330–e1419: SOM / LiP / SOM+LiP on `now`, queued early (2026-10-09, array 4751562)
+
+Queued behind e1300–e1329 to hold queue age; base is `now` (`director
+director_og pubmatch`) unless now+v3 wins the comparison above, in which case
+`director_og` is swapped for `mgr_expl_perc002` in `sbatch/pubgae_params.txt`
+for every task not yet started (the launcher re-reads PARAMS at task start)
+and started ones are relaunched. Tags, each layered on the base:
+SOM = `goal_som_line`; LiP = `goal_lipvq_prod lip_relu goal_vq_f32`;
+SOM+LiP = `goal_som_lipvq_line_prod lip_relu goal_vq_f32` (resolves identical
+to the benchmark's `som_lip director_og` + `pubmatch`). The SOM arm keeps the
+default SiLU trunk (ReLU belongs to the LiP tag). New block `goal_vq_f32`.
+Order: seed-major, then SOM/LiP/SOM+LiP, then the 6 tasks (e1330–e1347 seed 0,
+... e1402–e1419 seed 4). 90 runs, A100 128G, `RUN_ENVS=4 DMC_PROPRIO=False`.
+
 ### Result, e1197–e1214 (2026-10-07 04:45): Director's 16x64 update shape
 
 Mean return over 3–4M (3 seeds), vs the same config at 4x32 (e1071–e1094):
