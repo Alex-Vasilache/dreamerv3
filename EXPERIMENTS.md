@@ -508,6 +508,29 @@ parallel envs (was 8), 5 seeds. Both our agents:
 cartpole, cheetah, hopper; +12 per seed). Launcher: `RUN_ENVS=4
 DMC_PROPRIO=False`. A100, 128G (`job_logs/pubmatch_*.tsv`).
 
+### e1300–e1329: now+v3 — DreamerV3 actor-critic on the matched protocol (launched 2026-10-09, array 4751548)
+
+**"+v3" tag (fixed 2026-10-09):** an HRL arm's actor-critic settings taken from
+DreamerV3 instead of TF Director — return normalization (perc 5–95, floor
+1.0), manager exploration-return floor 0.02, no advantage normalization, fixed
+entropy 3e-4 on manager and worker, EMA target critic (0.02/step, slowreg 1.0),
+LaProp lr 4e-5 wd 0, horizon 333. Protocol and world-model fixes are NOT part
+of the tag.
+
+Config `director mgr_expl_perc002 pubmatch`, everything else as e1230–e1289's
+Director arm (`director director_og pubmatch`): 4M steps, ratio 64, 16x64,
+image-only DMC, 4 envs, WM fix on, size6m. 6 tasks x 5 seeds, seed-ordered
+(e1300–e1305 seed 0, ... e1324–e1329 seed 4; pinpad_four/five/six, cartpole,
+cheetah, hopper). A100, 128G (`sbatch/pubv3_params.txt`, `job_logs/pubv3_*.tsv`).
+
+**Hypothesis:** unknown sign; v3 won nothing at size6m in the Sept benchmark,
+but that was on the old protocol with the WM bug.
+**Decision rule (set before results):** when 8 runs remain, compare to the
+e1230–e1289 Director arm per task on the 3–4M late window (Welch t, 5 v 5
+seeds; whole-curve shape and stability as secondary). Take +v3 as the base for
+the goal-AE arms only if it is better overall; equal or slightly worse -> keep
+`director_og`. Next: SOM, LiP, SOM+LiP on the chosen base, 6 tasks x 5 seeds.
+
 ### Result, e1197–e1214 (2026-10-07 04:45): Director's 16x64 update shape
 
 Mean return over 3–4M (3 seeds), vs the same config at 4x32 (e1071–e1094):
