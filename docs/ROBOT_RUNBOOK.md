@@ -53,7 +53,8 @@ Code blocks hold commands only, so they paste cleanly into zsh.
 **Script settings**: `HZ` (default 25; picks the preset), `CONFIGS` (default
 `robot_daydreamer robot_fast robot_<HZ>hz`: same reward at every rate, 2 s
 horizon, 20 s episodes), `STEPS` (default 100000: ~67 min at
-25 Hz, ~33 at 50, ~17 at 100). Anything after the name goes to `main.py`.
+25 Hz, ~33 at 50, ~17 at 100), `GPU` (`v100` default, or `p100`).
+Anything after the name goes to `main.py`.
 
 ## TensorBoard
 
