@@ -550,6 +550,26 @@ seeds; whole-curve shape and stability as secondary). Take +v3 as the base for
 the goal-AE arms only if it is better overall; equal or slightly worse -> keep
 `director_og`. Next: SOM, LiP, SOM+LiP on the chosen base, 6 tasks x 5 seeds.
 
+### Decision, now vs now+v3 (2026-10-11 01:40): keep `now`
+
+Taken with 24/30 v3 runs finished (5v3 to 5v5 seeds per task), when the last v3
+task started. `tools/collapse_study/compare_v3.py`; late = 3–4M mean, p = exact permutation.
+
+| task | now | now+v3 | diff | p |
+|---|---|---|---|---|
+| pinpad_four | 271 ± 9 | 217 ± 80 | −54 | 0.14 |
+| pinpad_five | 210 ± 12 | 192 ± 45 | −18 | 0.44 |
+| pinpad_six | 69 ± 94 | 0 ± 0 | −69 | 0.44 |
+| cartpole | 692 ± 32 | 736 ± 17 | +44 | 0.05 |
+| cheetah | 511 ± 38 | 376 ± 53 | −134 | 0.008 |
+| hopper | 333 ± 82 | 148 ± 125 | −185 | 0.05 |
+
+v3 is lower on 5 of 6 tasks (mean normalized −0.34), learns slower everywhere
+(area under the curve lower on all 6, incl. cartpole, p=0.024), and is less stable
+(drop from its best 500k window larger on pinpad four/five, cheetah, hopper). Its only
+gain is cartpole's late window. Rule was "+v3 only if better", so the goal-AE arms
+e1330–e1419 stay on `director_og` as queued; no change to array 4751562.
+
 ### e1330–e1419: SOM / LiP / SOM+LiP on `now`, queued early (2026-10-09, array 4751562)
 
 Queued behind e1300–e1329 to hold queue age; base is `now` (`director
