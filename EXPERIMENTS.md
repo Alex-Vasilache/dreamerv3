@@ -570,6 +570,9 @@ v3 is lower on 5 of 6 tasks (mean normalized −0.34), learns slower everywhere
 gain is cartpole's late window. Rule was "+v3 only if better", so the goal-AE arms
 e1330–e1419 stay on `director_og` as queued; no change to array 4751562.
 
+Final 5v5 (2026-10-11 09:50) confirms it: pinpad_five 210 vs 200, cartpole 692 vs 736 (p=0.03),
+cheetah 511 vs 374 (p=0.008), hopper 333 vs 179 (p=0.024); mean normalized −0.32.
+
 ### e1330–e1419: SOM / LiP / SOM+LiP on `now`, queued early (2026-10-09, array 4751562)
 
 Queued behind e1300–e1329 to hold queue age; base is `now` (`director
