@@ -1689,4 +1689,6 @@ robot_command_taper_sum:
   env.robot.command_hold_max: 5.0
   env.robot.command_p_zero: 0.25
   env.robot.command_p_axis: 0.5
+  env.robot.forward_sign: -1.0
+  env.robot.command_sigma: 0.3
   env.robot.command_step: 0.0
