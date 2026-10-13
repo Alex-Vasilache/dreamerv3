@@ -788,8 +788,12 @@ class SmartphoneRobot(embodied.Env):
                + self._zeta() * self.command_track_weight * track)
     elif self.command_reward == 'product':
       score = balance * track
-    else:
+    elif self.command_reward == 'sum':
       score = self.command_balance_weight * balance + self.command_track_weight * track
+    elif self.command_reward == 'taper_sum':
+      score = (1 - (abs(cmd_f) + abs(cmd_t))/2) * balance + ((abs(cmd_f) + abs(cmd_t))/2) * track
+    else:
+      raise ValueError(f'Unknown command reward: {self.command_reward}')
     return float(
         score
         - self.rate_penalty * abs(float(sensors['angular_velocity']))
