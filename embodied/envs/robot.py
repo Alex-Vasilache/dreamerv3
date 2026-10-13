@@ -774,7 +774,7 @@ class SmartphoneRobot(embodied.Env):
     bonus = np.exp(-((offset / self.theta_sigma) ** 2))
     cmd_f, cmd_t = self._cmd
     forward, turn = self._measured(sensors)
-    track = 0.5 * (np.exp(-(((forward - cmd_f) / self.command_sigma) ** 2))
+    track = (np.exp(-(((forward - cmd_f) / self.command_sigma) ** 2))
                    + np.exp(-(((turn - cmd_t) / self.command_sigma) ** 2)))
     drive = self.forward_sign * cmd_f * self.command_speed
     want_l = drive + cmd_t * self.command_turn

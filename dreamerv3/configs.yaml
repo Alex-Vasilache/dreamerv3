@@ -1685,10 +1685,10 @@ robot_command_taper_sum:
   # Commands held 5-10 s (legged_gym resamples every 10 s): e1300's 2-5 s
   # holds left little steady driving. Five levels per axis (-1, -0.5, 0, 0.5,
   # 1): both zero 25%, forward only 25%, turn only 25%, both nonzero 25%.
-  env.robot.command_hold_min: 0.5
+  env.robot.command_hold_min: 1.0
   env.robot.command_hold_max: 5.0
   env.robot.command_p_zero: 0.25
   env.robot.command_p_axis: 0.5
   env.robot.forward_sign: -1.0
   env.robot.command_sigma: 0.3
-  env.robot.command_step: 0.0
+  env.robot.command_step: 0.25
