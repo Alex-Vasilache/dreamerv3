@@ -797,9 +797,10 @@ class SmartphoneRobot(embodied.Env):
       raise ValueError(f'Unknown command reward: {self.command_reward}')
     return float(
         score
-        - self.rate_penalty * abs(float(sensors['angular_velocity']))
-        - self.drift_penalty * drift
-        - self.wheel_penalty * self._wheel_effort(err_l, err_r))
+        #- self.rate_penalty * abs(float(sensors['angular_velocity']))
+        #- self.drift_penalty * drift
+        #- self.wheel_penalty * self._wheel_effort(err_l, err_r)
+        )
 
   def _wheel_effort(self, speed_l, speed_r):
     return 0.5 * (
