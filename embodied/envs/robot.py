@@ -399,7 +399,7 @@ class SmartphoneRobot(embodied.Env):
     self.command_speed = float(command_speed)
     self.command_turn = float(command_turn)
     self.command_sigma = float(command_sigma)
-    assert command_reward in ('product', 'sum', 'curriculum'), command_reward
+    assert command_reward in ('product', 'sum', 'curriculum', 'taper_sum'), command_reward
     self.command_reward = command_reward
     # 'curriculum' (arXiv 2409.09845, a wheel-legged robot balancing on its
     # wheels): balance + zeta * track_weight * tracking - penalties, with
