@@ -791,7 +791,7 @@ class SmartphoneRobot(embodied.Env):
     elif self.command_reward == 'sum':
       score = self.command_balance_weight * balance + self.command_track_weight * track
     elif self.command_reward == 'taper_sum':
-      score = (1 - (abs(cmd_f) + abs(cmd_t))/2) * balance + ((abs(cmd_f) + abs(cmd_t))/2) * track
+      score = (0.9 - 0.8 * (abs(cmd_f) + abs(cmd_t))/2) * balance + (0.1 + 0.9 * ((abs(cmd_f) + abs(cmd_t))/2)) * track
     else:
       raise ValueError(f'Unknown command reward: {self.command_reward}')
     return float(
