@@ -810,7 +810,7 @@ class SmartphoneRobot(embodied.Env):
     elif self.command_reward == 'sum':
       score = self.command_balance_weight * balance + self.command_track_weight * track
     elif self.command_reward == 'taper_sum':
-      movement = max(abs(cmd_f), abs(cmd_t))
+      movement = np.linalg.norm([cmd_f, cmd_t])
       # Exponential taper: rapidly shifts weight from balance to tracking as movement increases
       alpha = np.exp(-5 * movement)
       score = alpha * balance + (1 - alpha) * track
