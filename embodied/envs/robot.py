@@ -812,7 +812,7 @@ class SmartphoneRobot(embodied.Env):
     elif self.command_reward == 'taper_sum':
       movement = np.linalg.norm([cmd_f, cmd_t])
       # Exponential taper: maintains at least 0.1 weight on balance when tracking dominates and vice versa
-      alpha = np.exp(-1 * movement)
+      alpha = (1 - movement)
       score = (alpha * 0.9 + 0.1) * balance + ((1 - alpha) * 0.9 + 0.1) * track
     else:
       raise ValueError(f'Unknown command reward: {self.command_reward}')
