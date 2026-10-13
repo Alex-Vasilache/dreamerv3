@@ -792,7 +792,9 @@ class SmartphoneRobot(embodied.Env):
       score = self.command_balance_weight * balance + self.command_track_weight * track
     elif self.command_reward == 'taper_sum':
       movement = max(abs(cmd_f), abs(cmd_t))
-      score = (0.9 - 0.8 * movement) * balance + (0.1 + 0.9 * movement) * track
+      # Exponential taper: rapidly shifts weight from balance to tracking as movement increases
+      alpha = np.exp(-5 * movement)
+      score = alpha * balance + (1 - alpha) * track
     else:
       raise ValueError(f'Unknown command reward: {self.command_reward}')
     return float(
