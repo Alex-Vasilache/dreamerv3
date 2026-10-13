@@ -774,8 +774,21 @@ class SmartphoneRobot(embodied.Env):
     bonus = np.exp(-((offset / self.theta_sigma) ** 2))
     cmd_f, cmd_t = self._cmd
     forward, turn = self._measured(sensors)
-    track = (np.exp(-(((forward - cmd_f) / self.command_sigma) ** 2))
-                   + np.exp(-(((turn - cmd_t) / self.command_sigma) ** 2)))
+    # Tracking: Only count error for commanded axes. If command is zero, that axis doesn't count at all.
+    # If (cmd_f,cmd_t)==(1,0) and (forward,turn)==(1,0) -> 1
+    # If (cmd_f,cmd_t)==(1,0) and (forward,turn)==(0.5,0) -> 0.5
+    # If (cmd_f,cmd_t)==(0,1) and (forward,turn)==(0,1) -> 1
+    # If both commands are zero, treat as perfect track
+    cmd_weights = np.array([abs(cmd_f) > 1e-6, abs(cmd_t) > 1e-6], dtype=np.float32)
+    n_axes = np.sum(cmd_weights)
+    if n_axes == 0:
+      track = 1.0
+    else:
+      error_f = ((forward - cmd_f) / self.command_sigma) ** 2 if cmd_weights[0] else 0.0
+      error_t = ((turn - cmd_t) / self.command_sigma) ** 2 if cmd_weights[1] else 0.0
+      t_f = np.exp(-error_f) if cmd_weights[0] else 0.0
+      t_t = np.exp(-error_t) if cmd_weights[1] else 0.0
+      track = (t_f + t_t) / n_axes  # Only average over commanded axes, or else perfect track
     drive = self.forward_sign * cmd_f * self.command_speed
     want_l = drive + cmd_t * self.command_turn
     want_r = drive - cmd_t * self.command_turn
