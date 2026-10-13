@@ -784,11 +784,17 @@ class SmartphoneRobot(embodied.Env):
     if n_axes == 0:
       track = 1.0
     else:
-      error_f = ((forward - cmd_f) / self.command_sigma) ** 2 if cmd_weights[0] else 0.0
-      error_t = ((turn - cmd_t) / self.command_sigma) ** 2 if cmd_weights[1] else 0.0
-      t_f = np.exp(-error_f) if cmd_weights[0] else 0.0
-      t_t = np.exp(-error_t) if cmd_weights[1] else 0.0
-      track = (t_f + t_t) / n_axes  # Only average over commanded axes, or else perfect track
+      # Treat command as a single 2D target velocity vector and compute the error as the Euclidean distance
+      cmd_vec = np.array([cmd_f, cmd_t], dtype=np.float32)
+      meas_vec = np.array([forward, turn], dtype=np.float32)
+      cmd_norm = np.linalg.norm(cmd_vec)
+      meas_norm = np.linalg.norm(meas_vec)
+      if cmd_norm < 1e-6:
+        track = 1.0
+      else:
+        # Penalize error for overall magnitude and direction: use full vector difference
+        err = np.linalg.norm(meas_vec - cmd_vec) / (self.command_sigma + 1e-8)
+        track = np.exp(-err ** 2)
     drive = self.forward_sign * cmd_f * self.command_speed
     want_l = drive + cmd_t * self.command_turn
     want_r = drive - cmd_t * self.command_turn
