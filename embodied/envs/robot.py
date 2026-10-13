@@ -789,7 +789,7 @@ class SmartphoneRobot(embodied.Env):
     elif self.command_reward == 'product':
       score = balance * track
     else:
-      score = 0.5 * balance + 0.5 * track
+      score = self.command_balance_weight * balance + self.command_track_weight * track
     return float(
         score
         - self.rate_penalty * abs(float(sensors['angular_velocity']))
