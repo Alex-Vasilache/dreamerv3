@@ -821,16 +821,16 @@ class SmartphoneRobot(embodied.Env):
       # scored on staying upright only.
       score = balance
     elif self.command_reward == 'bumper':
-      # Leaning to speed up costs nothing: only touching (or nearly touching)
-      # a bumper does, and that is -1 whatever else happens. Otherwise
-      # tracking, plus a share for being upright that shrinks with the
-      # command, from 0.3 at rest to 0 at full command: a robot leaning to
-      # follow a full command scores 1. A zero command tracks by standing
-      # still.
+      # Touching (or nearly touching) a bumper is -1 whatever else happens.
+      # Otherwise, at a zero command half upright and half tracking (which
+      # then means standing still); at any other command tracking alone, so
+      # leaning to speed up costs nothing. With command_ramp a command only
+      # counts as zero once it has ramped all the way there.
       near = (offset >= self.bumper_hi - self.bumper_margin
               or offset <= self.bumper_lo + self.bumper_margin)
-      w_up = 0.3 * (1.0 - min(1.0, float(np.hypot(cmd_f, cmd_t))))
-      score = -1.0 if near else w_up * balance + (1.0 - w_up) * track
+      still = abs(cmd_f) < 1e-3 and abs(cmd_t) < 1e-3
+      score = -1.0 if near else (
+          0.5 * balance + 0.5 * track if still else track)
     elif self.command_reward == 'gated':
       # Tracking counts only while upright: lying on a bumper pays ~0 however
       # the wheels turn, balancing while ignoring the command ~0.5, and

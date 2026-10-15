@@ -1731,8 +1731,8 @@ robot_command_bias:
 # forward (wheels back first) before it can speed up. Commands ramp at 0.5/s
 # (0 to full in 2 s) to leave time for the lean, and the phone compensates
 # the motors' dead zone and stiction so small actions move the wheels. Reward
-# 'bumper': -1 on or within 1 deg of either bumper, else w * upright +
-# (1 - w) * tracking with w = 0.3 at rest falling to 0 at full command --
+# 'bumper': -1 on or within 1 deg of either bumper; else at a zero command
+# 0.5 * upright + 0.5 * tracking, at any other command tracking alone --
 # 'gated' multiplied everything by an upright score that fell
 # to ~0.3 at a 5 deg lean, so leaning to accelerate was punished. Tracking
 # scale 2450 mm/s as before.
