@@ -286,7 +286,8 @@ class SmartphoneRobot(embodied.Env):
       recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
       command_sigma=0.5, command_reward='product', command_track_weight=2.0,
       command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
-      command_zeta_steps=40000, command_bias=0.0, turn_source='wheels', yaw_rate_max=1.5,
+      command_zeta_steps=40000, command_bias=0.0, command_ramp=0.0,
+      friction_comp=False, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
@@ -426,6 +427,13 @@ class SmartphoneRobot(embodied.Env):
     # balance around the drive. The command stays in the observation, which
     # is all the policy needs to know the bias. 0: the policy alone.
     self.command_bias = float(command_bias)
+    # command_ramp: the phone moves the command toward each new target at
+    # this many units per second (0: steps), so the policy has time to lean
+    # before it must speed up; it observes and is scored on the ramped one.
+    # friction_comp: the phone lifts each action past the motors' dead zone
+    # and kicks still wheels loose (its main.compensate; dead zone and
+    # stiction measured 2026-10-15 in docs/ROBOT_BRIDGE_FINDINGS.md).
+    self.friction_comp = bool(friction_comp)
     self._total_steps = 0
     # Turn rate from the wheels (half the speed difference / command_turn) or
     # from the phone's raw gyroscope: the body's true yaw rate, which wheel
@@ -451,7 +459,7 @@ class SmartphoneRobot(embodied.Env):
         mode=str(command_mode), hold_min=float(command_hold_min),
         hold_max=float(command_hold_max), p_zero=float(command_p_zero),
         p_axis=float(command_p_axis),
-        step=float(command_step))
+        step=float(command_step), ramp=float(command_ramp))
     self._cmd = (0.0, 0.0)
     self._cmd_src = 0.0
     self.reconnect = bool(reconnect)
@@ -923,6 +931,7 @@ class SmartphoneRobot(embodied.Env):
         type='hello', protocol=PROTOCOL, discrete=self.discrete,
         pipeline=self.pipeline, onboard=self._onboard,
         cmd_scale=self.command_scale, command_bias=self.command_bias,
+        friction_comp=self.friction_comp,
         **({'command': self.command_sampler}
            if self.task == 'command' else {}),
         # The phone keeps this run's latest weights under `run`, with these
@@ -959,6 +968,7 @@ class SmartphoneRobot(embodied.Env):
         wheel_penalty=self.wheel_penalty, rate_penalty=self.rate_penalty,
         action_rate_penalty=self.action_rate_penalty,
         command_scale=self.command_scale, command_bias=self.command_bias,
+        friction_comp=self.friction_comp,
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,

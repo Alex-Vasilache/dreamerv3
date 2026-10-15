@@ -626,3 +626,25 @@ joystick sets the motor outputs, no policy), polling the app's `/state` at
   the wheel speeds froze at their last values (−516/−480, counts not
   changing) while the motors and the serial link kept working; a power-cycle
   cleared it.
+
+# Motor dead zone and stiction, 2026-10-15
+
+Slow output ramps (0 -> 0.45 -> 0 over ~30 s) through direct mode, encoder
+counts recorded at ~25 Hz; battery 3.52 V. "Starts" is the output at which a
+still wheel began to turn, "stops" the output below which a turning wheel
+stopped.
+
+| Condition | Starts (static) | Stops (kinetic) |
+|---|---|---|
+| Wheels in the air, both forward / both back | 0.29-0.34 | 0.12-0.13 |
+| On the ground, turning in place (resting on a bumper) | 0.31-0.38 | 0.26-0.28 |
+
+- Once turning in the air, speed ≈ 5700 × (|output| − 0.06) mm/s: ~1400 at
+  0.30, ~2200 at 0.45. So a wheel at rest does nothing until ~0.3 and then
+  jumps to ~1400 mm/s -- the jerk that throws the body back onto its bumper
+  when a balancing robot starts to drive.
+- The ground numbers include the bumper sliding and the tyres scrubbing in a
+  spin, so they overstate what a balancing robot rolling straight needs.
+- Below the bridge's dead zone (|output| < 0.097) the phone sends ±0.13
+  (`ZERO_MODE='min'`). In the air that sometimes kept one wheel creeping at
+  ~300 mm/s while the other stood still.
