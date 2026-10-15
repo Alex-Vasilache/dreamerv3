@@ -403,7 +403,7 @@ class SmartphoneRobot(embodied.Env):
     self.command_sigma = float(command_sigma)
     assert command_reward in (
         'product', 'sum', 'curriculum', 'taper_sum', 'balance',
-        'gated', 'bumper'), command_reward
+        'gated', 'bumper', 'bumper_track'), command_reward
     self.command_reward = command_reward
     # 'curriculum' (arXiv 2409.09845, a wheel-legged robot balancing on its
     # wheels): balance + zeta * track_weight * tracking - penalties, with
@@ -820,6 +820,14 @@ class SmartphoneRobot(embodied.Env):
       # With command_bias the command drives the wheels itself; the policy is
       # scored on staying upright only.
       score = balance
+    elif self.command_reward == 'bumper_track':
+      # Tracking alone, -1 on or within 1 deg of a bumper. Balance is
+      # implied: a robot cannot hold a lean while standing still, so at a
+      # zero command the only way to keep tracking is to stay upright --
+      # around its true balance point, not theta_zero, which was set by eye.
+      near = (offset >= self.bumper_hi - self.bumper_margin
+              or offset <= self.bumper_lo + self.bumper_margin)
+      score = -1.0 if near else track
     elif self.command_reward == 'bumper':
       # Touching (or nearly touching) a bumper is -1 whatever else happens.
       # Otherwise, at a zero command half upright and half tracking (which
