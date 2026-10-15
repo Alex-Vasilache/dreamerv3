@@ -91,7 +91,7 @@ defaults:
     # pipeline True lets the phone free-run on its own clock instead of
     # blocking on us for every action; see embodied/envs/robot.py. False falls
     # back to the lock-step protocol without reinstalling the phone app.
-    robot: {pipeline: True, host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, action_rate_penalty: 0.0, command_scale: 1.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, command_speed: 1500.0, command_turn: 1000.0, command_sigma: 0.5, command_reward: product, command_track_weight: 2.0, command_balance_weight: 1.0, forward_sign: -1.0, command_step: 0.0, command_zeta_steps: 40000, command_bias: 0.0, command_ramp: 0.0, friction_comp: False, bumper_lo: -0.120, bumper_hi: 0.161, bumper_margin: 0.0175, turn_source: wheels, yaw_rate_max: 1.5, yaw_axis: y, yaw_sign: -1.0, command_mode: auto, command_hold_min: 2.0, command_hold_max: 5.0, command_p_zero: 0.3, command_p_axis: 0.4, repeat: 1, use_logdir: True, onboard: False, weights_every: 0.0}
+    robot: {pipeline: True, host: '0.0.0.0', port: 3000, length: 200, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, action_rate_penalty: 0.0, command_scale: 1.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, command_speed: 1500.0, command_turn: 1000.0, command_sigma: 0.5, command_reward: product, command_track_weight: 2.0, command_balance_weight: 1.0, forward_sign: -1.0, command_step: 0.0, command_zeta_steps: 40000, command_bias: 0.0, command_ramp: 0.0, friction_comp: False, bumper_lo: -0.120, bumper_hi: 0.161, bumper_margin: 0.0175, bumper_penalty: 1.0, turn_source: wheels, yaw_rate_max: 1.5, yaw_axis: y, yaw_sign: -1.0, command_mode: auto, command_hold_min: 2.0, command_hold_max: 5.0, command_p_zero: 0.3, command_p_axis: 0.4, repeat: 1, use_logdir: True, onboard: False, weights_every: 0.0}
 
   replay:
     size: 5e6
@@ -1620,6 +1620,13 @@ robot_50hz:
   agent.horizon: 100
   env.robot.length: 1000
 
+#   CONFIGS="robot_daydreamer robot_fast robot_65hz", HZ=65. Near the
+# phone's ceiling: a 100 Hz cap only reached 65-75 Hz (serial reply ~8.6 ms
+# + policy ~4 ms per step, 2026-10-15).
+robot_65hz:
+  agent.horizon: 130
+  env.robot.length: 1300
+
 #   CONFIGS="robot_daydreamer robot_fast robot_100hz", HZ=100
 robot_100hz:
   agent.horizon: 200
@@ -1731,16 +1738,20 @@ robot_command_bias:
 # forward (wheels back first) before it can speed up. Commands ramp at 0.5/s
 # (0 to full in 2 s) to leave time for the lean, and the phone compensates
 # the motors' dead zone and stiction so small actions move the wheels. Reward
-# 'bumper_track': -1 on or within 1.5 deg of either bumper, else tracking
+# 'bumper_track': -2 on or within 1.5 deg of either bumper, else tracking
 # alone (e1465's 'bumper' also paid 0.5 * upright at a zero command) --
 # 'gated' multiplied everything by an upright score that fell
 # to ~0.3 at a 5 deg lean, so leaning to accelerate was punished.
 # Full stick tracks full speed, 4900 mm/s.
-#   CONFIGS="robot_daydreamer robot_fast robot_50hz robot_command robot_command_lean"
+#   CONFIGS="robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean"
 robot_command_lean:
   env.robot.command_reward: bumper_track
-  # -1 within 1.5 deg of either bumper: at or above +7.7 deg, at or below -5.4.
+  # -2 within 1.5 deg of either bumper: at or above +7.7 deg, at or below -5.4.
   env.robot.bumper_margin: 0.0262
+  env.robot.bumper_penalty: 2.0
+  # Return horizon 5 s (the robot_<N>hz presets have 2 s): leaning, then
+  # speeding up to a new command takes a few seconds. In steps, so for 65 Hz.
+  agent.horizon: 325
   env.robot.command_bias: 0.0
   env.robot.command_ramp: 0.5
   env.robot.friction_comp: True

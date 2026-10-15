@@ -288,7 +288,7 @@ class SmartphoneRobot(embodied.Env):
       command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
       command_zeta_steps=40000, command_bias=0.0, command_ramp=0.0,
       friction_comp=False, bumper_lo=-0.120, bumper_hi=0.161,
-      bumper_margin=0.0175, turn_source='wheels', yaw_rate_max=1.5,
+      bumper_margin=0.0175, bumper_penalty=1.0, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
@@ -442,6 +442,7 @@ class SmartphoneRobot(embodied.Env):
     self.bumper_lo = float(bumper_lo)
     self.bumper_hi = float(bumper_hi)
     self.bumper_margin = float(bumper_margin)
+    self.bumper_penalty = float(bumper_penalty)  # 'bumper_track' pays minus this
     self._total_steps = 0
     # Turn rate from the wheels (half the speed difference / command_turn) or
     # from the phone's raw gyroscope: the body's true yaw rate, which wheel
@@ -821,13 +822,13 @@ class SmartphoneRobot(embodied.Env):
       # scored on staying upright only.
       score = balance
     elif self.command_reward == 'bumper_track':
-      # Tracking alone, -1 on or within 1 deg of a bumper. Balance is
+      # Tracking alone, -bumper_penalty on or within bumper_margin of a bumper. Balance is
       # implied: a robot cannot hold a lean while standing still, so at a
       # zero command the only way to keep tracking is to stay upright --
       # around its true balance point, not theta_zero, which was set by eye.
       near = (offset >= self.bumper_hi - self.bumper_margin
               or offset <= self.bumper_lo + self.bumper_margin)
-      score = -1.0 if near else track
+      score = -self.bumper_penalty if near else track
     elif self.command_reward == 'bumper':
       # Touching (or nearly touching) a bumper is -1 whatever else happens.
       # Otherwise, at a zero command half upright and half tracking (which
@@ -997,6 +998,7 @@ class SmartphoneRobot(embodied.Env):
         command_scale=self.command_scale, command_bias=self.command_bias,
         friction_comp=self.friction_comp, bumper_lo=self.bumper_lo,
         bumper_hi=self.bumper_hi, bumper_margin=self.bumper_margin,
+        bumper_penalty=self.bumper_penalty,
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,
