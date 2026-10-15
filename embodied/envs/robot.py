@@ -285,7 +285,7 @@ class SmartphoneRobot(embodied.Env):
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
       command_sigma=0.5, command_reward='product', command_track_weight=2.0,
-      command_balance_weight=1.0, forward_sign=1.0, command_step=0.0,
+      command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
       command_zeta_steps=40000, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
@@ -413,7 +413,7 @@ class SmartphoneRobot(embodied.Env):
     # Which way forward 1.0 drives the wheels. +1: positive wheel speed is
     # forward. e1302 showed the robot's positive direction is what a person
     # at the joystick calls backward (it leaned and rolled backward on a
-    # forward command), hence -1 in robot_command_cur. Turning is measured
+    # forward command), hence the default -1. Turning is measured
     # by the gyro, clockwise from above, which is a right turn whichever way
     # the front faces, so it needs no sign.
     self.forward_sign = float(forward_sign)
@@ -749,7 +749,7 @@ class SmartphoneRobot(embodied.Env):
     """Balance times tracking the commanded forward speed and turn.
 
     Balance is the balance task's upright score in [0, 1]. Tracking pays
-    exp(-(error / command_sigma)^2) per axis, averaged over the two axes: the
+    exp(-(|v - cmd| / command_sigma)^2) on the 2D (forward, turn) error: the
     kernel legged-robot velocity tracking uses (Rudin et al. 2022), so it
     saturates rather than letting one spiky wheel reading dominate.
 
@@ -764,8 +764,9 @@ class SmartphoneRobot(embodied.Env):
     the balance task. sigma 0.5 (was 0.3) makes a partial attempt pay: half
     of a 0.8 command earns 0.53 against 0.08 for standing still.
 
-    The drift and wheel penalties of 'balance' are kept, subtracted, measured
-    from the wheel speeds the command asks for. At most 1.0 per step.
+    Of the balance task's penalties only the tilt-rate one is kept, against
+    wobble. Drift duplicated the forward part of tracking, and wheel effort
+    was weighted 0 in every command run, so both are gone. At most 1.0.
     """
     theta = float(sensors['theta'])
     offset = theta - self.theta_zero
@@ -774,33 +775,15 @@ class SmartphoneRobot(embodied.Env):
     bonus = np.exp(-((offset / self.theta_sigma) ** 2))
     cmd_f, cmd_t = self._cmd
     forward, turn = self._measured(sensors)
-    # Tracking: Only count error for commanded axes. If command is zero, that axis doesn't count at all.
-    # If (cmd_f,cmd_t)==(1,0) and (forward,turn)==(1,0) -> 1
-    # If (cmd_f,cmd_t)==(1,0) and (forward,turn)==(0.5,0) -> 0.5
-    # If (cmd_f,cmd_t)==(0,1) and (forward,turn)==(0,1) -> 1
-    # If both commands are zero, treat as perfect track
-    cmd_weights = np.array([abs(cmd_f) > 1e-6, abs(cmd_t) > 1e-6], dtype=np.float32)
-    n_axes = np.sum(cmd_weights)
-    if n_axes == 0:
-      track = 1.0
-    else:
-      # Treat command as a single 2D target velocity vector and compute the error as the Euclidean distance
-      cmd_vec = np.array([cmd_f, cmd_t], dtype=np.float32)
-      meas_vec = np.array([forward, turn], dtype=np.float32)
-      cmd_norm = np.linalg.norm(cmd_vec)
-      meas_norm = np.linalg.norm(meas_vec)
-      if cmd_norm < 1e-6:
-        track = 1.0
-      else:
-        # Penalize error for overall magnitude and direction: use full vector difference
-        err = np.linalg.norm(meas_vec - cmd_vec) / (self.command_sigma + 1e-8)
-        track = np.exp(-err ** 2)
-    drive = self.forward_sign * cmd_f * self.command_speed
-    want_l = drive + cmd_t * self.command_turn
-    want_r = drive - cmd_t * self.command_turn
-    err_l = (float(sensors['wheel_speed_l']) - want_l) * self.speed_scale
-    err_r = (float(sensors['wheel_speed_r']) - want_r) * self.speed_scale
-    drift = min(abs(0.5 * (err_l + err_r)), self.drift_clip)
+    # Tracking treats the command as one 2D velocity vector: a Gaussian on
+    # the Euclidean error, so neither axis needs its own weight. A zero
+    # command is a real target (stand still), not a free pass.
+    # The busier wheel gets at most what full forward asks of both: a
+    # diagonal is scaled down, keeping its heading, as in the phone's direct
+    # drive mode. The taper weight below still reads the stick as given.
+    k = max(1.0, abs(cmd_f) + abs(cmd_t) * self.command_turn / self.command_speed)
+    err = np.hypot(forward - cmd_f / k, turn - cmd_t / k)
+    track = float(np.exp(-((err / self.command_sigma) ** 2)))
     balance = 0.5 * linear + 0.5 * bonus
     if self.command_reward == 'curriculum':
       score = (self.command_balance_weight * balance
@@ -810,18 +793,15 @@ class SmartphoneRobot(embodied.Env):
     elif self.command_reward == 'sum':
       score = self.command_balance_weight * balance + self.command_track_weight * track
     elif self.command_reward == 'taper_sum':
-      movement = np.linalg.norm([cmd_f, cmd_t])
-      # Exponential taper: maintains at least 0.1 weight on balance when tracking dominates and vice versa
-      alpha = (1 - movement)
-      score = (alpha * 0.9 + 0.1) * balance + ((1 - alpha) * 0.9 + 0.1) * track
+      # Tracking weight grows linearly with command magnitude, from 0.1 at
+      # rest to 0.9 at |cmd| >= 1; the weights sum to 1, so score <= 1.
+      movement = min(1.0, float(np.hypot(cmd_f, cmd_t)))
+      w_track = 0.1 + 0.8 * movement
+      score = (1.0 - w_track) * balance + w_track * track
     else:
       raise ValueError(f'Unknown command reward: {self.command_reward}')
     return float(
-        score
-        #- self.rate_penalty * abs(float(sensors['angular_velocity']))
-        #- self.drift_penalty * drift
-        #- self.wheel_penalty * self._wheel_effort(err_l, err_r)
-        )
+        score - self.rate_penalty * abs(float(sensors['angular_velocity'])))
 
   def _wheel_effort(self, speed_l, speed_r):
     return 0.5 * (

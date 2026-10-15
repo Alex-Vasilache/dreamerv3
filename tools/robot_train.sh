@@ -16,6 +16,11 @@
 # Needs: `ssh saion` working, the phone on adb, a base on the phone.
 # Stop with:  ssh saion scancel <job>; adb shell am force-stop jp.oist.abcvlib.dreamerBridge
 set -euo pipefail
+# Without HZ, take it from a robot_<N>hz block in CONFIGS: the phone's rate
+# comes only from trainer.json, so CONFIGS="... robot_100hz" alone ran at 25.
+if [ -z "${HZ:-}" ] && [[ ${CONFIGS:-} =~ robot_([0-9]+)hz ]]; then
+  HZ=${BASH_REMATCH[1]}
+fi
 HZ=${HZ:-25}
 CONFIGS=${CONFIGS:-robot_daydreamer robot_fast robot_${HZ}hz}
 STEPS=${STEPS:-100000}
