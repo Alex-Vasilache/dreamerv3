@@ -287,7 +287,8 @@ class SmartphoneRobot(embodied.Env):
       command_sigma=0.5, command_reward='product', command_track_weight=2.0,
       command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
       command_zeta_steps=40000, command_bias=0.0, command_ramp=0.0,
-      friction_comp=False, turn_source='wheels', yaw_rate_max=1.5,
+      friction_comp=False, bumper_lo=-0.120, bumper_hi=0.161,
+      bumper_margin=0.0175, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
@@ -402,7 +403,7 @@ class SmartphoneRobot(embodied.Env):
     self.command_sigma = float(command_sigma)
     assert command_reward in (
         'product', 'sum', 'curriculum', 'taper_sum', 'balance',
-        'gated'), command_reward
+        'gated', 'bumper'), command_reward
     self.command_reward = command_reward
     # 'curriculum' (arXiv 2409.09845, a wheel-legged robot balancing on its
     # wheels): balance + zeta * track_weight * tracking - penalties, with
@@ -434,6 +435,13 @@ class SmartphoneRobot(embodied.Env):
     # and kicks still wheels loose (its main.compensate; dead zone and
     # stiction measured 2026-10-15 in docs/ROBOT_BRIDGE_FINDINGS.md).
     self.friction_comp = bool(friction_comp)
+    # 'bumper' reward: within bumper_margin of either bumper (or past it) is
+    # -1, anything else is fine. The stops are the tilt the body rests at on
+    # each bumper, measured 2026-10-15 (back -6.7..-7.1 deg, front +9.2..9.4
+    # deg), relative to theta_zero; the margin is 1 deg.
+    self.bumper_lo = float(bumper_lo)
+    self.bumper_hi = float(bumper_hi)
+    self.bumper_margin = float(bumper_margin)
     self._total_steps = 0
     # Turn rate from the wheels (half the speed difference / command_turn) or
     # from the phone's raw gyroscope: the body's true yaw rate, which wheel
@@ -812,6 +820,14 @@ class SmartphoneRobot(embodied.Env):
       # With command_bias the command drives the wheels itself; the policy is
       # scored on staying upright only.
       score = balance
+    elif self.command_reward == 'bumper':
+      # Leaning to speed up costs nothing: only touching (or nearly touching)
+      # a bumper does, and that is -1 whatever else happens. Otherwise mostly
+      # tracking, with a little for being upright when there is no reason to
+      # lean. A zero command tracks by standing still.
+      near = (offset >= self.bumper_hi - self.bumper_margin
+              or offset <= self.bumper_lo + self.bumper_margin)
+      score = -1.0 if near else 0.3 * balance + 0.7 * track
     elif self.command_reward == 'gated':
       # Tracking counts only while upright: lying on a bumper pays ~0 however
       # the wheels turn, balancing while ignoring the command ~0.5, and
@@ -968,7 +984,8 @@ class SmartphoneRobot(embodied.Env):
         wheel_penalty=self.wheel_penalty, rate_penalty=self.rate_penalty,
         action_rate_penalty=self.action_rate_penalty,
         command_scale=self.command_scale, command_bias=self.command_bias,
-        friction_comp=self.friction_comp,
+        friction_comp=self.friction_comp, bumper_lo=self.bumper_lo,
+        bumper_hi=self.bumper_hi, bumper_margin=self.bumper_margin,
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,
