@@ -1734,8 +1734,8 @@ robot_command_bias:
 # 'bumper_track': -1 on or within 1 deg of either bumper, else tracking
 # alone (e1465's 'bumper' also paid 0.5 * upright at a zero command) --
 # 'gated' multiplied everything by an upright score that fell
-# to ~0.3 at a 5 deg lean, so leaning to accelerate was punished. Tracking
-# scale 2450 mm/s as before.
+# to ~0.3 at a 5 deg lean, so leaning to accelerate was punished.
+# Full stick tracks full speed, 4900 mm/s.
 #   CONFIGS="robot_daydreamer robot_fast robot_50hz robot_command robot_command_lean"
 robot_command_lean:
   env.robot.command_reward: bumper_track
@@ -1750,6 +1750,7 @@ robot_command_lean:
   env.robot.command_step: 0.0
   env.robot.forward_sign: -1.0
   env.robot.command_sigma: 0.4
-  env.robot.command_speed: 2450.0
-  env.robot.command_turn: 2450.0
+  # Full stick is full speed: ~4900 mm/s, the ground top speed.
+  env.robot.command_speed: 4900.0
+  env.robot.command_turn: 4900.0
   env.robot.obs_wheel_scale: -1.75e-4
