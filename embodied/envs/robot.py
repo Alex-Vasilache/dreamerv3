@@ -400,7 +400,8 @@ class SmartphoneRobot(embodied.Env):
     self.command_turn = float(command_turn)
     self.command_sigma = float(command_sigma)
     assert command_reward in (
-        'product', 'sum', 'curriculum', 'taper_sum', 'balance'), command_reward
+        'product', 'sum', 'curriculum', 'taper_sum', 'balance',
+        'gated'), command_reward
     self.command_reward = command_reward
     # 'curriculum' (arXiv 2409.09845, a wheel-legged robot balancing on its
     # wheels): balance + zeta * track_weight * tracking - penalties, with
@@ -803,6 +804,11 @@ class SmartphoneRobot(embodied.Env):
       # With command_bias the command drives the wheels itself; the policy is
       # scored on staying upright only.
       score = balance
+    elif self.command_reward == 'gated':
+      # Tracking counts only while upright: lying on a bumper pays ~0 however
+      # the wheels turn, balancing while ignoring the command ~0.5, and
+      # balancing while following it 1.
+      score = balance * (0.5 + 0.5 * track)
     elif self.command_reward == 'taper_sum':
       # Tracking weight grows linearly with command magnitude, from 0.1 at
       # rest to 0.9 at |cmd| >= 1; the weights sum to 1, so score <= 1.

@@ -1703,14 +1703,16 @@ robot_command_taper_sum:
   # Wheel observations as a fraction of the in-air top speed (1/5700),
   # negated so that, like the motor output, positive means forward.
   env.robot.obs_wheel_scale: -1.75e-4
-# Balance-only policy with the command as a feed-forward bias: the phone
-# sends the motors 0.5 * action + 0.5 * the outputs that drive as the command
-# asks, and the reward is the upright score alone. The command is still an
-# observation, so the policy knows the bias. Commands and scales as
-# robot_command_taper_sum.
+# The command as a feed-forward bias: the phone sends the motors
+# 0.5 * action + 0.5 * the outputs that drive as the command asks, and the
+# command is an observation, so the policy knows the bias. Reward 'gated',
+# balance * (0.5 + 0.5 * tracking): upright first, then follow the command;
+# a balance-only reward let the policy cancel the bias and stand still.
+# Full command is ~0.5 output, ~2450 mm/s on the ground, so that is the
+# tracking scale: a policy adding nothing tracks it, and only has to lean.
 #   CONFIGS="robot_daydreamer robot_fast robot_50hz robot_command robot_command_bias"
 robot_command_bias:
-  env.robot.command_reward: balance
+  env.robot.command_reward: gated
   env.robot.command_bias: 0.5
   env.robot.turn_source: wheels
   env.robot.command_hold_min: 4.0
@@ -1720,6 +1722,6 @@ robot_command_bias:
   env.robot.command_step: 0.0
   env.robot.forward_sign: -1.0
   env.robot.command_sigma: 0.4
-  env.robot.command_speed: 4900.0
-  env.robot.command_turn: 4900.0
+  env.robot.command_speed: 2450.0
+  env.robot.command_turn: 2450.0
   env.robot.obs_wheel_scale: -1.75e-4
