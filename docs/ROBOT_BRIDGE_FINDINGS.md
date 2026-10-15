@@ -589,3 +589,40 @@ their logcat. Then: build `split/telemetry-cache` (Docker image
 `topher217/smartphone-robot-firmware`, `make firmware`), flash it on the Mac
 (BOOTSEL), and re-run `tools/robot_latency_probe.py`; `PACE='serial'` on the
 phone will follow the faster cycle automatically.
+
+# Top wheel speeds, 2026-10-15
+
+Measured with the phone app's direct-drive mode ("Stick = motors": the
+joystick sets the motor outputs, no policy), polling the app's `/state` at
+~25 Hz. Fast firmware, battery 3.55 V. Wheel speeds are abcvlib's mm/s
+(30 mm wheel radius, 128 encoder counts per turn).
+
+| Condition | Motor output | Wheel speed (mm/s) |
+|---|---|---|
+| Wheels in the air | ±1.0 | ~5500-5800 |
+| Wheels in the air | ±0.5 | ~3000-3400 |
+| Wheels in the air | ±0.25 | ~1700 |
+| On the ground, straight | ±1.0 | ~4800-5000 |
+| On the ground, turning in place | ±1.0 / ∓1.0 | ~3500-4400 per wheel |
+
+- **Sign:** a positive motor output gives a *negative* wheel speed on both
+  wheels. Positive output drives the robot forward (as the joystick user
+  means it), so forward is negative wheel speed: `forward_sign: -1`.
+- On the ground the robot rested on a bumper the whole time (tilt about −7°
+  one way, +9° the other), so these are speeds while leaning, not while
+  balancing. The wheels differ by up to ~20% at equal output.
+- **Command scales:** `robot_command_taper_sum` sets `command_speed` =
+  `command_turn` = 4900, the ground top speed, so full stick is full output
+  and the web page's "doing" dot reaches the circle's edge at it. Whether the
+  robot can balance anywhere near that is untested (it was 1000 before).
+- **Display:** the phone's and the web mirror's wheel-speed strips are scaled
+  by the in-air maximum, 5700, and signed like the motor output, so full
+  output with the wheels spinning freely fills the same height as the command
+  bar.
+- **Hazards met on the way:** reversing at once from full speed left the base
+  replying in ~95 ms with the battery and encoders reading 0 until it was
+  power-cycled (most likely a motor-driver fault). Direct mode now limits
+  each output to a change of 4 per second. Once, after the robot was set down,
+  the wheel speeds froze at their last values (−516/−480, counts not
+  changing) while the motors and the serial link kept working; a power-cycle
+  cleared it.
