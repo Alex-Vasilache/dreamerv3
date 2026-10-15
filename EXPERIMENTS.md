@@ -573,6 +573,19 @@ e1330–e1419 stay on `director_og` as queued; no change to array 4751562.
 Final 5v5 (2026-10-11 09:50) confirms it: pinpad_five 210 vs 200, cartpole 692 vs 736 (p=0.03),
 cheetah 511 vs 374 (p=0.008), hopper 333 vs 179 (p=0.024); mean normalized −0.32.
 
+### e1430–e1459: now + SOM + UCB (2026-10-15, array 4762301)
+
+`director director_og goal_som_line mgr_ucb pubmatch`, 6 tasks x 5 seeds,
+seed-major (`sbatch/pubucb_params.txt`), A100 128G, `RUN_ENVS=4
+DMC_PROPRIO=False`, %8. UCB = tilted sampling among 8 manager candidates,
+`mgr_ucb_c` 10, `select_bins` 4 (the only setting with valid prior runs,
+e706–e717; c=20 runs e660–e675 used the retired argmax rule), with now's
+`mgr_expl_weight` 0.1 (e706–e717 used 0.15) and SOM alone, not SOM+LiP.
+Compared against now (e1230–e1289) and now+SOM (e1330–e1419).
+Hypothesis: the selection-time count bonus adds exploration without changing
+the manager's objective; expected gain on cheetah (e714/e715 beat every
+Director seed) and on the long pin pads. Status: queued.
+
 ### e1330–e1419: SOM / LiP / SOM+LiP on `now`, queued early (2026-10-09, array 4751562)
 
 Queued behind e1300–e1329 to hold queue age; base is `now` (`director
