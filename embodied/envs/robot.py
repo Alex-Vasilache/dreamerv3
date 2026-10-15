@@ -286,7 +286,7 @@ class SmartphoneRobot(embodied.Env):
       recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
       command_sigma=0.5, command_reward='product', command_track_weight=2.0,
       command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
-      command_zeta_steps=40000, turn_source='wheels', yaw_rate_max=1.5,
+      command_zeta_steps=40000, command_bias=0.0, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
@@ -399,7 +399,8 @@ class SmartphoneRobot(embodied.Env):
     self.command_speed = float(command_speed)
     self.command_turn = float(command_turn)
     self.command_sigma = float(command_sigma)
-    assert command_reward in ('product', 'sum', 'curriculum', 'taper_sum'), command_reward
+    assert command_reward in (
+        'product', 'sum', 'curriculum', 'taper_sum', 'balance'), command_reward
     self.command_reward = command_reward
     # 'curriculum' (arXiv 2409.09845, a wheel-legged robot balancing on its
     # wheels): balance + zeta * track_weight * tracking - penalties, with
@@ -418,6 +419,12 @@ class SmartphoneRobot(embodied.Env):
     # the front faces, so it needs no sign.
     self.forward_sign = float(forward_sign)
     self.command_zeta_steps = float(command_zeta_steps)
+    # Feed-forward from the command: the phone sends the motors
+    # (1 - command_bias) * action + command_bias * the outputs that drive as
+    # the command asks (its main.command_motors), so the policy only has to
+    # balance around the drive. The command stays in the observation, which
+    # is all the policy needs to know the bias. 0: the policy alone.
+    self.command_bias = float(command_bias)
     self._total_steps = 0
     # Turn rate from the wheels (half the speed difference / command_turn) or
     # from the phone's raw gyroscope: the body's true yaw rate, which wheel
@@ -792,6 +799,10 @@ class SmartphoneRobot(embodied.Env):
       score = balance * track
     elif self.command_reward == 'sum':
       score = self.command_balance_weight * balance + self.command_track_weight * track
+    elif self.command_reward == 'balance':
+      # With command_bias the command drives the wheels itself; the policy is
+      # scored on staying upright only.
+      score = balance
     elif self.command_reward == 'taper_sum':
       # Tracking weight grows linearly with command magnitude, from 0.1 at
       # rest to 0.9 at |cmd| >= 1; the weights sum to 1, so score <= 1.
@@ -905,7 +916,7 @@ class SmartphoneRobot(embodied.Env):
     link.send(dict(
         type='hello', protocol=PROTOCOL, discrete=self.discrete,
         pipeline=self.pipeline, onboard=self._onboard,
-        cmd_scale=self.command_scale,
+        cmd_scale=self.command_scale, command_bias=self.command_bias,
         **({'command': self.command_sampler}
            if self.task == 'command' else {}),
         # The phone keeps this run's latest weights under `run`, with these
@@ -941,7 +952,7 @@ class SmartphoneRobot(embodied.Env):
         drift_penalty=self.drift_penalty, drift_clip=self.drift_clip,
         wheel_penalty=self.wheel_penalty, rate_penalty=self.rate_penalty,
         action_rate_penalty=self.action_rate_penalty,
-        command_scale=self.command_scale,
+        command_scale=self.command_scale, command_bias=self.command_bias,
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,
