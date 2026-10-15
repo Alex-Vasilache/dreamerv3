@@ -291,6 +291,9 @@ def make_logger(config):
           config=config.flat,
           id=run_id,
           resume='allow',
+          # Without dir, wandb caches under the cwd (code/dreamerv3/wandb on
+          # /apps, 50G quota); 747 cached runs filled it on 2026-10-15.
+          dir=_os.environ.get('WANDB_DIR') or logdir,
       )
       if is_online:
         kwargs['group'] = group_id
