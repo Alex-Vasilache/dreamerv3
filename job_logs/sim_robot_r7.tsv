@@ -1,0 +1,8 @@
+e1724	4764059	e1724_simrobot_balance65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot hrl_robot_fast sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 15
+e1725	4764060	e1725_simrobot_balance65_flat	robot_daydreamer robot_fast robot_65hz sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 15
+e1726	4764061	e1726_simrobot_balance65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot hrl_robot_fast sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 20
+e1727	4764062	e1727_simrobot_balance65_flat	robot_daydreamer robot_fast robot_65hz sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 20
+e1724	4764110	e1724_simrobot_balance65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot hrl_robot_fast sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 15
+e1725	4764111	e1725_simrobot_balance65_flat	robot_daydreamer robot_fast robot_65hz sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 15
+e1726	4764112	e1726_simrobot_balance65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot hrl_robot_fast sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 20
+e1727	4764113	e1727_simrobot_balance65_flat	robot_daydreamer robot_fast robot_65hz sim_robot sim_65hz	 --seed 1 --env.robot.sim_w0 20

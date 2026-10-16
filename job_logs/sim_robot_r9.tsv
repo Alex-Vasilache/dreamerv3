@@ -1,0 +1,12 @@
+e1736	4764237	e1736_simrobot_command65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot hrl_robot_fast sim_robot sim_65hz	--agent.horizon 325 --seed 3 --agent.horizon 130
+e1737	4764238	e1737_simrobot_command65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot hrl_robot_fast sim_robot sim_65hz	--agent.horizon 325 --seed 4 --agent.horizon 130
+e1738	4764239	e1738_simrobot_command65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot hrl_robot_fast sim_robot sim_65hz	--agent.horizon 325 --seed 5 --agent.horizon 130
+e1739	4764240	e1739_simrobot_command65_hrlfast	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot hrl_robot_fast sim_robot sim_65hz	--agent.horizon 325 --seed 6 --agent.horizon 130
+e1740	4764241	e1740_simrobot_command65_flat	robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean sim_robot sim_65hz	--agent.horizon 325 --seed 1 --agent.horizon 130
+e1741	4764242	e1741_simrobot_command65_flat	robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean sim_robot sim_65hz	--agent.horizon 325 --seed 2 --agent.horizon 130
+e1742	4764243	e1742_simrobot_command65_flat	robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean sim_robot sim_65hz	--agent.horizon 325 --seed 3 --agent.horizon 130
+e1743	4764244	e1743_simrobot_command65_flat	robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean sim_robot sim_65hz	--agent.horizon 325 --seed 4 --agent.horizon 130
+e1744	4764245	e1744_simrobot_command25_hrlfast	director director_og robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean hrl_robot hrl_robot_fast sim_robot sim_25hz	--agent.horizon 125 --seed 1 --agent.horizon 50
+e1745	4764246	e1745_simrobot_command25_flat	robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean sim_robot sim_25hz	--agent.horizon 125 --seed 1 --agent.horizon 50
+e1746	4764247	e1746_simrobot_command25_hrlfast	director director_og robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean hrl_robot hrl_robot_fast sim_robot sim_25hz	--agent.horizon 125 --seed 2 --agent.horizon 50
+e1747	4764248	e1747_simrobot_command25_flat	robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean sim_robot sim_25hz	--agent.horizon 125 --seed 2 --agent.horizon 50

@@ -1,0 +1,12 @@
+e1736 hrlfast command 65 v100 --seed 3 --agent.horizon 130
+e1737 hrlfast command 65 v100 --seed 4 --agent.horizon 130
+e1738 hrlfast command 65 v100 --seed 5 --agent.horizon 130
+e1739 hrlfast command 65 v100 --seed 6 --agent.horizon 130
+e1740 flat command 65 v100 --seed 1 --agent.horizon 130
+e1741 flat command 65 v100 --seed 2 --agent.horizon 130
+e1742 flat command 65 v100 --seed 3 --agent.horizon 130
+e1743 flat command 65 v100 --seed 4 --agent.horizon 130
+e1744 hrlfast command 25 p100 --seed 1 --agent.horizon 50
+e1745 flat command 25 p100 --seed 1 --agent.horizon 50
+e1746 hrlfast command 25 p100 --seed 2 --agent.horizon 50
+e1747 flat command 25 p100 --seed 2 --agent.horizon 50

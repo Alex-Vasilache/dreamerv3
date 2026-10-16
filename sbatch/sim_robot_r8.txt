@@ -1,0 +1,8 @@
+e1728 hrlfast command 65 v100 --seed 1 --agent.wkr_extr_weight 1.0
+e1729 hrlfast command 65 v100 --seed 2 --agent.wkr_extr_weight 1.0
+e1730 hrlfast command 65 v100 --seed 1 --agent.goal_enc.units 1024 --agent.goal_dec.units 1024 --agent.manager_policy.units 1024
+e1731 hrlfast command 65 v100 --seed 2 --agent.goal_enc.units 1024 --agent.goal_dec.units 1024 --agent.manager_policy.units 1024
+e1732 hrlfast command 65 v100 --seed 1 --agent.imag_length 32
+e1733 hrlfast command 65 v100 --seed 2 --agent.imag_length 32
+e1734 hrlfast command 65 v100 --seed 1 --agent.horizon 130
+e1735 hrlfast command 65 v100 --seed 2 --agent.horizon 130

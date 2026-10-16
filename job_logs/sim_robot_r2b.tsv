@@ -1,0 +1,4 @@
+e1504	4763526	e1504_simrobot_command25_hrl	director director_og robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean hrl_robot sim_robot sim_25hz	--agent.horizon 125 --seed 0 --agent.wkr_extr_weight 1.0
+e1505	4763527	e1505_simrobot_command25_hrl	director director_og robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean hrl_robot sim_robot sim_25hz	--agent.horizon 125 --seed 0 --agent.manager_sample_freq 4
+e1506	4763528	e1506_simrobot_command25_hrl	director director_og robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean hrl_robot sim_robot sim_25hz	--agent.horizon 125 --seed 0 --agent.mgr_expl_weight 0.0
+e1507	4763529	e1507_simrobot_command25_hrl	director director_og robot_daydreamer robot_fast robot_25hz robot_command robot_command_lean hrl_robot sim_robot sim_25hz	--agent.horizon 125 --seed 0 --agent.opt.lr 1e-4 --agent.ac_opt.lr 1e-4

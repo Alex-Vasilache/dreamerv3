@@ -1,0 +1,4 @@
+e1724 hrlfast balance 65 p100 --seed 1 --env.robot.sim_w0 15
+e1725 flat balance 65 p100 --seed 1 --env.robot.sim_w0 15
+e1726 hrlfast balance 65 p100 --seed 1 --env.robot.sim_w0 20
+e1727 flat balance 65 p100 --seed 1 --env.robot.sim_w0 20

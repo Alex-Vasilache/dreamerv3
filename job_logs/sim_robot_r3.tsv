@@ -1,0 +1,9 @@
+e1512	4763610	e1512_simrobot_balance65_hrl	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot sim_robot sim_65hz	 --seed 0 --agent.worker_actent_adapt False
+e1513	4763611	e1513_simrobot_balance65_hrl	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot sim_robot sim_65hz	 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0
+e1514	4763612	e1514_simrobot_balance65_hrl	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot sim_robot sim_65hz	 --seed 0 --agent.manager_sample_freq 16
+e1515	4763613	e1515_simrobot_balance65_hrl	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot sim_robot sim_65hz	 --seed 0 --batch_size 16
+e1516	4763614	e1516_simrobot_balance65_hrl	director director_og robot_daydreamer robot_fast robot_65hz hrl_robot sim_robot sim_65hz	 --agent.worker_actent_adapt False --seed 1
+e1517	4763615	e1517_simrobot_command65_hrl	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot sim_robot sim_65hz	--agent.horizon 325 --seed 0 --agent.worker_actent_adapt False
+e1518	4763616	e1518_simrobot_command65_hrl	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot sim_robot sim_65hz	--agent.horizon 325 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0
+e1519	4763617	e1519_simrobot_command65_hrl	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot sim_robot sim_65hz	--agent.horizon 325 --seed 0 --agent.manager_sample_freq 16
+e1520	4763618	e1520_simrobot_command65_hrl	director director_og robot_daydreamer robot_fast robot_65hz robot_command robot_command_lean hrl_robot sim_robot sim_65hz	--agent.horizon 325 --seed 0 --batch_size 16

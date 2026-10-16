@@ -1,0 +1,273 @@
+{
+ "panels": [
+  {
+   "title": "Balance 65 Hz: HRL single factors",
+   "ylim": [
+    0,
+    1.0
+   ],
+   "xmax": 70,
+   "series": [
+    [
+     "now baseline",
+     "black",
+     [
+      1483,
+      1491
+     ]
+    ],
+    [
+     "manager every 4 steps",
+     "sky",
+     [
+      1501
+     ]
+    ],
+    [
+     "no expl. bonus",
+     "orange",
+     [
+      1502
+     ]
+    ],
+    [
+     "lr 1e-4",
+     "blue",
+     [
+      1503
+     ]
+    ],
+    [
+     "worker task reward",
+     "green",
+     [
+      1500
+     ]
+    ]
+   ]
+  },
+  {
+   "title": "Balance 65 Hz: worker entropy",
+   "ylim": [
+    0,
+    1.0
+   ],
+   "xmax": 90,
+   "series": [
+    [
+     "now baseline",
+     "black",
+     [
+      1483,
+      1491
+     ]
+    ],
+    [
+     "fixed worker entropy",
+     "blue",
+     [
+      1512,
+      1516
+     ]
+    ],
+    [
+     "+ no expl. bonus (tuned)",
+     "orange",
+     [
+      1513,
+      1700,
+      1704,
+      1708
+     ]
+    ],
+    [
+     "flat DreamerV3",
+     "green",
+     [
+      1482,
+      1490,
+      1701,
+      1705,
+      1709
+     ]
+    ]
+   ]
+  },
+  {
+   "title": "Command 65 Hz: worker entropy",
+   "ylim": [
+    -1.0,
+    1.0
+   ],
+   "xmax": 90,
+   "series": [
+    [
+     "now baseline",
+     "black",
+     [
+      1487,
+      1495
+     ]
+    ],
+    [
+     "fixed worker entropy",
+     "blue",
+     [
+      1517
+     ]
+    ],
+    [
+     "+ no expl. bonus (tuned)",
+     "orange",
+     [
+      1518,
+      1702,
+      1706,
+      1710
+     ]
+    ],
+    [
+     "worker task reward",
+     "pink",
+     [
+      1508
+     ]
+    ]
+   ]
+  },
+  {
+   "title": "Command 65 Hz: tuned HRL add-ons",
+   "ylim": [
+    -1.0,
+    1.0
+   ],
+   "xmax": 115,
+   "series": [
+    [
+     "tuned, 5 s horizon",
+     "black",
+     [
+      1702,
+      1706,
+      1710
+     ]
+    ],
+    [
+     "2 s horizon",
+     "blue",
+     [
+      1734,
+      1735,
+      1736,
+      1737,
+      1738,
+      1739
+     ]
+    ],
+    [
+     "imag. 32",
+     "orange",
+     [
+      1732,
+      1733
+     ]
+    ],
+    [
+     "+ worker task reward",
+     "pink",
+     [
+      1728,
+      1729
+     ]
+    ]
+   ]
+  },
+  {
+   "title": "Balance 65 Hz: tuned add-ons",
+   "ylim": [
+    0,
+    1.0
+   ],
+   "xmax": 85,
+   "series": [
+    [
+     "tuned",
+     "black",
+     [
+      1513,
+      1700,
+      1704,
+      1708
+     ]
+    ],
+    [
+     "+ advnorm off",
+     "blue",
+     [
+      1526
+     ]
+    ],
+    [
+     "+ mgr entropy fixed",
+     "orange",
+     [
+      1525
+     ]
+    ],
+    [
+     "+ both (C)",
+     "sky",
+     [
+      1527,
+      1528
+     ]
+    ],
+    [
+     "manager every 16",
+     "green",
+     [
+      1531
+     ]
+    ]
+   ]
+  },
+  {
+   "title": "Balance 65 Hz: harder physics",
+   "ylim": [
+    0,
+    1.0
+   ],
+   "xmax": 85,
+   "series": [
+    [
+     "flat, w0 15",
+     "black",
+     [
+      1725
+     ]
+    ],
+    [
+     "HRL tuned, w0 15",
+     "blue",
+     [
+      1724
+     ]
+    ],
+    [
+     "flat, w0 20",
+     "orange",
+     [
+      1727
+     ]
+    ],
+    [
+     "HRL tuned, w0 20",
+     "green",
+     [
+      1726
+     ]
+    ]
+   ]
+  }
+ ]
+}

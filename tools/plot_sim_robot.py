@@ -172,11 +172,13 @@ def figure(spec, out):
     ax.set_ylabel('Reward per step\n(trailing 5 episodes)', fontsize=15)
   bottom = 0.05
   if spec.get('shared_legend'):
+    ncol = min(len(handles), 3)
+    rows = -(-len(handles) // ncol)
     fig.legend(handles.values(), handles.keys(), loc='lower center',
-               ncol=min(len(handles), 4), fontsize=14, frameon=False)
-    bottom = 0.11
+               ncol=ncol, fontsize=14, frameon=False)
+    bottom = 0.06 + 0.04 * rows
   fig.tight_layout(rect=(0, bottom, 1, 1), h_pad=2)
-  fig.text(0.5, bottom - 0.035, 'Real time (minutes)', ha='center', fontsize=15)
+  fig.text(0.5, bottom - 0.02, 'Real time (minutes)', ha='center', fontsize=15)
   out = pathlib.Path(out)
   out.parent.mkdir(parents=True, exist_ok=True)
   fig.savefig(out.with_suffix('.png'), dpi=200, facecolor='white')

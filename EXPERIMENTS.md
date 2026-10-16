@@ -1446,3 +1446,20 @@ Getting under 24 h therefore requires changing something that *is* a parameter
 (train_ratio, batch, imag_length, or the step budget), or splitting one run
 across 2 GPUs --- which does not help throughput here, since the 8-GPU quota
 already runs all 8 seeds concurrently.
+
+### e1480–e1535, e1700–e1747: 'now' Director on the simulated phone robot (2026-10-16/17, robot branch)
+
+Branch `smartphone-robot-bridge` (main merged in). A real-time simulated
+two-wheeled robot (`embodied/envs/robot_sim.py`, `env.robot.sim`) with the
+robot's own observations and rewards; balance and command following
+(`robot_command_lean`) at 25 and 65 Hz; one env paced to wall clock, one GPU
+per run. Write-up and figures: `docs/SIM_ROBOT.md` on that branch.
+
+Result (reward per step, 60–115 min mean, 3 seeds): at 65 Hz tuned HRL
+(`hrl_robot_fast` = `worker_actent_adapt False` + `mgr_expl_weight 0`, goal-only
+worker) balance 0.76–0.79 vs flat DreamerV3 0.84–0.85, command 0.53–0.67 vs
+0.78–0.88 (2 s horizon: HRL 0.71 n=6, flat 0.87 n=4). Untuned 'now' Director:
+balance ~0.5. The fix is the worker entropy: director_og's adaptive target
+kept the worker at +0.2 nats vs −1.8 for the flat policy. 25 Hz: HRL fails on
+2 of 3 seeds; flat 0.33 balance. Deploy at 65 Hz. e1724–e1727: same gap at
+ω₀ 15/20. All runs archived.
