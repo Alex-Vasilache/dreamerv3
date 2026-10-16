@@ -47,6 +47,8 @@ def imag_loss_wkr(
     actent=3e-4,
     slowreg=1.0,
     skill_window=0,
+    wkr_actent_adapter=None,
+    wkr_actent_perdim=True,
 ):
   """Worker actor-critic losses on imagined trajectories.
 
@@ -100,13 +102,63 @@ def imag_loss_wkr(
 
   w = sg(weight[:, :-1])
 
-  # REINFORCE with the percentile-scaled advantage and a fixed entropy bonus
-  # (DreamerV3 actor loss).
+  # Entropy term. DreamerV3 uses a fixed coefficient; Director holds NORMALIZED
+  # per-dim entropy at a target with an AutoAdapt on both actors. Mirrors the
+  # manager path in ``imag_loss_mgr`` exactly, including the min/max
+  # normalization, so the two heads are regulated the same way.
+  wkr_actent_mets = {}
+  if wkr_actent_adapter is None:
+    wkr_ent_term = actent * sum(wkr_ents.values())
+  else:
+    terms = []
+    for k, head in policy.items():
+      # One adapter per action head, each holding its own dimensions at the
+      # target (Director `actent_perdim`). A single adapter shared across heads
+      # could not do that: heads differ in width.
+      adapter = (wkr_actent_adapter[k] if isinstance(wkr_actent_adapter, dict)
+                 else wkr_actent_adapter)
+      if adapter is None:
+        terms.append(-actent * wkr_ents[k])
+        continue
+      inner = _head_inner(head)
+      if not hasattr(inner, 'minent') or not hasattr(inner, 'maxent'):
+        # No entropy range to normalize against -- fall back to the fixed
+        # coefficient for that head rather than dropping its bonus entirely.
+        terms.append(-actent * wkr_ents[k])
+        continue
+      ent_perdim = head_entropy_perdim_time(head)
+      L = ent_perdim.shape[-1] if ent_perdim.ndim > 2 else 1
+      # minent/maxent are scalars for a categorical head but PER-ELEMENT arrays
+      # for a continuous one, where the entropy range depends on the predicted
+      # std -- so they carry the full time axis while the entropy above has
+      # already been sliced to T-1. Align before normalizing.
+      def _align(x):
+        x = jnp.asarray(x, f32)
+        if x.ndim >= 2 and x.shape[1] == ent_perdim.shape[1] + 1:
+          x = x[:, :-1]
+        return x
+      lo, hi = _align(inner.minent) / L, _align(inner.maxent) / L
+      ent_norm = (ent_perdim - lo) / jnp.maximum(hi - lo, 1e-8)
+      if wkr_actent_perdim and ent_perdim.ndim > 2:
+        loss_pd, mets = adapter(ent_norm, update=update)
+        terms.append(loss_pd.sum(-1))
+      else:
+        ent_s = ent_norm.mean(-1) if ent_norm.ndim > 2 else ent_norm
+        loss_s, mets = adapter(ent_s, update=update)
+        terms.append(loss_s)
+      wkr_actent_mets.update(
+          {f'wkr_actent_{k}_{mk}': mv for mk, mv in mets.items()})
+    # The adapter returns a LOSS (inverse=True already negates the entropy), so
+    # it enters with the opposite sign to the fixed-coefficient bonus below.
+    wkr_ent_term = -sum(terms)
+
+  # REINFORCE with the scaled advantage plus the entropy term above.
   wkr_goal_policy_loss = w * -(
-      wkr_logpi * sg(wkr_goal_adv_normed) + actent * sum(wkr_ents.values()))
+      wkr_logpi * sg(wkr_goal_adv_normed) + wkr_ent_term)
 
   losses['wkr_policy'] = wkr_goal_policy_loss
 
+  metrics.update(wkr_actent_mets)
   metrics['wkr_goal_policy_loss'] = wkr_goal_policy_loss.mean()
   metrics['wkr_goal_rew'] = wkr_goal_rew.mean()
 
@@ -321,6 +373,26 @@ def imag_loss_mgr(
         mgr_novel_ret, update, weights=dec_mask)
     mgr_novel_adv = (mgr_novel_ret - mgr_novel_tarval[:, :-1]) / rscale_novel
     mgr_adv = mgr_adv + novel_weight * mgr_novel_adv
+  # Realized divisors. `perc` returns max(limit, hi-lo), so rscale_expl equal
+  # to the configured limit means the stream is CLAMPED, i.e. not normalized.
+  # This is the number to set `mgr_expl_retnorm.limit` from.
+  metrics['mgr/rscale_extr'] = rscale_extr.mean()
+  metrics['mgr/rscale_expl'] = rscale_expl.mean()
+  # UNCLAMPED 5-95 range of each return, computed straight off the batch. The
+  # rscale_* above are max(limit, hi-lo), so once a stream is clamped they only
+  # report the limit back and say nothing about where it should be set. These
+  # do: if range_expl < mgr_expl_retnorm.limit, the stream is being clamped and
+  # the limit needs to come down to that value.
+  def _p595(x, mask):
+    xf = x.reshape(-1)
+    if mask is not None:
+      mf = jnp.broadcast_to(mask.reshape(mask.shape + (1,) * (x.ndim - 2)),
+                            x.shape).reshape(-1)
+      xf = jnp.where(mf > 0, xf, jnp.nan)
+      return (jnp.nanpercentile(xf, 95) - jnp.nanpercentile(xf, 5))
+    return jnp.percentile(xf, 95) - jnp.percentile(xf, 5)
+  metrics['mgr/range_extr'] = _p595(mgr_extr_ret, dec_mask)
+  metrics['mgr/range_expl'] = _p595(mgr_expl_ret, dec_mask)
   mgr_aoffset, mgr_ascale = mgr_advnorm(mgr_adv, update, weights=dec_mask)
   mgr_adv_normed = (mgr_adv - mgr_aoffset) / mgr_ascale
 

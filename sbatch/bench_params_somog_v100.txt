@@ -1,0 +1,9 @@
+som_lip dmc_cheetah_run 0 e959 director_og
+som_lip dmc_hopper_hop 0 e961 director_og
+som_lip dmc_cartpole_swingup 0 e963 director_og
+som_lip dmc_cheetah_run 1 e965 director_og
+som_lip dmc_hopper_hop 1 e967 director_og
+som_lip dmc_cartpole_swingup 1 e969 director_og
+som_lip dmc_cheetah_run 2 e971 director_og
+som_lip dmc_hopper_hop 2 e973 director_og
+som_lip dmc_cartpole_swingup 2 e975 director_og

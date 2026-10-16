@@ -1,0 +1,8 @@
+director dmc_cheetah_run 1 e841 mgr_expl_perc002
+som_lip dmc_cheetah_run 1 e842 mgr_expl_perc002
+director pinpad_six 1 e843 mgr_expl_perc002
+som_lip pinpad_six 1 e844 mgr_expl_perc002
+director pinpad_five 2 e859 mgr_expl_perc002
+som_lip pinpad_five 2 e860 mgr_expl_perc002
+director dmc_cartpole_swingup 2 e861 mgr_expl_perc002
+som_lip dmc_cartpole_swingup 2 e862 mgr_expl_perc002

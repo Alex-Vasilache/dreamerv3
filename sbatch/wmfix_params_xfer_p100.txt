@@ -1,0 +1,9 @@
+director dmc_cartpole_swingup 0 e1086 director_og wm_norepgrad steps4m
+director dmc_cartpole_swingup 1 e1087 director_og wm_norepgrad steps4m
+director dmc_cartpole_swingup 2 e1088 director_og wm_norepgrad steps4m
+director dmc_cheetah_run 0 e1089 director_og wm_norepgrad steps4m
+director dmc_cheetah_run 1 e1090 director_og wm_norepgrad steps4m
+director dmc_cheetah_run 2 e1091 director_og wm_norepgrad steps4m
+director dmc_hopper_hop 0 e1092 director_og wm_norepgrad steps4m
+director dmc_hopper_hop 1 e1093 director_og wm_norepgrad steps4m
+director dmc_hopper_hop 2 e1094 director_og wm_norepgrad steps4m

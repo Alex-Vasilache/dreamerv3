@@ -130,6 +130,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # V(s, goal, countdown) is well-posed under variable goal lengths instead
     # of facing a random unobservable deadline.
     self.worker_timed_goals = bool(getattr(config, 'worker_timed_goals', False))
+    # What the worker SEES as its goal: the decoded goal vector (Director) or
+    # the manager's raw goal code. The worker reward always uses the decoded goal.
+    self.worker_goal_input = str(getattr(config, 'worker_goal_input', 'decoded'))
+    assert self.worker_goal_input in ('decoded', 'code'), self.worker_goal_input
     self.goal_switch_cost = float(getattr(config, 'goal_switch_cost', 0.0))
     # Manager extrinsic-reward block aggregation: 'mean' (per-step average, the
     # original; under per-step discounting this under-credits long blocks -> short-K
@@ -372,7 +376,11 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # Director's std-based return scaling. Each critic owns its own valnorm
       # (no-op under ``none`` but kept so the unnorm/norm path mirrors flat v3).
       self.mgr_extr_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_extr_retnorm')
-      self.mgr_expl_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_expl_retnorm')
+      # Own key: the exploration stream's units are ~2 orders of magnitude
+      # below the task reward's, so it needs its own denominator floor.
+      self.mgr_expl_retnorm = embodied.jax.Normalize(
+          **getattr(config, 'mgr_expl_retnorm', config.mgr_retnorm),
+          name='mgr_expl_retnorm')
       self.mgr_novel_retnorm = embodied.jax.Normalize(**config.mgr_retnorm, name='mgr_novel_retnorm')
       self.wkr_goal_retnorm = embodied.jax.Normalize(**config.retnorm, name='wkr_goal_retnorm')
 
@@ -390,6 +398,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.mgr_novel_weight = float(getattr(config, 'mgr_novel_weight', -1.0))
 
       # Director-style adaptive Lagrange multipliers (``tfutils.AutoAdapt``).
+      # The adapter is always CONSTRUCTED so its variable stays in the parameter
+      # tree and old checkpoints keep loading; ``manager_actent_adapt`` only
+      # decides whether it is handed to the loss. Off (the DreamerV3 default)
+      # the manager falls back to the fixed ``manager_actent`` coefficient.
+      self.manager_actent_adapt = bool(
+          getattr(config, 'manager_actent_adapt', False))
       self.manager_actent_perdim = bool(config.manager_actent_perdim)
       mgr_actent_shape = (skill_shape_t[0],) if self.manager_actent_perdim else ()
       self.mgr_actent = embodied.jax.AutoAdapt(
@@ -402,6 +416,46 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           inverse=True,
           init=float(config.manager_actent_init),
           name='mgr_actent')
+      # Worker entropy controller. Director runs its `actent` AutoAdapt on BOTH
+      # actors at the same normalized target; DreamerV3 uses a fixed
+      # coefficient on its one actor. Constructed unconditionally so the
+      # variable stays in the parameter tree and old checkpoints keep loading;
+      # `worker_actent_adapt` decides whether it is handed to the loss.
+      #
+      # ONE MULTIPLIER PER ACTION DIMENSION, as Director does (TF `agent.py`
+      # 297-300: `shape = act_space.shape[:-1] if discrete else act_space.shape`
+      # with `actent_perdim`). This was a shared scalar until 2026-09-08, which
+      # is a different controller: a scalar holds only the MEAN normalized
+      # entropy at the target, so one saturated dimension can be offset by a
+      # high-entropy one and the multiplier never corrects either. It is not a
+      # hypothetical -- e865 (cheetah, 6 action dims) logged `wkr_actent_std`
+      # 1.44-1.67 around a mean of 0.55, so the dimensions were far from
+      # uniform. One adapter per action head, because heads differ in width.
+      self.worker_actent_adapt = bool(
+          getattr(config, 'worker_actent_adapt', False))
+      self.worker_actent_perdim = bool(
+          getattr(config, 'worker_actent_perdim', True))
+
+      def wkr_actent_shape(space):
+        # `space.shape` IS the per-dimension entropy shape here, discrete or
+        # not. Director writes `shape[:-1] if discrete` because its onehot
+        # spaces carry the class axis inside `shape`; ours keep classes in a
+        # separate `classes` field, so there is no axis to strip and stripping
+        # one would collapse a multi-dimensional discrete head to a scalar.
+        return tuple(space.shape) if self.worker_actent_perdim else ()
+
+      self.wkr_actent = {
+          k: embodied.jax.AutoAdapt(
+              shape=wkr_actent_shape(v),
+              impl=str(getattr(config, 'worker_actent_impl', 'mult')),
+              target=float(getattr(config, 'worker_actent_target', 0.5)),
+              min=float(getattr(config, 'worker_actent_min', 1e-5)),
+              max=float(getattr(config, 'worker_actent_max', 1e2)),
+              vel=float(getattr(config, 'worker_actent_vel', 0.1)),
+              inverse=True,
+              init=float(getattr(config, 'worker_actent_init', 1.0)),
+              name=f'wkr_actent_{k}')
+          for k, v in act_space.items()}
       # Rao's quadratic entropy on the skill head (``manager_rao``). Regulates
       # WHERE on the ordered SOM codebook the manager's probability mass sits,
       # which ``mgr_actent`` cannot see: entropy is invariant to permuting the
@@ -561,8 +615,21 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           'ac': (ac_modules, self._make_opt(**config.ac_opt)),
       }
     self.modules = [m for ms, _ in groups.values() for m in ms]
+    freeze = {}
+    if self.use_hrl:
+      mgr_mods = [self.manager_pol, self.mgr_extr_val, self.mgr_expl_val]
+      if self.mgr_novel:
+        mgr_mods.append(self.mgr_novel_val)
+      for fname, mods in (
+          ('worker', [self.pol, self.wkr_goal_val]),
+          ('goal', [self.goal_enc, self.goal_dec]),
+          ('manager', mgr_mods),
+          ('model', model_modules)):
+        at = int(getattr(config, f'freeze_{fname}_at', 0))
+        if at > 0:
+          freeze[fname] = (mods, at)
     self.opt = embodied.jax.MultiOptimizer(
-        groups, summary_depth=1, name='opt')
+        groups, freeze=freeze, summary_depth=1, name='opt')
 
     # One ``rec`` scale is expanded to every reconstruction key in ``dec_space``.
     scales = self.config.loss_scales.copy()
@@ -779,7 +846,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       else:
         act_cd = K - ((mgr_step - 1) % K)
       policy = self.pol(self._feat_goal2tensor(
-          feat, goal, countdown=self._countdown_norm(act_cd)), bdims=1)
+          feat, self._wkr_goal_in(goal, mgr_skill),
+          countdown=self._countdown_norm(act_cd)), bdims=1)
     else:
       policy = self.pol(self.feat2tensor(feat), bdims=1)
     act = sample(policy)
@@ -1329,7 +1397,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     last_goal = sg(self._goal_from_skill(jax.tree.map(sg, last_mgr_skill), bdims=1))
     lastact = sample(self.pol(
         self._feat_goal2tensor(
-            last_feat, last_goal,
+            last_feat, self._wkr_goal_in(last_goal, last_mgr_skill),
             countdown=self._countdown_norm(img_countdowns[:, -1])), 1))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
@@ -1562,7 +1630,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             self.mgr_novel_slowval(inp_eff, 2) if self.mgr_novel else None),
         mgr_novel_retnorm=self.mgr_novel_retnorm if self.mgr_novel else None,
         mgr_novel_valnorm=self.mgr_novel_valnorm if self.mgr_novel else None,
-        mgr_actent_adapter=self.mgr_actent,
+        mgr_actent_adapter=self.mgr_actent if self.manager_actent_adapt else None,
         mgr_actent_perdim=self.manager_actent_perdim,
         mgr_rao_adapter=self.mgr_rao,
         mgr_rao_perdim=self.manager_rao_perdim,
@@ -1590,7 +1658,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     kwargs_wkr.update(
         update=training,
         contdisc=self.config.contdisc,
-        horizon=self.config.horizon)
+        horizon=self.config.horizon,
+        wkr_actent_adapter=(
+            self.wkr_actent if self.worker_actent_adapt else None),
+        wkr_actent_perdim=self.worker_actent_perdim)
     K_split = worker_split_window(
         self.config.worker_split_traj, self.variable_goal_length,
         self.goal_duration_fixed, self.manager_sample_freq, H)
@@ -1615,8 +1686,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # window's goal for bootstrap, so its honest countdown is 0 (time's up).
       win_cd = jnp.broadcast_to(
           K - jnp.arange(K + 1, dtype=i32), (M * n_win, K + 1))
+      win_goal_in = win_goal
+      if self.worker_goal_input == 'code':
+        codes = sg(f32(self._running_goal_code(mgr_skills)))
+        win_goal_in = merge(jnp.broadcast_to(
+            codes[:, win_starts][:, :, None],
+            (M, n_win, K + 1) + codes.shape[2:]))
       win_feat_goal = self._feat_goal2tensor(
-          win_feat, win_goal, countdown=self._countdown_norm(win_cd))
+          win_feat, win_goal_in, countdown=self._countdown_norm(win_cd))
       win_goal_rew = self._wkr_goal_reward(win_goal, win_feat)
       kwargs_wkr.update(skill_window=0)                         # each window is its own segment
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
@@ -1636,7 +1713,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # mask (``switch_mask``); the fixed-K fallback (e.g. H not a multiple of K)
       # passes the integer window length K.
       feat_goal = self._feat_goal2tensor(
-          imgfeat, goals, countdown=self._countdown_norm(img_countdowns))
+          imgfeat, self._wkr_goal_in(goals, mgr_skills),
+          countdown=self._countdown_norm(img_countdowns))
       wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
       kwargs_wkr.update(
           skill_window=(switch_mask if self.variable_goal_length else K))
@@ -1653,7 +1731,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
 
     # --- Optional replay value loss (tail of real sequence + imag bootstrap) ---
     if self.config.repval_loss:
-      feat = sg(repfeat, skip=self.config.repval_grad)
+      # ``hrl_repval_grad`` (default False), not the flat ``repval_grad``: with
+      # three critics the replay value losses reshape the world model and cause
+      # the late Pin Pad collapse (EXPERIMENTS e1068-e1094).
+      feat = sg(repfeat, skip=self.config.hrl_repval_grad)
       last, term = [obs[k] for k in ('is_last', 'is_terminal')]
       boot_extr = imgloss_mgr_out['mgr_extr_ret'][:, 0].reshape(B, K_imag)
       boot_expl = imgloss_mgr_out['mgr_expl_ret'][:, 0].reshape(B, K_imag)
@@ -1671,7 +1752,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
 
       # --- 1. Replay sequence for Manager ---
       repl_con_full = self.con(self.feat2tensor(feat), 2).prob(1)
-      repl_rew_full = self.rew(self.feat2tensor(feat), 2).pred()
+      # Real replayed rewards, as in flat v3's ``repl_loss`` -- not the reward
+      # head's prediction, which can blur sparse rewards (pinpad). Same
+      # alignment as the reward loss: ``rew(feat[t])`` is fit to ``reward[t]``.
+      # ``repval_pred_reward`` restores the pre-2026-10-02 behaviour.
+      if self.config.repval_pred_reward:
+        repl_rew_full = self.rew(self.feat2tensor(feat), 2).pred()
+      else:
+        repl_rew_full = f32(obs['reward'])
       repl_expl_full = self._mgr_expl_reward(feat)
       repl_novel_full = self._mgr_novel_reward(feat) if self.mgr_novel else None
 
@@ -1760,7 +1848,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # Detach manager goals in replay value path.
       repl_goals = sg(self._goals_from_skills(jax.tree.map(sg, repl_skills), bdims=2))
       feat_goal_wkr = self._feat_goal2tensor(
-          feat_wkr, repl_goals, countdown=self._countdown_norm(repl_cd))
+          feat_wkr, self._wkr_goal_in(repl_goals, repl_skills),
+          countdown=self._countdown_norm(repl_cd))
       repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
 
       # --- 3. Compute Value Losses ---

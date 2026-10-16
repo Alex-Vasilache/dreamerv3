@@ -1,0 +1,49 @@
+#!/bin/bash
+# Resubmit runs that stopped before their target step (e.g. host OOM at 64G:
+# the in-RAM replay passes 64G near 3.6M pinpad steps). Resumes from the run's
+# own RUN_DIR with more memory, on gpu-a100.
+# Resumes inherit RUN_ENVS / DMC_PROPRIO from the keeper's environment, so
+# start it with the same values the runs were launched with.
+# Usage: [KEEP_MATCH=<dir substring>] [RUN_ENVS=4 DMC_PROPRIO=False] nohup keep_alive.sh <target_step> <exp> [...] &
+cd /apps/unit/DoyaU/vasilache/apps/code/dreamerv3
+TARGET=$1; shift
+STATE=job_logs/keep_alive_state.tsv; touch "$STATE"
+alive() { [ -n "$1" ] && [ -n "$(squeue -h -j "$1" 2>/dev/null)" ]; }
+count() { squeue -u "$USER" -h -p "$1" -t RUNNING,PENDING | wc -l; }
+while :; do
+  # If the controller is unreachable, squeue prints nothing and every run looks
+  # dead; resubmitting then duplicates live runs once sbatch works again. Skip
+  # the cycle unless squeue itself succeeds.
+  if ! squeue -u "$USER" -h -o '%i' > /dev/null 2>&1; then
+    echo "$(date '+%F %T') squeue failed, skipping cycle"; sleep 300; continue
+  fi
+  pending=0
+  for e in "$@"; do
+    # KEEP_MATCH narrows the run dir when an experiment number is shared
+    # (e1197-e1204 collided with another session's cartpole runs on 2026-10-06).
+    d=$(ls -d /work/DoyaU/vasilache/work/${e}_* 2>/dev/null | grep -e "${KEEP_MATCH:-.}" | head -1)
+    # Not started yet (array task still queued): keep waiting, do not exit.
+    [ -n "$d" ] || { pending=1; continue; }
+    step=$(tail -1 "$d/logdir/metrics.jsonl" 2>/dev/null | python3 -c 'import sys,json;print(int(json.loads(sys.stdin.read())["step"]))' 2>/dev/null || echo 0)
+    [ "$step" -ge "$TARGET" ] && continue
+    pending=1
+    j1=$(grep -h '^JOB=' "$d/job.env" | tail -1 | cut -d= -f2); j2=$(awk -v e="$e" '$1==e{j=$2} END{print j}' "$STATE")
+    # Any of my jobs named "${e}_*" (e.g. a pending migration) also counts:
+    # job.env only learns a job id once that job starts.
+    named=$(squeue -u "$USER" -h -o '%j' | grep -c "^${e}_")
+    { alive "$j1" || alive "$j2" || [ "$named" -gt 0 ]; } && continue
+    . <(grep -E '^(EXP_TAG|CONFIG|TASK|SEED|RUN_DIR|WANDB_PROJECT)=' "$d/job.env" | sed 's/^\([A-Z_]*\)=\(.*\)$/\1="\2"/')
+    # A100 only: queued array tasks count against the cap, so a "partition
+    # full" fallback would push resumes onto V100/P100, which need 4 GPUs
+    # at size6m and were ruled out for these runs.
+    res=(-p gpu-a100 --gres=gpu:a100:1 -c 16 --mem=128G)
+    new=$(sbatch --parsable "${res[@]}" -t 2-00:00:00 -J "${EXP_TAG}_k" \
+      --export=ALL,CONFIG="$CONFIG",TASK="$TASK",SEED="$SEED",EXP_TAG="$EXP_TAG",RUN_DIR="$RUN_DIR",WANDB_PROJECT="$WANDB_PROJECT",RUN_ENVS="${RUN_ENVS:-8}",DMC_PROPRIO="${DMC_PROPRIO:-True}" \
+      sbatch/run_benchmark.sbatch)
+    [ -n "$new" ] || { echo "$(date '+%F %T') sbatch failed for $e"; continue; }
+    printf '%s\t%s\t%s\t%s\n' "$e" "$new" "${res[1]}" "$(date '+%F %T') step=$step" >> "$STATE"
+    echo "$(date '+%F %T') resubmit $e at step $step -> $new on ${res[1]}"
+  done
+  [ "$pending" = 0 ] && { echo "$(date '+%F %T') all at target"; exit 0; }
+  sleep 300
+done

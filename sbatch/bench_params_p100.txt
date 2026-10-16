@@ -1,0 +1,6 @@
+director dmc_hopper_hop 1 e759
+som_lip dmc_hopper_hop 1 e760
+dreamerv3 dmc_hopper_hop 1 e761
+director pinpad_four 2 e786
+som_lip pinpad_four 2 e787
+dreamerv3 pinpad_four 2 e788

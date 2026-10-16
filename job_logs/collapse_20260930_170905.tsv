@@ -1,0 +1,13 @@
+array_job	task_idx	exp	config	task	seed
+4738154	0	e1031	director director_og collapse_ctrl	pinpad_four	0
+4738154	1	e1032	director director_og collapse_freeze_worker	pinpad_four	0
+4738154	2	e1033	director director_og collapse_freeze_worker_goal	pinpad_four	0
+4738154	3	e1034	director director_og collapse_freeze_manager	pinpad_four	0
+4738154	4	e1035	director director_og collapse_ctrl	pinpad_four	1
+4738154	5	e1036	director director_og collapse_freeze_worker	pinpad_four	1
+4738154	6	e1037	director director_og collapse_freeze_worker_goal	pinpad_four	1
+4738154	7	e1038	director director_og collapse_freeze_manager	pinpad_four	1
+4738154	8	e1039	director director_og collapse_ctrl	pinpad_four	2
+4738154	9	e1040	director director_og collapse_freeze_worker	pinpad_four	2
+4738154	10	e1041	director director_og collapse_freeze_worker_goal	pinpad_four	2
+4738154	11	e1042	director director_og collapse_freeze_manager	pinpad_four	2

@@ -1,0 +1,110 @@
+2026-10-03 05:23:02 resubmit e1071 at step 3712784 -> 4742669 on gpu-p100
+2026-10-03 05:23:02 resubmit e1072 at step 3958512 -> 4742670 on gpu-p100
+2026-10-03 05:23:03 resubmit e1073 at step 3619472 -> 4742671 on gpu-p100
+2026-10-03 14:51:01 resubmit e1086 at step 3583056 -> 4742923 on gpu-a100
+2026-10-03 15:41:16 resubmit e1088 at step 3717120 -> 4742931 on gpu-a100
+2026-10-03 15:41:17 resubmit e1094 at step 3867952 -> 4742932 on gpu-p100
+2026-10-03 15:46:18 resubmit e1089 at step 3766080 -> 4742933 on gpu-a100
+2026-10-03 15:46:18 resubmit e1091 at step 3519120 -> 4742934 on gpu-a100
+2026-10-03 15:51:19 resubmit e1083 at step 1498400 -> 4742936 on gpu-p100
+2026-10-03 16:26:29 resubmit e1087 at step 3908656 -> 4742939 on gpu-p100
+2026-10-03 17:15:07 resubmit e1090 at step 3911152 -> 4742944 on gpu-p100
+2026-10-03 17:40:15 resubmit e1092 at step 3882640 -> 4742949 on gpu-a100
+2026-10-04 00:56:42 resubmit e1081 at step 3989872 -> 4743079 on gpu-a100
+2026-10-04 02:21:48 all at target
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:16:57 resubmit e1095 at step 1425440 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:18:00 resubmit e1096 at step 1476464 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:19:03 resubmit e1097 at step 1497376 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:20:07 resubmit e1098 at step 1477328 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:21:10 resubmit e1099 at step 1512128 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:22:13 resubmit e1100 at step 1455920 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:23:16 resubmit e1101 at step 1511472 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:24:19 resubmit e1102 at step 1492432 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:30:23 resubmit e1095 at step 1511408 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:31:26 resubmit e1096 at step 1552208 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:32:29 resubmit e1097 at step 1586800 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:33:32 resubmit e1098 at step 1565840 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:34:36 resubmit e1099 at step 1601856 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:35:39 resubmit e1100 at step 1529296 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:36:42 resubmit e1101 at step 1600464 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:37:45 resubmit e1102 at step 1579760 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:43:49 resubmit e1095 at step 1585376 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:44:52 resubmit e1096 at step 1640800 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:45:55 resubmit e1097 at step 1663360 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:46:58 resubmit e1098 at step 1654656 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+sbatch: error: Batch job submission failed: Unable to contact slurm controller (connect failure)
+2026-10-05 14:48:02 resubmit e1099 at step 1678576 ->  on gpu-a100
+slurm_load_jobs error: Unable to contact slurm controller (connect failure)
+2026-10-05 14:50:57 squeue failed, skipping cycle
+2026-10-05 14:56:15 squeue failed, skipping cycle
+2026-10-05 16:06:46 squeue failed, skipping cycle
+2026-10-05 16:12:04 squeue failed, skipping cycle
+2026-10-05 16:17:22 squeue failed, skipping cycle
+2026-10-05 16:22:40 squeue failed, skipping cycle
+2026-10-05 16:27:58 squeue failed, skipping cycle
+2026-10-05 16:33:16 squeue failed, skipping cycle
+2026-10-05 16:38:34 squeue failed, skipping cycle
+2026-10-05 20:49:33 resubmit e1099 at step 3988496 -> 4744307 on gpu-v100
+2026-10-06 11:02:09 all at target

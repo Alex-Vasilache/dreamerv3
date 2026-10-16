@@ -1,0 +1,15 @@
+job	exp	arm	seed	source	run_dir
+4741813	e1060	reset_none	0	e1057	/work/DoyaU/vasilache/work/e1060_pinpad_four_director-director_og-reset_none_s0_frome1057
+4741814	e1062	reset_mgr	0	e1057	/work/DoyaU/vasilache/work/e1062_pinpad_four_director-director_og-reset_mgr_s0_frome1057
+4741815	e1061	reset_none	1	e1058	/work/DoyaU/vasilache/work/e1061_pinpad_four_director-director_og-reset_none_s1_frome1058
+4741816	e1063	reset_mgr	1	e1058	/work/DoyaU/vasilache/work/e1063_pinpad_four_director-director_og-reset_mgr_s1_frome1058
+4741817	e1066	reset_wkr	0	e1057	/work/DoyaU/vasilache/work/e1066_pinpad_four_director-director_og-reset_wkr_s0_frome1057
+4741818	e1065	reset_goal	1	e1058	/work/DoyaU/vasilache/work/e1065_pinpad_four_director-director_og-reset_goal_s1_frome1058
+4741819	e1064	reset_goal	0	e1057	/work/DoyaU/vasilache/work/e1064_pinpad_four_director-director_og-reset_goal_s0_frome1057
+4741821	e1067	reset_mgr	2	e1059	/work/DoyaU/vasilache/work/e1067_pinpad_four_director-director_og-reset_mgr_s2_frome1059
+4741833	e1062	reset_mgr	0	offline-splice relaunch	/work/DoyaU/vasilache/work/e1062_pinpad_four_director-director_og-reset_mgr_s0_frome1057
+4741834	e1063	reset_mgr	1	offline-splice relaunch	/work/DoyaU/vasilache/work/e1063_pinpad_four_director-director_og-reset_mgr_s1_frome1058
+4741835	e1067	reset_mgr	2	offline-splice relaunch	/work/DoyaU/vasilache/work/e1067_pinpad_four_director-director_og-reset_mgr_s2_frome1059
+4741836	e1064	reset_goal	0	offline-splice relaunch	/work/DoyaU/vasilache/work/e1064_pinpad_four_director-director_og-reset_goal_s0_frome1057
+4741837	e1065	reset_goal	1	offline-splice relaunch	/work/DoyaU/vasilache/work/e1065_pinpad_four_director-director_og-reset_goal_s1_frome1058
+4741838	e1066	reset_wkr	0	offline-splice relaunch	/work/DoyaU/vasilache/work/e1066_pinpad_four_director-director_og-reset_wkr_s0_frome1057

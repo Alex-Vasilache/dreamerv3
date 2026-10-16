@@ -1,0 +1,4 @@
+director dmc_cheetah_run 0 e825 mgr_actent_adapt
+som_lip dmc_cheetah_run 0 e826 mgr_actent_adapt
+director pinpad_six 0 e827 mgr_actent_adapt
+som_lip pinpad_six 0 e828 mgr_actent_adapt

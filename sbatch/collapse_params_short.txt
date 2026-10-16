@@ -1,0 +1,7 @@
+director pinpad_four 2 e1039 director_og collapse_ctrl
+director pinpad_four 2 e1040 director_og collapse_freeze_worker
+director pinpad_four 2 e1041 director_og collapse_freeze_worker_goal
+director pinpad_four 2 e1042 director_og collapse_freeze_manager
+director pinpad_four 0 e1043 director_og collapse_freeze_manager_model
+director pinpad_four 1 e1044 director_og collapse_freeze_manager_model
+director pinpad_four 2 e1045 director_og collapse_freeze_manager_model

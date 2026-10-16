@@ -1,0 +1,10 @@
+array_job	task_idx	exp	config	seed
+4742298	0	e1068	director director_og wm_realrew	0
+4742298	1	e1069	director director_og wm_realrew	1
+4742298	2	e1070	director director_og wm_realrew	2
+4742298	3	e1071	director director_og wm_norepgrad	0
+4742298	4	e1072	director director_og wm_norepgrad	1
+4742298	5	e1073	director director_og wm_norepgrad	2
+4742298	6	e1074	director director_og wm_b64 wm_oldrew	0
+4742298	7	e1075	director director_og wm_b64 wm_oldrew	1
+4742298	8	e1076	director director_og wm_b64 wm_oldrew	2

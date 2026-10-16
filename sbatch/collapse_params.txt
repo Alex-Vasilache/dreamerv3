@@ -1,0 +1,12 @@
+director pinpad_four 0 e1031 director_og collapse_ctrl
+director pinpad_four 0 e1032 director_og collapse_freeze_worker
+director pinpad_four 0 e1033 director_og collapse_freeze_worker_goal
+director pinpad_four 0 e1034 director_og collapse_freeze_manager
+director pinpad_four 1 e1035 director_og collapse_ctrl
+director pinpad_four 1 e1036 director_og collapse_freeze_worker
+director pinpad_four 1 e1037 director_og collapse_freeze_worker_goal
+director pinpad_four 1 e1038 director_og collapse_freeze_manager
+director pinpad_four 2 e1039 director_og collapse_ctrl
+director pinpad_four 2 e1040 director_og collapse_freeze_worker
+director pinpad_four 2 e1041 director_og collapse_freeze_worker_goal
+director pinpad_four 2 e1042 director_og collapse_freeze_manager

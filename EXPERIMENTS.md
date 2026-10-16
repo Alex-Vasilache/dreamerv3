@@ -79,109 +79,1166 @@ metrics reference.
 
 ## 2. Live board
 
-**e722–e729 launched 2026-09-01** (job ids 4704341–4704348, log
-`job_logs/e722_e729_director_vs_somlip.tsv`). Eight runs, one seed each, 4M
-steps, all on `gpu-a100` at 1 GPU apiece — exactly the 8-GPU cap, so they run as
-one wave. **First batch under the new defaults**, so nothing in the archive is a
-valid comparator.
+### Unattended operation, 2026-09-08 to ~2026-11-01
 
-| exp | job | task | arm |
+Everything below runs without intervention. What is in place, and what is not:
+
+| piece | job | lifetime | what it does |
 |---|---|---|---|
-| e722 | 4704341 | pinpad_five | director |
-| e723 | 4704342 | pinpad_six | director |
-| e724 | 4704343 | dmc_cartpole_swingup | director |
-| e725 | 4704344 | dmc_cheetah_run | director |
-| e726 | 4704345 | dmc_hopper_hop | director |
-| e727 | 4704346 | pinpad_five | som_lipvq_line_relu |
-| e728 | 4704347 | pinpad_six | som_lipvq_line_relu |
-| e729 | 4704348 | dmc_cheetah_run | som_lipvq_line_relu |
+| training arrays | `bench_*` | until their tasks finish | `--requeue` plus a USR1 self-requeue at walltime, with a fixed `RUN_DIR`, so preemption and walltime resume from the last checkpoint |
+| watchdog | `bench_watchdog` | self-renewing to 2026-11-01 | resubmits any run that stopped without finishing; reclaims `logdir/replay` from finished runs |
+| journal | `bench_journal` | self-renewing to 2026-11-01 | appends a status snapshot every 30 min to `/work/.../bench_journal.log` |
 
-Director is `director_match director_stable`; SOM/LiP is
-`director_match goal_som_lipvq_line_prod lip_relu director_stable` — the ReLU
-Lipschitz-SOM variant **without** `mgr_ucb`. **Both arms carry `director_stable`,
-so the goal autoencoder is the only difference between them** — this is the
-matched comparison the e718–e721 batch could not support (there the Director arm
-had slowtar/advnorm/retnorm and the SOM arm did not).
+Both infrastructure jobs have a 3-day walltime and trap USR1 shortly before it
+to submit their own successor, so neither needs a human to restart it.
 
-**Hypothesis:** with the arms matched and the goal AE isolated, the SOM-line +
-Lipschitz codebook should hold its pinpad score later into training than the
-Director codebook, whose curve peaks near 1M and decays. **Caveat, stated up
-front:** one seed per cell resolves nothing on its own, and `dmc_hopper_hop` is
-retired as a comparison substrate (5 seeds there have ~1% power). e726 is a
-smoke/sanity cell, not evidence.
+**The watchdog detects death by staleness**, not by an exit code: it resubmits a
+run whose `metrics.jsonl` has not been written for 45 minutes and which has no
+live job behind it. Keying off `rc != 0` -- the first version -- misses
+`scancel`, OOM kills and node failures, which is how e795 sat dead for 25 hours.
+Three checks guard against double-submitting, and `bench_droplist.txt` holds
+runs that were deliberately abandoned, since a cancelled run is otherwise
+indistinguishable from a crashed one.
 
-**Prerequisite fixes that landed with this batch** (`9ae4ee0`): ten sbatch
-scripts hardcoded the removed `dreamerv3_somvae` worktree path, and both
-launchers pinned `goal_opt.lr` 4e-5, `goal_opt.wd` 0.0 and
-`goal_autoencoder_beta` 0.25 **on the command line**, where a flag beats any
-config block — so the 2026-09-01 defaults would never have reached a run. All
-three are now variables defaulting to the config values.
+**It finds runs by marker, not by job-id prefix, and reads each run's own
+target.** Both were wrong until 2026-09-08. Discovery was a glob on
+`j4706*`/`j4707*`, and job ids only go up, so the 42 `director_og` and `size50m`
+runs submitted later had no watchdog behind them and did not appear in
+`bench_status.sh`; it now selects the dirs whose `job.env` names the benchmark's
+wandb project. The target was a hardcoded 1.09M, which is right for the
+`size6m` arms and wrong for `director_og` and `size50m`, both of which run 4M --
+under the widened glob that constant would have called a 4M run finished at 27%
+and reaped its replay, the one thing that makes it resumable. Both scripts now
+read `run.steps` from the run's own `logdir/config.yaml`.
 
-**Cancelled earlier the same day:** e718–e721 at ~3.47M/4M and e706–e712 before
-starting. Their run dirs are still under `/work/DoyaU/vasilache/work/` and are
-not yet archived to the bucket.
+**Space.** Archiving to `/bucket` **cannot** be automated: it is read-only on
+compute nodes, which is why the 2026-09-04 SLURM cleanup job archived nothing
+and correctly refused to delete. The watchdog instead deletes `logdir/replay`
+from runs that have reached target -- multi-GB of raw experience needed only to
+resume -- keeping `ckpt`, `ckpt_milestones`, `config.yaml`, `metrics.jsonl` and
+`scores.jsonl`. First pass reclaimed 55 GB from 20 runs. `/work` sits at ~340 GB
+of 10 TB, so space is not expected to bind.
 
-**Repo state.** One worktree (`code/dreamerv3`) on `main`, holding both the
-Director and SOM/LiP arms. `archive/hrl` is the only other branch. Local `main`
-is ahead of `origin/main` by 179 commits and **has not been pushed**.
+**Still manual, for whoever returns first:** archiving finished runs to
+`/bucket` (login node only, `SKIP_REPLAY=1` is now moot for reaped runs since
+replay is already gone). `git push` worked again on 2026-09-08 and the backlog
+is on the remote; the rebase there picked up an Apple-GPU commit made from
+another machine, whose `resolve_platform` is the identity on Linux, so requeued
+jobs re-reading the tree are unaffected.
 
-**Where the science stands.**
+**Reading the state:** `bash sbatch/bench_status.sh -v`, or the journal log for
+a timeline.
 
-- **The `director_stable` arm is a null.** Its four factors each hit their
-  mechanical target and the seed-averaged pinpad-five curve is indistinguishable
-  from the plain baseline (peak ~191 vs ~202 at 1.0M, same decay). It fixed the
-  *recovery-blocker* — the manager value runaway, which only ever hit 2 of 5
-  baseline seeds — not the *trigger*, which is present in every seed. Full
-  measurements in the 2026-09-01 archive.
-- **`director_stable` is a five-factor change, not four.** `mgr_advnorm` and
-  `wkr_goal_advnorm` read one shared `config.advnorm` key, so turning on the
-  manager's advantage normalization also raised the worker's update magnitude
-  ~17x (0.037–0.043 -> 0.699–0.700). Splitting that key is a prerequisite for
-  ablating either half.
-- **The collapse trigger is not identified.** The one signal that moves with
-  every collapse is `wkr_goal_rew` roughly doubling (0.19–0.25 -> 0.50–0.53)
-  while the score falls ~90% — the worker gets better at reaching goals as the
-  score dies. Manager entropy is held at target throughout and is ruled out.
-- **The goal VAE was audited against Director line by line** on 2026-09-01
-  (`docs/VERIFICATION.md`, *Goal autoencoder* — the component previously had no
-  entry at all). Encoder/decoder inputs, the summed-MSE reconstruction, the KL
-  prior and its AutoAdapt controller, the training data and the exploration
-  reward all match. The one active difference, `goal_autoencoder_beta` 0.25 vs
-  Director's 1.0, **is now the default**. What still differs: the nets are
-  DreamerV3-sized (3x1024, silu/rms) against Director's 4x512 elu/layer, and
-  `eps` is 1e-20 against their 1e-6.
 
-**Next, in order.**
 
-1. Split `advnorm` into worker and manager keys, then ablate the 17x worker
-   change apart from the manager normalization.
-2. Log `success_manager` (Director's "final goal reward > 0.7" fraction) and a
-   time-to-reach within the K-block, so the "worker arrives early and idles"
-   reading of the collapse can be tested at all.
-3. Archive the cancelled e706–e721 run dirs to the bucket and clear `/work`.
-4. Re-baseline both arms under the new defaults — every number in the archive
-   predates them.
+**e735–e788 launched 2026-09-04** — the benchmark matrix. 54 runs: three
+configs x six tasks x three seeds, one GPU each, 1.1M env steps at replay
+ratio 256. Arrays `4706650` (a100, 36), `4706651` (v100, 12), `4706660`
+(p100, 6); watchdog `4706677`; log `job_logs/bench_20260904_204028.tsv`.
+W&B project **`dreamerv3-bench-2026-09`**.
 
-**Default changes (2026-09-01).** Four moves, all in `defaults`, so both arms get
-them with no extra config block:
+| config | what it is |
+|---|---|
+| `dreamerv3` | flat DreamerV3, no hierarchy. The control. |
+| `director` | hierarchy + Director's categorical goal VAE |
+| `som_lip` | hierarchy + SOM/Lipschitz VQ goal VAE |
 
-- **Optimizers** `opt`/`ac_opt`/`goal_opt`: lr **4e-5 -> 1e-4**, wd **0 -> 1e-2**,
-  matching TF Director exactly. Decoupled shrinkage `wd*lr` stays at 1e-6, which
-  is what `director_stable`'s old wd 2.5e-2 gave at lr 4e-5 — the decay is
-  unchanged and only the learning rate rose. `director_stable` no longer carries
-  wd overrides.
-- **`goal_autoencoder_beta` 0.25 -> 1.0**, matching Director, which puts no beta
-  on the goal-VAE KL at all.
-- **Network sizes**: `director_match` no longer resizes every MLP — its
-  `.*\.units: 512` / `.*\.layers: 4` globs are gone, so all eleven nets keep the
-  DreamerV3 base sizes (3x1024; 1x1024 for the reward and continue heads). The
-  block now sets only rssm (deter/hidden 1024, classes 32), depth 64 and the
-  batch shape. **This moves the nets away from Director, not toward it.**
-- **`goal_struct_adapt` and `goal_soft_reuse_adapt` default to False**, so a
-  Director baseline is a clean control; recipes that want them must opt in.
+Tasks: `dmc_cheetah_run`, `pinpad_six`, `dmc_hopper_hop`, `pinpad_five`,
+`dmc_cartpole_swingup`, `pinpad_four`. Submission order is seed-major then
+environment then config, so a full seed-0 sweep of all six environments and
+all three arms is in flight before any seed-1 run starts, and within a cell the
+order is director -> som_lip -> dreamerv3.
 
-Every result in the archive predates these defaults. Reproducing an old run needs
-its own `logdir/config.yaml`, not the current file.
+**This is the first batch on DreamerV3 hyperparameters throughout** (38f8bf6,
+856ffb8), so nothing in the archive is a valid comparator — not even the
+2026-09-01 batch. What changed: lr 4e-5 / wd 0.0, `manager_policy.unimix` 0.01,
+`mgr_retnorm` percentile, fixed manager entropy instead of the AutoAdapt,
+`director_stable` deleted, replay 5e6, and `size6m` in place of
+`director_match`. That last one is the big one: **3.94M parameters against
+107M**, because `size6m` is DreamerV3's ladder rung at deter 1024 and satisfies
+their scaling rules (deter = 8*units, classes = units/16, depth = units/16)
+while `director_match` ran deter 1024 against units 1024 — a 107M model with a
+6M recurrent state.
+
+**Question:** does the hierarchy beat flat DreamerV3 at all, on a matched and
+now-honest hyperparameter set, and does the SOM/Lipschitz goal AE beat
+Director's on the sparse pinpad tasks where the collapse lives?
+
+**Pre-registered expectations.** On the three DMC tasks all three arms should
+be close; DreamerV3 reaches ~800+ on cheetah at 1M steps and the hierarchy has
+never bought anything on dense control, so a large gap in *either* direction
+there means something is misconfigured rather than interesting. The claim under
+test is pinpad. Director's pinpad curve has peaked near 1M and decayed in every
+batch we have run; if the decay is a replay-eviction artifact it should be gone
+here, because replay 5e6 against 1.1M steps never evicts. -> If Director still
+peaks and decays with a non-evicting buffer, eviction is ruled out and the
+trigger is in the algorithm. -> If it holds, the whole 2026-08 collapse
+programme was chasing a buffer-size artifact.
+
+**e789–e824 added 2026-09-04 22:50** — the paired exploration-floor arm.
+`director` and `som_lip` with `mgr_expl_perc01` layered on (36 runs, seed-major,
+arrays `4706728` p100 / `4706729` short-a100). Everything else is identical to
+e735–e788, so the pairs differ only in `mgr_expl_retnorm.limit`.
+
+**Why.** Measured across all 15 HRL runs of the first batch, both arms and four
+tasks, the manager's exploration return is 0.19–0.55 against a `perc` floor of
+1.0. `perc` returns `max(limit, hi−lo)`, so **the exploration stream is never
+normalized, in any run, on any task**, while the extrinsic stream (return ~17
+on cheetah) is normalized properly. Where extrinsic reward is exactly 0 — every
+pinpad task until the first pad sequence is found — that leaves `mgr_adv_mag`
+at 4e-4 against 8e-2 on cheetah, and manager entropy pinned at its 16.64-nat
+ceiling (measured 16.47 on pinpad_six against 1.76 on cheetah).
+
+The cause is a unit mismatch rather than a broken normalizer: the exploration
+reward is a per-dim *mean* of squared reconstruction error over 1024 deter
+dims, so it is intrinsically ~1e-3, while the floor is absolute and was chosen
+for a task-reward stream. DreamerV3 never met this because it has one stream;
+Director avoids it with per-stream `std`.
+
+`perc` is kept rather than switched to `meanstd` because `meanstd` divides by
+the running std unconditionally, and would keep handing the manager a
+unit-scale advantage built from noise once the goal AE reconstructs everything
+equally well. A floor gives the wanted annealing for free: real novelty
+structure → divide by the real range → signal; structure gone → range falls
+under the floor → advantage decays → entropy returns to maximum.
+
+**0.1 is provisional.** It is ~1/3 of the estimated current 5–95 range, but
+propagating the measured spread gives 0.07–0.8 — the uncertainty is entirely in
+how correlated reconstruction errors are along a trajectory, which the logs
+could not settle. `mgr/rscale_expl` is now logged; set the floor from that
+rather than from this arithmetic. **Read it first: if it equals the configured
+limit, the stream is still clamped.**
+
+**Branches.** → If the paired arm's manager entropy falls below the ceiling on
+pinpad while the baseline's stays pinned, the floor was suppressing the
+exploration signal and 0.1 (or lower) becomes the default. → If both stay
+pinned, `mgr_expl_weight` is the binding constraint instead, not the normalizer.
+
+**Measured while setting this up** (size6m, one GPU per run):
+
+| GPU | conv | env fps | GPU mem | ETA for 1.1M |
+|---|---|---|---|---|
+| A100-80GB | native | 24.2 | 2.4 GB (3%) | ~12.6 h |
+| V100-16GB | reference | 7.8 | 4.2 GB (26%) | ~39 h |
+| P100-16GB | reference | 7.2 | 3.8 GB (24%) | ~42 h |
+
+Two standing answers from that. **One GPU per run is enough everywhere** — the
+old multi-V100 scripts used four because the 107M model needed ~59 GB, and at
+3.94M a single 16 GB card is 4x oversized. **A GPU cannot be shared between
+runs** despite 2.4 GB of an 80 GB A100 being nothing: the cluster exposes
+`GresTypes = gpu,mic` with no MPS or shard type, so SLURM hands out whole GPUs.
+
+**Two bugs found by launching it**, both fixed in 856ffb8:
+
+- `som_lip` died on every V100 within two minutes (`agent.py:254 assert all
+  finite`) while running fine on A100. `goal_vq_enc/dec` use `norm: none`
+  because a norm would undo the Lipschitz bound, and an unnormalized trunk in
+  bfloat16 goes non-finite. `goal_vq.dtype: float32` is what `LipMLP.dtype`
+  exists for. Applied to A100 too, so the arm is not bf16 on one card and f32
+  on another.
+- The partition split assigned runs by index mod 9, but algorithm is index
+  mod 3, so every P100 task was `dreamerv3` and every V100 task was
+  `director`/`som_lip`. The unit of assignment is now a *cell* — the three
+  arms for one (environment, seed) — so the arms being compared always ran on
+  identical hardware.
+
+
+### First results (2026-09-05 08:00, ~36% of the matrix)
+
+Two runs finished, both flat `dreamerv3` at seed 0:
+
+| run | task | last-15 | best |
+|---|---|---|---|
+| e737 | `dmc_cheetah_run` | **910.5** | 923.5 |
+| e740 | `pinpad_six` | 0.0 | 0.0 |
+
+**The flat control reproduces published DreamerV3 on cheetah** (~800–900 at 1M)
+with a 4.19M-parameter `size6m` model, against the ~200M `size200m` that v3
+uses for its own `dmc_vision` benchmark. That is a useful calibration: the
+harness, the config and the 30x-smaller model are all sound, and any deficit
+elsewhere is not "our DreamerV3 is broken".
+
+**The hierarchy is far behind on dense control.** At comparable steps on
+cheetah: flat 910.5, `som_lip` 418.3, `director` 166.7. Manager skill entropy
+there is ~1.5 of a possible 16.64 nats, i.e. the manager has collapsed onto
+essentially one goal and the worker is chasing a constant target. That is the
+predicted consequence of `manager_actent_adapt: False` — DreamerV3's fixed
+`actent` 3e-4 is calibrated for a worker-sized action space against
+percentile-normalized returns, and nothing holds an 8x8 categorical open.
+A `mgr_actent_adapt` block exists to restore the controller, but **e825–e828
+were cancelled before running on 2026-09-05 and the probe was not taken**. The
+DMC ordering therefore stands unattributed: we know the manager collapses onto
+one goal under the fixed coefficient, and we do not know whether restoring the
+controller recovers the deficit.
+
+**Nothing has scored on pinpad_six**, in any arm, flat or hierarchical, at
+~980k steps. One run has found reward on a pinpad task at all: e781
+(`som_lip`, pinpad_five, seed 2) at last-15 192.7 after 104 episodes.
+
+**The exploration floor works directionally.** On pinpad_six the paired arm
+(floor 0.1) has manager advantage 0.00844 against the baseline's 0.00096 —
+8.8x, exactly the 1.0/0.1 ratio — and manager entropy has come off its ceiling
+to 13.06 against 15.13. But `mgr/rscale_expl` still reads exactly 0.1000, so
+the stream is *still* clamped and the true 5–95 range is below 0.1. The new
+`mgr/range_expl` metric logs the unclamped range so the floor can be set from a
+measurement rather than the arithmetic that produced 0.1.
+
+### Standings at 2026-09-06 09:00 (17 of 90 runs finished, 37% of env steps)
+
+Best run per cell, **single seeds, so treat every ordering as provisional**.
+`last-15` episode return; `*` marks a run still in flight (~520-590k steps).
+
+| task | dreamerv3 | director | som_lip | director+expl | som_lip+expl |
+|---|---|---|---|---|---|
+| `dmc_cartpole_swingup` | **858.9** | 528.2 | 744.9 | 704.0 | 704.0 |
+| `dmc_cheetah_run` | **910.5** | 338.7 | 282.1 | 361.4* | 381.1* |
+| `dmc_hopper_hop` | **336.8** | 0.0 | 65.1 | 65.1 | — |
+| `pinpad_four` | **381.3** | 0.0 | 12.0 | 234.0 | 326.7 |
+| `pinpad_five` | **297.3** | 0.0 | 2.0 | — | 0.0 |
+| `pinpad_six` | 0.0 | 0.0 | 0.0 | 0.0* | 0.0* |
+
+**Flat DreamerV3 leads every task**, including the sparse pinpad ones the
+hierarchy exists for. Director's paper claims the opposite there, so either the
+hierarchy is misconfigured or something about this setup differs from theirs in
+a way we have not identified. Do not read this as "hierarchy does not work"
+yet: it is one seed per cell, and the manager is in a state we already know is
+degenerate (below).
+
+**The exploration floor is the largest single effect measured.** On
+`pinpad_four` it moves the HRL arms from 0.0/12.0 to **234.0/326.7**. That is
+direct confirmation of the diagnosis behind e789-e824: with `perc`'s floor at
+1.0 the exploration return (0.19-0.55) was never normalized, so on a task whose
+extrinsic reward is 0 the manager had almost no gradient. Lowering the floor to
+0.1 gave it one. Note `mgr/rscale_expl` still reads exactly 0.1000, so the
+stream is *still* clamped and a lower floor should help further --
+`mgr/range_expl` now logs the unclamped range to set it from.
+
+**Open, and the most likely reason the HRL arms trail:** manager skill entropy
+sits at ~1.5 of a possible 16.64 nats on dense tasks under the fixed
+`actent: 3e-4` (`manager_actent_adapt: False`). A manager collapsed onto one
+goal makes the worker chase a constant target. The `mgr_actent_adapt` block
+restores Director's controller but **was deliberately not run**, so this stays
+a hypothesis with no experiment attached.
+
+**Nothing has scored on `pinpad_six` in any arm**, flat or hierarchical, at
+~1.09M steps.
+
+## Pinpad collapse: the world model, not the worker (e1031–e1053, 2026-09-30/10-01)
+
+**Question.** In every `director director_og` pinpad_four/five run (both sizes)
+the sequence is found by 0.1–0.3M, then lost by ~0.5M (size6m) / ~1M (size50m)
+and never recovered. The collapse coincides with the worker's goal reward
+jumping 0.25 → 0.45. Is the worker's learning the cause, or a correlate?
+
+**Method.** Causal freezes: `agent.freeze_{worker,goal,manager,model}_at`
+(new, `embodied/jax/opt.py`) hold a module group's parameters exactly fixed —
+no gradient step, no weight decay — from 75k updates (~150k env steps), after
+the sequence is found and before the goal-reward jump. `director director_og
+collapse_<arm>`, pinpad_four, size6m, 3 seeds, 1.2–2M steps, gpu-a100/short-a100
+(arrays 4738154, 4738292, 4738427/8, 4738651; tsv in `job_logs/collapse_*`).
+Wandb project `dreamerv3-collapse-2026-09`.
+
+| arm (frozen at 150k) | score 0.1–0.3M | 0.6–0.9M | 0.9–1.2M | goal reward 0.1–0.3M → 0.6–0.9M |
+|---|---|---|---|---|
+| control (old e924/30/36) | 229 | 23 | 0 | 0.27 → 0.52 |
+| control (e1031/35/39) | 239 | 51 | 0 | 0.27 → 0.48 |
+| worker | 220 | 22 | 9 | 0.33 → **0.69** |
+| manager | 63 | 0 | – | 0.45 → 0.56 |
+| manager + world model | 146 | 21 | 4 | 0.34 → 0.43 |
+| worker + goal AE | 232 | 198 | 211 | 0.14 → 0.01 |
+| goal AE | 241 | 160 | 136 | 0.19 → 0.00 |
+| goal AE + world model | 185 | 201 | **252** | 0.29 → 0.28 |
+| **world model** | 244 | **254** | **247** | 0.25 → 0.23 |
+
+**Findings.**
+1. **The worker's learning is a correlate, not the cause.** Freezing the worker
+   does not prevent the collapse (3/3 seeds collapse, ~100–200k later than
+   control). The goal-reward jump happens anyway — larger, to 0.69 — with the
+   worker's weights fixed, so that jump was never the worker improving.
+2. **World-model learning is necessary for the collapse.** Freezing the world
+   model alone holds 3/3 seeds at ~250 to 1.2M, with the worker, goal AE and
+   manager all still learning; with the goal AE also frozen, 3/3 hold. In all six
+   the goal-reward jump never happens and imagined reward stays tied to real
+   reward (imagined/real reward ratio 4.4–6.6 in the held runs vs. imagined 0.04–0.11 against real ≈ 0 in
+   collapsed controls).
+3. Freezing the goal AE alone (world model drifting) breaks the goal channel
+   (goal reward → 0) and degrades partially (136); freezing worker + goal AE
+   holds (211) — with the goal channel dead, the frozen worker acts as a fixed
+   task policy. A frozen manager collapses at once, and still collapses with the
+   world model frozen too (the learning worker/goal AE move under it).
+
+**Not separated by these arms.** Freezing the world model fixes both (a) the
+feature space that goals are decoded into and scored in, and (b) the
+imagination model (dynamics + reward head) the manager and critic train in.
+Either drift could be the mechanism. A world-model freeze is also not a fix:
+the agent stops learning a model of new experience. Single task (pinpad_four),
+single size (size6m), 3 seeds, ≤1.2M steps for the frozen-model arms.
+e1044's run was interrupted once (cancelled in error, resumed from its run dir).
+
+### Follow-up: do goal codes change meaning? (`tools/code_drift.py`, 2026-10-01)
+
+Decoded each code with each milestone checkpoint and found the nearest real
+probe state (cosine_max, each checkpoint in its own feature space), so only a
+change of *meaning* registers, not a change of coordinates. Fraction of codes
+still pointing within 2 grid cells of the same place 500k steps later
+(chance ≈ 5–10%): size6m controls 33–62%, worker-frozen 38–50%,
+**world-model-frozen 68–81%**, **size50m controls 67–85%**. Over 0.5→4M every
+control re-assigns its codes almost completely. So meaning drift is real and
+the world model drives it — but the size50m runs collapse (0.9–1M) while
+their codes are as stable as in the non-collapsing frozen-model runs, so
+meaning drift alone does not explain the collapse there. The other route —
+the world model re-expressing the *same* places in new coordinates — remains.
+Worker+goal-AE-frozen runs: the frozen decoder's goals still point at the
+right places (66–82%) while their cosine to the current state is ~0.05.
+
+### e1054–e1059: worker conditions on the goal code (launched 2026-10-01)
+
+`agent.worker_goal_input: code` (new): the worker sees the manager's raw 8×8
+code instead of the decoded goal; its reward is still cosine_max to the
+decoded goal. 3 seeds (e1054–56) + matched control (e1057–59, same commit),
+pinpad_four, size6m, `director director_og`, 1.2M steps, array `4740404`.
+
+**Prediction.** If coordinate drift in the worker's goal input is what breaks
+the hierarchy, the code arm holds its score past the control's ~0.45M
+collapse. → If it collapses like the control, the coordinate route through
+the goal input is not the cause; next suspect is meaning drift (anchor the
+goal AE, EMA target) or drift in the worker's *state* input. → Early
+discovery may be slower (the worker must learn every code from reward with no
+state-space generalisation); compare first sustained-50 crossings.
+
+**Result (2026-10-01, all 6 complete at ~1.2M): the code input does not
+prevent the collapse — the second branch fired.**
+
+| arm | score 0.1–0.3M | 0.6–0.9M | 0.9–1.2M | goal reward 0.1–0.3M → 0.6–0.9M |
+|---|---|---|---|---|
+| control (e1057/58/59) | 237 / 244 / 192 | 53 / 2 / 0 | 3 / 1 / 0 | 0.27 → 0.52 |
+| worker sees code (e1054/55/56) | 269 / 220 / 179 | 58 / 1 / 23 | 0 / 0 / 0 | 0.26 → 0.55 |
+
+Discovery is not slower (both arms cross 50 by ~0.1M) and the goal-reward
+jump comes at the same point (~0.3M) and size. So coordinate drift in the
+worker's goal input is not the route: with the decoded goal removed from the
+worker's input, the world model still breaks the hierarchy. Remaining routes:
+meaning drift of the codes (the reward target D_t(z) still moves) and drift in
+the worker's *state* input. The jump appearing here too, with a fixed symbolic
+goal input, says rising cosine_max reward comes from the decoded goals / state
+features becoming easier to match, not from what the worker is shown.
+
+### e1068–e1076: world-model drift fixes, phase 1 (launched 2026-10-02, array 4742298)
+
+**Question.** Freezing the world model stops the pinpad collapse (3/3). Two
+differences from TF Director could keep our world model moving: (a) the HRL
+replay value losses (3 critics x 0.3) backprop into enc/RSSM (`repval_grad`),
+which Director never does; (b) we update the world model once per 2 env steps
+(4x32 at ratio 64), Director once per 16 (16x64 at ratio 64), at the same lr.
+Also fixed a bug first: the HRL replay value targets used the reward head's
+prediction instead of the real replayed reward (flat v3 uses the real one);
+real reward is now the default, `agent.repval_pred_reward` restores the old.
+
+All `director director_og`, pinpad_four, size6m, 2M steps, 3 seeds; controls
+are e1057–e1059 (old predicted-reward code, 1.2M) and the earlier freeze-study controls.
+
+| arm | runs | change | expected if it is the cause |
+|---|---|---|---|
+| `wm_realrew` | e1068–e1070 | real rewards in replay value targets | small; target quality only |
+| `wm_norepgrad` | e1071–e1073 | + `repval_grad False` | sequence held past 0.6M |
+| `wm_b64 wm_oldrew` | e1074–e1076 | batch length 64, lr 2.5e-5 on all 3 optimizers (updates x lr = Director's), old reward | later discovery, then held |
+
+Phase 2, e1077–e1079 (array 4742428, queued 2026-10-02 18:45): `wm_norepgrad wm_b64` with real rewards. Chosen over `wm_realrew` because at 0.65M norepgrad held 3/3 while realrew had collapsed on 2/3.
+
+### Result, e1068–e1079 (2026-10-03 04:30): the critic gradient into the world model causes the collapse
+
+pinpad_four, 3 seeds per arm. Sustained-50 crossing (first 50k bin from which
+the next 200k stay >= 50) and window means of episode score:
+
+| arm | runs | cross-50 | 0.5–1M | 1–1.5M | 1.5–2M | 3–4M |
+|---|---|---|---|---|---|---|
+| control (old code) | e1057–59 | 0.05M | 57 / 2 / 5 | 5 / 1 / 0 | – | – |
+| `wm_realrew` | e1068–70 | 0.05M | 47 / 0 / 153 | 12 / 0 / 7 | 0 / 0 / 0 | – |
+| **`wm_norepgrad`** | e1071–73 | 0.05M | 243 / 270 / 269 | 256 / 277 / 288 | 258 / 275 / 292 | 263 / 283 / 288 (all three to 4M) |
+| `wm_b64 wm_oldrew` | e1074–76 | 0.15–0.40M | 245 / 251 / 211 | 197 / 209 / 161 | 120 / 94 / 130 (0 by 2M) | – |
+| `wm_norepgrad wm_b64` | e1077–79 | 0.20–0.30M | 275 / 240 / 237 | 286 / 239 / 248 | 279 / 245 / 243 | – |
+
+**Reading.** Stopping the HRL replay value losses from backpropagating into
+enc/RSSM (`agent.repval_grad False`, what TF Director does) removes the
+collapse: 3/3 hold to 3.6M with no decline, and the worker goal-reward jump
+that accompanied every collapse never happens (stays ~0.22). Real rewards in
+the repval targets alone change nothing (3/3 collapse). Batch length 64 with
+lr/4 (Director's update budget) only delays it (collapse at ~1.7–2M, 3/3).
+Adding batch 64 to the gradient fix holds equally but finds the sequence
+later, so `wm_norepgrad` alone is the recommended setting. Figure:
+`/work/DoyaU/vasilache/work/collapse_figs/wmfix_pinpad4.png`.
+
+### e1080–e1094: `wm_norepgrad` on the other benchmark tasks (launched 2026-10-02 20:00)
+
+At 1M steps on pinpad_four `wm_norepgrad` held 3/3 (248–275) while
+`wm_realrew` declined on 3/3 and `wm_b64` slipped 290→190, so the
+world-model gradient fix alone goes to the other tasks: `director director_og
+wm_norepgrad steps4m`, 3 seeds, 4M steps, against the benchmark's director_og
+baselines e919–e936 (same budget). pinpad_five/six e1080–e1085 on V100 (array
+4742471); cartpole/cheetah/hopper e1086–e1094 on P100 nodes 11–14 (array 4742472).
+Expected: pinpad five/six keep the sequence past ~1M (baselines lose it by
+1–1.5M); DMC scores within seed noise of the baselines (no harm).
+
+### e1095–e1112: batch length 64 with the fix, at the normal lr (launched 2026-10-05, array 4743866)
+
+`director director_og b64 steps4m`: batch 4x64 at train_ratio 64, lr 1e-4 on
+all optimizers, `hrl_repval_grad False` (the HRL default since 2026-10-05),
+real replay rewards; all six benchmark tasks x 3 seeds, 4M steps, A100, 128G
+(`job_logs/b64_*.tsv`; e1095–97 pinpad_six, e1098–100 pinpad_five, e1101–03
+pinpad_four, e1104–06 cartpole, e1107–09 cheetah, e1110–12 hopper). Unlike
+`wm_b64`, nothing else changes. Question: does a world model trained on 64-step
+windows help Pin Pad Six discovery? Compare against e1080–e1094 (same, at 32).
+
+**Default change (2026-10-05).** `agent.hrl_repval_grad: False` now gates the
+HRL replay value gradient into enc/RSSM; flat runs keep `repval_grad: True`.
+Add `wm_oldgrad` last to reproduce any HRL run up to e1079 (except the
+`wm_norepgrad` arms). Pinned by `embodied/tests/test_hrl_repval_grad.py`.
+
+### Result, e1230–e1289 (2026-10-09 19:40): matched protocol, 5 seeds
+
+Late window 3–4M, mean ± sd over 5 seeds (per-seed in brackets for the
+bimodal cells). Figure `26_04_HRL-paper/figures/motivation/pubmatch_vs_published.{pdf,png}`.
+
+| task | Director (`director_og`) | DreamerV3 | Director, published (3.87M) |
+|---|---|---|---|
+| pinpad_four | 271 ± 9 | **382 ± 1** | ~115 |
+| pinpad_five | **210 ± 12** | 161 ± 150 [316, 0, 9, 187, 291] | ~88 |
+| pinpad_six | **69 ± 94** [0, 0, 173, 0, 170] | 0 | ~0 |
+| cartpole | 692 ± 32 | **845 ± 11** | ~545 |
+| cheetah | 511 ± 38 | **728 ± 57** | ~495 |
+| hopper | **333 ± 82** | 225 ± 109 [one seed 33] | ~335 |
+
+Our Director matches or beats the published 53M Director everywhere at 3.9M
+params. It is the only agent to solve Pin Pad Six (2 of 5 seeds) and is more
+reliable on Pin Pad Five; flat DreamerV3 leads on pinpad_four, cartpole and
+cheetah.
+
+### e1230–e1289: protocol matched to the published Director (launched 2026-10-07, array 4745769)
+
+Fair comparison with Hafner et al. 2022: images only (DMC joint state dropped;
+all earlier DMC runs had `--env.dmc.proprio True`, i.e. image + joint state,
+which the published `dmc_vision` agent never saw), action repeat 1, 4M env
+steps, 16x64 batches at replay ratio 64 (one update per 16 env steps), 4
+parallel envs (was 8), 5 seeds. Both our agents:
+`director director_og pubmatch` (WM fix on, size6m, 4.2M params) and
+`dreamerv3 pubmatch` (flat, 2.9M params; NB this puts DreamerV3 off its own
+1.1M @ ratio 256 recipe). 6 tasks x 5 seeds x 2 agents; ordered seed by seed
+(e1230-41 seed 0, Director then DreamerV3, tasks pinpad_four/five/six,
+cartpole, cheetah, hopper; +12 per seed). Launcher: `RUN_ENVS=4
+DMC_PROPRIO=False`. A100, 128G (`job_logs/pubmatch_*.tsv`).
+
+### e1300–e1329: now+v3 — DreamerV3 actor-critic on the matched protocol (launched 2026-10-09, array 4751548)
+
+**"+v3" tag (fixed 2026-10-09):** an HRL arm's actor-critic settings taken from
+DreamerV3 instead of TF Director — return normalization (perc 5–95, floor
+1.0), manager exploration-return floor 0.02, no advantage normalization, fixed
+entropy 3e-4 on manager and worker, EMA target critic (0.02/step, slowreg 1.0),
+LaProp lr 4e-5 wd 0, horizon 333. Protocol and world-model fixes are NOT part
+of the tag.
+
+Config `director mgr_expl_perc002 pubmatch`, everything else as e1230–e1289's
+Director arm (`director director_og pubmatch`): 4M steps, ratio 64, 16x64,
+image-only DMC, 4 envs, WM fix on, size6m. 6 tasks x 5 seeds, seed-ordered
+(e1300–e1305 seed 0, ... e1324–e1329 seed 4; pinpad_four/five/six, cartpole,
+cheetah, hopper). A100, 128G (`sbatch/pubv3_params.txt`, `job_logs/pubv3_*.tsv`).
+
+**Hypothesis:** unknown sign; v3 won nothing at size6m in the Sept benchmark,
+but that was on the old protocol with the WM bug.
+**Decision rule (set before results):** when 8 runs remain, compare to the
+e1230–e1289 Director arm per task on the 3–4M late window (Welch t, 5 v 5
+seeds; whole-curve shape and stability as secondary). Take +v3 as the base for
+the goal-AE arms only if it is better overall; equal or slightly worse -> keep
+`director_og`. Next: SOM, LiP, SOM+LiP on the chosen base, 6 tasks x 5 seeds.
+
+### Decision, now vs now+v3 (2026-10-11 01:40): keep `now`
+
+Taken with 24/30 v3 runs finished (5v3 to 5v5 seeds per task), when the last v3
+task started. `tools/collapse_study/compare_v3.py`; late = 3–4M mean, p = exact permutation.
+
+| task | now | now+v3 | diff | p |
+|---|---|---|---|---|
+| pinpad_four | 271 ± 9 | 217 ± 80 | −54 | 0.14 |
+| pinpad_five | 210 ± 12 | 192 ± 45 | −18 | 0.44 |
+| pinpad_six | 69 ± 94 | 0 ± 0 | −69 | 0.44 |
+| cartpole | 692 ± 32 | 736 ± 17 | +44 | 0.05 |
+| cheetah | 511 ± 38 | 376 ± 53 | −134 | 0.008 |
+| hopper | 333 ± 82 | 148 ± 125 | −185 | 0.05 |
+
+v3 is lower on 5 of 6 tasks (mean normalized −0.34), learns slower everywhere
+(area under the curve lower on all 6, incl. cartpole, p=0.024), and is less stable
+(drop from its best 500k window larger on pinpad four/five, cheetah, hopper). Its only
+gain is cartpole's late window. Rule was "+v3 only if better", so the goal-AE arms
+e1330–e1419 stay on `director_og` as queued; no change to array 4751562.
+
+Final 5v5 (2026-10-11 09:50) confirms it: pinpad_five 210 vs 200, cartpole 692 vs 736 (p=0.03),
+cheetah 511 vs 374 (p=0.008), hopper 333 vs 179 (p=0.024); mean normalized −0.32.
+
+### e1430–e1459: now + SOM + UCB (2026-10-15, array 4762301)
+
+`director director_og goal_som_line mgr_ucb pubmatch`, 6 tasks x 5 seeds,
+seed-major (`sbatch/pubucb_params.txt`), A100 128G, `RUN_ENVS=4
+DMC_PROPRIO=False`, %8. UCB = tilted sampling among 8 manager candidates,
+`mgr_ucb_c` 10, `select_bins` 4 (the only setting with valid prior runs,
+e706–e717; c=20 runs e660–e675 used the retired argmax rule), with now's
+`mgr_expl_weight` 0.1 (e706–e717 used 0.15) and SOM alone, not SOM+LiP.
+Compared against now (e1230–e1289) and now+SOM (e1330–e1419).
+Hypothesis: the selection-time count bonus adds exploration without changing
+the manager's objective; expected gain on cheetah (e714/e715 beat every
+Director seed) and on the long pin pads. Status: queued.
+
+### e1330–e1419: SOM / LiP / SOM+LiP on `now`, queued early (2026-10-09, array 4751562)
+
+Queued behind e1300–e1329 to hold queue age; base is `now` (`director
+director_og pubmatch`) unless now+v3 wins the comparison above, in which case
+`director_og` is swapped for `mgr_expl_perc002` in `sbatch/pubgae_params.txt`
+for every task not yet started (the launcher re-reads PARAMS at task start)
+and started ones are relaunched. Tags, each layered on the base:
+SOM = `goal_som_line`; LiP = `goal_lipvq_prod lip_relu goal_vq_f32`;
+SOM+LiP = `goal_som_lipvq_line_prod lip_relu goal_vq_f32` (resolves identical
+to the benchmark's `som_lip director_og` + `pubmatch`). The SOM arm keeps the
+default SiLU trunk (ReLU belongs to the LiP tag). New block `goal_vq_f32`.
+Order: seed-major, then SOM/LiP/SOM+LiP, then the 6 tasks (e1330–e1347 seed 0,
+... e1402–e1419 seed 4). 90 runs, A100 128G, `RUN_ENVS=4 DMC_PROPRIO=False`.
+
+### Result, e1197–e1214 (2026-10-07 04:45): Director's 16x64 update shape
+
+Mean return over 3–4M (3 seeds), vs the same config at 4x32 (e1071–e1094):
+
+| task | 4x32 | 16x64 | sustained-50 crossing (16x64) |
+|---|---|---|---|
+| Pin Pad Four | 278 ± 11 | 274 ± 3 | 0.15M x3 (4x32: 0.05M) |
+| Pin Pad Five | 236 ± 8 | 216 ± 2 | 0.40–1.05M (4x32: 0.05–0.35M) |
+| Pin Pad Six | 65 ± 91 | 0 ± 0 | never (4x32: 1/3 at 1.7M) |
+| cartpole swingup | 692 ± 27 | 716 ± 28 | |
+| cheetah run | 433 ± 6 | 467 ± 3 | |
+| hopper hop | 322 ± 67 | 266 ± 53 | |
+
+**Reading.** With the published Director's update shape the fix still holds
+the sequence on Pin Pad Four/Five (6/6 seeds to 4M); discovery is slower on
+Five, and no seed solves Six. Control Suite within seed noise of 4x32
+(cheetah slightly up, hopper slightly down). Runs are ~2.4x faster in wall
+time (~5 h per 4M on A100: training is ~21% of wall time vs ~85% at 4x32).
+At equal gradient updates (0.25M) our 4.2M-param Director matches or beats
+the 53M-param published Director on Pin Pad Four/Five and cartpole.
+Figures: `26_04_HRL-paper/figures/motivation/size6m_vs_published{,_samples}.png`
+(also in `collapse_figs/`). Note: e1197–e1204 also name another session's
+`cartpole_rt` runs; ours are the `*_director-director_og_s*` dirs.
+
+### e1197–e1214: director_og with TF Director's update shape (launched 2026-10-06, array 4744957)
+
+To compare like for like with the published Director curves, `director_og`
+now trains on 16x64 = 1024 samples per update at replay ratio 64, i.e. one
+update per 16 env steps (0.25M updates over 4M), exactly TF Director's
+`train_every 16 / batch_size 16 / replay_chunk 64`. Everything else unchanged:
+size6m networks, 4M steps, lr 1e-4, `hrl_repval_grad False` (the WM fix),
+real replay rewards. `bs4x32` (layer last) reproduces the earlier 4x32 runs.
+All six tasks x 3 seeds, A100, 128G (`job_logs/dirbatch_*.tsv`): e1197–99
+pinpad_six, e1200–02 pinpad_five, e1203–05 pinpad_four, e1206–08 cartpole,
+e1209–11 cheetah, e1212–14 hopper. Compare against e1071–e1094 (same at 4x32)
+and the published Director. The batch-length-64 study e1095–e1112 was stopped
+here with e1111/e1112 (hopper s1/s2) unfinished at 0.96M / 0.58M.
+
+### Result, e1080–e1094 (2026-10-04 02:30): the fix on the other benchmark tasks
+
+`wm_norepgrad steps4m` vs the benchmark's `director_og` baselines e919–e936,
+3 seeds each, 4M steps. Mean +- std over seeds of each seed's mean return in
+3–4M (`tools/collapse_study/transfer_summary.py`; the paper's table is generated
+by `26_04_HRL-paper/figures/motivation/make_collapse_table.py`):
+
+| task | director_og | wm_norepgrad | note |
+|---|---|---|---|
+| pinpad_five | 1 ± 1 | **236 ± 8** | 3/3 hold to 4M (cross-50 0.05–0.35M); baselines find then lose by ~1M |
+| pinpad_six | 1 ± 1 | 65 ± 91 | 1/3 finds it at 1.7M and holds (194); 2/3 never find it. Discovery, not collapse |
+| cartpole swingup | 640 ± 42 | 692 ± 27 | |
+| cheetah run | 513 ± 78 | 433 ± 6 | lower; all 3 fix seeds below 2 of 3 baselines |
+| hopper hop | 253 ± 63 | 322 ± 67 | |
+
+**Reading.** The fix carries to Pin Pad Five unchanged. Pin Pad Six stays
+unsolved for a different reason (the sequence is rarely found at all). On the
+Control Suite nothing is resolved with 3 seeds; cheetah is the one task where
+the change may cost return.
+
+Run notes: these were launched on V100/P100 and moved to A100 mid-run from
+their own RUN_DIR (`tools/collapse_study/migrate_to_a100.sh`, `auto_migrate.sh`);
+64G jobs hit host OOM near 3.6M (in-RAM replay) and were resubmitted at
+120/128G by `keep_alive.sh`. e1083 (pinpad_six s0) ran as two jobs on the same
+RUN_DIR for ~11 min on 10-03 16:23 (keeper/migration race, since fixed), so a
+few episodes around 1.5M are logged twice; it scores 0 throughout. Figures:
+`/work/DoyaU/vasilache/work/collapse_figs/wmfix_{pinpad4,transfer}.png`; paper
+section 3.3 (`26_04_HRL-paper` commit 979dfce).
+
+### e1060–e1067: reset one component of a collapsed run (2026-10-02)
+
+**Question.** Why does `director_og` never re-find the pinpad sequence once it
+has lost it? Take the collapsed controls e1057–59 at their ~1.17M checkpoint
+(with replay), re-initialise ONE component — weights, optimizer state,
+normalizers, slow targets — and continue to 1.6M. Recovery after a reset says
+that component's state is what blocks rediscovery. Reset done offline by
+splicing a fresh step-0 checkpoint of the same seed into the run's checkpoint
+(`tools/splice_reset.py`; the in-run `run.reset_regex` path trips ninjax when
+it re-calls `_init_params`, and is kept only as a no-op marker check).
+
+| reset | runs | score after reset, 50k bins (+0 → +0.42M) |
+|---|---|---|
+| nothing | e1060 / e1061 | 33 0 8 0 … 0 / 0 5 1 0 … 0 |
+| **manager** | e1062 | **122 180 125** 1 24 8 6 5 7 |
+| manager | e1063 / e1067 | 21 2 0 … 0 / 11 2 22 0 3 0 … |
+| goal AE | e1064 / e1065 | 24 1 1 0 2 … / 0 0 0 1 5 0 … |
+| worker | e1066 | 0 0 2 53 0 0 2 0 0 |
+
+(First-bin 20–30s in several arms are one or two lucky episodes of the old
+policy; a 50k bin holds ~25 episodes.)
+
+**Reading.** Only a fresh manager re-found the sequence, and only on 1 of 3
+seeds — immediately (≤50k steps, score up to ~230 per episode) — then lost it
+again ~0.15M later. The second loss has the original collapse's signature in
+the same bin: worker goal reward 0.45 → 0.57, manager entropy 0.51 → 0.61.
+Resetting the goal AE or the worker never helped; doing nothing never helped.
+So (i) the collapsed manager's own state is part of why it cannot recover — a
+fresh one can re-find the sequence through the same, already-drifted world
+model, worker and goal AE — but (ii) recovery is not reliable (1/3), and (iii)
+whatever causes the loss is still active and re-fires. Small samples (1–3
+seeds per arm); treat as directional.
+
+Figure: `/work/DoyaU/vasilache/work/collapse_figs/reset_scores.png`.
+
+## BENCHMARK COMPLETE — 252/252 cells (2026-09-25)
+
+14 arms x 6 tasks x 3 seeds, every cell at its target step count. Means of the
+per-seed late-20% windows.
+
+| arm | cartpole | cheetah | hopper | pp4 | pp5 | pp6 |
+|---|---|---|---|---|---|---|
+| **`dreamerv3`** | **868** | **901** | 319 | 381 | 206 | 0 |
+| `dreamerv3 size50m` | 858 | 857 | 310 | **402** | **219** | 0 |
+| `director` | 654 | 226 | 0 | 46 | 0 | 1 |
+| `som_lip` | 707 | 426 | 79 | 159 | 5 | 0 |
+| `director mgr_expl_perc01` | 700 | 379 | 64 | 110 | 42 | 0 |
+| `som_lip mgr_expl_perc01` | 711 | 340 | 66 | 156 | 0 | 0 |
+| `director mgr_expl_perc002` | 599 | 220 | 68 | 122 | 2 | 0 |
+| `som_lip mgr_expl_perc002` | 707 | 292 | 61 | 101 | 0 | 0 |
+| `director director_og` | 637 | 515 | 260 | 0 | 0 | 1 |
+| `som_lip director_og` | 717 | 513 | 279 | 75 | 34 | 0 |
+| `director director_og size50m` | 660 | **726** | 266 | 1 | 12 | 2 |
+| `som_lip director_og size50m` | 714 | 603 | **323** | 1 | 10 | 0 |
+| `director mgr_expl_perc002 size50m` | 728 | 391 | 114 | **270** | **101** | 0 |
+| `som_lip mgr_expl_perc002 size50m` | **741** | 302 | 120 | 203 | 75 | 0 |
+
+(bold = best flat and best hierarchical arm per column)
+
+### What the benchmark answered
+
+**1. Flat DreamerV3 beats the hierarchy on five of six tasks, at both scales.**
+Best hierarchical arm as a fraction of the best flat arm: cartpole 0.85,
+cheetah 0.81, pinpad_four 0.67, pinpad_five 0.46, pinpad_six undefined (all
+zero). The ordering in \citet{hafner_deep_2022} does not reproduce here.
+
+**2. The single exception is hopper_hop.** `som_lip director_og size50m`
+reaches 323 against 319 for flat `dreamerv3` and 310 for `dreamerv3 size50m` --
+a tie, and the only column where a hierarchy is not behind. `director
+director_og size50m` has a seed at 456, the highest single-seed hopper number
+in the benchmark. This is the one place the hierarchy earns its complexity, and
+it is also the task where plain `director` scores exactly 0.
+
+**3. Pin Pad Six is unsolved by everything**, flat included, at both scales and
+at 4M steps. It should be dropped from future comparisons rather than reported
+as a hierarchy failure.
+
+**4. Model scale does nothing for the flat agent and a lot for the hierarchy.**
+`dreamerv3` vs `dreamerv3 size50m` is within noise on all six tasks (868/858,
+901/857, 319/310, 381/402, 206/219, 0/0) at 11x the parameters. Every
+hierarchical arm improves with scale, some sharply: `director director_og`
+cheetah 515 -> 726, `director mgr_expl_perc002` pinpad_four 122 -> 270 and
+pinpad_five 2 -> 101.
+
+**5. Open question (i) — which arm is "DirectorV3" — has no single answer, at
+either scale.** At `size6m` `som_lip director_og` is the best compromise: it is
+the only arm strong on dense tasks (717/513/279) while non-zero on sparse ones
+(75/34). At `size50m` the split hardens instead of closing -- `director_og`
+wins dense (cheetah 726) and is dead on sparse (pp4 1, pp5 12), while
+`mgr_expl_perc002` wins sparse (pp4 270, pp5 101) and gives up cheetah (391).
+The paper cannot name one arm "the hierarchy at matched scale" without choosing
+which half of the benchmark to represent. **This is a decision for the author,
+not a measurement.**
+
+**6. Open question (ii) — the 0.02 exploration floor — is scale-dependent, and
+it holds on both trunks.** `director mgr_expl_perc002` pinpad_four 122 -> 270
+and pinpad_five 2 -> 101 going from size6m to size50m; `som_lip
+mgr_expl_perc002` 101 -> 203 and 0 -> 75. At size50m both cross the sustained-50
+bar on 3/3 seeds on pinpad_four, against 2/3 and 1/3 at size6m. The 09-13 entry
+calling 0.02 a dead end was measured only at size6m and is corrected: at 4.19M
+parameters the manager never produces an exploration signal worth protecting;
+at 45.6M it does.
+
+### Cost
+
+2026-09-04 to 2026-09-25, 252 runs, roughly 302M env steps. Peak concurrency 24
+GPUs (8 each on gpu-a100/v100/p100); the last week ran on A100 alone because
+`size50m` is a 24 GB model and the V100/P100 cards are 16 GB.
+
+### Confirmed: the 0.02 floor works at size50m and not at size6m (2026-09-21)
+
+226 of 252 cells. `director mgr_expl_perc002 size50m` has finished pinpad_five
+and the scale-dependence flagged on 09-19 is real, not seed noise:
+
+| task | `perc002` size6m (complete) | `perc002` **size50m** | flat size50m |
+|---|---|---|---|
+| pinpad_five | 0 / 6 / 0 → **2** | 108 / 191 / 3 → **101** | 337 / 0 / 319 → 219 |
+| pinpad_four | 142 / 0 / 225 → 122 | 375 / 227 / (1 running) | 402 |
+| cheetah | 408 / 106 / 147 → 220 | 380 / 421 / 373 → **391** | 857 |
+| cartpole | 521 / 649 / 628 → 599 | 723 / 734 / 726 → **728** | 858 |
+
+101 on pinpad_five is **2.4x the best size6m hierarchical arm** on that task
+(42, `director mgr_expl_perc01`) and 46% of flat, where every size6m HRL arm
+sat below 20%. Cheetah and cartpole improve too, and with far tighter seed
+spread (373-421 against 106-408 at size6m).
+
+**The 09-13 "0.02 is a dead end" entry is wrong as stated** and should be read
+as "0.02 does nothing at size6m". The floor sets how small an exploration
+return has to get before it stops being normalized; at 4.19M parameters the
+manager apparently never produces a signal worth protecting, and at 45.6M it
+does. That is a statement about when the exploration bonus becomes useful, not
+about the floor value itself.
+
+**`som_lip director_og size50m`** finished cheetah at 634/574/601 (603) against
+~726 for `director director_og size50m`. At size6m the two trunks were level on
+cheetah (513 vs 515); at size50m the Director trunk is ahead. The trunk
+ordering is not stable across scale, so neither "SOM/LiP is better" nor the
+reverse should be claimed without saying at which size.
+
+### size50m in progress: the 0.02 floor may be scale-dependent (2026-09-19)
+
+210 of 252 cells. Only `dreamerv3 size50m` is complete across all six tasks;
+the other four size50m arms are part-way, so what follows is provisional and
+flagged as such.
+
+**The one that should change our minds.** `director mgr_expl_perc002 size50m`
+-- the 0.02 exploration floor I recorded as a dead end on 09-13 -- is producing
+the best hierarchical pinpad numbers in the benchmark:
+
+| task | `...perc002` **size6m** (complete) | `...perc002` **size50m** (partial) | flat size50m |
+|---|---|---|---|
+| pinpad_four | 142 / 0 / 225 | **375** / ~0 | 402 |
+| pinpad_five | 0 / 6 / 0 | **108 / 191** / ~9 | 337 / 0 / 319 |
+
+At size6m the 0.02 floor did nothing on pinpad_five (0/6/0). At size50m two
+seeds read 108 and 191, against 42 for the best size6m arm on that task. The
+"0.02 is no better than no floor" conclusion was drawn entirely at size6m and
+may not carry: it is plausible that the floor only matters once the model is
+large enough to make use of the exploration signal. Seed variance is large
+(pinpad_four is 375 and ~0), so this needs its remaining seeds before it is
+more than a hypothesis. **Do not cite the 09-13 dead-end entry without this
+caveat.**
+
+**`director director_og size50m`**, still partial: cartpole complete at
+688/638/653 (660), cheetah 684/774/719 (~726, against 857 for flat -- the best
+hierarchical cheetah anywhere in the benchmark), hopper 456 / ~344 / 1 with a
+third seed that has produced nothing yet, and pinpad_four complete at 0/3/0.
+The dense gains hold at scale; the sparse failure holds too.
+
+**`som_lip director_og size50m`** has one to two seeds per cell so far: cheetah
+634/~593, hopper 229/~236, cartpole 712. Below the Director trunk on cheetah at
+this size, which is the opposite of the size6m ordering -- another reason to
+wait for seeds before drawing the size50m picture.
+
+### `som_lip director_og` is the best hierarchy, and it answers the open question (2026-09-17)
+
+Ten arms complete, 196 of 252 cells. Means of the per-seed late-20% windows:
+
+| arm | cartpole | cheetah | hopper | pp4 | pp5 | pp6 |
+|---|---|---|---|---|---|---|
+| `dreamerv3` | 868 | **901** | **319** | **381** | **206** | 0 |
+| `dreamerv3 size50m` | 858 | 857 | 310 | 402 | 219 | 0 |
+| `director` | 654 | 226 | 0 | 46 | 0 | 1 |
+| `director mgr_expl_perc01` | 700 | 379 | 64 | 110 | 42 | 0 |
+| `director director_og` | 635 | 515 | 260 | 0 | 0 | 1 |
+| `som_lip` | 707 | 426 | 79 | 159 | 5 | 0 |
+| `som_lip mgr_expl_perc01` | 711 | 340 | 66 | 156 | 0 | 0 |
+| **`som_lip director_og`** | **717** | **513** | **279** | 75 | 34 | 0 |
+
+**The dense/sparse trade-off recorded on 09-14 was a property of the Director
+trunk, not of the og hyperparameters.** `director director_og` buys dense
+performance and gives up every pinpad (0 / 0 / 1). `som_lip director_og` gets
+the same dense numbers -- cartpole 717 vs 635, cheetah 513 vs 515, hopper 279
+vs 260 -- and keeps sparse performance (75 / 34 / 0). The goal autoencoder is
+what survives the switch to `meanstd` normalization.
+
+It is the best hierarchical arm on all three dense tasks and the only one that
+is simultaneously strong there and non-zero on pinpad. It still trails flat
+DreamerV3 everywhere: 0.83 of flat on cartpole, 0.57 on cheetah, 0.87 on
+hopper, 0.20 on pinpad_four.
+
+**Recommendation for the paper, not yet acted on:** the figure's "DirectorV3"
+is `director mgr_expl_perc01`, chosen when the exploration floor was the only
+thing that made the hierarchy work at all. On complete data `som_lip
+director_og` beats it on five of six tasks (717/513/279/75/34 against
+700/379/64/110/42) and is the natural single arm to carry the name. Changing
+which arm the paper calls DirectorV3 is a scientific choice, so it is flagged
+rather than made.
+
+### `director director_og` complete on all six tasks (2026-09-15)
+
+56 cells done. The whole arm has landed, so the trade-off recorded yesterday
+can be stated with three seeds everywhere. Means of the per-seed late-20%
+windows, against flat DreamerV3 at the same size:
+
+| task | flat `dreamerv3` | `director director_og` | ratio |
+|---|---|---|---|
+| cartpole | 868 | 635 (664/572/668) | 0.73 |
+| cheetah | 901 | 515 (524/603/419) | 0.57 |
+| hopper_hop | 318 | **260** (165/319/296) | **0.82** |
+| pinpad_four | 381 | 0 (0/0/1) | 0.00 |
+| pinpad_five | 206 | 1 (2/0/0) | 0.00 |
+| pinpad_six | 0 | 1 (0/0/2) | — |
+
+Hopper is the closest any hierarchical arm has come to the flat agent at this
+scale, and it is the task where plain Director scores exactly 0. The sparse
+column is unchanged: `director_og` produces nothing on any pinpad.
+
+**One sparse result did move.** `som_lip director_og` finished pinpad_five at
+52 / 3 / 48 -- the first non-zero pinpad_five from any og arm, against 2/0/0
+for the Director trunk. It is still a fifth of flat (206), but it says the goal
+autoencoder and the og hyperparameters are not simply additive: the SOM/LiP
+trunk keeps something on the sparse task that the Director trunk loses.
+
+**size50m, single seeds so far, and the numbers are the best HRL results in the
+benchmark**: `director_og size50m` cheetah 774 at 4M (against 515 at size6m and
+901 for flat), hopper 456 (against 318 for flat), cartpole 688. Three of the
+six tasks now have a hierarchical arm at or above the flat agent at 50M
+parameters. Hold judgement until the other two seeds land -- one seed produced
+the 2026-09-10 hopper claim and this is the same exposure -- but if it holds,
+the story changes from "the hierarchy never wins" to "the hierarchy needs both
+Director's hyperparameters and the larger model".
+
+### director_og trades sparse for dense (2026-09-14)
+
+48 cells complete. `director director_og` finished cheetah and both smaller
+pinpads, and the two directions are opposite:
+
+| arm | cheetah | hopper | pinpad_four | pinpad_five |
+|---|---|---|---|---|
+| flat `dreamerv3` | **901** | 318 | **381** | 296/0/321 |
+| `director` | 226 | 0 | 0/0/139 | 0 |
+| `director mgr_expl_perc01` | 379 | 64 | 222/3/104 | 128/0/0 |
+| `director director_og` | **515** (524/603/419) | 242* | **0/0/1** | **2/0/0** |
+| `som_lip director_og` | 468* (498/553/354) | 240* | 3/105/195* | 52/20/18* |
+
+\* not all three seeds at 4M yet.
+
+On the dense tasks `director_og` is far ahead of every other HRL arm -- cheetah
+515 against 379 for the best exploration-floor arm and 226 for plain Director,
+and hopper around 242 where plain Director scores exactly 0. On the sparse ones
+it is the **worst** arm we have run: pinpad_four 0/0/1 complete, against
+0/0/139 for plain Director and 222/3/104 with the floor. It did not merely fail
+to help, it removed what little the other arms had.
+
+That is a coherent story rather than noise. `director_og` swaps `perc` return
+normalization for Director's `meanstd` with a `1e-2` floor on every stream
+including the exploration return, which is the opposite of the change that
+rescued pinpad in the first place (`mgr_expl_perc01`, floor 0.1 on a `perc`
+normalizer). The og recipe is tuned for tasks where the extrinsic return is
+informative; on a task whose extrinsic reward is identically zero until the
+goal is reached, it puts the manager back where it started.
+
+**Scale still does nothing for the flat agent.** `dreamerv3 size50m` is now
+complete on five tasks and matches `size6m` within noise everywhere: cartpole
+858 vs 868, cheetah 857 vs 901, hopper 310 vs 318, pinpad_four 402 vs 381,
+pinpad_five 337/0/319 vs 296/0/321.
+
+**For the paper:** the figure's DirectorV3 arm is `director mgr_expl_perc01`.
+If the headline is "the best hierarchy we can build at matched scale", that is
+now `director_og` on dense tasks and `mgr_expl_perc01` on sparse ones, and no
+single arm wins both. Worth a decision before the figure is final.
+
+### The floor value is settled: 0.1, not 0.02 (2026-09-13)
+
+36 cells complete. Both `mgr_expl_perc002` arms finished on the dense tasks, so
+the three-point comparison the 0.02 batch was launched to make is now closed.
+Means of the per-seed late-20% windows:
+
+| arm | cartpole | cheetah | hopper |
+|---|---|---|---|
+| `director` (no floor) | 654 | 226 | 0 |
+| `director mgr_expl_perc002` (0.02) | 599 | 220 | — |
+| `director mgr_expl_perc01` (**0.1**) | **700** | **379** | 64 |
+| `som_lip mgr_expl_perc002` (0.02) | — | 292 | 61 |
+| `som_lip mgr_expl_perc01` (**0.1**) | — | **340** | 66 |
+
+**0.02 is not a smaller version of the same benefit -- it is no benefit.** On
+cartpole and cheetah it lands within noise of having no floor at all (599 vs
+654, 220 vs 226), while 0.1 gains +7% and +68%. The measurement that produced
+0.02 (median observed exploration-return range 0.167, minimum 0.034) argued for
+a floor just under the smallest range seen; what that actually does is leave
+the stream unnormalized in exactly the regime the floor exists to fix. Read
+`mgr_expl_perc002` as a dead end and use 0.1.
+
+**Scale does not help the flat agent on cheetah.** `dreamerv3 size50m`
+completed at 853 / 852 / 866 (mean 857) against 907 / 897 / 900 (mean 901) for
+`dreamerv3` at `size6m` -- 11x the parameters, slightly worse. Whatever limits
+these runs on cheetah, it is not model capacity.
+
+One oddity worth watching: plain `som_lip` pinpad_four reads 137 / 245 / 94
+with one seed crossing 50, better than `som_lip mgr_expl_perc002` (74/160/71)
+and comparable to `som_lip mgr_expl_perc01` (302/57/108). Pinpad_four seed
+variance is large enough that none of these three separate.
+
+### The exploration floor on cheetah, both trunks (2026-09-12)
+
+`director` cheetah completed at 234 / 123 / 320 (mean 226, late-20%). Against
+the same arm with the exploration floor, `director mgr_expl_perc01` at
+433 / 480 / 223 (mean 379), that is the clearest single-factor comparison we
+have on a dense task: +68% from giving the manager's exploration return its own
+normalizer floor. Both remain far below flat DreamerV3 at 901.
+
+Scheduling note: the A100 partition became contended on 2026-09-11 -- we were
+held to 3 of our 8 GPUs for about six hours, recovering to 5. The five size50m
+arms can only run there (24 GB model, 16 GB cards elsewhere), so the projected
+finish moved from 09-19 to 10-03 at 3 GPUs. It returns to ~09-25 at 5 and
+~09-20 at 8, so it recovers without intervention if the squeeze keeps easing.
+`sbatch/bench_forecast.py` now projects from the GPUs actually held rather than
+from our quota.
+
+### Pinpad, all complete cells (2026-09-11)
+
+Read as the sustained-50 crossing plus a late-20% window, never the final
+last-15. 20 cells are now complete at 3 seeds.
+
+| arm | pinpad_four | pinpad_five | pinpad_six |
+|---|---|---|---|
+| `dreamerv3` | **383 / 380 / 380**, crosses 0.11–0.19M on 3/3 | 296 / 0 / 321, crosses 2/3 | 0 / 0 / 0 |
+| `director` | 0 / 0 / 139, crosses 0/3 | 0 / 0 / 0 | — |
+| `director mgr_expl_perc01` | 222 / 3 / 104, crosses 1/3 (0.78M) | — | 0 / 0 / 0 |
+| `som_lip` | — | 1 / 0 / 15 | — |
+| `som_lip mgr_expl_perc01` | 302 / 57 / 108, crosses 3/3 but at 0.64–1.09M | 0 / 0 / 0 | 0 / 0 / 0 |
+
+Flat DreamerV3 is the only arm that solves pinpad_four reliably -- three seeds
+within 3 points of each other, all crossing before 0.19M. The exploration floor
+is what lets the hierarchy reach it at all (`som_lip mgr_expl_perc01` crosses on
+all three seeds, `som_lip` alone on none), but it crosses 3-6x later and lands
+at a third of the score. Pinpad_five separates the same way: flat gets 2 of 3
+seeds, every HRL arm gets nothing. **Pin Pad Six remains 0.0 for every arm**,
+which is why it should not be read as evidence about the hierarchy.
+
+*Correction to the 2026-09-10 entry, which said 9 cells were complete: the
+count was 20. The check compared the last SCORE step against the target, and a
+pinpad episode is 2000 steps, so the final partial episode goes unscored and
+the last score lands ~11k steps short -- just under the 0.99 threshold. Cell
+completion is measured from `metrics.jsonl`, which is what `bench_coverage.py`
+has always used; only the ad-hoc summary was wrong.*
+
+### director_og beats flat DreamerV3 on hopper (2026-09-10)
+
+First time in this benchmark that a hierarchical arm has beaten the flat agent
+on any task. One seed, so read it as a signal and not a result.
+
+| task | flat `dreamerv3` (3 seeds) | best other HRL arm | `director_og` 6m | `director_og` **size50m** |
+|---|---|---|---|---|
+| hopper_hop | 334 / 278 / 343 | 117 (`+perc01`) | 164 @2.9M, 81 @2.4M | **451** @3.7M |
+| cheetah_run | 907 / 897 / 900 | 480 (`+perc01`) | **524** done, 545 @2.8M | 662 @3.0M |
+| cartpole | 858 / 873 / 874 | 726 (`+perc01`) | 417 @0.5M (early) | — |
+| pinpad four/five/six | 381 / 296 / 0 | 302 / 128 / 0 | 27 / 3 / **0.0 done** | — / 3 / 0.0 |
+
+Late-20% windows. The size50m hopper number is the one that matters: 451
+against 318 for flat at the same task, where every earlier HRL arm scored 0.0
+or double digits. Cheetah moves the same way and stays behind flat (662 vs
+901), and pinpad does not move at all -- `director_og` finished pinpad_six at
+4M steps with a late window of exactly 0.0, the same as everything else.
+
+Not put in the paper yet: one seed on the arm that carries the claim. The other
+two size50m seeds are queued; revisit when they land.
+
+**Newly complete cells** (all 3 seeds at target): `dreamerv3`,
+`director mgr_expl_perc01` and `som_lip mgr_expl_perc01` on all three DMC
+tasks. The two `perc01` arms are indistinguishable from each other on cartpole
+(713/661/726 against 713/719/702) and both trail flat everywhere.
+
+### Standings at 2026-09-09 07:00 (73 of 107 at target, 76%)
+
+Pinpad read with the sustained-50 crossing plus a late-20% window, never the
+final last-15.
+
+**Pin Pad Six is unsolved by everything.** Flat DreamerV3, Director and SOM/LiP
+all score 0.0 on all three seeds, at `size6m` and at `size50m`, and
+`director_og` is still 0.0 at 2.6–3.0M steps. No arm has ever crossed 50 there.
+It is not a discriminating task at this budget and should not be read as
+evidence about the hierarchy.
+
+**Flat DreamerV3 wins every completed cell, including the sparse ones.**
+
+| task | dreamerv3 | director | director+expl0.1 | som_lip+expl0.1 |
+|---|---|---|---|---|
+| cartpole | 869 | 528/703/642 | 704/565 | 745/691 |
+| cheetah | **910** (910/908/911) | 339/202/406 | 420/484/103 | 382/62/415 |
+| hopper_hop | 319 | 0.0/0.0 | 65/65/28 | 74/145/14 |
+| pinpad_four (late-20%) | **381** (3/3 cross by 0.19M) | 0/0/110 | 222/3 | 302/57 |
+| pinpad_five (late-20%) | 296/0/321 (2/3) | 0/0/0 | 128/0/94 | 0/0/0 |
+| pinpad_six | 0.0 | 0.0 | 0.0 | 0.0 |
+
+Cheetah is the cleanest read: flat is at 910 on all three seeds while no HRL arm
+exceeds 484. On pinpad_four flat crosses 50 by 0.11–0.19M on every seed; the
+best HRL arm crosses at 0.64M on one seed and never on the other.
+
+**`director_og` is the first HRL arm to move the DMC numbers**, and it is early
+(1–2 seeds per cell, 4M-step runs at ratio 64, so far less gradient work than
+the 1.1M/ratio-256 arms):
+
+- cheetah: 442 at 2.95M (s0), 482 at 1.11M (s1), and **657 at 2.64M at
+  `size50m`** — the best cheetah any hierarchical arm has produced here, against
+  339/202/406 for plain `director` at the same size.
+- hopper_hop: 178 at 1.48M and 95 at 0.95M, against 0.0 for plain `director` on
+  both finished seeds. Every HRL arm before this scored 0 on hopper.
+- pinpad: no effect. 0.0 on four and six, 10.2 late-window on five.
+
+Step-matched rather than compute-matched this is already ahead: at 1.11M env
+steps `director_og` s1 reads 482 on cheetah having used a quarter of the
+replayed samples of the ratio-256 arms. Hold the conclusion until three seeds
+land, but the DMC direction is the opposite of everything before it.
+
+### e919–e954: TF Director's own hyperparameters on our networks (2026-09-08)
+
+`director` + `director_og`, 6 tasks x 3 seeds at `size6m` (arrays `4709678`
+a100 12 / `4709679` v100 4 / `4709680` p100 2) and the same matrix at `size50m`
+(array `4709681`, 18). Networks are held fixed inside each set — the point is
+to vary the hyperparameters, not the model.
+
+**These replace e865–e900, which are void.** Those ran with the worker entropy
+controller as a single shared SCALAR multiplier; Director keeps one per action
+dimension (TF `agent.py:297-300`). A scalar holds only the MEAN normalized
+entropy at 0.5, so a saturated dimension offset by a high-entropy one leaves it
+still — and e865 logged `wkr_actent_std` 1.44–1.67 around a mean of 0.55, so
+the dimensions were nowhere near uniform and the two controllers were not the
+same experiment. Fixed 2026-09-08 (one adapter per action head, shaped by
+`space.shape`), covered by `embodied/tests/test_worker_actent_parity.py`
+(10 assertions, including the TF config file itself), and the eight started
+runs were deleted rather than kept — about 1.7M env steps discarded.
+
+Note the shape rule differs from Director's line for a reason: TF writes
+`shape[:-1] if discrete` because its onehot spaces carry the class axis inside
+`shape`, while ours keep classes in a separate field. Stripping an axis here
+would collapse a multi-dimensional discrete head to a scalar — the same bug
+again, in a different place.
+
+Transcribed from `code/director/embodied/agents/director/configs.yaml`:
+
+| Director | ours in this block |
+|---|---|
+| `actent {mult, target 0.5, min 1e-5, max 1e2, vel 0.1}`, `actent_norm/perdim True` | `manager_actent_adapt: True` + the matching `manager_actent_*` |
+| `retnorm {std, decay 0.999, max 1e2}` | `retnorm`/`mgr_retnorm`/`mgr_expl_retnorm` `{meanstd, rate 0.001, limit 1e-2}` |
+| `advnorm {mean_std, decay 0.99, max 1e8}` | `advnorm {meanstd, rate 0.01, limit 1e-8}` |
+| `slow_target True, _update 100, _fraction 1.0, adv_slow_critic True` | `slowvalue {rate 1.0, every 100}`, `manager_slowtar True`, `imag_loss/repl_loss.slowtar True`, `slowreg 0.0` |
+| `*_opt {lr 1e-4, wd 1e-2 kernel}` | `opt`/`goal_opt`/`ac_opt` lr 1e-4, wd 1e-2 |
+| `discount 0.99` | `horizon: 100` (our other arms use 333) |
+
+Two mappings are not one-to-one: Director's `max` floors the divisor at `1/max`
+(so `max: 1e2` is our `limit: 1e-2`), and their `decay` is our `rate = 1 -
+decay`. Their `std` divides without subtracting the mean while our `meanstd`
+returns both, but the offset is discarded on every advantage path in
+`hrl/losses.py`, so the two are equivalent here.
+
+**Two differences remain and cannot be closed by config** (worker entropy was
+the third until 2026-09-08; `worker_actent_adapt` now runs the same normalized
+per-dimension controller at target 0.5 on the worker, which matters here
+because switching `retnorm` to `meanstd` rescales the worker's advantage and
+the fixed 3e-4 was calibrated against `perc`):
+
+- **Optimizer family.** Director is Adam (`eps 1e-6`, global-norm clip 100);
+  ours is LaProp (`eps 1e-20`, AGC 0.3). `lr` and `wd` are matched; `eps` and
+  the clipping rule are not comparable across the two.
+- **Network shapes**, held at `size6m` deliberately.
+
+**What it tests.** Every HRL arm so far has trailed flat DreamerV3 on every
+task, with the manager collapsed to ~1.5 of 16.64 nats. This is the arm that
+gives the manager back everything Director gave it — the entropy controller,
+per-stream std normalization, advantage normalization, and a hard periodic
+target network — while holding size and the goal AE fixed. -> If it closes the
+gap to flat, the deficit was our DreamerV3-flavoured actor-critic settings, not
+the hierarchy. -> If it does not, the hierarchy itself is the problem at this
+scale, and `director_og` rules out the most obvious confound.
+
+### e829–e864: exploration floor 0.02, set from measurement (2026-09-07)
+
+`director` and `som_lip` with `mgr_expl_perc002`, 6 tasks x 3 seeds, arrays
+`4707513` (a100, 24) / `4707514` (v100, 8) / `4707517` (p100, 4). Third point on
+the floor axis, against the unmodified arm (1.0) and the 0.1 arm.
+
+**The value comes from `mgr/range_expl`, not from arithmetic.** Across 39 runs
+past 200k steps the exploration return's unclamped 5–95 range is:
+
+| arm | n | min | p25 | median | p75 | max |
+|---|---|---|---|---|---|---|
+| baseline (floor 1.0) | 24 | 0.034 | 0.096 | **0.167** | 0.216 | 0.481 |
+| floor 0.1 | 15 | 0.056 | 0.082 | **0.115** | 0.164 | 0.506 |
+
+Sparse tasks (pinpad/hopper) sit lower than dense ones: median 0.090 against
+0.137 in the 0.1 arm. **At floor 0.1, four of fifteen cells were still clamped**
+— both `pinpad_four` runs, `dmc_hopper_hop`, and one cheetah, with ranges
+0.056–0.076. Those are exactly the tasks where lowering the floor produced the
+largest gains, so the remaining headroom sits where it matters.
+
+0.02 is ~40% below the lowest range ever observed (0.034), so nothing clamps at
+launch, while still guarding a genuine collapse toward zero. Lower would sit
+inside the noise floor of a stream whose per-step reward is ~5e-3.
+
+**Correction to the 2026-09-06 entry**, which said the 0.1 arm was "still
+clamped": that came from four early runs where the range estimate had not
+settled. With the full set it is 4 of 15, not all — 0.1 landed near the median
+of the distribution and fixed most cells. The earlier estimate of 0.15–0.5,
+derived from the per-state reward spread, was about 2x too high; the lambda-
+return damps that spread more than assumed. This is why the metric was added.
+
+**Also on 2026-09-07:** the baseline (non-exploration) `director`/`som_lip`
+runs still early or unstarted were dropped, keeping the seven already past 900k
+so the control retains its seed coverage. `bench_droplist.txt` stops the
+watchdog resurrecting them.
+
+### Standings at 2026-09-07 08:30 (38 of 90 finished, 63 with scores)
+
+Mean last-15 over the seeds started; (n seeds, lowest step reached).
+
+| task | dreamerv3 | director | som_lip | director+expl | som_lip+expl |
+|---|---|---|---|---|---|
+| `dmc_cartpole_swingup` | **865.6** (3) | 624.2 (3) | 691.8 (3) | 704.0 (1) | 744.5 (1) |
+| `dmc_cheetah_run` | **909.2** (2) | 280.8 (3) | 373.9 (3) | 481.3 (2) | 232.0 (2) |
+| `dmc_hopper_hop` | **278.7** (2) | 0.3 (2) | 48.7 (2) | 88.6 (2) | 142.2 (1) |
+| `pinpad_four` | **382.0** (3) | 23.6 (3) | 128.0 (3) | 326.0 (1) | 250.0 (1) |
+| `pinpad_five` | **99.1** (3) | 0.0 (3) | 6.7 (3) | — | 0.0 (1) |
+| `pinpad_six` | 0.0 (2) | 0.0 (2) | 0.0 (2) | 0.0 (2) | 0.0 (2) |
+
+**The exploration floor now helps across tasks, not just one.** Comparing each
+HRL arm against its `+expl` pair: director gains on pinpad_four (23.6 -> 326.0),
+cheetah (280.8 -> 481.3) and hopper (0.3 -> 88.6); som_lip gains on hopper
+(48.7 -> 142.2) and pinpad_four (128.0 -> 250.0). Five of six comparable cells
+improve. The single regression, som_lip+expl on cheetah (232.0 against 373.9),
+is two partial runs at ~870k steps. This is now repeated evidence rather than
+one striking cell, and it is the strongest result in the batch.
+
+**Flat DreamerV3 still leads every task.** The gap narrows a lot with the
+exploration fix but does not close. Since the manager is known to be collapsed
+onto ~1.5 of 16.64 nats under the fixed `actent`, the honest reading is that
+this batch does not yet test "hierarchy vs flat" -- it tests one particular
+degenerate manager against flat.
+
+**`pinpad_six` is unsolved by everything**, two seeds per arm, all at ~1M steps,
+all exactly 0.0. Whatever the six-pad sequence needs, none of these agents has
+it, and that includes the flat agent that solves pinpad_four at 382.
+
+### Packing runs onto one GPU: measured and rejected (2026-09-05)
+
+A run uses 2.4 GB of an 80 GB A100, which looks like 97% waste. It is not.
+Four runs packed onto one A100 reach **21.6 aggregate env-fps against 24.2 for
+a single run** — 0.89x, slightly *slower* in total, with each run crawling at
+5.4 fps. Memory was never the constraint; the card is already compute-saturated
+by one run, and `nvidia-smi`'s `compute_avg` of 0.97 meant what it said.
+SLURM also cannot subdivide a GPU here (`GresTypes = gpu,mic`, no MPS or shard
+type), so packing inside one job was the only route and it does not pay.
+
+`sbatch/run_benchmark_packed.sbatch` is kept with the measurement in its header
+in case a smaller model or shorter imagination horizon changes the arithmetic.
+**One run per GPU stands.**
+
+A 1.26x reading taken at ~1000 steps was warmup, not signal — the runs had not
+finished filling replay or settled after JIT. Do not trust a throughput number
+from the first minutes of a run.
 
 ---
 

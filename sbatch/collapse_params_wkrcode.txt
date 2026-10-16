@@ -1,0 +1,6 @@
+director pinpad_four 0 e1054 director_og collapse_wkr_code
+director pinpad_four 1 e1055 director_og collapse_wkr_code
+director pinpad_four 2 e1056 director_og collapse_wkr_code
+director pinpad_four 0 e1057 director_og collapse_ctrl12
+director pinpad_four 1 e1058 director_og collapse_ctrl12
+director pinpad_four 2 e1059 director_og collapse_ctrl12

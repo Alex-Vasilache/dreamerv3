@@ -355,6 +355,28 @@ class Agent(embodied.Agent):
     data = {'params': params, 'counters': counters}
     return data
 
+  def reset_params(self, regex):
+    """Re-initialise the parameters whose names match ``regex`` (fresh init)."""
+    pattern = re.compile(regex)
+    keys = sorted(k for k in self.params if pattern.search(k))
+    assert keys, f'reset_regex {regex!r} matches no parameter'
+    with contextlib.ExitStack() as stack:
+      stack.enter_context(self.train_lock)
+      stack.enter_context(self.policy_lock)
+      stack.enter_context(jax.disable_jit(False))
+      fresh, _ = self._init_params()
+      for k in keys:
+        self.params[k].delete()
+        self.params[k] = fresh.pop(k)
+      jax.tree.map(lambda x: x.delete(), list(fresh.values()))
+      if self.jaxcfg.enable_policy:
+        jax.tree.map(lambda x: x.delete(), self.policy_params)
+        policy_params = {
+            k: self.params[k].copy() for k in self.policy_keys}
+        self.policy_params = internal.move(
+            policy_params, self.policy_params_sharding)
+    return keys
+
   @elements.timer.section('jaxagent_load')
   def load(self, data, regex=None):
     params = data['params']

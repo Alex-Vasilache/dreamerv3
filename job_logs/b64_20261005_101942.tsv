@@ -1,0 +1,19 @@
+array_job	task_idx	exp	config	task	seed
+4743866	0	e1095	director director_og b64 steps4m	pinpad_six	0
+4743866	1	e1096	director director_og b64 steps4m	pinpad_six	1
+4743866	2	e1097	director director_og b64 steps4m	pinpad_six	2
+4743866	3	e1098	director director_og b64 steps4m	pinpad_five	0
+4743866	4	e1099	director director_og b64 steps4m	pinpad_five	1
+4743866	5	e1100	director director_og b64 steps4m	pinpad_five	2
+4743866	6	e1101	director director_og b64 steps4m	pinpad_four	0
+4743866	7	e1102	director director_og b64 steps4m	pinpad_four	1
+4743866	8	e1103	director director_og b64 steps4m	pinpad_four	2
+4743866	9	e1104	director director_og b64 steps4m	dmc_cartpole_swingup	0
+4743866	10	e1105	director director_og b64 steps4m	dmc_cartpole_swingup	1
+4743866	11	e1106	director director_og b64 steps4m	dmc_cartpole_swingup	2
+4743866	12	e1107	director director_og b64 steps4m	dmc_cheetah_run	0
+4743866	13	e1108	director director_og b64 steps4m	dmc_cheetah_run	1
+4743866	14	e1109	director director_og b64 steps4m	dmc_cheetah_run	2
+4743866	15	e1110	director director_og b64 steps4m	dmc_hopper_hop	0
+4743866	16	e1111	director director_og b64 steps4m	dmc_hopper_hop	1
+4743866	17	e1112	director director_og b64 steps4m	dmc_hopper_hop	2

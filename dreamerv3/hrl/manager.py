@@ -83,6 +83,15 @@ class ManagerMixin:
       parts.append(nn.cast(sg(countdown)))
     return jnp.concatenate(parts, -1)
 
+  def _wkr_goal_in(self, goal, skills):
+    """Worker goal INPUT: the decoded goal, or the raw code (``worker_goal_input``).
+
+    Only what the worker conditions on changes; its reward stays cosine_max to
+    the decoded goal. A ``(..., L, C)`` code is flattened by ``_feat_goal2tensor``."""
+    if self.worker_goal_input == 'code':
+      return sg(f32(self._running_goal_code(skills)))
+    return goal
+
   def _mgr_input(self, feat, mgr_skill):
     """Manager-policy input: ``feat2tensor(feat)`` plus optional pre-edit conditioning.
 
@@ -323,6 +332,10 @@ class ManagerMixin:
 
   def _worker_policy_fixed_goal(self, goal):
     goal = sg(goal)
+    if self.worker_goal_input == 'code':
+      # Report rollouts hand over a goal VECTOR; re-encode it to the code the
+      # worker is trained on.
+      goal = sg(f32(self._encode_goal_code(goal, 1)))
     return lambda feat: sample(
         self.pol(self._feat_goal2tensor(feat, goal), bdims=1))
 
@@ -372,7 +385,8 @@ class ManagerMixin:
       # Match skill to state: decode goal from mgr_skill *after* resampling.
       goal = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
       act = sample(self.pol(self._feat_goal2tensor(
-          feat, goal, countdown=self._countdown_norm(cd_steps)), 1))
+          feat, self._wkr_goal_in(goal, mgr_skill),
+          countdown=self._countdown_norm(cd_steps)), 1))
       dyn_carry, (feat_next, act_out) = self.dyn.imagine(
           dyn_carry, act, 1, training, single=True)
       # Fixed K: ``update`` is a scalar (shared step counter); broadcast to (B,) so

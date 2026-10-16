@@ -1,0 +1,9 @@
+som_lip pinpad_six 0 e960 director_og
+som_lip pinpad_five 0 e962 director_og
+som_lip pinpad_four 0 e964 director_og
+som_lip pinpad_six 1 e966 director_og
+som_lip pinpad_five 1 e968 director_og
+som_lip pinpad_four 1 e970 director_og
+som_lip pinpad_six 2 e972 director_og
+som_lip pinpad_five 2 e974 director_og
+som_lip pinpad_four 2 e976 director_og
