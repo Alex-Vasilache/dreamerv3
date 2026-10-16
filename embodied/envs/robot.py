@@ -304,6 +304,8 @@ class SmartphoneRobot(embodied.Env):
     self.onboard = bool(onboard)
     self._onboard = False        # negotiated per connection
     self._onboard_act = None     # the action the phone actually applied
+    self._base_ok = True
+    self._base_health = {}
     self._config = config
     self._policy_dir = elements.Path(policy_dir) if policy_dir else None
     # Pushes run on a thread of their own (`_push_loop`), so they can go as
@@ -582,6 +584,7 @@ class SmartphoneRobot(embodied.Env):
         self._connect()
         self._send(0.0, 0.0, reset=True)
         sensors, latency = self._recv()
+        sensors, latency = self._wait_for_base(sensors, latency)
         sensors, latency = self._recover(sensors, latency)
         self._step = 0
         self._done = False
@@ -596,6 +599,20 @@ class SmartphoneRobot(embodied.Env):
         print(f'Robot did not answer the reset, waiting for it again: {e}')
         self._drop()
         time.sleep(1.0)
+
+  def _wait_for_base(self, sensors, latency):
+    """Hold the episode start until the phone's base is answering again."""
+    if self._base_ok:
+      return sensors, latency
+    print('[robot] base not answering; waiting for it before the next '
+          'episode (%s)' % self._base_health, flush=True)
+    start = time.time()
+    while not self._base_ok:
+      self._send(0.0, 0.0, reset=True)
+      sensors, latency = self._recv()
+    print('[robot] base back after %.1f s (%s)' % (
+        time.time() - start, self._base_health), flush=True)
+    return sensors, latency
 
   def _recover(self, sensors, latency):
     """Drive the body back under itself so the next episode can start upright.
@@ -629,6 +646,15 @@ class SmartphoneRobot(embodied.Env):
     self._sent_act = (left, right)
     self._send(left, right, reset=False)
     sensors, latency = self._recv()
+    if not self._base_ok:
+      # The base dropped out: its sensors are frozen and the wheels held, so
+      # nothing after this is the world the policy acts in. End the episode
+      # here (not terminal: nothing about the state ended it); _reset waits
+      # for the base.
+      print('[robot] base stopped answering at step %d; ending the episode '
+            '(%s)' % (self._step, self._base_health), flush=True)
+      self._done = True
+      return self._obs(self._last, latency, 0.0, is_last=True)
     self._step += 1
     self._total_steps += 1
     self._record(latency)
@@ -1136,6 +1162,16 @@ class SmartphoneRobot(embodied.Env):
       raise ValueError(f'Expected an obs message, got {header!r}')
     self._last = header['sensors']
     self._seq = header.get('seq')
+    # False from the moment the phone's base stops answering until it has
+    # answered cleanly for a while (dreamerBridge main.BASE_HOLD_S); its
+    # sensors are frozen and its wheels held at zero meanwhile. A phone that
+    # predates the flag sends none.
+    self._base_ok = bool(header.get('base_ok', True))
+    self._base_health = {
+        k: header[k] for k in (
+            'base_reset_cause', 'base_prev_stage', 'base_boots',
+            'base_motor_fail', 'base_bus_recoveries', 'base_self_resets')
+        if k in header}
     # The command the phone's policy saw for this observation. A phone that
     # predates commands sends none, which is the same as a centred stick.
     cmd = header.get('cmd') or (0.0, 0.0)
