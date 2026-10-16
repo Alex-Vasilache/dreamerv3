@@ -103,6 +103,13 @@ The two arms take the same config sets the server passes via `CONFIGS=`, e.g.
 `director_match director_stable` for the Director arm and
 `director_match goal_som_lipvq_line_prod lip_relu mgr_ucb` for the SOM/LiP+UCB arm.
 
+## Smartphone robot (branch `smartphone-robot-bridge`)
+
+The robot work stays on this branch; it is shared with the group, so keep it
+free of personal paths. `ROBOT.md` is the entrypoint, tools live in
+`tools/robot/`, and per-person settings (Saion paths, ssh host, phone IP) go in
+the gitignored `tools/robot/robot.env`, never in the scripts.
+
 ## Not available locally
 
 Present in the repo but **server-only** — do not try to run these here:

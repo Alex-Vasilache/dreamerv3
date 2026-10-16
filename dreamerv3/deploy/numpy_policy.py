@@ -13,9 +13,9 @@ reconverting and shipping a new model. Here the weights are a plain .npz that
 The scope is deliberately the *acting* path only. There is no imagination, no
 decoder, no value head -- the learner keeps all of that.
 
-`tools/export_policy.py` writes the .npz this reads, and
-`tools/test_numpy_policy.py` checks the output against the JAX agent step for
-step. Any edit here must keep that test passing: a silent divergence between
+`tools/robot/dev/export_policy.py` writes the .npz this reads, and
+`tools/robot/dev/test_numpy_policy.py` checks the output against the JAX
+agent step for step. Any edit here must keep that test passing: a silent divergence between
 this and the learner's own policy would show up only as a robot that acts
 subtly worse than its training curve claims.
 """

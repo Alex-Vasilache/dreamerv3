@@ -1,0 +1,18 @@
+# Everything the robot learner and tools need, without the game/benchmark
+# suites in requirements.txt. Install JAX separately for your machine (see
+# ROBOT.md, "Install"), then:  pip install -r requirements-robot.txt
+chex
+colored_traceback
+einops
+elements>=3.19.1
+granular>=0.20.3
+jaxtyping
+ninjax>=3.5.1
+numpy<2
+optax
+portal>=3.5.0
+psutil
+ruamel.yaml
+scope>=0.4.4
+tqdm
+# Optional, for tools/robot/tensorboard.sh:  tensorboard torch
