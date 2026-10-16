@@ -11,6 +11,7 @@ import ninjax as nj
 
 import embodied.jax.nets as nn
 
+from . import goal_mask
 from .tensors import goal_reward_cosine_max, imag_reward_pad
 
 f32 = jnp.float32
@@ -39,7 +40,26 @@ class GoalCodeMixin:
 
   def _goal_from_skill(self, skills, bdims=1):
     """Decode the running goal code to a ``deter`` goal vector (single batch dim)."""
-    return self.goal_dec(self._running_goal_code(skills), bdims).pred()
+    code = self._running_goal_code(skills)
+    return self._mask_goal(self.goal_dec(code, bdims).pred(), code, bdims)
+
+  def _mask_head_in(self, code):
+    """Input of the mask head: the one-hot code (Director AE) or its codebook
+    embeddings (VQ AE). The embeddings let the training loss reach the VQ
+    encoder through a straight-through estimate; a one-hot from a hard
+    quantizer carries no gradient."""
+    if self.goal_ae_impl == 'vq':
+      return self.goal_dec.codebook.lookup(code)
+    return code
+
+  def _mask_goal(self, goal, code, bdims):
+    """Zero the groups the code marks as ignored (no-op without masking)."""
+    groups = getattr(self, 'goal_mask_groups', 0)
+    if not groups:
+      return goal
+    logit = self.goal_mdec(self._mask_head_in(code), bdims).output.logit
+    keep = goal_mask.hard_keep(logit)
+    return goal * goal_mask.expand_groups(keep, goal.shape[-1]).astype(goal.dtype)
 
   def _held_goal_deter(self, mgr_skill, update, reset, cached_goal):
     """Decode Z to deter; refresh on manager switch or episode reset, else hold."""
@@ -53,7 +73,7 @@ class GoalCodeMixin:
     s = self._running_goal_code(skills)
     bshape = s.shape[:bdims]
     flat = s.reshape((-1, *s.shape[bdims:]))
-    goals = self.goal_dec(flat, 1).pred()
+    goals = self._mask_goal(self.goal_dec(flat, 1).pred(), flat, 1)
     return goals.reshape(bshape + goals.shape[1:])
 
   def _feat_from_goal(self, goal):
@@ -67,6 +87,13 @@ class GoalCodeMixin:
     """Worker goal reward: ``cosine_max`` between ``goal`` and ``deter`` (Director)."""
     feat = sg(self.feat2deter(imgfeat))
     goal = sg(goals)
+    groups = getattr(self, 'goal_mask_groups', 0)
+    if groups:
+      # Score only the kept groups: ignored groups are zero in the goal, so
+      # zeroing them in the state removes them from both the dot product and
+      # the norms of cosine_max.
+      keep = goal_mask.group_keep(goal, groups)
+      feat = feat * goal_mask.expand_groups(keep, feat.shape[-1]).astype(feat.dtype)
     cos = goal_reward_cosine_max(goal, feat)
     return imag_reward_pad(cos[:, 1:])
 

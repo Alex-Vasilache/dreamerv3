@@ -175,7 +175,9 @@ class TestConfigParity:
     Director's MLPs are handed a ``context`` entry that its config does not
     list, so it is dropped. Ours pass one tensor each, which is the same thing.
     """
-    assert 'self.goal_enc(deter_feat, 2)' in AGENT_PY
+    # ``enc_in`` is the masked state under goal_mask_groups, else deter_feat.
+    assert 'self.goal_enc(enc_in, 2)' in AGENT_PY
+    assert '      enc_in = deter_feat\n' in AGENT_PY
     assert 'self.goal_dec(skill_code, 2)' in AGENT_PY
 
   def test_reconstruction_reduction_is_sum(self):
