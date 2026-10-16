@@ -1,6 +1,6 @@
 """Turn learner params into the .npz the phone runs.
 
-Shared by `tools/export_policy.py` (offline, from a checkpoint) and by the
+Shared by `tools/robot/dev/export_policy.py` (offline, from a checkpoint) and by the
 online actor, which exports in-process every time it installs new weights so
 the bridge has something to push down. Keeping one implementation matters: the
 manifest is a contract, and a phone fed a manifest built two different ways is

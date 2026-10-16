@@ -6,8 +6,8 @@ knows about the robot: it reproduces the observation scaling from
 accepts weight updates pushed down the existing bridge socket.
 
 The scaling constants are **not** duplicated here -- they ride in the exported
-`.npz` manifest (`tools/export_policy.py`), because a policy fed inputs scaled
-differently from how it was trained is wrong in a way nothing downstream can
+`.npz` manifest (`tools/robot/dev/export_policy.py`), because a policy fed
+inputs scaled differently from how it was trained is wrong in a way nothing downstream can
 detect. One source of truth.
 
 Copied verbatim into the app alongside `numpy_policy.py`; numpy is the only

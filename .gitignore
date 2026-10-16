@@ -33,3 +33,4 @@ job_logs/*.bak_*
 *.gif
 experiments/**/*.mp4
 experiments/**/*.png
+tools/robot/robot.env

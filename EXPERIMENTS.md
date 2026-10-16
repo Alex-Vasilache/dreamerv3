@@ -1453,7 +1453,7 @@ Branch `smartphone-robot-bridge` (main merged in). A real-time simulated
 two-wheeled robot (`embodied/envs/robot_sim.py`, `env.robot.sim`) with the
 robot's own observations and rewards; balance and command following
 (`robot_command_lean`) at 25 and 65 Hz; one env paced to wall clock, one GPU
-per run. Write-up and figures: `docs/SIM_ROBOT.md` on that branch.
+per run. Write-up and figures: `docs/robot/SIM_ROBOT.md` on that branch.
 
 Result (reward per step, 60–115 min mean, 3 seeds): at 65 Hz tuned HRL
 (`hrl_robot_fast` = `worker_actent_adapt False` + `mgr_expl_weight 0`, goal-only

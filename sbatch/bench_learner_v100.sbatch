@@ -21,7 +21,7 @@ OUT="${OUT:-/work/DoyaU/vasilache/work/bench_learner_v100.txt}"
 cd "$CODE"
 {
   echo "=== V100 $(hostname) $(date -Is)"
-  python -u tools/bench_learner.py --mode learner \
+  python -u tools/robot/dev/bench_learner.py --mode learner \
     --deters 256 512 --units 256 512 \
     --batches 16 64 256 1024 --seconds 12 --actor_hz 40
 } > "$OUT" 2>&1

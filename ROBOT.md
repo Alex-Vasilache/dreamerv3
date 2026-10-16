@@ -1,262 +1,329 @@
-# Robot training quickstart
+# DreamerV3 on the OIST smartphone robot
 
-> **Latest state and next steps:** `docs/HANDOFF_2026-10-06.md` (robot work moved back to the Mac; policy on the phone, training on Saion).
+This branch (`smartphone-robot-bridge`) trains DreamerV3 on the real
+smartphone robot: a phone on a two-wheeled base, learning to balance and to
+follow joystick commands. The policy runs **on the phone**; a learner on a GPU
+(your computer or a Slurm cluster) trains on everything the phone records and
+pushes it new weights every ~2-3 s.
 
-## 1. Phone
-
-Set the Mac's IP in `~/StudioProjects/smartphone-robot-android/config.json`
-(`ipconfig getifaddr en0`) -- it is baked in at build time, so it must be reset
-and the app rebuilt whenever the Mac changes network, then, with the phone on adb (see below):
-
-```bash
-cd ~/StudioProjects/smartphone-robot-android
-JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
-  ./app run --app dreamerBridge     # build + install + launch; `run`, not `install`
+```
+  phone (dreamerBridge app)                         learner (this repo)
+ ┌──────────────────────────────┐   observations   ┌──────────────────────────┐
+ │ sensors -> policy -> wheels  │ ───────────────> │ replay -> world model    │
+ │ 25 / 50 / 100 Hz, on device  │ <─────────────── │ -> actor-critic          │
+ └──────────────┬───────────────┘   new weights    └──────────────────────────┘
+                │ USB serial                        dreamerv3/main.py, env
+ ┌──────────────┴───────────────┐                   embodied/envs/robot.py
+ │ base (RP2040 firmware)       │
+ └──────────────────────────────┘
 ```
 
-No hardware? `.venv/bin/python tools/fake_robot_phone.py --host 127.0.0.1 --port 3000`
+The learner listens on a port; the phone connects to it over WiFi. So the
+only network requirement is that **the phone can reach the learner's
+address** (your laptop on the same WiFi, or a cluster compute node that the
+WiFi can route to -- true for Saion from the OIST internal WiFi).
 
-### adb: connecting to the phone
+Contents: [Repos](#repos) · [Install](#install) · [Train](#train) ·
+[Watch](#watch) · [Configs and reward](#configs-and-reward) ·
+[Joystick](#joystick-and-command-following) · [Saved policies](#saved-policies) ·
+[No hardware](#without-hardware) · [Flash a base](#flash-a-base) ·
+[Troubleshooting](#troubleshooting) · [Tools](#tools) · [Background](#background)
 
-**Over WiFi with a pairing code** (no cable). On the phone: Settings → System →
-Developer options → **Wireless debugging** → *Pair device with pairing code*.
-That dialog shows an IP:port and a 6-digit code; the main Wireless debugging
-screen shows a **different** port.
+## Repos
 
-```bash
-adb pair 10.24.76.175:37535     # the PAIRING port, then paste the 6-digit code
-adb connect 10.24.76.175:42761  # the port on the main Wireless debugging screen
-adb devices
-```
+| repo | branch | what |
+|---|---|---|
+| [Alex-Vasilache/dreamerv3](https://github.com/Alex-Vasilache/dreamerv3) | `smartphone-robot-bridge` | learner, robot env, these tools |
+| [Alex-Vasilache/smartphone-robot-android](https://github.com/Alex-Vasilache/smartphone-robot-android) | `dreamer-bridge` | phone app `dreamerBridge` (fork of [oist/smartphone-robot-android](https://github.com/oist/smartphone-robot-android)) |
+| [Alex-Vasilache/smartphone-robot-firmware](https://github.com/Alex-Vasilache/smartphone-robot-firmware) | `telemetry-cache` | base firmware: fast replies, motor watchdog (fork of [oist/smartphone-robot-firmware](https://github.com/oist/smartphone-robot-firmware)) |
 
-Pairing is one-time per machine; afterwards only `adb connect` is needed, but
-that port changes on every reboot, so re-read it from the screen.
+All commands below run from the dreamerv3 checkout.
 
-Do **not** run `adb tcpip` on a wireless connection — it restarts adbd and the
-device goes `offline`. If you did, reconnect on 5555 instead:
+## Install
 
-```bash
-adb disconnect 10.24.76.175:42761 && adb connect 10.24.76.175:5555
-```
-
-**Over USB:** plug in, accept the "Allow USB debugging" prompt, `adb devices`.
-`adb tcpip 5555` then `adb connect <phone-ip>:5555` moves that session to WiFi
-so the cable can come out.
-
-## 2. Start training
+### 1. Learner
 
 ```bash
-tools/run_robot.sh                          # config robot_balance, learner GPU + actor CPU
-CONFIGS=robot_daydreamer tools/run_robot.sh # other arm
-tail -f ~/logdir/latest/train.log           # from any other terminal
+git clone -b smartphone-robot-bridge https://github.com/Alex-Vasilache/dreamerv3.git
+cd dreamerv3
+python3 -m venv .venv          # Python 3.10-3.13 (tested on 3.13)
 ```
 
-The phone connects in; training starts once it does. Re-run with the same
-`--logdir` to resume.
-
-## 3. Stop
-
-`Ctrl-C` in the `run_robot.sh` terminal (kills learner and actor), or
-`pkill -f dreamerv3/main.py`.
-
-## 4. Train on Saion instead (V100)
-
-The actor stays here beside the robot at ~45Hz; only replay chunks go up and
-policy weights come down. Needs the MacBook on the **OIST internal** network --
-`saion-ext` through the jump host is policed to ~10 KB/s and cannot carry it
-(`docs/SAION_BRIDGE_FINDINGS.md`). Put the phone on the internal WiFi too.
-
-Start, in two steps -- `start_robot.sh` finds a running job, it does not submit
-one:
+JAX for your machine, then the rest:
 
 ```bash
-# 1. the learner (8h wall limit; note the job id it prints)
-ssh saion 'cd /apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3 && \
-  CODE=$PWD SCRIPT=online_learner CONFIGS=robot_daydreamer \
-  sbatch sbatch/run_robot_v100.sbatch'
-
-# 2. once squeue shows it RUNNING: actor + bridge + TensorBoard here
-MODE=saion tools/start_robot.sh
+.venv/bin/pip install "jax[cuda12]==0.4.34"                          # Linux + NVIDIA GPU
+.venv/bin/pip install jax==0.4.34 jaxlib==0.4.34 jax-metal==0.1.1    # Apple silicon GPU
+.venv/bin/pip install jax==0.4.34                                    # CPU only (tests)
+.venv/bin/pip install -r requirements-robot.txt
+.venv/bin/pip install tensorboard torch     # optional, for tools/robot/tensorboard.sh
 ```
 
-`MODE=saion` fails loudly if no learner is running; plain `tools/start_robot.sh`
-silently falls back to a local learner instead, which is the right default when
-the robot session matters more than the throughput.
+The platform is picked automatically (CUDA on Linux, Metal on macOS when
+`jax-metal` is installed). Force one with `DREAMERV3_PLATFORM=cpu`.
 
-Stop, also two steps -- **`stop_robot.sh` does not cancel the Saion job**, and a
-learner left running holds a V100 for the full 8 hours:
+Your settings -- where the learner runs, the phone's address, cluster paths --
+go in one gitignored file:
 
 ```bash
-tools/stop_robot.sh              # actor, bridge, TensorBoard here
-ssh saion scancel <job-id>       # the learner
+cp tools/robot/robot.env.example tools/robot/robot.env
 ```
 
-Watch it with `tail -f ~/logdir/latest/train.log` (actor),
-`tail -f ~/logdir/.robot_session/bridge.log` (a `sent N/M` line per 8s cycle),
-and http://localhost:6006.
+and edit it; every key is explained there. With `ROBOT_TRAINER=local` (the
+default) nothing else is needed. You also need `adb` (Android
+platform-tools: `brew install --cask android-platform-tools`, or from Android Studio).
 
-The job runs the git checkout of this branch at
-`/apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3`, not the shared checkout under `/apps/unit/.../code/dreamerv3`, which is
-on `main` and does not carry the robot code. Push from the Mac and
-`git pull` there after changing anything in `dreamerv3/` or `embodied/`.
-(The old rsync'd copy at `/work/DoyaU/vasilache/work/dreamerv3_robot` is
-retired; it was identical to commit f081b4e.)
+**On a Slurm cluster** (optional): clone the same branch there, make a Python
+environment with the CUDA JAX above, and set in `robot.env`:
+`ROBOT_TRAINER=slurm`, `ROBOT_SSH` (an ssh alias that logs in without a
+password prompt), `ROBOT_REMOTE_CODE` (the clone), `ROBOT_RUNS` (a directory
+for runs on the shared filesystem), `ROBOT_SETUP` (the command that activates
+that environment inside a job) and `ROBOT_SLURM_FLAGS` (partition and GPU).
+A Saion example:
 
-**Tunnelling the robot to the compute node instead** (`SCRIPT=train` plus
-`tools/robot_tunnel.sh`) is the other shape, and it was measured at 0.45Hz with
-95% of frames dropped over the jump host. Untested over the direct route; the
-split above keeps the control loop off the network either way.
+```bash
+ROBOT_TRAINER=slurm
+ROBOT_SSH=saion
+ROBOT_REMOTE_CODE=/apps/unit/<Unit>/<you>/dreamerv3
+ROBOT_RUNS=/work/<Unit>/<you>/robot
+ROBOT_SETUP='module load python/3.11 && source /apps/unit/<Unit>/<you>/venv/bin/activate'
+ROBOT_SLURM_FLAGS="-p gpu-v100 --gres=gpu:v100:1"
+```
 
-## 4b. Resume the 2026-09-03 balancing session
+`train.sh` runs `git pull` in `ROBOT_REMOTE_CODE` before each submission, so
+push your changes before starting a run.
 
-That session reached ~345 mean episode score (from 187) and was stopped
-deliberately, not lost. Everything needed to continue lives on Saion:
+### 2. Phone app
+
+The phone is an Android phone with Developer options on (tap Build number 7
+times) and **USB debugging** and **Wireless debugging** enabled. Build
+needs a full JDK 17+ (Android Studio's bundled one works):
+
+```bash
+git clone -b dreamer-bridge https://github.com/Alex-Vasilache/smartphone-robot-android.git
+cd smartphone-robot-android
+cp config.template.json config.json      # values unused: train.sh points the phone at the learner
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"   # macOS + Android Studio
+./gradlew :dreamerBridge:assembleDebug
+adb install -r apps/dreamerBridge/build/outputs/apk/debug/dreamerBridge-debug.apk
+```
+
+Set `ROBOT_ANDROID_DIR` in `robot.env` to this checkout. More on the
+Android side: `docs/getting-started.md` and `docs/dreamer-bridge.md` there.
+
+**Connecting adb wirelessly.** First time, pair: Settings → Developer options
+→ Wireless debugging → *Pair device with pairing code*, then
+`adb pair <ip>:<pairing port>` and enter the code. Afterwards, with Wireless
+debugging switched on, `tools/robot/phone_connect.sh` finds the (changing)
+port and connects; set `PHONE_IP` in `robot.env` first. Over a cable, plain
+`adb devices` works.
+
+### 3. Base firmware
+
+Bases need the firmware from `telemetry-cache` (fast ~7 ms serial replies,
+wheels stop by themselves when commands stop). A base with the stock firmware
+balances poorly and can spin a wheel at power-up. See [Flash a base](#flash-a-base).
+
+## Train
+
+1. Wireless debugging on, then `tools/robot/phone_connect.sh`.
+2. Phone on the base, base switched on (switch on the bottom **UP**, Phone
+   Side). Check both say `true`:
+   ```bash
+   adb shell dumpsys usb | grep -E 'host_connected|source_power'
+   ```
+3. Stand the robot upright with room to move, and start:
+
+   | rate | command |
+   |---|---|
+   | 25 Hz | `tools/robot/train.sh` |
+   | 50 Hz | `HZ=50 tools/robot/train.sh` |
+   | 100 Hz | `HZ=100 tools/robot/train.sh` |
+
+   It starts the learner (locally, or submits the Slurm job), waits for it to
+   listen, writes its address into the phone's `trainer.json`, starts the app
+   and waits until the phone connects (~1-2 min). An optional name comes
+   first, extra `dreamerv3/main.py` flags after it:
+   `tools/robot/train.sh balance_carpet --env.robot.action_rate_penalty 0.1`.
+4. Stop: `tools/robot/stop.sh` (cancels the job or kills the local learner,
+   and stops the app). The base stops the wheels 250 ms after commands stop.
+
+**Resume** a run with the same rate and configs:
+`RUN_DIR=<its run dir> tools/robot/train.sh resume`.
+
+**Settings** (environment variables): `HZ` (25; picks the `robot_<HZ>hz`
+preset), `CONFIGS` (default `robot_daydreamer robot_fast robot_<HZ>hz`),
+`STEPS` (100000: ~67 min at 25 Hz, ~33 at 50, ~17 at 100), `GPU` (Slurm:
+use `ROBOT_SLURM_FLAGS_<GPU>` from robot.env), `NO_BASE=1` (phone alone, for
+testing the link). Runs land in `$ROBOT_RUNS/<name>_<date>/`.
+
+**A local learner wants a real GPU.** A laptop (CPU or Apple GPU) does
+learn, but trains far fewer samples per robot step than a cluster GPU, so it
+learns more slowly in wall-clock time.
+
+## Watch
+
+On the phone screen: the reward at the top (~1.0 per step is perfect) and the
+`policy` stamp, which changes with every weight push. Or:
+
+```bash
+tools/robot/tensorboard.sh                  # the latest run
+tools/robot/tensorboard.sh <run> <run> ...  # compare runs
+```
+
+It prints the address (first free port from 6006). Each run shows as
+`<run>/actor` (x = robot steps: `episode/score`, `fps/policy`,
+`epstats/log/dropped/sum`, `epstats/log/policy_age_s/avg`, sensors) and
+`<run>/learner` (x = trained samples: losses, `fps/train`).
+
+Healthy: `fps/policy` at the chosen rate, `dropped/sum` 0, `policy_age_s`
+~2-3 s, and `logdir/online_shared/policy/latest` in the run dir advancing.
+A learner can crash while the phone keeps driving with its last weights, so
+that last check is the one that matters.
+
+## Configs and reward
+
+Config blocks in `dreamerv3/configs.yaml`, layered left to right:
+
+| block | what |
+|---|---|
+| `robot` | base: flat DreamerV3 (no HRL), size1m, online learning |
+| `robot_daydreamer` | balancing task, continuous per-wheel actions |
+| `robot_fast` | faster-learning hyperparameters from the real-time cartpole sweep ([docs/robot/SIM_PHONE.md](docs/robot/SIM_PHONE.md)) |
+| `robot_25hz`, `_50hz`, `_65hz`, `_100hz` | 2 s horizon and 20 s episodes at that rate |
+| `robot_command` (+ `_cur`, `_sum`, `_taper_sum`, `_lean`) | balance while following a command, see below |
+| `sim_phone`, `sim_phone_fast` | cartpole paced to real time, no robot |
+| `hrl_robot`, `hrl_robot_fast` | after the robot blocks, with `director director_og` first: the HRL agent ('now' Director), tuned for the robot ([docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md)); acts from the trainer, not the phone |
+| `sim_robot` + `sim_25hz` / `sim_65hz` | the robot task against a simulated balancing body, paced to real time, no robot |
+
+Reward and motor flags, passed after the name:
+
+| flag | default | meaning |
+|---|---|---|
+| `env.robot.action_rate_penalty` | 0 | chatter cost: flag × mean \|aₜ − aₜ₋₁\| over wheels |
+| `env.robot.command_scale` | 1.0 | phone scales every wheel command: caps motor power |
+| `env.robot.wheel_penalty` | 0.3 | cost on wheel speed |
+| `env.robot.drift_penalty` | 0.1 | cost on net forward speed |
+| `env.robot.rate_penalty` | 0.05 | cost on tilt rate |
+| `env.robot.weights_every` | 0 | minimum seconds between weight pushes; `1e9` stops them |
+
+The reward peaks at 1.0 per step, so a 20 s episode scores at most ~500 at
+25 Hz, ~1000 at 50 Hz and ~2000 at 100 Hz. All reward terms are computed on
+the learner (`embodied/envs/robot.py`), so changing the task needs no app
+rebuild.
+
+## Joystick and command following
+
+The app serves a page at `http://<phone's WiFi address>:8080` (shown on the
+robot's screen): **DRIVE** is a joystick, **SCREEN** mirrors the display.
+Off that WiFi: `adb forward tcp:8080 tcp:8080`, then http://localhost:8080.
+
+Only a policy trained on the command task follows it:
+
+```bash
+CONFIGS="robot_daydreamer robot_fast robot_25hz robot_command" \
+  tools/robot/train.sh cmd_25hz --env.robot.action_rate_penalty 0.05
+```
+
+The policy sees a command (forward, turn) in [-1, 1]. While training, the
+phone holds a random one for 2-5 s (zero 30% of the time); touching the stick
+overrides it. Reward: balance × exp(-(error/0.5)²) tracking of forward speed
+and turn rate. In TensorBoard compare `epstats/log/cmd_forward` with
+`epstats/log/forward`, likewise `turn`. The variants and their parameters are
+documented beside each block in `configs.yaml`.
+
+## Saved policies
+
+The app opens in training. **Back** ends training and opens the policy list:
+tap a policy to run it with no learner (STOP returns to the list), long-press
+to rename or delete. Every training run keeps its latest weights there under
+its run name, updated with every push. To save a run's current weights under
+a name of your choice:
+
+```bash
+tools/robot/save_policy.sh balance_table            # the latest run
+tools/robot/save_policy.sh balance_table <run dir>  # a given run
+```
+
+Copies are kept in `~/logdir/robot_policies/`.
+
+## Without hardware
+
+- **No base:** `NO_BASE=1 HZ=100 STEPS=30000 tools/robot/train.sh linktest`
+  runs the app without wheels, paced by `HZ` alone, to test the link.
+- **No phone:** start a learner and point the stand-in phone at it; it runs
+  the app's own policy and link code on a fixed clock:
+  ```bash
+  ROBOT_RUNS=~/logdir/robot NAME=fake PORT=3000 STEPS=5000 bash tools/robot/trainer_job.sh &
+  .venv/bin/python tools/robot/dev/fake_onboard_phone.py --port 3000 --hz 25 --seconds 120
+  kill %1
+  ```
+- **No robot at all:** `sim_phone` trains cartpole swingup paced to wall-clock
+  time through the same code path (needs `dm-control`, which needs Python
+  ≤ 3.12): `.venv/bin/python dreamerv3/main.py --configs sim_phone --logdir ~/logdir/sim`.
+- **Simulated robot:** `sim_robot` swaps the phone for a two-wheeled
+  inverted-pendulum model with the robot's own observations and rewards
+  (pure numpy, no `dm-control`); layer it last with `sim_25hz` or `sim_65hz`:
+  `--configs robot_daydreamer robot_fast robot_65hz sim_robot sim_65hz`.
+  Results for flat DreamerV3 vs HRL at 25/65 Hz: [docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md).
+
+## Flash a base
+
+One-time: `picotool` and docker (macOS: `brew install colima docker picotool`),
+the firmware checkout, and `ROBOT_FIRMWARE_DIR` set in `robot.env`:
+
+```bash
+git clone -b telemetry-cache https://github.com/Alex-Vasilache/smartphone-robot-firmware.git
+```
+
+1. Turn the base over and push the **USB switch DOWN** (External).
+2. Data cable from the computer to the base's **external USB port**.
+3. `tools/robot/flash_base.sh --build` (the first time; later without
+   `--build` reuses the build). It must end with `OK: base answers`. If
+   nothing is detected, replug while holding **BOOTSEL** and run it again.
+4. Unplug and push the switch back **UP** (Phone Side).
+
+## Troubleshooting
+
+| symptom | fix |
+|---|---|
+| `host_connected=false` | reseat the phone on the base; check the base is on and its switch is UP |
+| Pico appears/disappears every second (`adb logcat \| grep UsbHostManager`) | reseat the phone; if that fails, reinstall the app |
+| phone stopped powering the base after the app was killed | unplug and replug the phone |
+| wheels never move, phone log says `no base` | the app is in link-test mode: `tools/robot/stop.sh`, then `train.sh` again |
+| "Allow … to access Pico?" on the phone | `tools/robot/phone_allow_usb.sh`, or tap OK |
+| phone shows `no trainer at …` | learner not up yet, or the phone cannot reach its address (check the phone and learner networks) |
+| `cannot reach …: timed out` in logcat | the phone is dozing: `adb shell input keyevent KEYCODE_WAKEUP` |
+| `adb devices` empty | Wireless debugging switched itself off: turn it on, `tools/robot/phone_connect.sh` |
+| a wheel spins at power-up | old firmware: flash the base |
+| learner exits after ~30 s | a crashed run left `logdir/error_learner`; `train.sh` deletes it on resume, otherwise delete it by hand |
+| `RPI-RP2` drive won't mount | ignore it; `flash_base.sh` uses picotool |
+
+## Tools
 
 | | |
 |---|---|
-| Run dir | `/work/DoyaU/vasilache/work/robot_v100_20260903_152855_xZnLLD` |
-| Checkpoint | `logdir/ckpt/20260903T163052F054241` (32MB) |
-| Replay | 1232 chunks in `logdir/online_shared/experience/` |
-| Durable copy | `/bucket/DoyaU/vasilache/robot_checkpoints/20260903T164143_balancing` |
+| `tools/robot/train.sh` | start a run and point the phone at it |
+| `tools/robot/stop.sh` | stop the learner and the app |
+| `tools/robot/tensorboard.sh` | live TensorBoard for local or cluster runs |
+| `tools/robot/save_policy.sh` | name and keep a run's current weights on the phone |
+| `tools/robot/phone_connect.sh` | adb over WiFi, finding the port |
+| `tools/robot/phone_allow_usb.sh` | tap OK on the USB permission dialog |
+| `tools/robot/flash_base.sh` | build and flash base firmware |
+| `tools/robot/trainer_job.sh` | the learner itself (Slurm job or local process) |
+| `tools/robot/common.sh`, `robot.env.example` | shared settings |
+| `tools/robot/dev/` | development: fake phones, policy export and its numerical test, protocol test, latency probes, learner benchmark, sweep plots, and `check_app_copies.sh` (the app carries copies of three `dreamerv3/deploy/` modules; run it after changing them) |
 
-```bash
-RUN=/work/DoyaU/vasilache/work/robot_v100_20260903_152855_xZnLLD
+Code: `embodied/envs/robot.py` (env, reward, link to the phone),
+`dreamerv3/deploy/` (on-phone policy in numpy, export, link protocol), robot
+blocks in `dreamerv3/configs.yaml`.
 
-# The learner reloads ckpt/latest and the existing replay, so it does not
-# re-prefill from nothing. train_ratio 384 rather than the block's 512: see
-# docs/SAION_BRIDGE_FINDINGS.md, 512 sits exactly at what the V100 sustains.
-ssh saion "cd /apps/unit/DoyaU/vasilache/apps/code/robot/dreamerv3 && \
-  CODE=\$PWD SCRIPT=online_learner CONFIGS=robot_daydreamer STEPS=1000000 \
-  RUN_DIR=$RUN sbatch sbatch/run_robot_v100.sbatch --run.train_ratio 384"
+## Background
 
-# once squeue shows it RUNNING
-MODE=saion tools/start_robot.sh
-```
-
-**Before resuming, `$RUN/logdir/online_shared/actor_step` must not exist**
-(already cleared). A fresh actor starts counting at 0, while `Ratio._prev` in
-the learner is set from the first value it reads and never moves backwards -- a
-leftover high `actor_step` makes the learner wait until the robot has climbed
-all the way back past it, which looks exactly like the learner being hung.
-
-`git pull` the Saion checkout first if `dreamerv3/` or `embodied/` changed
-since (see §4).
-
-**Health check while it runs:** `online_shared/policy/latest` must keep
-advancing. Job state, GPU use and chunk flow all stay green while the learner
-silently stops publishing weights, so they prove nothing on their own.
-
-## 4bb. The learner can die silently -- watch `policy/latest`
-
-On 2026-09-07 the learner crashed 1h32m into a session and nobody noticed for
-75 minutes. The job disappeared from `squeue`, the actor kept driving the robot
-at 49Hz, the bridge kept syncing, TensorBoard kept updating from the actor's own
-metrics -- everything looked healthy while no gradient was being computed.
-
-The crash was `KeyError` in `embodied/core/replay.py:_remove`. `load()` walks a
-snapshot of `self.chunks` and calls `_insert()` as it goes; `_insert()` evicts
-when the buffer is at capacity, so the first load that fills replay can retire a
-chunk while items pointing into it are still queued. The next eviction of one of
-those items then looked up a `refs` entry that was already gone. It is fixed by
-discarding such an item instead of raising -- which is what `_sample()` already
-does on the same condition. This only bites once replay reaches capacity, which
-is why it takes an hour or two to show up.
-
-**The only honest health check is that `online_shared/policy/latest` keeps
-advancing.** Job state, GPU utilisation and chunk flow all stay green through
-this. Something should be watching it for the length of every session:
-
-```bash
-watch -n60 'ssh saion "cat <RUN>/logdir/online_shared/policy/latest"'
-```
-
-**A crashed learner blocks its own restart.** On the way down it writes
-`<RUN>/logdir/error_learner`, and the next job sees that file and exits after
-~30s with `Shutting down due to error file`, which looks like a fresh crash
-rather than a refusal. Delete it before resubmitting:
-
-```bash
-ssh saion 'rm -f <RUN>/logdir/error_learner'
-```
-
-Note the `actor_step` rule in §4b is the opposite way round here: if the actor
-is **still running** when you restart the learner, leave `actor_step` alone --
-it is live, not stale, and the learner should pace against it.
-
-## 4c. On-device policy (in progress, 2026-09-07)
-
-Work has started on running the policy on the phone and sending only weight
-updates down. See `docs/ONDEVICE_POLICY.md` for the measured reaction-delay
-budget that motivates it and for what is built so far.
-
-**Heads up before the next `./app run --app dreamerBridge`:**
-`apps/dreamerBridge/build.gradle.kts` now pulls in numpy via Chaquopy, which
-required moving that module to Python 3.13 (Chaquopy 17 wants buildPython to
-match, and 3.10 is not installed here) and cutting its ABIs to `arm64-v8a,
-x86_64` (Chaquopy has no 3.13 for 32-bit). It is verified to **build**; it has
-not yet been run on the robot, and the phone was left on the older APK. So the
-next install is a bigger change than usual -- do it when you can watch it, not
-mid-experiment.
-
-The policy port itself is verified against the JAX modules to ~1e-6:
-
-```bash
-.venv/bin/python tools/export_policy.py --checkpoint <policy.pkl> --out policy.npz
-JAX_PLATFORMS=cpu .venv/bin/python tools/test_numpy_policy.py --weights policy.npz
-```
-
-## 4d. The control rate is set by the RP2040, not by the phone (2026-09-14)
-
-The microcontroller services one motor command per ~83 ms and reads USB only in
-between, so the wheels update at ~12 Hz whatever the phone does. The phone now
-paces one decision per reply (`PACE = 'serial'` in `main.py`), which applies
-every action fresh instead of a random third of them, and it no longer sends
-coast commands, which were stalling the microcontroller for 1 s at a time.
-Numbers and the firmware fix that would lift the ceiling: `docs/ROBOT_BRIDGE_FINDINGS.md`.
-On 2026-09-16 the phone side was taken to that floor: ~92 ms per decision in
-both onboard and trainer-driven mode, ~15 ms sensor-to-torque onboard (see
-§"Driving the phone side to the floor" in the findings). Three things to check
-before every session:
-
-```bash
-adb shell dumpsys power | grep mWakefulness   # must be Awake: a dozing phone freezes the sensors
-adb logcat -d | grep SerialLatency | tail -1  # max should be ~90 ms; 1090 means coast commands
-adb shell dumpsys usb | grep source_power     # must be true: the phone powers the Pico
-```
-
-If the Pico is attaching and vanishing every second (`adb logcat | grep
-UsbHostManager`), the phone has stopped sourcing power on the port; reinstall
-the app (`./app run --app dreamerBridge`) to re-run the USB permission grant.
-
-## 4e. No robot? Real-time cartpole (2026-10-05)
-
-`sim_phone` trains one cartpole swingup paced to wall-clock time through the
-same actor/learner split. `sbatch sbatch/run_sim_phone.sbatch`, then
-`python tools/sim_curve.py <run>` for minutes to hold a score. An overnight
-sweep found a 2.4x faster setup (`sim_phone_fast`), and its robot translation
-is the opt-in block `robot_fast`. Findings and caveats are in
-`docs/SIM_PHONE.md`. The "200 Hz PID" question is answered at the end of
-`docs/ROBOT_BRIDGE_FINDINGS.md`: firmware branch `RTT-LoopReduction`.
-
-## 5. When the rate is below 50 Hz
-
-`log/dropped` above zero means the phone produced observations we did not
-consume. Find out whose fault it is without starting a training run:
-
-```bash
-.venv/bin/python tools/time_robot_steps.py                 # per-stage timing
-.venv/bin/python tools/time_robot_steps.py --stages arrival
-```
-
-Measured 2026-09-03, the answer was the WiFi, not the code: the actor's whole
-step path costs about 1 ms of the 20 ms budget. Check `ping <phone-ip>` (`adb shell ip route` gives it) -- an
-average far above the ~6 ms minimum is the radio dozing.
-
-Full numbers, and what was ruled out, in `docs/ROBOT_BRIDGE_FINDINGS.md`.
-
-## 6. Check it
-
-```bash
-.venv/bin/python tools/did_it_learn.py ~/logdir/latest
-tools/tensorboard.sh ~/logdir            # http://localhost:6006
-```
+Lab notes behind the design, with measurements:
+[ROBOT_BRIDGE_FINDINGS](docs/robot/ROBOT_BRIDGE_FINDINGS.md) (control rate,
+latency, firmware), [ONDEVICE_POLICY](docs/robot/ONDEVICE_POLICY.md) (why the
+policy runs on the phone), [SIM_PHONE](docs/robot/SIM_PHONE.md) (real-time
+cartpole sweep), [SAMPLE_EFFICIENCY_SURVEY](docs/robot/SAMPLE_EFFICIENCY_SURVEY.md).
+They are dated records: scripts they name may since have been replaced, see
+`docs/robot/history/` for the older guides.

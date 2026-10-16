@@ -1,5 +1,8 @@
 # Mastering Diverse Domains through World Models
 
+> **Smartphone robot:** this branch (`smartphone-robot-bridge`) trains
+> DreamerV3 on the OIST smartphone robot. Start at [ROBOT.md](ROBOT.md).
+
 A reimplementation of [DreamerV3][paper], a scalable and general reinforcement
 learning algorithm that masters a wide range of applications with fixed
 hyperparameters.

@@ -1714,7 +1714,7 @@ robot_daydreamer:
   # to walk, but 7x wider than the 3x64 it replaces.
   #
   # batch_size 256 rather than 16, because the learner now runs on a Saion V100
-  # (sbatch/run_robot_v100.sbatch) and that machine is launch-bound at this
+  # (tools/robot/trainer_job.sh) and that machine is launch-bound at this
   # size, not FLOP-bound. Measured on a V100 2026-09-03, samples/s and the
   # train ratio they buy against a 40Hz actor:
   #
@@ -1843,7 +1843,7 @@ sim_phone:
   jax: {prealloc: False}
   logger: {outputs: [jsonl, scope]}
 
-# The fastest `sim_phone` recipe in wall-clock time (docs/SIM_PHONE.md, rounds
+# The fastest `sim_phone` recipe in wall-clock time (docs/robot/SIM_PHONE.md, rounds
 # 1-8): 12.5 Hz control, a 2 s return horizon, lr 3e-4, wider MLPs and a 32x64
 # batch hold cartpole swingup >= 800 after ~10.5 min of real time (3 seeds),
 # against ~25.5 for `sim_phone`. At a low control rate the learner does several
@@ -1860,7 +1860,7 @@ sim_phone_fast:
   batch_size: 32
   run.train_ratio: 8192
 
-# What the real-time cartpole sweep (docs/SIM_PHONE.md, e1113-e1196) says to
+# What the real-time cartpole sweep (docs/robot/SIM_PHONE.md, e1113-e1196) says to
 # change on the robot. Opt-in on top of `robot_daydreamer`; untested on the
 # robot itself:
 #   CONFIGS="robot_daydreamer robot_fast"
@@ -1874,7 +1874,7 @@ sim_phone_fast:
 # - batch 32x64: in the sim the learner is bound by host-side overhead at
 #   small batches and by the GPU at large ones; 32x64 was the free point on a
 #   P100. 256x32 is 4x the samples per update and costs updates/s; check with
-#   tools/bench_learner.py on the learner's GPU before trusting either.
+#   tools/robot/dev/bench_learner.py on the learner's GPU before trusting either.
 # - train_ratio out of reach: the learner should never wait for the robot.
 # The weight push interval (env.robot.weights_every, 30 s) did not matter
 # between 5 and 60 s in the sim.
@@ -1986,7 +1986,7 @@ robot_command_taper_sum:
   # Equal forward and turn scales make the command one isotropic wheel-speed
   # vector; diagonals are capped so no wheel is asked for more than full
   # forward. Full stick is the top speed measured on the ground, ~4900 mm/s
-  # at full output (5700 in the air; docs/ROBOT_BRIDGE_FINDINGS.md,
+  # at full output (5700 in the air; docs/robot/ROBOT_BRIDGE_FINDINGS.md,
   # 2026-10-15) -- not yet known to be reachable while balancing.
   env.robot.command_speed: 4900.0
   env.robot.command_turn: 4900.0
@@ -2212,7 +2212,7 @@ hrl_robot:
   agent.use_hrl: True
 
 
-# The 'now' Director tuned for the robot in real time (docs/SIM_ROBOT.md,
+# The 'now' Director tuned for the robot in real time (docs/robot/SIM_ROBOT.md,
 # e1480-e1747). Goal-only worker (no task reward). Two changes from
 # director_og, tested on the simulated robot at 65 Hz:
 # - worker_actent_adapt False: director_og's adaptive worker entropy (target
