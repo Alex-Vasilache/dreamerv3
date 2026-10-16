@@ -464,6 +464,12 @@ def make_env(config, index, **overrides):
   # cannot, because the phone owns the control clock and must keep sensing at
   # full rate while the agent decides less often.
   repeat = kwargs.pop('repeat', 1) if suite == 'robot' else 1
+  if suite == 'robot':
+    # env.robot.sim: the same task against a simulated body (robot_sim.py).
+    sim = {k: kwargs.pop(k) for k in list(kwargs) if k.startswith('sim')}
+    if sim.pop('sim', False):
+      from embodied.envs import robot_sim
+      ctor = bind(robot_sim.RobotSim, **sim)
   env = ctor(task, **kwargs)
   if repeat > 1:
     env = embodied.wrappers.ActionRepeat(env, repeat)

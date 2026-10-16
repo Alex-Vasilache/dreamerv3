@@ -1,0 +1,16 @@
+e1480 flat balance 25 v100 --seed 0
+e1481 hrl balance 25 v100 --seed 0
+e1482 flat balance 65 v100 --seed 0
+e1483 hrl balance 65 v100 --seed 0
+e1484 flat command 25 v100 --seed 0
+e1485 hrl command 25 v100 --seed 0
+e1486 flat command 65 v100 --seed 0
+e1487 hrl command 65 v100 --seed 0
+e1488 flat balance 25 p100 --seed 1
+e1489 hrl balance 25 p100 --seed 1
+e1490 flat balance 65 p100 --seed 1
+e1491 hrl balance 65 p100 --seed 1
+e1492 flat command 25 p100 --seed 1
+e1493 hrl command 25 p100 --seed 1
+e1494 flat command 65 p100 --seed 1
+e1495 hrl command 65 p100 --seed 1
