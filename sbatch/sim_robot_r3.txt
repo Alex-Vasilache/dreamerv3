@@ -1,0 +1,9 @@
+e1512 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False
+e1513 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0
+e1514 hrl balance 65 v100 --seed 0 --agent.manager_sample_freq 16
+e1515 hrl balance 65 v100 --seed 0 --batch_size 16
+e1516 hrl balance 65 v100 --agent.worker_actent_adapt False --seed 1
+e1517 hrl command 65 p100 --seed 0 --agent.worker_actent_adapt False
+e1518 hrl command 65 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0
+e1519 hrl command 65 p100 --seed 0 --agent.manager_sample_freq 16
+e1520 hrl command 65 p100 --seed 0 --batch_size 16

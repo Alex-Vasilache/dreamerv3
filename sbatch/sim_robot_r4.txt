@@ -1,0 +1,6 @@
+e1521 hrl balance 25 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0
+e1522 hrl command 25 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0
+e1523 hrl command 65 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.manager_actent_adapt False
+e1524 hrl command 65 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none
+e1525 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.manager_actent_adapt False
+e1526 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none

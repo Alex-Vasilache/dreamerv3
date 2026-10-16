@@ -1,0 +1,9 @@
+e1527 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False
+e1528 hrl balance 65 v100 --seed 1 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False
+e1529 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False --agent.imag_loss.actent 1e-4
+e1530 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False --agent.worker_goal_input code
+e1531 hrl balance 65 v100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.manager_sample_freq 16
+e1532 hrl command 65 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False
+e1533 hrl command 65 p100 --seed 1 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False
+e1534 hrl command 65 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False --agent.imag_loss.actent 1e-4
+e1535 hrl command 65 p100 --seed 0 --agent.worker_actent_adapt False --agent.mgr_expl_weight 0.0 --agent.advnorm.impl none --agent.manager_actent_adapt False --agent.worker_goal_input code

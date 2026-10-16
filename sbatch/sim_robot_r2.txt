@@ -1,0 +1,16 @@
+e1496 hrl balance 25 v100 --seed 0 --agent.wkr_extr_weight 1.0
+e1497 hrl balance 25 v100 --seed 0 --agent.manager_sample_freq 4
+e1498 hrl balance 25 v100 --seed 0 --agent.mgr_expl_weight 0.0
+e1499 hrl balance 25 v100 --seed 0 --agent.opt.lr 1e-4 --agent.ac_opt.lr 1e-4
+e1500 hrl balance 65 v100 --seed 0 --agent.wkr_extr_weight 1.0
+e1501 hrl balance 65 v100 --seed 0 --agent.manager_sample_freq 4
+e1502 hrl balance 65 v100 --seed 0 --agent.mgr_expl_weight 0.0
+e1503 hrl balance 65 v100 --seed 0 --agent.opt.lr 1e-4 --agent.ac_opt.lr 1e-4
+e1504 hrl command 25 p100 --seed 0 --agent.wkr_extr_weight 1.0
+e1505 hrl command 25 p100 --seed 0 --agent.manager_sample_freq 4
+e1506 hrl command 25 p100 --seed 0 --agent.mgr_expl_weight 0.0
+e1507 hrl command 25 p100 --seed 0 --agent.opt.lr 1e-4 --agent.ac_opt.lr 1e-4
+e1508 hrl command 65 p100 --seed 0 --agent.wkr_extr_weight 1.0
+e1509 hrl command 65 p100 --seed 0 --agent.manager_sample_freq 4
+e1510 hrl command 65 p100 --seed 0 --agent.mgr_expl_weight 0.0
+e1511 hrl command 65 p100 --seed 0 --agent.opt.lr 1e-4 --agent.ac_opt.lr 1e-4

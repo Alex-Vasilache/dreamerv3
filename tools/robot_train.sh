@@ -9,7 +9,7 @@
 #   NO_BASE=1 HZ=100 tools/robot_train.sh linktest_100hz    # phone alone, no number
 #   GPU=p100 tools/robot_train.sh                       # learner on a P100 (default v100)
 #   HZ=65 CONFIGS="director director_og robot_daydreamer robot_fast robot_65hz \
-#     hrl_robot hrl_robot_65hz" tools/robot_train.sh hrl_balance_65hz   # HRL, policy on Saion
+#     hrl_robot hrl_robot_fast" tools/robot_train.sh hrl_balance_65hz   # HRL, policy on Saion
 #
 # The experiment number is the highest e<N> found on Saion in EXPERIMENTS*.md,
 # the slurm log names and the last month's job names, plus one. A name that

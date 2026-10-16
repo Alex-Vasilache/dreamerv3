@@ -2211,3 +2211,18 @@ sim_65hz:
 hrl_robot:
   agent.use_hrl: True
 
+
+# The 'now' Director tuned for the robot in real time (docs/SIM_ROBOT.md,
+# e1480-e1535). Goal-only worker (no task reward). Two changes from
+# director_og, both found on the simulated robot at 65 Hz:
+# - worker_actent_adapt False: director_og's adaptive worker entropy (target
+#   0.5) held the worker's action entropy at ~+0.2 nats against -1.8 for the
+#   flat policy, and a noisy worker cannot balance; fixed actent 3e-4 instead.
+#   Balance 0.50 -> 0.74 reward/step.
+# - mgr_expl_weight 0: the manager's novelty bonus pulled it away from the
+#   task; command following 0.48 -> 0.63.
+#   CONFIGS="director director_og robot_daydreamer robot_fast robot_65hz
+#            hrl_robot hrl_robot_fast"
+hrl_robot_fast:
+  agent.worker_actent_adapt: False
+  agent.mgr_expl_weight: 0.0

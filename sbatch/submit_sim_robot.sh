@@ -4,7 +4,8 @@
 #
 #   <exp> <arm> <task: balance|command> <hz: 25|65> <gpu: v100|p100> [main.py flags...]
 #
-# with <arm> 'flat' (DreamerV3) or 'hrl' (the 'now' Director). Flags after the
+# with <arm> 'flat' (DreamerV3), 'hrl' (the 'now' Director) or 'hrlfast'
+# (hrl + hrl_robot_fast, the tuned goal-only recipe). Flags after the
 # GPU go to main.py, e.g. --agent.manager_sample_freq 16 --seed 1.
 #
 #   PARAMS=sbatch/sim_robot_r1.txt sbatch/submit_sim_robot.sh
@@ -28,12 +29,13 @@ while read -r exp arm task hz gpu extra; do
   case $arm in
     flat) ;;
     hrl) configs="director director_og $configs hrl_robot" ;;
+    hrlfast) configs="director director_og $configs hrl_robot hrl_robot_fast" ;;
     *) echo "unknown arm $arm"; exit 1 ;;
   esac
   configs="$configs sim_robot sim_${hz}hz"
   case $gpu in
     v100) gflags="-p gpu-v100 --gres=gpu:v100:1 --exclude=saion-gpu20" ;;
-    p100) gflags="-p gpu-p100 --gres=gpu:p100:1 --exclude=saion-gpu[01,02,07-10]" ;;
+    p100) gflags="-p gpu-p100 --gres=gpu:p100:1 --exclude=saion-gpu[01,02,04,06,07-10]" ;;
     a100) gflags="-p gpu-a100 --gres=gpu:a100:1" ;;
   esac
   name="${exp}_simrobot_${task}${hz}_${arm}"
