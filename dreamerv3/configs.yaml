@@ -515,6 +515,8 @@ defaults:
     worker_report_horizon: 32
     worker_split_traj: True
     mgr_expl_weight: 0.1
+    # Task reward added to the worker's goal reward (agent.py); 0 = Director.
+    wkr_extr_weight: 0.0
     # Weight on the count-novelty advantage (agent.mgr_novel). Negative means
     # "same as mgr_expl_weight", which is the original equal-weight behaviour.
     # Set it lower to stop the count bonus from crowding out the

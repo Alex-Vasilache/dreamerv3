@@ -453,6 +453,12 @@ def make_env(config, index, **overrides):
     kwargs['seed'] = hash((config.seed, index)) % (2 ** 32 - 1)
   if kwargs.pop('use_logdir', False):
     kwargs['logdir'] = elements.Path(config.logdir) / f'env{index}'
+  if suite == 'robot' and kwargs.get('onboard') and config.agent.use_hrl:
+    # The phone's numpy policy is the flat actor only; it has no manager or
+    # goal decoder. Act from here over the pipelined link instead.
+    print('[robot] onboard policy needs a flat agent; HRL acts from the '
+          'trainer (env.robot.onboard False)')
+    kwargs['onboard'] = False
   if suite == 'robot' and kwargs.get('onboard'):
     # The env pushes policy weights to the phone, so it has to be able to build
     # the on-device .npz -- which needs the agent config, not just env.robot.

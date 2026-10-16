@@ -393,6 +393,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
 
       self.mgr_expl_weight = config.mgr_expl_weight
+      # Worker reward = goal reward + wkr_extr_weight * task reward. 0 is
+      # Director (goals only); >0 lets the worker optimise the task directly
+      # between manager decisions, e.g. a fast stabilising loop on the robot.
+      self.wkr_extr_weight = float(getattr(config, 'wkr_extr_weight', 0.0))
       # Negative = "same as mgr_expl_weight" (the original equal-weight
       # behaviour). Set >= 0 to weight the count bonus independently.
       self.mgr_novel_weight = float(getattr(config, 'mgr_novel_weight', -1.0))
@@ -1695,6 +1699,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       win_feat_goal = self._feat_goal2tensor(
           win_feat, win_goal_in, countdown=self._countdown_norm(win_cd))
       win_goal_rew = self._wkr_goal_reward(win_goal, win_feat)
+      if self.wkr_extr_weight:
+        win_goal_rew = win_goal_rew + self.wkr_extr_weight * win(rew_step)
       kwargs_wkr.update(skill_window=0)                         # each window is its own segment
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
           win_act, win_goal_rew, win_con,
@@ -1716,6 +1722,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           imgfeat, self._wkr_goal_in(goals, mgr_skills),
           countdown=self._countdown_norm(img_countdowns))
       wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
+      if self.wkr_extr_weight:
+        wkr_goal_rew = wkr_goal_rew + self.wkr_extr_weight * rew_step
       kwargs_wkr.update(
           skill_window=(switch_mask if self.variable_goal_length else K))
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
@@ -1851,6 +1859,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           feat_wkr, self._wkr_goal_in(repl_goals, repl_skills),
           countdown=self._countdown_norm(repl_cd))
       repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
+      if self.wkr_extr_weight:
+        repl_wkr_goal_rew = repl_wkr_goal_rew + self.wkr_extr_weight * (
+            repl_rew_full[:, -K_repl:])
 
       # --- 3. Compute Value Losses ---
       # Manager Replay Value Loss (predicts combined return)

@@ -8,6 +8,8 @@
 #   RUN_DIR=<a previous run dir on /work> tools/robot_train.sh resume   # resume it
 #   NO_BASE=1 HZ=100 tools/robot_train.sh linktest_100hz    # phone alone, no number
 #   GPU=p100 tools/robot_train.sh                       # learner on a P100 (default v100)
+#   HZ=65 CONFIGS="director director_og robot_daydreamer robot_fast robot_65hz \
+#     hrl_robot hrl_robot_65hz" tools/robot_train.sh hrl_balance_65hz   # HRL, policy on Saion
 #
 # The experiment number is the highest e<N> found on Saion in EXPERIMENTS*.md,
 # the slurm log names and the last month's job names, plus one. A name that
@@ -24,6 +26,10 @@ fi
 HZ=${HZ:-25}
 CONFIGS=${CONFIGS:-robot_daydreamer robot_fast robot_${HZ}hz}
 STEPS=${STEPS:-100000}
+# The phone can only run the flat policy (dreamerv3/deploy/numpy_policy.py),
+# so an HRL run (hrl_robot) acts from Saion over the pipelined link instead.
+if [[ " $CONFIGS " == *" hrl_robot "* ]]; then ONBOARD=${ONBOARD:-False}; fi
+ONBOARD=${ONBOARD:-True}
 # sbatch flags given on the command line override the script's #SBATCH lines.
 # The P100 exclude matches the sim_phone launchers.
 GPU=${GPU:-v100}
@@ -60,7 +66,7 @@ echo "== submitting $NAME"
 JOB=$(ssh saion "cd $CODE && git pull -q && \
   ${RUN_DIR:+rm -f $RUN_DIR/logdir/error_learner $RUN_DIR/logdir/online_shared/actor_step;} \
   CODE=$CODE SCRIPT=train STEPS=$STEPS CONFIGS='$CONFIGS' $RUN_DIR_ENV \
-  sbatch --parsable -J $NAME $GPU_FLAGS sbatch/run_robot_v100.sbatch --env.robot.onboard True $*")
+  sbatch --parsable -J $NAME $GPU_FLAGS sbatch/run_robot_v100.sbatch --env.robot.onboard $ONBOARD $*")
 echo "job $JOB"
 
 echo "== waiting for it to start"
