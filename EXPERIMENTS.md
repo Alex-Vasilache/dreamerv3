@@ -573,6 +573,30 @@ e1330–e1419 stay on `director_og` as queued; no change to array 4751562.
 Final 5v5 (2026-10-11 09:50) confirms it: pinpad_five 210 vs 200, cartpole 692 vs 736 (p=0.03),
 cheetah 511 vs 374 (p=0.008), hopper 333 vs 179 (p=0.024); mean normalized −0.32.
 
+### e1600–e1659: now + goal mask / now + SOM + goal mask (2026-10-16, array 4763638)
+
+`goal_mask8` layered on `now` (`director director_og goal_mask8 pubmatch`,
+e1600–e1629) and on now+SOM (`... goal_som_line goal_mask8 ...`, e1630–e1659),
+6 tasks x 5 seeds, seed-major (`sbatch/pubmask_params.txt`), A100 128G,
+`RUN_ENVS=4 DMC_PROPRIO=False`, %8; array order runs all now+mask before
+som+mask. Mechanism (`hrl/goal_mask.py`): the goal code also decodes a
+keep/ignore flag for each of the 8 RSSM deter blocks (128 dims each); the
+goal AE trains on random masks (whole goal w.p. 0.5, else 1–7 groups) with
+reconstruction on kept groups only plus a binary mask head; the worker sees
+the 8 flags and is scored with cosine_max on kept groups only.
+Why: in pinpad six UCB visits every pad uniformly but never orders them
+(2-in-order at chance), i.e. position is saturated and the code cannot say
+"only the sequence matters"; deter blocks partly specialise (blocks 2/7
+carry the sequence count, R² 0.95/0.93, block 5 the x position).
+Pre-check: offline GAE on e1432 deter, mask acc 0.86 / loss 2.29 (marginal
+chance 0.78 / 4.2) after 4k updates and rising, kept-dim rec 0.0136 vs 0.0110
+unmasked.
+Hypothesis: partial goals help where one factor matters — pinpad five/six —
+and do not hurt DMC. Compare against now (e1230–e1289) and now+SOM
+(e1330–e1419). Watch `goal/mask_keep_mgr` (fraction of groups the manager
+keeps) and `goal/mask_acc`. If the manager always keeps everything
+(`mask_full_mgr` → 1) the arm reduces to its base. Status: queued.
+
 ### e1430–e1459: now + SOM + UCB (2026-10-15, array 4762301)
 
 `director director_og goal_som_line mgr_ucb pubmatch`, 6 tasks x 5 seeds,

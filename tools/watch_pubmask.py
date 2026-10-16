@@ -102,7 +102,8 @@ def main():
       vals[k] = xs[-1] if xs else None
     score = sum(r['episode/score'] for r in srows) / len(srows) if srows else float('nan')
     flags = []
-    if any(bad(v) for r in mrows for v in r.values()):
+    # train/ only: timer/*/min is NaN in every run until the timer has fired.
+    if any(bad(v) for r in mrows for k, v in r.items() if k.startswith('train/')):
       flags.append('NaN/inf')
     e = err_flag(d)
     if e:
