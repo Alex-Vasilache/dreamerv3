@@ -59,3 +59,4 @@ array_job	task_idx	exp	config	task	seed
 4763638	57	e1657	director director_og goal_som_line goal_mask8 pubmatch	dmc_cartpole_swingup	4
 4763638	58	e1658	director director_og goal_som_line goal_mask8 pubmatch	dmc_cheetah_run	4
 4763638	59	e1659	director director_og goal_som_line goal_mask8 pubmatch	dmc_hopper_hop	4
+4765383	22	e1622	director director_og goal_mask8 pubmatch	dmc_cheetah_run	3
