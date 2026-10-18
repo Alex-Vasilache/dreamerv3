@@ -595,7 +595,30 @@ Hypothesis: partial goals help where one factor matters — pinpad five/six —
 and do not hurt DMC. Compare against now (e1230–e1289) and now+SOM
 (e1330–e1419). Watch `goal/mask_keep_mgr` (fraction of groups the manager
 keeps) and `goal/mask_acc`. If the manager always keeps everything
-(`mask_full_mgr` → 1) the arm reduces to its base. Status: queued.
+(`mask_full_mgr` → 1) the arm reduces to its base. Status: now+mask done, som+mask running.
+
+**Interim result, now+mask complete (2026-10-18 17:00; som+mask running).**
+Mean ± sd over 5 seeds of each seed's 3–4M mean; pin pads also give seeds
+crossing sustained-50 and the median crossing step; p = exact permutation
+test vs now:
+
+| task | now | now+mask | p |
+|---|---|---|---|
+| pinpad_four | 270.7 ± 8.1, 5/5 @0.23M | **289.9 ± 8.3**, 5/5 @0.19M | 0.016 |
+| pinpad_five | 210.1 ± 10.8, 5/5 @0.33M | 221.5 ± 10.3, 5/5 @0.26M | 0.19 |
+| pinpad_six | 68.6 ± 84.0, 2/5 | 0.0, **0/5** | 0.44 |
+| cartpole | 691.8 ± 28.9 | 747.9 ± 55.4 | 0.15 |
+| cheetah | 510.5 ± 33.7 | 448.1 ± 53.4 | 0.07 |
+| hopper | 333.1 ± 73.6 | 287.7 ± 55.7 | 0.38 |
+
+Masking helps the tasks that were already solved (pinpad_four significant,
+five and cartpole higher, faster sequence discovery) but does not help — and
+may hurt — discovery on pinpad_six (0/5), the case it was designed for, and
+costs on cheetah. The manager does use partial goals: it keeps ~40–60% of
+groups late on pin pads and hopper, ~85–95% on cheetah. Caveats: e1612 and
+e1614 got 19–80 min of P100 training from a stray watchdog retry (benchmark
+watchdog adopted these runs; fixed via `bench_droplist.txt`); e1622 was
+restarted from scratch after a retry left a proprio-model checkpoint.
 
 ### e1430–e1459: now + SOM + UCB (2026-10-15, array 4762301)
 
