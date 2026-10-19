@@ -20,6 +20,7 @@ import dreamerv3.hrl as hrl
 SUBMODULES = [
     'explore',
     'goal_ae',
+    'goal_mask',
     'goals',
     'heads',
     'lipschitz',

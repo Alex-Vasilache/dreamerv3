@@ -392,3 +392,90 @@ class CodeCounts(nj.Module):
       v = v / jnp.maximum(v.max(), 1e-8)
       out[f'code_coverage_{name}'] = (v * 255).astype(jnp.uint8)[..., None]
     return out
+
+
+# --- UCB inside imagination ---------------------------------------------------
+#
+# The tilt above acts only in the environment rollout. This one acts where the
+# manager actually searches for goals: imagination training, ~2,000 decisions per
+# update and ~500M per 4M-step run against ~500k real ones. Its purpose is not
+# to explore the world for the world model but to make the manager try goals it
+# has rarely tried *in imagination*, so it finds the best goal from a state
+# faster. Hence the counts are of IMAGINED picks, and no importance correction is
+# applied: the bias (which goals get feedback) is the exploration.
+#
+# Counts decay because the codebook drifts (mostly before ~1M steps), so an old
+# count can describe a goal that now means something else. They are smeared over
+# neighbouring classes, which is only meaningful because the SOM orders the
+# codebook. Optionally the cell also carries a coarse code of the START state
+# (contextual bandit: "rarely tried from here").
+class ImagCounts(nj.Module):
+  """Decaying, smeared counts over ``(state code?, goal code)`` cells.
+
+  The table is one dense vector over the grid ``(state_bins,)*L + (goal_bins,)*L``
+  (state axes only when ``state_bins > 0``). A pick deposits 1.0 that is spread
+  over neighbouring bins by a separable Gaussian of width ``h`` CLASSES, applied
+  as one small matrix per axis to the batch's deposit tensor -- the cost is a
+  few passes over the table per update, never a neighbour search per pick.
+  """
+
+  def __init__(self, decay, goal_bins=8, state_bins=0, h=1.0, classes=8,
+               blocks=8):
+    self.decay = float(decay)
+    self.goal_bins = int(goal_bins)
+    self.state_bins = int(state_bins)
+    self.h = float(h)
+    self.classes = int(classes)
+    self.blocks = int(blocks)
+    axes = ([self.state_bins] * self.blocks if self.state_bins else [])
+    axes += [self.goal_bins] * self.blocks
+    self.shape = tuple(axes)
+    self.size = int(np.prod(self.shape))
+    self.tab = nj.Variable(jnp.zeros, (self.size,), f32, name='tab')
+
+  def _bins(self, ids, bins):
+    return jnp.minimum((ids.astype(i32) * bins) // self.classes, bins - 1)
+
+  def _key(self, goal_ids, state_ids=None):
+    """Flat row-major index; ``(..., L)`` ids -> ``(...)``."""
+    q = self._bins(goal_ids, self.goal_bins)
+    if self.state_bins:
+      assert state_ids is not None, 'state_bins > 0 needs start-state ids'
+      q = jnp.concatenate([self._bins(state_ids, self.state_bins), q], -1)
+    strides = np.cumprod((self.shape[1:] + (1,))[::-1])[::-1]
+    return (q * jnp.asarray(strides, i32)).sum(-1)
+
+  def _kernel(self, bins):
+    """``(bins, bins)`` column-normalized: mass from bin j spread to bins i."""
+    centers = (np.arange(bins) + 0.5) * (self.classes / bins) - 0.5
+    if self.h <= 0:
+      return np.eye(bins, dtype=np.float32)
+    d = centers[:, None] - centers[None, :]
+    k = np.exp(-(d ** 2) / (2.0 * self.h ** 2))
+    return (k / k.sum(0, keepdims=True)).astype(np.float32)
+
+  def count(self, goal_ids, state_ids=None):
+    return self.tab.read()[self._key(goal_ids, state_ids)]
+
+  def bonus(self, goal_ids, state_ids=None):
+    """``1/sqrt(n+1)`` in (0, 1]."""
+    return 1.0 / jnp.sqrt(self.count(goal_ids, state_ids) + 1.0)
+
+  def update(self, goal_ids, state_ids=None, weights=None):
+    """Decay once, then add this update's picks (``weights`` masks non-picks)."""
+    flat_g = goal_ids.reshape((-1, self.blocks))
+    flat_s = (state_ids.reshape((-1, self.blocks))
+              if state_ids is not None else None)
+    w = (jnp.ones((flat_g.shape[0],), f32) if weights is None
+         else f32(weights).reshape(-1))
+    delta = jnp.zeros((self.size,), f32).at[self._key(flat_g, flat_s)].add(w)
+    x = delta.reshape(self.shape)
+    for axis, bins in enumerate(self.shape):
+      k = jnp.asarray(self._kernel(bins))
+      x = jnp.moveaxis(jnp.tensordot(k, x, axes=([1], [axis])), 0, axis)
+    self.tab.write(self.tab.read() * self.decay + x.reshape(-1))
+
+  def metrics(self):
+    t = self.tab.read()
+    pr = jnp.square(t.sum()) / jnp.maximum(jnp.square(t).sum(), 1e-8)
+    return {'mass': t.sum(), 'eff_cells': pr, 'max_count': t.max()}

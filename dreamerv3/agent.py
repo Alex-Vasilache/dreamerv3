@@ -365,6 +365,23 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         # real decision contribute exactly 1.0 -- the same accounting as visits.
         # The table itself never decays; see CodeCounts.select_tab for why.
         self._select_weight = 1.0 / _ratio
+      # UCB INSIDE imagination (hrl/explore.py:ImagCounts): tilt the manager's
+      # goal picks during imagination training toward goals rarely picked there
+      # lately. Own decaying table of IMAGINED picks; independent of the
+      # environment-time tilt above (``mgr_ucb_c``) and of its table.
+      self.mgr_ucb_imag_c = float(getattr(config, 'mgr_ucb_imag_c', 0.0))
+      if self.mgr_ucb_imag_c > 0.0:
+        _icfg = config.mgr_ucb_imag
+        _env_per_train = (float(config.batch_size) * float(config.batch_length)
+                          / float(config.train_ratio))
+        # Half-life in ENV steps -> per-update decay (one update() per train step).
+        _decay = 0.5 ** (_env_per_train / max(float(_icfg.half_life), 1.0))
+        self.imag_counts = explore_mod.ImagCounts(
+            decay=_decay, goal_bins=int(_icfg.goal_bins),
+            state_bins=int(_icfg.state_bins), h=float(_icfg.h),
+            classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
+            name='imag_counts')
+        self.mgr_ucb_imag_candidates = int(_icfg.candidates)
       # Reward channel and its critic: only for the reward-shaped arm. The UCB
       # arm shares the table above but must NOT create these -- an unused critic
       # would still be built, checkpointed and optimized.
@@ -1437,6 +1454,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
     imgfeat, imgprevact, img_skills, mgr_seed_code, switch_mask, img_countdowns = (
         self._imagine_with_manager(starts, H, training))
+    metrics.update({f'imag_ucb/{k}': v
+                    for k, v in getattr(self, '_imag_ucb_metrics', {}).items()})
     # Prefix replay states to imagined chain so AC sees grounded first step.
     first = jax.tree.map(
         lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)

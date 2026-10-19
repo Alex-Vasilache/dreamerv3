@@ -506,6 +506,18 @@ defaults:
     # without it.
     mgr_ucb_c: 0.0
     mgr_ucb_candidates: 8
+    # UCB INSIDE imagination (hrl/explore.py:ImagCounts). 0 disables. Tilts the
+    # manager's goal picks DURING IMAGINATION TRAINING toward goals rarely picked
+    # there lately (decaying, SOM-smeared counts of imagined picks), and trains
+    # on the picked goal without importance correction -- the bias is the
+    # exploration. Independent of the environment-time ``mgr_ucb_c``.
+    mgr_ucb_imag_c: 0.0
+    mgr_ucb_imag:
+      candidates: 8
+      goal_bins: 8        # bins per goal block (8 = full class resolution)
+      state_bins: 0       # >0 adds the start state's code as context
+      h: 1.0              # smear width in CLASS units (meaningful on a SOM line)
+      half_life: 5.0e5    # env steps; counts decay because the codebook drifts
     # Probability that a manager decision in the ENVIRONMENT rollout is
     # replaced by a deliberate large index jump from its mode (hrl/explore.py).
     # 0 disables. Only meaningful on an ordered codebook (SOM on a line).
@@ -1506,6 +1518,23 @@ mgr_ucb:
     # nats). c=0 reproduces an exact policy sample.
     mgr_ucb_c: 10.0
     mgr_ucb_candidates: 8
+
+# UCB inside imagination, arm A: counts over the goal code alone at full
+# resolution, 8^8 = 16.7M cells (~30 picks/cell over a 4M run without decay,
+# ~4 at the 0.5M-step half-life). Environment-time UCB stays off.
+ucb_imag_a:
+  agent:
+    mgr_ucb_c: 0.0
+    mgr_ucb_imag_c: 10.0
+    mgr_ucb_imag: {goal_bins: 8, state_bins: 0}
+
+# Arm B: same table size, but the cell is (start-state code at 2 bins/block,
+# goal code at 4 bins/block) = 256 x 65,536 -- "rarely tried from here".
+ucb_imag_b:
+  agent:
+    mgr_ucb_c: 0.0
+    mgr_ucb_imag_c: 10.0
+    mgr_ucb_imag: {goal_bins: 4, state_bins: 2}
 
 mgr_novel_lowweight:
   agent:

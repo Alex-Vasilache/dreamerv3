@@ -126,7 +126,7 @@ class ManagerMixin:
 
   def _emit_manager(
       self, tensor, bdims, deterministic=False, prev_mgr_skill=None,
-      explore=False):
+      explore=False, imag_state_ids=None, imag_tilt=False):
     """Sample a manager command from the policy head.
 
     Under ``goal_soft_reuse_adapt`` the result also carries ``skill_probs`` --
@@ -159,6 +159,27 @@ class ManagerMixin:
       picked, _ = mgr_explore.ucb_pick(
           nj.seed(), cands, f32(bonus), float(self.mgr_ucb_c))
       result = {**result, 'skill': picked}
+    if (imag_tilt and getattr(self, 'mgr_ucb_imag_c', 0.0) > 0.0
+        and 'skill' in result and not deterministic):
+      # UCB INSIDE imagination (ImagCounts). Unlike the environment tilt above,
+      # this one deliberately biases the manager's REINFORCE update: the point
+      # is to make it try -- and so get feedback on -- goals it has rarely
+      # tried in imagination from here. No importance correction: a fully
+      # corrected tilt would leave the expected update unchanged.
+      dist = out['skill']
+      n = int(self.mgr_ucb_imag_candidates)
+      cands = jnp.stack([dist.sample(nj.seed()) for _ in range(n)], 0)
+      ids = jnp.argmax(cands, -1)                                # (n, B, L)
+      sids = (None if imag_state_ids is None else
+              jnp.broadcast_to(imag_state_ids, ids.shape))
+      bonus = f32(self.imag_counts.bonus(ids, sids))             # (n, B)
+      picked, idx = mgr_explore.ucb_pick(
+          nj.seed(), cands, bonus, float(self.mgr_ucb_imag_c))
+      logps = f32(jnp.stack([dist.logp(c) for c in cands], 0))
+      take = lambda x: jnp.take_along_axis(x, idx[None], 0)[0]
+      result = {**result, 'skill': picked}
+      self._imag_ucb_step_diag = jnp.stack([
+          take(bonus), bonus.mean(0), take(logps) - logps.mean(0)], -1)
     if explore and self.mgr_explore_eps and 'skill' in result:
       # eps-greedy index jump (hrl/explore.py). ONLY reachable from
       # ``_manager_skill_step``, i.e. the environment rollout: the manager is
@@ -345,6 +366,17 @@ class ManagerMixin:
     return lambda feat: sample(
         self.pol(self._feat_goal2tensor(feat, goal), bdims=1))
 
+  def _imag_ucb_state_ids(self, feat):
+    """Start-state context for ImagCounts: the SOM code of the decision state.
+
+    Encoded with the goal encoder's MODE (a fixed label, not a sample), stop
+    gradient. Only computed when the table has state axes."""
+    if not self.imag_counts.state_bins:
+      return None
+    enc = mode(self.goal_enc(sg(self.feat2deter(feat)), 1))
+    code = enc['skill'] if isinstance(enc, dict) else enc
+    return jnp.argmax(sg(code), -1).astype(i32)
+
   def _imagine_with_manager(self, starts, H, training):
     """Imagine with the manager skill resampled at the temporal-abstraction boundary.
 
@@ -356,6 +388,7 @@ class ManagerMixin:
     K = max(1, int(self.manager_sample_freq))
     B = jax.tree.leaves(starts)[0].shape[0]
     skill_shape = tuple(int(x) for x in self.skill_shape)
+    imag_ucb = getattr(self, 'mgr_ucb_imag_c', 0.0) > 0.0
     # Start with a dummy skill that will be replaced in first step
     mgr_skill = {'skill': jnp.zeros((B, *skill_shape), f32)}
     if self._mgr_needs_skill_probs:
@@ -377,8 +410,14 @@ class ManagerMixin:
       else:
         update = jnp.equal(step_i % K, 0)
       # The carry's goal_code is the PRE-edit running Z for this step.
+      state_ids = self._imag_ucb_state_ids(feat) if imag_ucb else None
+      self._imag_ucb_step_diag = jnp.zeros((B, 3), f32)
       emit = self._emit_manager(
-          self._mgr_input(feat, mgr_skill), 1, prev_mgr_skill=mgr_skill)
+          self._mgr_input(feat, mgr_skill), 1, prev_mgr_skill=mgr_skill,
+          imag_state_ids=state_ids, imag_tilt=imag_ucb)
+      ucb_diag = self._imag_ucb_step_diag
+      if state_ids is None:
+        state_ids = jnp.zeros((B, skill_shape[0]), i32)
       mgr_skill = self._advance_mgr_skill(mgr_skill, emit, update)
       if self.variable_goal_length:
         p = self._duration_steps(mgr_skill)
@@ -399,7 +438,8 @@ class ManagerMixin:
       # the scan stacks a batched switch flag. Variable: ``update`` is already (B,).
       switch = jnp.broadcast_to(f32(update), (B,))
       return ((dyn_carry, mgr_skill, step_i + 1, remaining),
-              (feat_next, act_out, mgr_skill, switch, i32(cd_steps)))
+              (feat_next, act_out, mgr_skill, switch, i32(cd_steps),
+               (i32(state_ids), ucb_diag)))
 
     if H < 1:
       raise ValueError(f'imagination length must be >= 1, got {H}')
@@ -408,9 +448,28 @@ class ManagerMixin:
     # Match ``rssm.imagine``: empty ``xs``, explicit ``length``, step in carry.
     init_remaining = jnp.zeros((B,), i32)
     ((last_dyn, last_mgr_skill, _, last_remaining),
-     (imgfeat, imgact, img_skills, img_switch, img_cd)) = nj.scan(
+     (imgfeat, imgact, img_skills, img_switch, img_cd,
+      (ucb_state_ids, ucb_diag))) = nj.scan(
         body, (starts, mgr_skill, jnp.int32(0), init_remaining), (), H,
         unroll=unroll, axis=1)
+
+    self._imag_ucb_metrics = {}
+    if imag_ucb:
+      # Count the picks the rollout actually executed (decision steps of the
+      # scan; the extra decision at s_H below only feeds the bootstrap).
+      dec = img_switch                                           # (B, H)
+      picks = jnp.argmax(img_skills['skill'], -1)                # (B, H, L)
+      sids = ucb_state_ids if self.imag_counts.state_bins else None
+      if training:
+        self.imag_counts.update(sg(picks), sg(sids) if sids is not None
+                                else None, weights=dec)
+      w = dec / jnp.maximum(dec.sum(), 1.0)
+      pick_b, cand_b, shift = [(ucb_diag[..., i] * w).sum() for i in range(3)]
+      self._imag_ucb_metrics = {
+          'pick_bonus': pick_b, 'cand_bonus': cand_b,
+          'novelty_gain': pick_b / jnp.maximum(cand_b, 1e-8),
+          'logp_shift': shift,
+          **self.imag_counts.metrics()}
 
     # imgfeat is [s1...sH]. imgact is [a0...aH-1]. img_skills is [skill0...skillH-1].
     # We need to sample one more skill at last_dyn (sH) to align with imgfeat prefix starts (s0).
@@ -421,7 +480,10 @@ class ManagerMixin:
       update_last = jnp.equal(H % K, 0)
     emit_last = self._emit_manager(
         self._mgr_input(feat_last, last_mgr_skill), 1,
-        prev_mgr_skill=last_mgr_skill)
+        prev_mgr_skill=last_mgr_skill,
+        imag_state_ids=(self._imag_ucb_state_ids(feat_last)
+                        if imag_ucb and self.imag_counts.state_bins else None),
+        imag_tilt=imag_ucb)
     last_mgr_skill = self._advance_mgr_skill(last_mgr_skill, emit_last, update_last)
 
     img_skills = concat([img_skills, jax.tree.map(lambda x: x[:, None], last_mgr_skill)], 1)
