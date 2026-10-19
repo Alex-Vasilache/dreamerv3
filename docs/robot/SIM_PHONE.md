@@ -73,7 +73,7 @@ Config block `sim_phone` (`dreamerv3/configs.yaml`), launcher
 sbatch -J e<N>_cartpole_rt50 sbatch/run_sim_phone.sbatch                  # 50 Hz
 sbatch -J e<N>_cartpole_rt12 sbatch/run_sim_phone.sbatch \
   --env.dmc.repeat 8 --env.realtime_hz 12.5                                # robot today
-python tools/robot/dev/sim_curve.py /work/DoyaU/vasilache/work/e<N>_*                # minutes to hold 500/700/800
+python tools/robot/dev/sim_curve.py $ROBOT_RUNS/e<N>_*                # minutes to hold 500/700/800
 ```
 
 Since every step is paced, `minutes = actor step / hz / 60`. Learner start-up
