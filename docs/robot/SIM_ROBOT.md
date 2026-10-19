@@ -13,7 +13,7 @@ and which control rate should we deploy at, 25 Hz or 65 Hz?
   goal-only (the worker still gets only the goal reward): a fixed worker
   entropy. Config block `hrl_robot_fast` = `worker_actent_adapt False` +
   `mgr_expl_weight 0` (the second is neutral within seed noise; see below).
-  Balance 0.50 → 0.77, command following 0.43 → 0.60.
+  Balance 0.49 → 0.77, command following 0.41 → 0.60.
 - **Flat DreamerV3 is still ahead.** At 65 Hz, tuned HRL reaches 0.7 on
   balance in 6–10 min (flat: 5 min) and holds 0.77 against 0.84; on command
   following 0.60 against 0.82. A 2 s return horizon instead of 5 s narrows the
@@ -29,13 +29,13 @@ of real time, mean ±1 std over seeds. 65 Hz runs on V100s, 25 Hz on P100s, one
 GPU per run, 125 min. The OG baseline is from round 1 (70 min, one V100
 and one P100 seed).
 
-| 60–115 min mean | flat DreamerV3 | HRL tuned (`hrl_robot_fast`) | HRL OG (≤70 min) |
+| 60–115 min mean | flat DreamerV3 | HRL tuned (`hrl_robot_fast`) | HRL OG (45–70 min) |
 |---|---|---|---|
-| balance, 65 Hz | 0.84, 0.84, 0.85 | 0.76, 0.77, 0.79 | 0.51, 0.48 |
-| command, 65 Hz (5 s horizon) | 0.78, 0.88, 0.81 | 0.59, 0.67, 0.53 | 0.56, 0.30 |
+| balance, 65 Hz | 0.84, 0.84, 0.85 | 0.76, 0.77, 0.79 | 0.50, 0.49 |
+| command, 65 Hz (5 s horizon) | 0.78, 0.88, 0.81 | 0.59, 0.67, 0.53 | 0.31, 0.52 |
 | command, 65 Hz (2 s horizon) | 0.85, 0.88, 0.87, 0.87 | 0.81, 0.68, 0.68, 0.66, 0.70, 0.75 | – |
-| balance, 25 Hz | 0.34, 0.32, 0.33 | 0.39, 0.08, 0.09 | 0.07, 0.01 |
-| command, 25 Hz (5 s) | 0.41, 0.39, 0.38 | −0.27, −0.88, −0.17 | −1.5, −1.6 |
+| balance, 25 Hz | 0.34, 0.32, 0.33 | 0.39, 0.08, 0.09 | 0.07, 0.00 |
+| command, 25 Hz (5 s) | 0.41, 0.39, 0.38 | −0.27, −0.88, −0.17 | −1.38, −1.61 |
 | command, 25 Hz (2 s) | 0.46, 0.44 | −0.24, −0.27 | – |
 
 | minutes to hold 0.7 (trailing 5) | flat | HRL tuned |
@@ -71,8 +71,8 @@ hinge on it; the 25 Hz ones might.
 1. **Fixed worker entropy** (`worker_actent_adapt False`). director_og adapts
    the worker's entropy toward a target of 0.5, which kept the worker's
    action entropy at about +0.2 nats against −1.8 for the flat policy. A
-   worker that noisy cannot balance: balance 0.50 → 0.75 (e1512/e1516), and
-   command following 0.43 → 0.67 (e1517).
+   worker that noisy cannot balance: balance 0.49 → 0.75 (e1512/e1516), and
+   command following 0.41 → 0.67 (e1517).
 2. **No manager exploration bonus** (`mgr_expl_weight 0`): neutral. It looked
    better early (command 0.65 vs 0.42 at 25 min) but not at 45–85 min
    (e1518 0.59 vs e1517 0.67, one seed each); balance 0.74 vs 0.75. Kept in
