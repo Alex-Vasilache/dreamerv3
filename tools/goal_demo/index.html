@@ -71,7 +71,10 @@
   .geom b { color: var(--ink); font-weight: 600; }
 
   /* ---- code grid ---- */
-  .grid { display: grid; gap: 3px; margin: 4px 0 6px; touch-action: none; }
+  /* As wide as the frame and the WM goal under it (240px), centred; the row
+     labels hang off to the left so the cells themselves span the 240px. */
+  .grid { display: grid; gap: 2px; margin: 4px auto 6px; touch-action: none;
+          width: 240px; position: relative; left: -9px; }
   .grid .rowlabel {
     color: var(--dim); font-size: 11px; text-align: right;
     padding-right: 6px; align-self: center; font-variant-numeric: tabular-nums;
@@ -100,8 +103,8 @@
      per block. For the mask arm the right-hand labels say which blocks the goal
      keeps; ignored rows are drawn faded. */
   .deter { display: flex; gap: 6px; align-items: stretch; justify-content: center;
-           margin-top: 8px; }
-  canvas.deter { width: 240px; height: 96px; image-rendering: pixelated;
+           margin-top: 8px; position: relative; left: 14px; }
+  canvas.deter { width: 240px; height: 240px; image-rendering: pixelated;
                  border: 1px solid var(--line); border-radius: 4px; }
   .deter .dlabels { display: grid; grid-template-rows: repeat(8, 1fr);
                     font-size: 10px; color: var(--dim); line-height: 1;
@@ -242,8 +245,9 @@
   <i>b</i> of the code and deter block <i>b</i> are not the same thing; both
   just happen to number 8.</p>
 
-  <p><b>WM goal.</b> Under each frame is the decoded goal itself, the 1024-dim
-  deter vector laid out as the RSSM's 8 blocks × 128 dims, one row per block:
+  <p><b>WM goal.</b> Under each frame is the decoded goal itself, all 1024
+  dims of the deter vector as a 32 × 32 square in order, so each of the RSSM's
+  8 blocks (128 dims) is a band of 4 rows, labelled on the right:
   orange above zero, blue below, on a scale fixed per checkpoint (99th
   percentile of |deter| over random codes). The frame is this vector pushed
   through the dynamics prior and the image decoder.</p>
@@ -450,14 +454,15 @@ function buildPanel(arm, info, model) {
       <div class="framebox now">
         <canvas class="main" width="64" height="64"></canvas>
         <div class="cap"></div>
-        <div class="deter"><canvas class="deter" width="128" height="8"></canvas>
+        <div class="deter"><canvas class="deter" width="32" height="32"></canvas>
           <div class="dlabels"></div></div>
-        <div class="cap">WM goal (deter): 8 blocks × 128</div>
+        <div class="cap">WM goal (deter), all 1024 values: 8 blocks × 128,
+          each block a 4 × 32 band</div>
       </div>
       <div class="framebox past" hidden>
         <canvas class="main past" width="64" height="64"></canvas>
         <div class="cap"></div>
-        <div class="deter"><canvas class="deter" width="128" height="8"></canvas>
+        <div class="deter"><canvas class="deter" width="32" height="32"></canvas>
           <div class="dlabels"></div></div>
       </div>
     </div>
@@ -804,8 +809,9 @@ function paintGrid(self) {
   paintMask(self);
 }
 
-/* The decoded WM goal for the code on screen, as an 8 x 128 heatmap: one row
-   per RSSM deter block, diverging colour around 0 on a scale fixed per
+/* The decoded WM goal for the code on screen, all 1024 values as a 32 x 32
+   square: deter block b (dims 128b .. 128b+127) is the band of rows 4b .. 4b+3,
+   read left to right, top to bottom; diverging colour around 0 on a scale fixed per
    checkpoint (p99 of |deter| over random codes, ``goal_scale``). The mask arm's
    keep flags belong HERE, on the deter blocks: the whole code decides them, so
    code row b and deter block b are unrelated. Comes with the critic readings
@@ -818,19 +824,21 @@ function paintMask(self) {
 function drawDeter(self, row, canvas, labels) {
   const blocks = 8;
   if (!row || !row.goal) return;
-  const g = row.goal, width = g.length / blocks;
-  canvas.width = width;
+  const g = row.goal, side = Math.round(Math.sqrt(g.length));
+  const perBlock = g.length / blocks;
+  canvas.width = canvas.height = side;
   const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(width, blocks);
+  const img = ctx.createImageData(side, side);
   const lim = (self.scale && self.scale.deter_abs) || 1;
   // Okabe-Ito blue below zero, orange above, dark grey at zero (dark page).
   const neg = [0, 114, 178], pos = [230, 159, 0], mid = [38, 43, 51];
   for (let b = 0; b < blocks; b++) {
     const ign = row.keep && row.keep[b] < 0.5;
-    for (let i = 0; i < width; i++) {
-      const v = Math.max(-1, Math.min(1, g[b * width + i] / lim));
+    for (let i = 0; i < perBlock; i++) {
+      const j = b * perBlock + i;     // row-major in the square = deter order
+      const v = Math.max(-1, Math.min(1, g[j] / lim));
       const end = v < 0 ? neg : pos, t = Math.abs(v);
-      const o = 4 * (b * width + i);
+      const o = 4 * j;
       for (let c = 0; c < 3; c++) img.data[o + c] = mid[c] + t * (end[c] - mid[c]);
       img.data[o + 3] = ign ? 70 : 255;
     }
