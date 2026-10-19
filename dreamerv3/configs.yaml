@@ -1536,6 +1536,13 @@ ucb_imag_b:
     mgr_ucb_imag_c: 10.0
     mgr_ucb_imag: {goal_bins: 4, state_bins: 2}
 
+# Weaker imagination tilt, layered after ucb_imag_a/b. c=10 (e1760-e1771) put
+# every DMC run below the full OG+SOM seed range by ~0.5M steps (logp shift
+# -0.5 to -1.2 nats); c=3 roughly thirds the pull on the manager's update.
+ucb_imag_c3:
+  agent:
+    mgr_ucb_imag_c: 3.0
+
 mgr_novel_lowweight:
   agent:
     mgr_novel: True
