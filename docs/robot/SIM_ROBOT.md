@@ -29,19 +29,26 @@ of real time, mean ±1 std over seeds. 65 Hz runs on V100s, 25 Hz on P100s, one
 GPU per run, 125 min. The OG baseline is from round 1 (70 min, one V100
 and one P100 seed).
 
-| 60–115 min mean | flat DreamerV3 | HRL tuned (`hrl_robot_fast`) | HRL OG (45–70 min) |
-|---|---|---|---|
-| balance, 65 Hz | 0.84, 0.84, 0.85 | 0.76, 0.77, 0.79 | 0.50, 0.49 |
-| command, 65 Hz (5 s horizon) | 0.78, 0.88, 0.81 | 0.59, 0.67, 0.53 | 0.31, 0.52 |
-| command, 65 Hz (2 s horizon) | 0.85, 0.88, 0.87, 0.87 | 0.81, 0.68, 0.68, 0.66, 0.70, 0.75 | – |
-| balance, 25 Hz | 0.34, 0.32, 0.33 | 0.39, 0.08, 0.09 | 0.07, 0.00 |
-| command, 25 Hz (5 s) | 0.41, 0.39, 0.38 | −0.27, −0.88, −0.17 | −1.38, −1.61 |
-| command, 25 Hz (2 s) | 0.46, 0.44 | −0.24, −0.27 | – |
+Reward per step, mean ± std over seeds. Late window: minutes 60–115 (HRL OG
+ran 70 min: minutes 45–70). Seeds per arm: 3, except the 2 s horizon at 65 Hz
+(flat 4, HRL 6), the 2 s horizon at 25 Hz (2 each) and HRL OG (2).
 
-| minutes to hold 0.7 (trailing 5) | flat | HRL tuned |
-|---|---|---|
-| balance, 65 Hz | 5.0, 4.7, 4.7 | 6.0, 10.3, 9.7 |
-| command, 65 Hz, 2 s | 16.0, 16.3, 9.7, 10.7 | 9.7, 21.7, 51.4, 23.7, 50.7, 23.4 |
+| | flat DreamerV3 | HRL tuned (`hrl_robot_fast`) | HRL OG |
+|---|---|---|---|
+| **65 Hz** | | | |
+| balance | **0.84 ± 0.00** | 0.77 ± 0.01 | 0.50 ± 0.01 |
+| command following, 5 s horizon | **0.82 ± 0.04** | 0.60 ± 0.06 | 0.42 ± 0.11 |
+| command following, 2 s horizon | **0.87 ± 0.01** | 0.71 ± 0.05 | – |
+| balance: minutes to hold 0.7 | **4.8 ± 0.1** | 8.7 ± 1.9 | never |
+| command (2 s): minutes to hold 0.7 | **13.2 ± 3.0** | 30.1 ± 15.6 | – |
+| **25 Hz** | | | |
+| balance | **0.33 ± 0.01** | 0.19 ± 0.14 | 0.04 ± 0.04 |
+| command following, 5 s horizon | **0.39 ± 0.01** | −0.44 ± 0.31 | −1.50 ± 0.12 |
+| command following, 2 s horizon | **0.45 ± 0.01** | −0.26 ± 0.02 | – |
+
+Bold: best in the row. "Minutes to hold 0.7": first point where the trailing
+5-episode mean reaches 0.7. At 25 Hz, 1 of 3 tuned-HRL seeds learns balance
+(0.39); the other two stay near 0.08.
 
 ## The simulator
 
