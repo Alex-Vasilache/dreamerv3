@@ -595,30 +595,31 @@ Hypothesis: partial goals help where one factor matters — pinpad five/six —
 and do not hurt DMC. Compare against now (e1230–e1289) and now+SOM
 (e1330–e1419). Watch `goal/mask_keep_mgr` (fraction of groups the manager
 keeps) and `goal/mask_acc`. If the manager always keeps everything
-(`mask_full_mgr` → 1) the arm reduces to its base. Status: now+mask done, som+mask running.
+(`mask_full_mgr` → 1) the arm reduces to its base. Status: complete.
 
-**Interim result, now+mask complete (2026-10-18 17:00; som+mask running).**
-Mean ± sd over 5 seeds of each seed's 3–4M mean; pin pads also give seeds
-crossing sustained-50 and the median crossing step; p = exact permutation
-test vs now:
+**Final result (2026-10-19 23:00), all 60 complete.** Mean ± sd over 5 seeds of each
+seed's 3–4M mean; pin pads also give seeds crossing sustained-50 and the
+median crossing step; p = exact permutation test vs the arm without masking:
 
-| task | now | now+mask | p |
-|---|---|---|---|
-| pinpad_four | 270.7 ± 8.1, 5/5 @0.23M | **289.9 ± 8.3**, 5/5 @0.19M | 0.016 |
-| pinpad_five | 210.1 ± 10.8, 5/5 @0.33M | 221.5 ± 10.3, 5/5 @0.26M | 0.19 |
-| pinpad_six | 68.6 ± 84.0, 2/5 | 0.0, **0/5** | 0.44 |
-| cartpole | 691.8 ± 28.9 | 747.9 ± 55.4 | 0.15 |
-| cheetah | 510.5 ± 33.7 | 448.1 ± 53.4 | 0.07 |
-| hopper | 333.1 ± 73.6 | 287.7 ± 55.7 | 0.38 |
+| task | now | now+mask | p | now+SOM | SOM+mask | p |
+|---|---|---|---|---|---|---|
+| pinpad_four | 270.7 ± 8.1, 5/5 @0.23M | 289.9 ± 8.3, 5/5 @0.19M | 0.016 | 273.9 ± 8.2, 5/5 @0.22M | 297.1 ± 5.3, 5/5 @0.20M | 0.008 |
+| pinpad_five | 210.1 ± 10.8, 5/5 @0.33M | 221.5 ± 10.3, 5/5 @0.26M | 0.190 | 216.1 ± 4.7, 5/5 @0.43M | 217.8 ± 2.9, 5/5 @0.78M | 0.579 |
+| pinpad_six | 68.6 ± 84.0, 2/5 @2.29M | 0.0 ± 0.0, 0/5 | 0.444 | 74.8 ± 75.9, 3/5 @2.40M | 34.6 ± 69.2, 1/5 @1.30M | 0.524 |
+| cartpole | 691.8 ± 28.9 | 747.9 ± 55.4 | 0.151 | 733.2 ± 29.8 | 700.8 ± 15.7 | 0.087 |
+| cheetah | 510.5 ± 33.7 | 448.1 ± 53.4 | 0.071 | 600.6 ± 22.5 | 540.4 ± 31.3 | 0.008 |
+| hopper | 333.1 ± 73.6 | 287.7 ± 55.7 | 0.381 | 313.7 ± 92.0 | 302.0 ± 76.4 | 0.825 |
 
-Masking helps the tasks that were already solved (pinpad_four significant,
-five and cartpole higher, faster sequence discovery) but does not help — and
-may hurt — discovery on pinpad_six (0/5), the case it was designed for, and
-costs on cheetah. The manager does use partial goals: it keeps ~40–60% of
-groups late on pin pads and hopper, ~85–95% on cheetah. Caveats: e1612 and
-e1614 got 19–80 min of P100 training from a stray watchdog retry (benchmark
-watchdog adopted these runs; fixed via `bench_droplist.txt`); e1622 was
-restarted from scratch after a retry left a proprio-model checkpoint.
+Masking reliably helps only pinpad_four (both bases, p=0.016 / 0.008).
+It does not solve the problem it was built for: pinpad_six goes 2/5 → 0/5
+without SOM and 3/5 → 1/5 with SOM (the one SOM+mask solve, e1644, crossed
+earliest of any arm at 1.30M). It costs on cheetah in both bases (−62, −60;
+p=0.07 / 0.008) and with SOM also slows pinpad_five discovery (median
+0.43M → 0.78M) and lowers cartpole. The manager does use partial goals
+(keeps ~40–60% of groups on pin pads/hopper, ~85–95% on cheetah). Caveats:
+e1612/e1614 had 19–80 min of stray P100 training from the benchmark
+watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
+after a watchdog retry left a proprio-model checkpoint.
 
 ### e1430–e1459: now + SOM + UCB (2026-10-15, array 4762301)
 
