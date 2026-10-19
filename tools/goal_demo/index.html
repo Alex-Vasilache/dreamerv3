@@ -21,7 +21,8 @@
     --canvas: #e9e8e4;
     --neg: #2a78d6; --mid: #f0efec; --pos: #e34948;
     --veil: rgba(255, 255, 255, .72); --hatch: #b55f12;
-    --side: 256px;               /* the one width the panel's column is built on */
+    --side: 188px;               /* one picture; image and WM goal sit side by side */
+    --gap: 12px;
     --radius: 10px;
     color-scheme: light;
   }
@@ -77,7 +78,7 @@
   /* ---- panels ---- */
   main {
     display: grid; gap: 14px; padding: 14px 20px;
-    grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
   }
   .panel {
     background: var(--panel); border: 1px solid var(--line);
@@ -97,7 +98,9 @@
   /* Everything that is a picture of the goal sits in one centred column of
      width --side. Labels that belong beside it (block numbers, mask ticks) are
      positioned outside that width, so they never push the column off centre. */
-  .stack { width: var(--side); margin: 0 auto; }
+  .stack { width: calc(2 * var(--side) + var(--gap)); margin: 0 auto; }
+  .pair { display: flex; gap: var(--gap); }
+  .pair > div { width: var(--side); flex: none; }
   .lbl { color: var(--dim); font-size: 11px; letter-spacing: .04em;
          text-transform: uppercase; margin: 12px 0 5px;
          display: flex; justify-content: space-between; }
@@ -190,7 +193,7 @@
   footer li { margin: 4px 0; }
   footer b { color: var(--ink); font-weight: 600; }
 
-  @media (max-width: 380px) { :root { --side: 220px; } }
+  @media (max-width: 500px) { :root { --side: 140px; } }
 </style>
 </head>
 <body>
@@ -356,15 +359,22 @@ function buildPanel(arm, info, model) {
         <div class="ticks left">${ticks}</div>
         <div class="grid"></div>
       </div>
-      <div class="lbl">Image<span class="r cap"></span></div>
-      <canvas class="frame" width="64" height="64"></canvas>
-      <div class="lbl">World-model goal<span class="r">${model.mask_groups
-          ? '✓ kept · ✕ ignored' : '1024 values'}</span></div>
-      <div class="side">
-        <canvas class="deter" width="32" height="32"></canvas>
-        <div class="ticks right"></div>
+      <div class="pair">
+        <div>
+          <div class="lbl">Image</div>
+          <canvas class="frame" width="64" height="64"></canvas>
+          <div class="scale cap"></div>
+        </div>
+        <div>
+          <div class="lbl">WM goal<span class="r">${model.mask_groups
+              ? '✓ kept · ✕ ignored' : '1024 values'}</span></div>
+          <div class="side">
+            <canvas class="deter" width="32" height="32"></canvas>
+            <div class="ticks right"></div>
+          </div>
+          <div class="scale">−<i></i>+</div>
+        </div>
       </div>
-      <div class="scale">−<i></i>+</div>
       <dl class="vals">${VALUE_KEYS.map(v => `
         <dt title="${v.head}">${v.label}</dt>
         <dd data-key="${v.key}" class="wait">…</dd>`).join('')}
