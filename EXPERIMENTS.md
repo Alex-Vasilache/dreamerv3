@@ -573,6 +573,53 @@ e1330–e1419 stay on `director_og` as queued; no change to array 4751562.
 Final 5v5 (2026-10-11 09:50) confirms it: pinpad_five 210 vs 200, cartpole 692 vs 736 (p=0.03),
 cheetah 511 vs 374 (p=0.008), hopper 333 vs 179 (p=0.024); mean normalized −0.32.
 
+### e1600–e1659: now + goal mask / now + SOM + goal mask (2026-10-16, array 4763638)
+
+`goal_mask8` layered on `now` (`director director_og goal_mask8 pubmatch`,
+e1600–e1629) and on now+SOM (`... goal_som_line goal_mask8 ...`, e1630–e1659),
+6 tasks x 5 seeds, seed-major (`sbatch/pubmask_params.txt`), A100 128G,
+`RUN_ENVS=4 DMC_PROPRIO=False`, %8; array order runs all now+mask before
+som+mask. Mechanism (`hrl/goal_mask.py`): the goal code also decodes a
+keep/ignore flag for each of the 8 RSSM deter blocks (128 dims each); the
+goal AE trains on random masks (whole goal w.p. 0.5, else 1–7 groups) with
+reconstruction on kept groups only plus a binary mask head; the worker sees
+the 8 flags and is scored with cosine_max on kept groups only.
+Why: in pinpad six UCB visits every pad uniformly but never orders them
+(2-in-order at chance), i.e. position is saturated and the code cannot say
+"only the sequence matters"; deter blocks partly specialise (blocks 2/7
+carry the sequence count, R² 0.95/0.93, block 5 the x position).
+Pre-check: offline GAE on e1432 deter, mask acc 0.86 / loss 2.29 (marginal
+chance 0.78 / 4.2) after 4k updates and rising, kept-dim rec 0.0136 vs 0.0110
+unmasked.
+Hypothesis: partial goals help where one factor matters — pinpad five/six —
+and do not hurt DMC. Compare against now (e1230–e1289) and now+SOM
+(e1330–e1419). Watch `goal/mask_keep_mgr` (fraction of groups the manager
+keeps) and `goal/mask_acc`. If the manager always keeps everything
+(`mask_full_mgr` → 1) the arm reduces to its base. Status: now+mask done, som+mask running.
+
+**Interim result, now+mask complete (2026-10-18 17:00; som+mask running).**
+Mean ± sd over 5 seeds of each seed's 3–4M mean; pin pads also give seeds
+crossing sustained-50 and the median crossing step; p = exact permutation
+test vs now:
+
+| task | now | now+mask | p |
+|---|---|---|---|
+| pinpad_four | 270.7 ± 8.1, 5/5 @0.23M | **289.9 ± 8.3**, 5/5 @0.19M | 0.016 |
+| pinpad_five | 210.1 ± 10.8, 5/5 @0.33M | 221.5 ± 10.3, 5/5 @0.26M | 0.19 |
+| pinpad_six | 68.6 ± 84.0, 2/5 | 0.0, **0/5** | 0.44 |
+| cartpole | 691.8 ± 28.9 | 747.9 ± 55.4 | 0.15 |
+| cheetah | 510.5 ± 33.7 | 448.1 ± 53.4 | 0.07 |
+| hopper | 333.1 ± 73.6 | 287.7 ± 55.7 | 0.38 |
+
+Masking helps the tasks that were already solved (pinpad_four significant,
+five and cartpole higher, faster sequence discovery) but does not help — and
+may hurt — discovery on pinpad_six (0/5), the case it was designed for, and
+costs on cheetah. The manager does use partial goals: it keeps ~40–60% of
+groups late on pin pads and hopper, ~85–95% on cheetah. Caveats: e1612 and
+e1614 got 19–80 min of P100 training from a stray watchdog retry (benchmark
+watchdog adopted these runs; fixed via `bench_droplist.txt`); e1622 was
+restarted from scratch after a retry left a proprio-model checkpoint.
+
 ### e1430–e1459: now + SOM + UCB (2026-10-15, array 4762301)
 
 `director director_og goal_som_line mgr_ucb pubmatch`, 6 tasks x 5 seeds,

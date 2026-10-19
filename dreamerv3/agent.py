@@ -43,6 +43,7 @@ from .hrl import (
 )
 from .hrl import explore as explore_mod
 from .hrl import goal_ae
+from .hrl import goal_mask
 
 
 def _g(cfg, key, default):
@@ -213,6 +214,15 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         self._goal_vq_kw = None
       else:
         raise NotImplementedError(self.goal_ae_impl)
+      # Goal-space masking (hrl/goal_mask.py): the code also decodes a keep/
+      # ignore pattern over G contiguous groups of deter. 0 = off (Director).
+      self.goal_mask_groups = int(getattr(config, 'goal_mask_groups', 0))
+      if self.goal_mask_groups:
+        assert self.goal_shape[0] % self.goal_mask_groups == 0, (
+            self.goal_shape, self.goal_mask_groups)
+        self.goal_mdec = embodied.jax.MLPHead(
+            elements.Space(bool, (self.goal_mask_groups,), 0, 2),
+            **config.goal_mdec, name='goal_mdec')
       self.goal_autoencoder_beta = config.goal_autoencoder_beta
       # Weight on the code/deter geometry-preservation term (0 = off).
       self.goal_struct_weight = float(getattr(config, 'goal_struct_weight', 0.0))
@@ -601,6 +611,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     model_modules = [self.dyn, self.enc, self.dec, self.rew, self.con]
     if self.use_hrl:
       goal_modules = [self.goal_enc, self.goal_dec]
+      if self.goal_mask_groups:
+        goal_modules.append(self.goal_mdec)
       ac_modules = [
           self.manager_pol, self.pol,
           self.mgr_extr_val, self.mgr_expl_val, self.wkr_goal_val,
@@ -626,7 +638,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         mgr_mods.append(self.mgr_novel_val)
       for fname, mods in (
           ('worker', [self.pol, self.wkr_goal_val]),
-          ('goal', [self.goal_enc, self.goal_dec]),
+          ('goal', goal_modules),
           ('manager', mgr_mods),
           ('model', model_modules)):
         at = int(getattr(config, f'freeze_{fname}_at', 0))
@@ -701,6 +713,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       groups = ['enc', 'dyn', 'dec', 'pol', 'manager_pol', 'goal_dec']
       if bool(getattr(self.config, 'policy_struct_diag', False)):
         groups.append('goal_enc')
+      if self.goal_mask_groups:
+        # The actor decodes the held goal, and with masking that includes
+        # the keep pattern.
+        groups.append('goal_mdec')
       if float(getattr(self, 'mgr_ucb_c', 0.0)) > 0.0:
         # Selection-time UCB reads the count table INSIDE the policy, so the
         # table must travel to the actor with the other policy params. Under
@@ -1121,9 +1137,20 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     """
     # --- Goal Autoencoder ---
     deter_feat = sg(self.feat2deter(repfeat))
+    # Goal-space masking: encode a randomly masked state, reconstruct only its
+    # kept groups, and decode the keep pattern from the code (hrl/goal_mask.py).
+    groups = self.goal_mask_groups
+    if groups:
+      train_keep = goal_mask.sample_train_mask(
+          nj.seed(), (B, T), groups, float(self.config.goal_mask_full_prob))
+      dim_keep = goal_mask.expand_groups(train_keep, deter_feat.shape[-1])
+      enc_in = deter_feat * dim_keep.astype(deter_feat.dtype)
+    else:
+      dim_keep = None
+      enc_in = deter_feat
     if self.goal_ae_impl == 'vq':
       # One encoder pass shared by the loss and the diagnostics below.
-      z_e = self.goal_enc.latent(deter_feat, 2)
+      z_e = self.goal_enc.latent(enc_in, 2)
       encoded_goal = self.goal_enc.code_from_latent(z_e)
       # The controller only steps its multiplier while training; at report time
       # it reads the current value without moving it.
@@ -1135,7 +1162,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           return self._commit_adapt.scale()
       goal_base_loss, vq_mets = goal_ae.vq_goal_loss(
           self.goal_enc, self.goal_dec, deter_feat, 2, z_e=z_e,
-          commit_adapt=commit_adapt, **self._goal_vq_kw)
+          commit_adapt=commit_adapt, rec_mask=dim_keep, **self._goal_vq_kw)
+      if groups:
+        # Straight-through codebook embedding: the mask loss reaches the
+        # encoder through z_e, as the reconstruction does on the STE arms.
+        z_q = self.goal_dec.codebook.quantize(z_e)['z_q']
+        mask_in = z_e + sg(z_q - z_e)
       # Reconstruction only: from z_q, plus from z_e on the SOM arms. Taken
       # UNREDUCED so ``goal/rec_std`` below is a real spread; the scalar
       # ``vq/rec_q`` would make it ``scalar.std()`` == 0.0 always.
@@ -1154,14 +1186,19 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # rec:kl balance knob, does not apply: the VQ reduction is
       # ``goal_vq.agg``.
     else:
-      encoded_goal = self.goal_enc(deter_feat, 2)
+      encoded_goal = self.goal_enc(enc_in, 2)
       skill = sample(encoded_goal)
       skill_code = skill['skill'] if isinstance(skill, dict) else skill
       # Reconstruction + KL vs uniform skill prior (Director: ``rec + kl_divergence(enc, prior)``).
       # ``MSEDist('sum')`` over ``deter``; masked goals reuse this standard autoencoder
       # (the mask edits the code, not the decoder).
       decoded_goal = self.goal_dec(skill_code, 2)
-      goal_rec_sum = decoded_goal.loss(sg(deter_feat))
+      if groups:
+        goal_rec_sum = (jnp.square(decoded_goal.pred() - sg(f32(deter_feat)))
+                        * dim_keep).sum(-1)
+        mask_in = skill_code      # straight-through one-hot sample
+      else:
+        goal_rec_sum = decoded_goal.loss(sg(deter_feat))
       goal_rec_agg = self.config.goal_rec_loss_agg
       if goal_rec_agg == 'sum':
         goal_rec_loss = goal_rec_sum
@@ -1190,6 +1227,19 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
 
     losses['goal_autoencoder'] = (
         goal_base_loss + self.config.goal_autoencoder_beta * goal_kl_loss)
+    if groups:
+      mask_dist = self.goal_mdec(mask_in, 2)
+      mask_loss = mask_dist.loss(train_keep)                 # (B, T), sum over G
+      losses['goal_autoencoder'] = (
+          losses['goal_autoencoder']
+          + float(self.config.goal_mask_loss_scale) * mask_loss)
+      pred_keep = goal_mask.hard_keep(mask_dist.output.logit)
+      metrics.update({
+          'goal/mask_loss': mask_loss.mean(),
+          'goal/mask_acc': (pred_keep == train_keep).astype(f32).mean(),
+          'goal/mask_full_acc': (pred_keep == train_keep).all(-1).astype(f32).mean(),
+          'goal/mask_keep_train': train_keep.mean(),
+      })
 
     # --- Geometry preservation (goal_struct_weight): make code-space distances
     # mirror deter-space distances. Pairs of states far apart in deter (low
@@ -1447,6 +1497,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     dec_sum = jnp.maximum(dec_w.sum(), 1.0)
     metrics['goal/implicit_sparsity_block'] = (block_kept * dec_w).sum() / dec_sum
     metrics['goal/implicit_sparsity_cont'] = (cont_sim * dec_w).sum() / dec_sum
+    if self.goal_mask_groups:
+      # How much of its goals the manager actually constrains. Every step
+      # counts (held steps carry the same goal), so this is time-weighted.
+      mgr_keep = goal_mask.group_keep(goals, self.goal_mask_groups)  # (M,H+1,G)
+      metrics['goal/mask_keep_mgr'] = mgr_keep.mean()
+      metrics['goal/mask_full_mgr'] = (mgr_keep.min(-1)).mean()
+      metrics['goal/mask_groups_kept_mgr'] = mgr_keep.sum(-1).mean()
     # Re-derive the manager policy with the SAME conditioning input the rollout used.
     # ``mgr_skills`` carry the POST-edit code Z_t; the manager conditioned on the
     # PRE-edit code (Z_{t-1}, with step 0 = the imagination seed).

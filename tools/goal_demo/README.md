@@ -1,7 +1,15 @@
 # Goal code explorer
 
 Edit a goal code by hand and watch what the world model decodes it into, for
-Director and for our SOM-line arm side by side, on the same environment.
+three arms side by side on the same environment: Director (`OG`), OG +
+SOM-line, and OG + SOM-line + goal mask (`goal_mask8`). Six environments: the
+three pin pads, cartpole swingup, cheetah run, hopper hop. (Until 2026-10-19 it
+compared Director against SOM-line + LipVQ on the old BIG runs, which have since
+been archived; see git history.)
+
+In the mask arm the code also decodes a keep/ignore flag per deter block. Rows
+the goal ignores are dimmed; the frame and goal distance use the unmasked
+decode, and the worker critic gets the masked goal, as in training.
 
 ```bash
 ./tools/goal_demo/run_demo.sh          # then open http://saion-login2:8899
@@ -11,7 +19,7 @@ Runs on the login node, same as `tensorboard_login.sh`. `--port` to move it.
 
 ## What you are looking at
 
-Each panel is one 3M-step milestone checkpoint. Rows of the grid are the 8
+Each panel is one 4M-step milestone checkpoint. Rows of the grid are the 8
 blocks of the goal code, columns are the classes for that block. Click a cell
 to set a block, drag along a row to sweep it, hover to preview without
 committing. The frame underneath is

@@ -1,0 +1,60 @@
+director pinpad_four 0 e1600 director_og goal_mask8 pubmatch
+director pinpad_five 0 e1601 director_og goal_mask8 pubmatch
+director pinpad_six 0 e1602 director_og goal_mask8 pubmatch
+director dmc_cartpole_swingup 0 e1603 director_og goal_mask8 pubmatch
+director dmc_cheetah_run 0 e1604 director_og goal_mask8 pubmatch
+director dmc_hopper_hop 0 e1605 director_og goal_mask8 pubmatch
+director pinpad_four 1 e1606 director_og goal_mask8 pubmatch
+director pinpad_five 1 e1607 director_og goal_mask8 pubmatch
+director pinpad_six 1 e1608 director_og goal_mask8 pubmatch
+director dmc_cartpole_swingup 1 e1609 director_og goal_mask8 pubmatch
+director dmc_cheetah_run 1 e1610 director_og goal_mask8 pubmatch
+director dmc_hopper_hop 1 e1611 director_og goal_mask8 pubmatch
+director pinpad_four 2 e1612 director_og goal_mask8 pubmatch
+director pinpad_five 2 e1613 director_og goal_mask8 pubmatch
+director pinpad_six 2 e1614 director_og goal_mask8 pubmatch
+director dmc_cartpole_swingup 2 e1615 director_og goal_mask8 pubmatch
+director dmc_cheetah_run 2 e1616 director_og goal_mask8 pubmatch
+director dmc_hopper_hop 2 e1617 director_og goal_mask8 pubmatch
+director pinpad_four 3 e1618 director_og goal_mask8 pubmatch
+director pinpad_five 3 e1619 director_og goal_mask8 pubmatch
+director pinpad_six 3 e1620 director_og goal_mask8 pubmatch
+director dmc_cartpole_swingup 3 e1621 director_og goal_mask8 pubmatch
+director dmc_cheetah_run 3 e1622 director_og goal_mask8 pubmatch
+director dmc_hopper_hop 3 e1623 director_og goal_mask8 pubmatch
+director pinpad_four 4 e1624 director_og goal_mask8 pubmatch
+director pinpad_five 4 e1625 director_og goal_mask8 pubmatch
+director pinpad_six 4 e1626 director_og goal_mask8 pubmatch
+director dmc_cartpole_swingup 4 e1627 director_og goal_mask8 pubmatch
+director dmc_cheetah_run 4 e1628 director_og goal_mask8 pubmatch
+director dmc_hopper_hop 4 e1629 director_og goal_mask8 pubmatch
+director pinpad_four 0 e1630 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_five 0 e1631 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_six 0 e1632 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cartpole_swingup 0 e1633 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cheetah_run 0 e1634 director_og goal_som_line goal_mask8 pubmatch
+director dmc_hopper_hop 0 e1635 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_four 1 e1636 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_five 1 e1637 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_six 1 e1638 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cartpole_swingup 1 e1639 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cheetah_run 1 e1640 director_og goal_som_line goal_mask8 pubmatch
+director dmc_hopper_hop 1 e1641 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_four 2 e1642 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_five 2 e1643 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_six 2 e1644 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cartpole_swingup 2 e1645 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cheetah_run 2 e1646 director_og goal_som_line goal_mask8 pubmatch
+director dmc_hopper_hop 2 e1647 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_four 3 e1648 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_five 3 e1649 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_six 3 e1650 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cartpole_swingup 3 e1651 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cheetah_run 3 e1652 director_og goal_som_line goal_mask8 pubmatch
+director dmc_hopper_hop 3 e1653 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_four 4 e1654 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_five 4 e1655 director_og goal_som_line goal_mask8 pubmatch
+director pinpad_six 4 e1656 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cartpole_swingup 4 e1657 director_og goal_som_line goal_mask8 pubmatch
+director dmc_cheetah_run 4 e1658 director_og goal_som_line goal_mask8 pubmatch
+director dmc_hopper_hop 4 e1659 director_og goal_som_line goal_mask8 pubmatch

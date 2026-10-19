@@ -187,6 +187,8 @@ defaults:
     conhead: {layers: 1, units: 1024, act: silu, norm: rms, output: binary, outscale: 1.0, winit: trunc_normal_in}
     goal_enc: {layers: 3, units: 1024, act: silu, norm: rms, output: onehot, outscale: 0.1, unimix: 0.0, winit: trunc_normal_in}
     goal_dec: {layers: 3, units: 1024, act: silu, norm: rms, output: mse, outscale: 0.1, winit: trunc_normal_in}
+    # Keep/ignore head of goal-space masking (code -> G binary); see goal_mask_groups.
+    goal_mdec: {layers: 2, units: 256, act: silu, norm: rms, output: binary, outscale: 0.1, winit: trunc_normal_in}
     # --- Lipschitz-constrained SOM-VAE goal autoencoder (see hrl/goal_ae.py) ---
     # ``director`` keeps the categorical + straight-through head above. ``vq``
     # swaps in the blockwise vector quantizer; the manager's (L, C) one-hot
@@ -407,6 +409,14 @@ defaults:
     # scale, removing the dimension-count term from cross-size comparisons.
     goal_rec_loss_agg: sum
     goal_rec_dim_ref: 1024
+    # Goal-space masking (hrl/goal_mask.py). G > 0 splits the deter goal into G
+    # contiguous groups (G = rssm.blocks: the RSSM's own blocks); the goal code
+    # also decodes which groups the worker must match. The AE trains on random
+    # masks: whole goal with prob goal_mask_full_prob, else k ~ U{1..G-1} groups.
+    # The worker sees the keep bits and is scored (cosine_max) on kept groups only.
+    goal_mask_groups: 0
+    goal_mask_full_prob: 0.5
+    goal_mask_loss_scale: 1.0
     # If false, KL term inside ``goal_autoencoder`` is zero (rec still trained).
     goal_kl: True
     # Director ``encdec_kl`` adaptive scale: holds KL(enc||uniform) near target nats.
@@ -1301,6 +1311,11 @@ goal_som_lipvq_line_mgr:
     goal_vq: {som: True, lip: True, topology: line, mgr_ring: True}
 
 # Line (open path) instead of a ring, no manager changes.
+goal_mask8:
+  # Goal-space masking over the 8 RSSM blocks; layers on either AE (now / now+SOM).
+  agent:
+    goal_mask_groups: 8
+
 goal_som_line:
   agent:
     goal_ae_impl: vq
