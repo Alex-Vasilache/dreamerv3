@@ -5,330 +5,247 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Goal code explorer</title>
 <style>
+  /* Light is the default; dark via the header toggle (remembered per browser).
+     The heatmap's diverging poles and grey midpoint change with the theme so
+     "near zero" always recedes into the surface. */
   :root {
-    --bg: #14161a;
-    --panel: #1c1f25;
-    --line: #2c313a;
-    --ink: #e6e9ef;
-    --dim: #8b94a3;
-    --accent: #6aa9ff;
-    --accent2: #ffb454;
-    --warn: #d98b6a;
+    --bg: #f5f5f2;
+    --panel: #ffffff;
+    --raised: #f0f0ec;
+    --line: #e1e0db;
+    --ink: #1c1e22;
+    --dim: #5d636e;
+    --faint: #8e939b;
+    --focus: #2a78d6;
+    --warn: #b55f12;
+    --canvas: #e9e8e4;
+    --neg: #2a78d6; --mid: #f0efec; --pos: #e34948;
+    --side: 256px;               /* the one width the panel's column is built on */
     --radius: 10px;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #121418;
+    --panel: #1a1d22;
+    --raised: #22262d;
+    --line: #2b3038;
+    --ink: #e7e9ee;
+    --dim: #8d95a3;
+    --faint: #5d6471;
+    --focus: #8ab4ff;
+    --warn: #e6a35c;
+    --canvas: #0c0d10;
+    --neg: #3987e5; --mid: #383835; --pos: #e66767;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; color: var(--ink);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
+  button, select, input { font: inherit; color: inherit; }
+  button, select {
+    background: var(--raised); border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  button:hover, select:hover { border-color: var(--dim); }
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 1px;
+  }
+  button:disabled { opacity: .35; cursor: default; }
+  button:disabled:hover { border-color: var(--line); }
+
+  /* ---- header ---- */
   header {
-    display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
-    padding: 14px 20px; border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; background: var(--bg); z-index: 5;
+    position: sticky; top: 0; z-index: 5; background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+    padding: 10px 20px;
   }
-  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
-  .sub { color: var(--dim); font-size: 12px; }
-  select, button {
-    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-    border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 13px;
-    cursor: pointer;
-  }
-  button:hover, select:hover { border-color: var(--accent); }
-  button:active { transform: translateY(1px); }
-  label.check {
-    display: inline-flex; align-items: center; gap: 6px;
-    color: var(--dim); font-size: 13px; cursor: pointer; user-select: none;
-  }
+  h1 { font-size: 15px; font-weight: 650; margin: 0; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  label.check { display: inline-flex; gap: 6px; align-items: center;
+                color: var(--dim); cursor: pointer; user-select: none; }
   #status { margin-left: auto; color: var(--dim); font-size: 12px; }
-  #status.busy { color: var(--accent2); }
+  #status.busy { color: var(--warn); }
+  #status.err { color: #d0402f; }
+  #theme { padding: 4px 9px; font-size: 12px; }
 
+  /* ---- panels ---- */
   main {
-    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px; padding: 16px 20px 8px;
+    display: grid; gap: 14px; padding: 14px 20px;
+    grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   }
-  @media (max-width: 1250px) { main { grid-template-columns: 1fr; } }
-
   .panel {
     background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 14px 16px 16px;
-    min-width: 0;
-    --arm: var(--accent);
+    border-radius: var(--radius); padding: 12px 14px 16px; min-width: 0;
   }
-  /* One colour per arm, sent by the server (runs.ARM_COLORS) so it matches the
-     comparison plots; set inline on each panel. */
   .panel h2 {
-    font-size: 14px; margin: 0 0 2px; font-weight: 600;
-    display: flex; align-items: baseline; gap: 8px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px; font-weight: 650; margin: 0 0 10px;
   }
   .panel h2::before {
     content: ''; width: 10px; height: 10px; border-radius: 3px;
-    background: var(--arm); flex: 0 0 auto; align-self: center;
+    background: var(--arm); flex: none;
   }
-  .panel h2 .tag {
-    font-weight: 400; color: var(--dim); font-size: 12px;
-  }
-  .geom { color: var(--dim); font-size: 12px; margin-bottom: 12px; }
-  .geom b { color: var(--ink); font-weight: 600; }
+  .panel h2 .tag { margin-left: auto; color: var(--dim); font-weight: 400;
+                   font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
-  /* ---- code grid ---- */
-  /* As wide as the frame and the WM goal under it (240px), centred; the row
-     labels hang off to the left so the cells themselves span the 240px. */
-  .grid { display: grid; gap: 2px; margin: 4px auto 6px; touch-action: none;
-          width: 240px; position: relative; left: -9px; }
-  .grid .rowlabel {
-    color: var(--dim); font-size: 11px; text-align: right;
-    padding-right: 6px; align-self: center; font-variant-numeric: tabular-nums;
+  /* Everything that is a picture of the goal sits in one centred column of
+     width --side. Labels that belong beside it (block numbers, mask ticks) are
+     positioned outside that width, so they never push the column off centre. */
+  .stack { width: var(--side); margin: 0 auto; }
+  .lbl { color: var(--dim); font-size: 11px; letter-spacing: .04em;
+         text-transform: uppercase; margin: 12px 0 5px;
+         display: flex; justify-content: space-between; }
+  .lbl:first-child { margin-top: 0; }
+  .lbl .r { text-transform: none; letter-spacing: 0; color: var(--faint); }
+  .side { position: relative; }
+  .side .ticks {
+    position: absolute; top: 0; bottom: 0; display: grid;
+    grid-template-rows: repeat(8, 1fr); font-size: 10.5px; color: var(--faint);
+    font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap;
   }
-  .grid .colhead {
-    color: var(--dim); font-size: 10px; text-align: center;
-    font-variant-numeric: tabular-nums; padding-bottom: 3px;
-  }
-  /* A rule under 0..7 brackets the range the model was actually trained on. */
-  .grid .colhead:not(.out) { border-bottom: 2px solid #4c5566; }
-  .grid .colhead.out { color: #5d6473; }
-  .cell {
-    aspect-ratio: 1; border-radius: 4px; cursor: pointer;
-    background: #262b33; border: 1px solid transparent;
-    transition: background .08s, border-color .08s;
-  }
-  .cell.out { background: #181b21; border: 1px dashed #2f3540; }
+  .side .ticks span { align-self: center; }
+  .side .ticks.left { right: 100%; padding-right: 6px; text-align: right; }
+  .side .ticks.right { left: 100%; padding-left: 6px; }
+  .side .ticks span.ign { color: var(--warn); }
+  .side .ticks span.keep { color: var(--dim); }
+
+  /* goal code: 8 rows x 8 classes, short rows so the grid stays slim */
+  .grid { display: grid; grid-template-columns: repeat(8, 1fr);
+          grid-auto-rows: 18px; gap: 3px; touch-action: none; }
+  .cell { border-radius: 3px; background: var(--raised); cursor: pointer;
+          border: 1px solid transparent; }
   .cell:hover { border-color: var(--arm); }
-  .cell.on { background: var(--arm); border-color: var(--arm); }
-  /* Selected but outside the trained range: keep the arm's colour so the two
-     grids stay distinguishable, and ring it so the extrapolation still shows. */
-  .cell.on.out { background: var(--arm); border: 1px solid var(--warn); }
+  .cell.on { background: var(--arm); }
   .grid.dragging .cell:hover { border-color: transparent; }
-  /* ---- WM goal (deter) ---- */
-  /* The decoded goal itself, 1024 dims as the RSSM's 8 blocks x 128, one row
-     per block. For the mask arm the right-hand labels say which blocks the goal
-     keeps; ignored rows are drawn faded. */
-  .deter { display: flex; gap: 6px; align-items: stretch; justify-content: center;
-           margin-top: 8px; position: relative; left: 14px; }
-  canvas.deter { width: 240px; height: 240px; image-rendering: pixelated;
-                 border: 1px solid var(--line); border-radius: 4px; }
-  .deter .dlabels { display: grid; grid-template-rows: repeat(8, 1fr);
-                    font-size: 10px; color: var(--dim); line-height: 1;
-                    font-variant-numeric: tabular-nums; }
-  .deter .dlabels span { align-self: center; white-space: nowrap; }
-  .deter .dlabels span.ign { color: var(--warn); }
 
-  /* ---- frames ---- */
-  /* The current frame, centred, with the saved one beside it once there is one.
-     The row of per-class thumbnails that used to sit to the right is gone; the
-     grid above already says which class each block is on, and the sweep is read
-     by dragging the row. */
-  .frames { display: flex; justify-content: center; flex-wrap: wrap;
-            gap: 14px; margin-top: 12px; }
-  canvas { image-rendering: pixelated; background: #0d0f12; border-radius: 6px;
-           display: block; }
-  canvas.main { width: 240px; height: 240px; border: 2px solid var(--arm); }
-  /* The saved frame is a frozen copy, so it does not wear the live border. */
-  canvas.main.past { border-color: var(--line); }
-  .framebox { text-align: center; }
-  .framebox[hidden] { display: none; }
-  .framebox .cap { color: var(--dim); font-size: 11px; margin-top: 5px; }
-  .framebox .cap b { color: var(--ink); font-weight: 600; }
+  canvas { display: block; image-rendering: pixelated; }
+  canvas.frame, canvas.deter {
+    width: var(--side); height: var(--side); border-radius: 6px;
+    background: var(--canvas);
+  }
+  canvas.frame { box-shadow: 0 0 0 2px var(--arm); }
+  .scale { display: flex; align-items: center; gap: 6px; margin-top: 5px;
+           color: var(--faint); font-size: 10.5px; }
+  .scale i { flex: 1; height: 6px; border-radius: 3px;
+             background: linear-gradient(90deg, var(--neg), var(--mid), var(--pos)); }
 
-  /* ---- critic readout ---- */
-  /* Labelled numbers, not a chart: five current values with nothing to plot
-     them against. Proportional figures here, tabular ones in the table below,
-     where the columns have to line up. */
-  .vals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  /* ---- critic readout: label / value list ---- */
+  .vals { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px;
+          margin-top: 12px; font-size: 12px; }
   .vals[hidden] { display: none; }
-  .tile {
-    flex: 1 1 92px; min-width: 0; padding: 6px 9px 7px;
-    background: #21252c; border: 1px solid var(--line); border-radius: 7px;
-  }
-  .tile .k {
-    color: var(--dim); font-size: 10.5px; line-height: 1.3;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .tile .v { font-size: 15px; font-weight: 600; margin-top: 1px; }
-  .tile .v.wait { color: var(--dim); font-weight: 400; }
+  .vals dt { color: var(--dim); }
+  .vals dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .vals dd.wait { color: var(--faint); }
 
-  /* ---- saved-vs-current comparison ---- */
-  .cmp { margin-top: 12px; }
-  .cmp[hidden] { display: none; }
-  .cmp table {
-    width: 100%; border-collapse: collapse; font-size: 12px;
+  /* ---- actions ---- */
+  .row { display: flex; gap: 5px; margin-top: 8px; align-items: center; }
+  .row > * { flex: 1 1 auto; min-width: 0; }
+  .row button { padding: 4px 6px; font-size: 12px; white-space: nowrap; }
+  .row .grow { flex: 1; }
+  .row input[type="number"] {
+    flex: 0 0 52px; width: 52px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 7px; padding: 4px 6px; font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
-  .cmp caption {
-    caption-side: top; text-align: left; color: var(--ink);
-    font-size: 12px; font-weight: 600; padding: 8px 0 4px;
-  }
-  .cmp th {
-    color: var(--dim); font-weight: 400; text-align: right;
-    padding: 3px 0 3px 12px; border-bottom: 1px solid var(--line);
-  }
-  .cmp td { text-align: right; padding: 3px 0 3px 12px; }
-  .cmp th.lbl, .cmp td.lbl {
-    text-align: left; padding-left: 0; color: var(--dim); font-weight: 400;
-  }
-  .cmp td.lbl { white-space: nowrap; }
+  .row select { padding: 4px 6px; font-size: 12px; }
+  .row .k { color: var(--dim); font-size: 12px; flex: 0 0 auto; }
+  button.primary { border-color: var(--arm); }
+  .note { color: var(--dim); font-size: 11.5px; margin-top: 6px; min-height: 1.45em; }
+  .note b { color: var(--ink); font-weight: 600; }
 
-  .codeline {
-    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--dim); margin-top: 10px; word-break: break-all;
-  }
-  .codeline b { color: var(--ink); font-weight: 600; }
-  .codeline .ex { color: var(--warn); }
-  .panel .tools {
-    display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px;
-    align-items: center;
-  }
-  .panel .tools button { padding: 4px 9px; font-size: 12px; }
-  .panel .tools button.jump { border-color: var(--arm); }
-  /* The two saved-state buttons do nothing until there is one to act on. */
-  .panel .tools button:disabled { opacity: .4; cursor: default; }
-  .panel .tools button:disabled:hover { border-color: var(--line); }
-  .panel .tools .lbl { color: var(--dim); font-size: 12px; }
-  .panel .tools input[type="number"] {
-    width: 66px; background: var(--bg); color: var(--ink);
-    border: 1px solid var(--line); border-radius: 7px; padding: 4px 6px;
-    font: inherit; font-size: 12px; font-variant-numeric: tabular-nums;
-  }
-  .panel .tools select { padding: 4px 6px; font-size: 12px; }
-  .panel .tools .hint {
-    color: var(--dim); font-size: 11px; flex-basis: 100%;
-  }
-  .panel .note {
-    color: var(--dim); font-size: 11.5px; margin-top: 8px; min-height: 1.4em;
-  }
-  .panel .note b { color: var(--ink); font-weight: 600; }
+  /* ---- comparison with a saved state: compact, never beside the frame ---- */
+  .cmp { margin-top: 10px; padding: 10px; border-radius: 8px;
+         background: var(--raised); }
+  .cmp[hidden] { display: none; }
+  .cmp .head { display: flex; gap: 8px; align-items: center; }
+  .cmp .head canvas { width: 56px; height: 56px; border-radius: 4px;
+                      background: var(--canvas); }
+  .cmp .head .t { color: var(--dim); font-size: 11.5px; line-height: 1.35; }
+  .cmp .head .t b { color: var(--ink); font-weight: 600; }
+  .cmp dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px;
+            margin: 8px 0 0; font-size: 12px; }
+  .cmp dt { color: var(--dim); }
+  .cmp dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .cmp details { margin-top: 6px; font-size: 12px; }
+  .cmp summary { color: var(--dim); cursor: pointer; }
+  .cmp table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 11.5px;
+               font-variant-numeric: tabular-nums; }
+  .cmp th { color: var(--faint); font-weight: 400; text-align: right;
+            padding: 2px 0 2px 5px; }
+  .cmp td { text-align: right; padding: 2px 0 2px 5px; white-space: nowrap; }
+  .cmp th:first-child, .cmp td:first-child { text-align: left; padding-left: 0;
+                                            color: var(--dim); }
 
-  footer {
-    padding: 4px 20px 28px; color: var(--dim); font-size: 12.5px;
-    max-width: 1100px;
-  }
-  footer p { margin: 10px 0; }
+  /* ---- help ---- */
+  footer { padding: 0 20px 28px; max-width: 900px; color: var(--dim); }
+  footer summary { cursor: pointer; color: var(--ink); font-weight: 600;
+                   padding: 6px 0; }
+  footer ul { margin: 4px 0 0; padding-left: 18px; }
+  footer li { margin: 4px 0; }
   footer b { color: var(--ink); font-weight: 600; }
-  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
-            vertical-align: -1px; margin-right: 2px; }
-  .err { color: #ff8f7a; }
+
+  @media (max-width: 380px) { :root { --side: 220px; } }
 </style>
 </head>
 <body>
 
 <header>
   <h1>Goal code explorer</h1>
-  <select id="task"></select>
-  <label class="check"><input type="checkbox" id="link"> link all grids</label>
-  <label class="check"><input type="checkbox" id="fine"> fine drag (¼ class)</label>
+  <select id="task" aria-label="environment"></select>
+  <label class="check"><input type="checkbox" id="link"> link grids</label>
+  <label class="check"><input type="checkbox" id="fine"> ¼-class drag</label>
   <span class="sub" id="ckpt"></span>
   <span id="status">starting…</span>
+  <button id="theme" title="switch light / dark">Dark</button>
 </header>
 
 <main id="panels"></main>
 
 <footer>
-  <p><b>How to read this.</b> Each row is one of the 8 blocks of the goal code;
-  each column is a class for that block. Click a cell to set a block, or drag
-  along a row to sweep it. Hover any cell to preview it without committing. The
-  frame below each grid is what the world model decodes that goal into —
-  <code>code → goal_dec → deter → dyn prior → image decoder</code>, the same
-  path the agent renders its goals with.</p>
-
-  <p><b>Colours.</b> Each grid is filled in its arm's colour, the same as the
-  comparison plots: <span class="swatch" style="background:#E69F00"></span>
-  Director (<code>now</code>), <span class="swatch" style="background:#CC79A7"></span>
-  now + SOM-line, <span class="swatch" style="background:#56B4E9"></span>
-  now + SOM-line + mask. Only the 8 trained classes are shown.</p>
-
-  <p><b>Mask.</b> In the mask arm the code also decodes a keep/ignore flag for
-  each of the 8 deter blocks of the world model's hidden state
-  (<code>hrl/goal_mask.py</code>), decided by the code as a whole. They are shown
-  beside the WM goal heatmap under the frame: ✓ kept, ✕ ignored (drawn faded);
-  hover for the keep probability. The frame and the goal-space distance use the unmasked decode,
-  because a deter with whole blocks set to zero is not a state the image decoder
-  has ever seen; the worker critic gets the masked goal, as in training. Block
-  <i>b</i> of the code and deter block <i>b</i> are not the same thing; both
-  just happen to number 8.</p>
-
-  <p><b>WM goal.</b> Under each frame is the decoded goal itself, all 1024
-  dims of the deter vector as a 32 × 32 square in order, so each of the RSSM's
-  8 blocks (128 dims) is a band of 4 rows, labelled on the right:
-  orange above zero, blue below, on a scale fixed per checkpoint (99th
-  percentile of |deter| over random codes). The frame is this vector pushed
-  through the dynamics prior and the image decoder.</p>
-
-  <p><b>Distant jump.</b> The paper's ε-greedy exploration move, on a button
-  instead of firing with probability ε. From the current code <i>c</i>, a block
-  at class <i>c<sub>l</sub></i> can shift by at most
-  <code>max(c_l, C−1−c_l)</code>, so the furthest reachable code is
-  <code>d_max(c) = Σ_l max(c_l, C−1−c_l)</code>. A target distance is drawn with
-  <code>p(d) = 2d / (d_max(d_max+1))</code>, which favours the big jumps and
-  gives <code>E[d] = ⅔(d_max + ½)</code>, then spread over the blocks within
-  each one's capacity. <code>d_max</code> is a property of the code, not a
-  constant — over uniform codes it averages 44, and only a code with every block
-  already at 0 or 7 reaches 56 — so the rule draws <i>d</i> ≈ 30 in practice.</p>
-
-  <p>Try it on every panel. It is only worth doing because our index is ordered:
-  on Director's code a large index gap does not imply a distant goal, so the
-  same jump buys nothing there. That is the comparison the button is for.</p>
-
-  <p><b>What the agent thinks of the state.</b> The five numbers under each
-  frame are the agent's own heads, read at the same <code>feat</code> the image
-  came from. <b>manager · task</b> (<code>mgr_extr_val</code>) is the discounted
-  task return it expects from here. <b>manager · explore</b>
-  (<code>mgr_expl_val</code>) is the exploration return, whose reward is the goal
-  autoencoder's own reconstruction error — it scores how <i>unfamiliar</i> a
-  state is, not how good it is, so a high value there and a low one next to it
-  is the normal shape, not a contradiction. <b>worker · on its goal</b>
-  (<code>wkr_goal_val</code>) is the only critic that needs a goal as well as a
-  state; on its own it is read with the state as its own goal, the worker's best
-  case. <b>reward here</b> and <b>keeps going</b> are the two heads the manager's
-  critic is built out of. Same caveat as the frame: these were trained on
-  features of real states, and a hand-edited code is only as real as the goal
-  decoder makes it.</p>
-
-  <p><b>New state at a distance.</b> Two distances, and they are not
-  interchangeable. <b>Class steps</b> is the index distance the jump uses,
-  <code>Σ|Δc_l|</code>, and is exact by counting — the same split rule as the
-  jump with <i>d</i> handed in instead of drawn, so it starts from the current
-  code rounded to whole classes. <b>Goal space</b> is the distance between the
-  decoded goals, which no amount of counting gets you. It is reachable anyway
-  because the class indices here are real-valued: the goal moves continuously
-  along a ray in code space, so the page draws a random direction and walks out
-  along it until the goal is the requested distance away. If the ray leaves the
-  grid first, it says so and stops there. Watching how many class steps it takes
-  to cover a fixed goal distance, on one arm against the other, is the same
-  ordered-index question the jump asks from the other end.</p>
-
-  <p><b>Save and compare.</b> <b>save this state</b> freezes the frame beside the
-  live one and turns the panel into a two-state comparison: how far apart the
-  codes are, how far apart the goals are and in what direction, how different
-  the two pictures actually look, and every critic for both states with the
-  change between them. The last two rows are the pair reading only the worker
-  critic can give — what it makes of the saved state while aiming at the current
-  goal, and the reverse. A large index gap with a small goal distance, or a big
-  goal distance the pictures barely reflect, is the interesting case.</p>
-
-  <p>All panels load the <b>4M-step milestone checkpoint</b> of the
-  best-scoring seed (of 5) we ran for that arm and environment, scored over the
-  last 300k steps (<code>runs.py</code>, <code>pick_runs.py</code>). Rendering runs in float32
-  rather than the bfloat16 the runs trained in; the two differ by at most 4/255
-  per pixel (<code>check_render.py</code>).</p>
+  <details>
+    <summary>How to read this</summary>
+    <ul>
+      <li><b>Goal code</b>: 8 blocks (rows) × 8 classes. Click or drag a row to
+        set it; hover to preview.</li>
+      <li><b>Image</b>: what the world model decodes the goal into
+        (code → goal decoder → WM state → image decoder).</li>
+      <li><b>World-model goal</b>: the decoded 1024-dim hidden state, in order;
+        each of its 8 blocks is a band of 4 rows. Blue below 0, red above.</li>
+      <li><b>Mask</b> (mask arm only): the whole code decides which WM blocks the
+        goal keeps <span style="color:var(--dim)">✓</span> or ignores
+        <span style="color:var(--warn)">✕</span> (faded). Code row <i>b</i> and
+        WM block <i>b</i> are unrelated. The image uses the unmasked goal.</li>
+      <li><b>Jump</b>: the ε-greedy distant jump (large class-index distance).
+        <b>Move</b>: a new code at a set distance, in class steps or in goal space.</li>
+      <li><b>Save</b>: freeze a state; the panel then compares the current one
+        to it.</li>
+      <li>Values are the agent's own heads at that state: manager task value,
+        manager exploration value, worker value on its goal, reward, continue
+        probability.</li>
+      <li>Each panel is the 4M checkpoint of the best of 5 seeds for that arm.</li>
+    </ul>
+  </details>
 </footer>
 
 <script>
 const SIZE = 64, BYTES = SIZE * SIZE * 3;
+const DETER_BLOCKS = 8;
 
-/* What the agent's own heads say about the state the code decodes to. The three
-   critics are kept apart because they answer different questions -- task return,
-   how unfamiliar the state is, and how the worker scores it against a goal --
-   and averaging them would hide exactly the disagreement worth looking at.
-   ``head`` is the name of the module in the checkpoint. */
+/* The agent's own heads at the decoded state. ``head`` is the module name. */
 const VALUE_KEYS = [
-  {key: 'mgr_extr', head: 'mgr_extr_val', label: 'manager · task'},
-  {key: 'mgr_expl', head: 'mgr_expl_val', label: 'manager · explore'},
-  {key: 'wkr_goal', head: 'wkr_goal_val', label: 'worker · on its goal'},
-  {key: 'reward', head: 'rew', label: 'reward here'},
-  {key: 'cont', head: 'con', label: 'keeps going', pct: true},
+  {key: 'mgr_extr', head: 'mgr_extr_val', label: 'manager · task value', short: 'task value'},
+  {key: 'mgr_expl', head: 'mgr_expl_val', label: 'manager · explore value', short: 'explore value'},
+  {key: 'wkr_goal', head: 'wkr_goal_val', label: 'worker · value on goal', short: 'worker value'},
+  {key: 'reward', head: 'rew', label: 'reward', short: 'reward'},
+  {key: 'cont', head: 'con', label: 'continue', short: 'continue', pct: true},
 ];
 
 const state = {
-  meta: null, task: null, extra: 4, classes: 8, blocks: 8,
+  meta: null, task: null, extra: 0, classes: 8, blocks: 8,
   arms: {}, link: false, fine: false, gen: 0,
 };
 const els = {
@@ -345,8 +262,6 @@ const keyOf = code => code.map(v => v.toFixed(3)).join(',');
 const range = (a, b) => Array.from({length: b - a}, (_, i) => a + i);
 const columns = () => range(-state.extra, state.classes + state.extra);
 const fmt = v => Number.isInteger(v) ? String(v) : v.toFixed(2);
-/* Critic outputs run from ~0.4 (the exploration head) to ~800 (a task return),
-   so the number of decimals follows the magnitude rather than being fixed. */
 const num = v => {
   const a = Math.abs(v);
   return v.toFixed(a >= 100 ? 1 : a >= 10 ? 2 : 3);
@@ -355,6 +270,7 @@ const armIds = () => state.meta.arms.map(a => a.id);
 const others = self => Object.values(state.arms).filter(o => o !== self);
 const stepLabel = () => `${state.meta.step / 1e6}M`;
 const signed = v => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v));
+const inRange = v => v >= 0 && v <= state.classes - 1;
 
 function setStatus(text, busy) {
   els.status.textContent = text;
@@ -406,15 +322,11 @@ function postValues(arm, codes, goals, ref) {
 
 /* ---------- per-arm controller ---------- */
 function makeArm(arm, info, model) {
-  const cache = new Map();
   const dom = buildPanel(arm, info, model);
   const self = {
-    arm, code: new Array(state.blocks).fill(3), cache, dom,
+    arm, code: new Array(state.blocks).fill(3), cache: new Map(), dom,
     active: 0, preview: null, dragging: false, chain: Promise.resolve(),
     token: 0, timer: 0,
-    // Critic readings, keyed the same way as the frame cache; ``saved`` is the
-    // frozen state to compare against, and ``pair`` / ``cross`` are the two
-    // things that depend on both codes and so cannot be cached per code.
     values: new Map(), scale: model.scale, hasValues: model.values !== false,
     maskGroups: model.mask_groups || 0,
     saved: null, pair: null, cross: null, pairKey: null,
@@ -431,92 +343,61 @@ function buildPanel(arm, info, model) {
   panel.className = 'panel';
   panel.dataset.arm = arm;
   panel.style.setProperty('--arm', state.meta.colors[arm]);
-  const cb = model.codebook;
-  const geom = cb
-    ? `codebook: 8 entries per block in ℝ<sup>${cb.dim}</sup>. One axis holds ` +
-      `<b>${(cb.pc1_mean * 100).toFixed(0)}%</b> of their spread on average, ` +
-      `<b>${(cb.pc1_min * 100).toFixed(0)}%</b> for the worst block ` +
-      `(8 random points would give ${(cb.pc1_random_mean * 100).toFixed(0)}%, ` +
-      `p95 ${(cb.pc1_random_p95 * 100).toFixed(0)}%)`
-    : 'no embedding: the 8×8 code goes straight into the decoder MLP as 64 inputs';
-  const maskNote = model.mask_groups
-    ? `<br>+ mask head: the whole code also decodes keep/ignore for each of ` +
-      `the ${model.mask_groups} WM deter blocks (✓/✕ beside the WM goal). The ` +
-      `frame shows the unmasked decode.`
-    : '';
+  const ticks = range(0, 8).map(b => `<span>${b}</span>`).join('');
   panel.innerHTML = `
-    <h2>${info.label}
-      <span class="tag">${info.exp} · seed ${info.seed} · ${info.score} @${stepLabel()}</span>
-    </h2>
-    <div class="geom">${geom}${maskNote}</div>
-    <div class="grid"></div>
-    <div class="frames">
-      <div class="framebox now">
-        <canvas class="main" width="64" height="64"></canvas>
-        <div class="cap"></div>
-        <div class="deter"><canvas class="deter" width="32" height="32"></canvas>
-          <div class="dlabels"></div></div>
-        <div class="cap">WM goal (deter), all 1024 values: 8 blocks × 128,
-          each block a 4 × 32 band</div>
+    <h2>${info.label}<span class="tag"
+        title="${info.run}">${info.exp} · seed ${info.seed} · ${info.score}</span></h2>
+    <div class="stack">
+      <div class="lbl">Goal code<span class="r">${model.mask_groups
+          ? 'decides the mask' : ''}</span></div>
+      <div class="side">
+        <div class="ticks left">${ticks}</div>
+        <div class="grid"></div>
       </div>
-      <div class="framebox past" hidden>
-        <canvas class="main past" width="64" height="64"></canvas>
-        <div class="cap"></div>
-        <div class="deter"><canvas class="deter" width="32" height="32"></canvas>
-          <div class="dlabels"></div></div>
+      <div class="lbl">Image<span class="r cap"></span></div>
+      <canvas class="frame" width="64" height="64"></canvas>
+      <div class="lbl">World-model goal<span class="r">${model.mask_groups
+          ? '✓ kept · ✕ ignored' : '1024 values'}</span></div>
+      <div class="side">
+        <canvas class="deter" width="32" height="32"></canvas>
+        <div class="ticks right"></div>
       </div>
-    </div>
-    <div class="vals">${VALUE_KEYS.map(v => `
-      <div class="tile" data-key="${v.key}" title="${v.head}">
-        <div class="k">${v.label}</div><div class="v wait">…</div>
-      </div>`).join('')}
-    </div>
-    <div class="codeline"></div>
-    <div class="tools">
-      <button data-act="reset">reset</button>
-      <button data-act="random">random</button>
-      <button class="jump" data-act="jump">distant jump</button>
-      <button data-act="copy">copy to the others</button>
-    </div>
-    <div class="tools">
-      <span class="lbl">new state at distance</span>
-      <input class="target" type="number" step="1" min="0" value="8">
-      <select class="metric">
-        <option value="code">class steps</option>
-        <option value="goal">goal space</option>
-      </select>
-      <button data-act="atdist">generate</button>
-      <span class="hint"></span>
-    </div>
-    <div class="tools">
-      <button data-act="save">save this state</button>
-      <button data-act="restore" disabled>go back to saved</button>
-      <button data-act="unsave" disabled>clear saved</button>
-    </div>
-    <div class="cmp" hidden></div>
-    <div class="note"></div>`;
+      <div class="scale">−<i></i>+</div>
+      <dl class="vals">${VALUE_KEYS.map(v => `
+        <dt title="${v.head}">${v.label}</dt>
+        <dd data-key="${v.key}" class="wait">…</dd>`).join('')}
+      </dl>
+      <div class="row">
+        <button data-act="reset">Reset</button>
+        <button data-act="random">Random</button>
+        <button data-act="jump" class="primary" title="ε-greedy distant jump">Jump</button>
+        <button data-act="copy" title="put this code on the other panels">Copy →</button>
+      </div>
+      <div class="row">
+        <span class="k">Move</span>
+        <input class="target" type="number" step="1" min="0" value="8">
+        <select class="metric">
+          <option value="code">class steps</option>
+          <option value="goal">goal dist.</option>
+        </select>
+        <button data-act="atdist">Go</button>
+      </div>
+      <div class="row">
+        <button data-act="save">Save state</button>
+        <button data-act="restore" disabled>Go back</button>
+        <button data-act="unsave" disabled>Clear</button>
+      </div>
+      <div class="note"></div>
+      <div class="cmp" hidden></div>
+    </div>`;
   els.panels.appendChild(panel);
+  const q = s => panel.querySelector(s);
   return {
-    panel,
-    grid: panel.querySelector('.grid'),
-    main: panel.querySelector('.framebox.now canvas.main'),
-    deter: panel.querySelector('.framebox.now canvas.deter'),
-    dlabels: panel.querySelector('.framebox.now .dlabels'),
-    pastDeter: panel.querySelector('.framebox.past canvas.deter'),
-    pastDlabels: panel.querySelector('.framebox.past .dlabels'),
-    cap: panel.querySelector('.framebox.now .cap'),
-    pastbox: panel.querySelector('.framebox.past'),
-    past: panel.querySelector('.framebox.past canvas.main'),
-    pastcap: panel.querySelector('.framebox.past .cap'),
-    vals: panel.querySelector('.vals'),
-    codeline: panel.querySelector('.codeline'),
-    target: panel.querySelector('input.target'),
-    metric: panel.querySelector('select.metric'),
-    hint: panel.querySelector('.hint'),
-    restore: panel.querySelector('[data-act="restore"]'),
-    unsave: panel.querySelector('[data-act="unsave"]'),
-    cmp: panel.querySelector('.cmp'),
-    note: panel.querySelector('.note'),
+    panel, grid: q('.grid'), main: q('canvas.frame'), cap: q('.cap'),
+    deter: q('canvas.deter'), dlabels: q('.ticks.right'),
+    vals: q('.vals'), target: q('input.target'), metric: q('select.metric'),
+    restore: q('[data-act="restore"]'), unsave: q('[data-act="unsave"]'),
+    cmp: q('.cmp'), note: q('.note'),
   };
 }
 
@@ -524,27 +405,17 @@ function buildPanel(arm, info, model) {
 function wireGrid(self) {
   const cols = columns();
   const grid = self.dom.grid;
-  grid.style.gridTemplateColumns = `auto repeat(${cols.length}, 1fr)`;
+  grid.style.gridTemplateColumns = `repeat(${cols.length}, 1fr)`;
   grid.innerHTML = '';
-  grid.appendChild(document.createElement('div'));
-  for (const c of cols) {
-    const h = document.createElement('div');
-    h.className = 'colhead' + (inRange(c) ? '' : ' out');
-    h.textContent = c;
-    grid.appendChild(h);
-  }
   self.cells = [];
   for (let b = 0; b < state.blocks; b++) {
-    const label = document.createElement('div');
-    label.className = 'rowlabel';
-    label.textContent = b;
-    grid.appendChild(label);
     const row = [];
     for (const c of cols) {
       const cell = document.createElement('div');
-      cell.className = 'cell' + (inRange(c) ? '' : ' out');
+      cell.className = 'cell';
       cell.dataset.block = b;
       cell.dataset.value = c;
+      cell.title = `block ${b}, class ${c}`;
       grid.appendChild(cell);
       row.push(cell);
     }
@@ -557,7 +428,6 @@ function wireGrid(self) {
                       row[row.length - 1].getBoundingClientRect(),
                       clientX, state.fine ? 0.25 : 1);
   };
-
   grid.addEventListener('pointerdown', ev => {
     const cell = ev.target.closest('.cell');
     if (!cell) return;
@@ -589,13 +459,12 @@ function wireGrid(self) {
     if (self.dragging === false) clearPreview(self);
   });
   self.dragging = false;
-
 }
 
 /* ---------- buttons ---------- */
 function wireTools(self) {
   self.dom.panel.addEventListener('click', ev => {
-    const act = ev.target.dataset.act;
+    const act = ev.target.dataset && ev.target.dataset.act;
     if (!act) return;
     if (act === 'reset') { setCode(self, new Array(state.blocks).fill(3));
                            setNote(self, ''); }
@@ -603,13 +472,9 @@ function wireTools(self) {
         () => Math.floor(Math.random() * state.classes)));
                             setNote(self, ''); }
     if (act === 'jump') {
-      const from = self.code.slice();
-      const {code, d, dmax} = jumpCode(from, state.classes);
+      const {code, d, dmax} = jumpCode(self.code.slice(), state.classes);
       setCode(self, code);
-      const mean = (2 / 3) * (dmax + 0.5);
-      setNote(self, `jumped <b>d = ${d}</b> of d<sub>max</sub> ${dmax} ` +
-          `(mean ${mean.toFixed(1)}) — summed index gap from ` +
-          from.map(v => fmt(Math.round(v))).join(' '));
+      setNote(self, `jumped <b>${d}</b> class steps (max ${dmax})`);
     }
     if (act === 'copy') {
       for (const other of others(self)) {
@@ -628,21 +493,16 @@ function wireTools(self) {
   setMetric(self);
 }
 
-/* The two distances are not interchangeable, so the input follows the one that
-   is selected: whole class steps for the index metric, and for goal space a
-   default and a hint taken from what that checkpoint's goals actually measure
-   (``goal_scale``), since the scale is arbitrary and differs per run. */
+/* Class steps are whole numbers; a goal distance gets a default from what this
+   checkpoint's goals actually measure (``goal_scale``), shown as a tooltip. */
 function setMetric(self) {
   const goal = self.dom.metric.value === 'goal';
   const s = self.scale || {step: 1, span: 8};
   self.dom.target.step = goal ? 0.1 : 1;
   self.dom.target.value = goal ? s.span.toFixed(1) : 8;
-  self.dom.hint.innerHTML = goal
-    ? `distance between the decoded goals. One block moved by one class is ` +
-      `about <b>${num(s.step)}</b>; two unrelated codes about ` +
-      `<b>${num(s.span)}</b>.`
-    : `summed class gap |Δc| over the 8 blocks, so a whole number from 0 to ` +
-      `d<sub>max</sub>. Starts from the current code rounded to whole classes.`;
+  self.dom.target.title = goal
+    ? `one class step ≈ ${num(s.step)}, two unrelated codes ≈ ${num(s.span)}`
+    : 'summed class gap over the 8 blocks';
 }
 
 async function generateAt(self) {
@@ -652,23 +512,19 @@ async function generateAt(self) {
     const {code, d, dmax} = codeAtDistance(self.code, state.classes, target);
     setCode(self, code);
     setNote(self, d === Math.round(target)
-      ? `new code exactly <b>${d}</b> class steps away`
-      : `asked for ${fmt(target)}, but from here the code can move at most ` +
-        `<b>${dmax}</b> — went that far instead`);
+      ? `moved <b>${d}</b> class steps`
+      : `can move at most <b>${dmax}</b> from here — moved that far`);
     return;
   }
-  setNote(self, 'walking out to that distance…');
+  setNote(self, 'searching…');
   const span = [-state.extra, state.classes - 1 + state.extra];
   const res = await postJSON('/api/at_goal_distance',
       {arm: self.arm, code: self.code, target, span});
   setCode(self, res.code);
   setNote(self, res.capped
-    ? `asked for ${num(target)}, but this direction leaves the grid at ` +
-      `<b>${num(res.dist)}</b> — went that far instead`
-    : `new state at goal distance <b>${num(res.dist)}</b>`);
+    ? `this direction ends at goal distance <b>${num(res.dist)}</b>`
+    : `goal distance <b>${num(res.dist)}</b>`);
 }
-
-const inRange = v => v >= 0 && v <= state.classes - 1;
 
 /* ---------- the epsilon-greedy distant jump ----------
    The paper's exploration rule, run on demand instead of with probability
@@ -802,61 +658,62 @@ function paintGrid(self) {
   for (let b = 0; b < state.blocks; b++) {
     for (let i = 0; i < cols.length; i++) {
       // A fractional value lights the nearest column so the row still reads.
-      const on = Math.round(shown[b]) === cols[i];
-      self.cells[b][i].classList.toggle('on', on);
+      self.cells[b][i].classList.toggle('on', Math.round(shown[b]) === cols[i]);
     }
   }
-  paintMask(self);
 }
 
-/* The decoded WM goal for the code on screen, all 1024 values as a 32 x 32
-   square: deter block b (dims 128b .. 128b+127) is the band of rows 4b .. 4b+3,
-   read left to right, top to bottom; diverging colour around 0 on a scale fixed per
-   checkpoint (p99 of |deter| over random codes, ``goal_scale``). The mask arm's
-   keep flags belong HERE, on the deter blocks: the whole code decides them, so
-   code row b and deter block b are unrelated. Comes with the critic readings
-   (one request), so it shows up as soon as they do. */
-function paintMask(self) {
+/* ---------- world-model goal ----------
+   All 1024 deter values as a 32 x 32 square in order, so deter block b (dims
+   128b .. 128b+127) is the band of rows 4b .. 4b+3. Diverging blue / grey / red
+   around 0, on a scale fixed per checkpoint (p99 of |deter| over random codes).
+   The mask arm's keep flags belong to these WM blocks: the whole code decides
+   them, so code row b and WM block b are unrelated. */
+/* Read the theme's heatmap colours from the CSS variables. */
+const rgbVar = name => {
+  const hex = getComputedStyle(document.documentElement)
+      .getPropertyValue(name).trim().replace('#', '');
+  return [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+};
+let NEG = [42, 120, 214], MID = [240, 239, 236], POS = [227, 73, 72];
+function readHeatColors() {
+  try { NEG = rgbVar('--neg'); MID = rgbVar('--mid'); POS = rgbVar('--pos'); }
+  catch (e) { /* keep the light defaults */ }
+}
+
+function drawDeter(self, row, canvas, labels) {
+  if (!row || !row.goal) return;
+  const g = row.goal, side = Math.round(Math.sqrt(g.length));
+  const per = g.length / DETER_BLOCKS;
+  if (canvas.width !== side) canvas.width = canvas.height = side;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(side, side);
+  const lim = (self.scale && self.scale.deter_abs) || 1;
+  for (let j = 0; j < g.length; j++) {
+    const b = Math.floor(j / per);
+    const ign = row.keep && row.keep[b] < 0.5;
+    const v = Math.max(-1, Math.min(1, g[j] / lim));
+    const end = v < 0 ? NEG : POS, t = Math.abs(v);
+    for (let c = 0; c < 3; c++) img.data[4 * j + c] = MID[c] + t * (end[c] - MID[c]);
+    img.data[4 * j + 3] = ign ? 60 : 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  if (!labels) return;
+  labels.innerHTML = range(0, DETER_BLOCKS).map(b => {
+    if (!row.keep) return `<span>${b}</span>`;
+    const ign = row.keep[b] < 0.5;
+    const p = (100 * row.keep_prob[b]).toFixed(0);
+    return `<span class="${ign ? 'ign' : 'keep'}" title="WM block ${b}: keep p = ${p}%">` +
+           `${ign ? '✕' : '✓'} ${b}</span>`;
+  }).join('');
+}
+
+function paintDeter(self) {
   const row = self.values.get(keyOf(self.preview || self.code));
   drawDeter(self, row, self.dom.deter, self.dom.dlabels);
 }
 
-function drawDeter(self, row, canvas, labels) {
-  const blocks = 8;
-  if (!row || !row.goal) return;
-  const g = row.goal, side = Math.round(Math.sqrt(g.length));
-  const perBlock = g.length / blocks;
-  canvas.width = canvas.height = side;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(side, side);
-  const lim = (self.scale && self.scale.deter_abs) || 1;
-  // Okabe-Ito blue below zero, orange above, dark grey at zero (dark page).
-  const neg = [0, 114, 178], pos = [230, 159, 0], mid = [38, 43, 51];
-  for (let b = 0; b < blocks; b++) {
-    const ign = row.keep && row.keep[b] < 0.5;
-    for (let i = 0; i < perBlock; i++) {
-      const j = b * perBlock + i;     // row-major in the square = deter order
-      const v = Math.max(-1, Math.min(1, g[j] / lim));
-      const end = v < 0 ? neg : pos, t = Math.abs(v);
-      const o = 4 * j;
-      for (let c = 0; c < 3; c++) img.data[o + c] = mid[c] + t * (end[c] - mid[c]);
-      img.data[o + 3] = ign ? 70 : 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  labels.innerHTML = range(0, blocks).map(b => {
-    if (!row.keep) return `<span>${b}</span>`;
-    const ign = row.keep[b] < 0.5;
-    const p = (100 * row.keep_prob[b]).toFixed(0);
-    return `<span class="${ign ? 'ign' : ''}" title="keep p = ${p}%">` +
-           `${b} ${ign ? '✕' : '✓'}</span>`;
-  }).join('');
-}
-
-/* Hover preview is served from the prefetch cache only. Firing a request per
-   pointermove would queue dozens of them while a sweep is still loading, and a
-   preview is not worth waiting for -- if it is not cached yet, leave the frame
-   showing the committed code rather than half-updating. */
+/* Hover previews come from the prefetch cache only, never a new request. */
 function showPreview(self, block, value) {
   if (self.code[block] === value) return clearPreview(self);
   const next = self.code.slice();
@@ -867,9 +724,7 @@ function showPreview(self, block, value) {
   drawCode(self, next, true);
 }
 
-function setNote(self, html) {
-  self.dom.note.innerHTML = html;
-}
+function setNote(self, html) { self.dom.note.innerHTML = html; }
 
 function clearPreview(self) {
   if (!self.preview) return;
@@ -879,44 +734,30 @@ function clearPreview(self) {
 }
 
 /* ---------- drawing ---------- */
-function blit(canvas, img) {
-  canvas.getContext('2d').putImageData(img, 0, 0);
-}
+function blit(canvas, img) { canvas.getContext('2d').putImageData(img, 0, 0); }
 
 function drawCurrent(self) { drawCode(self, self.code, false); }
 
 function drawCode(self, code, isPreview) {
   const key = keyOf(code);
-  self.dom.codeline.innerHTML = 'code &nbsp;' + code.map((v, i) => {
-    const text = i === self.active ? `<b>${fmt(v)}</b>` : fmt(v);
-    return `<span class="${inRange(v) ? '' : 'ex'}">${text}</span>`;
-  }).join(' ');
-  self.dom.cap.innerHTML = (isPreview ? 'preview · ' : self.saved ? 'now · ' : '') +
-      `block <b>${self.active}</b> = ${fmt(code[self.active])}`;
+  self.dom.cap.textContent = (isPreview ? 'preview · ' : '') +
+      'code ' + code.map(v => fmt(v)).join(' ');
   refreshValues(self);
   const hit = self.cache.get(key);
   if (hit) return blit(self.dom.main, hit);
-  // Deliberately not on the prefetch chain: the frame the user is waiting for
-  // must not queue behind a sweep. The server serializes renders anyway, so
-  // the worst case is one in-flight chunk.
+  // Not on the prefetch chain: the frame being waited for must not queue
+  // behind a sweep.
   post(self.arm, [code]).then(imgs => {
     self.cache.set(key, imgs[0]);
     if (keyOf(self.preview || self.code) === key) {
       blit(self.dom.main, imgs[0]);
-      paintCompare(self);        // the picture difference needs this frame
+      paintCompare(self);
     }
   }).catch(reportError);
 }
 
-/* ---------- critic readings ---------- */
-/* The five heads for whichever code is on screen. Cheap next to a frame (five
-   small MLPs against a convolutional decoder), but still a request, so it is
-   debounced and cached per code the same way frames are. When a state is saved,
-   the same request also carries the two readings that depend on *both* codes:
-   the goal distance to the saved state, and what the worker critic makes of
-   each state while aiming at the other. */
+/* ---------- critic readings + WM goal (one request per code) ---------- */
 function refreshValues(self) {
-  if (!self.hasValues) return;
   const code = self.preview || self.code;
   const key = keyOf(code);
   paintValues(self);
@@ -951,12 +792,11 @@ function valueText(spec, v) {
 }
 
 function paintValues(self) {
-  paintMask(self);
+  paintDeter(self);
   if (!self.hasValues) return self.dom.vals.setAttribute('hidden', '');
   const row = self.values.get(keyOf(self.preview || self.code));
   for (const spec of VALUE_KEYS) {
-    const cell = self.dom.vals.querySelector(
-        `.tile[data-key="${spec.key}"] .v`);
+    const cell = self.dom.vals.querySelector(`dd[data-key="${spec.key}"]`);
     cell.textContent = valueText(spec, row && row[spec.key]);
     cell.classList.toggle('wait', !row);
   }
@@ -968,20 +808,16 @@ function saveState(self) {
   self.saved = {code, key: keyOf(code), img: self.cache.get(keyOf(code)) || null,
                 vals: self.values.get(keyOf(code)) || null};
   self.pair = self.cross = self.pairKey = null;
-  self.dom.pastbox.hidden = false;
   self.dom.restore.disabled = self.dom.unsave.disabled = false;
-  self.dom.pastcap.innerHTML = 'saved · ' + code.map(fmt).join(' ');
-  setNote(self, 'saved — the panel now compares whatever you do next to it');
-  // Both are normally already cached (this is the code that was just on
-  // screen), but a save on the very first frame can beat them there.
+  setNote(self, '');
   if (!self.saved.img) {
     post(self.arm, [code]).then(imgs => {
       self.cache.set(self.saved.key, imgs[0]);
       if (self.saved && self.saved.key === keyOf(code)) self.saved.img = imgs[0];
-      paintSaved(self);
+      paintCompare(self);
     }).catch(reportError);
   }
-  if (!self.saved.vals && self.hasValues) {
+  if (!self.saved.vals) {
     postValues(self.arm, [code], [code], null).then(rows => {
       if (!rows) return;
       self.values.set(keyOf(code), rows[0]);
@@ -989,31 +825,18 @@ function saveState(self) {
       paintCompare(self);
     }).catch(reportError);
   }
-  paintSaved(self);
   refreshValues(self);
   paintCompare(self);
-  drawCurrent(self);             // the caption gains its "now ·" prefix
 }
 
 function clearSaved(self) {
   self.saved = self.pair = self.cross = self.pairKey = null;
-  self.dom.pastbox.hidden = true;
   self.dom.cmp.hidden = true;
   self.dom.restore.disabled = self.dom.unsave.disabled = true;
   setNote(self, '');
-  drawCurrent(self);
 }
 
-function paintSaved(self) {
-  if (self.saved && self.saved.img) blit(self.dom.past, self.saved.img);
-  if (self.saved && self.saved.vals) drawDeter(
-      self, self.saved.vals, self.dom.pastDeter, self.dom.pastDlabels);
-}
-
-/* Mean absolute channel difference between two frames, 0-255. The one thing in
-   the comparison the page can work out for itself: both frames are already
-   here as pixels, and it is the only number that says the two states *look*
-   different rather than that they are far apart in some latent space. */
+/* Mean absolute channel difference between two frames, 0-255. */
 function pixelDiff(a, b) {
   let total = 0;
   for (let i = 0; i < SIZE * SIZE; i++) {
@@ -1024,30 +847,25 @@ function pixelDiff(a, b) {
   return total / (SIZE * SIZE * 3);
 }
 
+/* A compact card under the controls: the saved state as two thumbnails, the
+   four numbers that say how far the current state is from it, and the full
+   critic table folded away. Nothing here moves the pictures above. */
 function paintCompare(self) {
-  const saved = self.saved;
-  if (!saved) { self.dom.cmp.hidden = true; return; }
+  const saved = self.saved, el = self.dom.cmp;
+  if (!saved) { el.hidden = true; return; }
   const now = self.preview || self.code;
-  const gaps = now.map((v, i) => v - saved.code[i]);
-  const rows = [
-    ['class steps apart', fmt(gaps.reduce((s, g) => s + Math.abs(g), 0))],
-    ['blocks changed', String(gaps.filter(g => Math.abs(g) > 1e-6).length)],
-  ];
-  if (self.pair && self.pairKey === keyOf(now)) {
-    rows.push(['goal distance', num(self.pair.dist)],
-              ['goal direction (cosine)', num(self.pair.cos)]);
-  }
+  const steps = now.reduce((s, v, i) => s + Math.abs(v - saved.code[i]), 0);
+  const blocks = now.filter((v, i) => Math.abs(v - saved.code[i]) > 1e-6).length;
+  const paired = self.pair && self.pairKey === keyOf(now);
   const nowimg = self.cache.get(keyOf(now));
-  if (saved.img && nowimg) {
-    rows.push(['picture difference (0–255)', num(pixelDiff(saved.img, nowimg))]);
-  }
-  if (self.cross && self.pairKey === keyOf(now)) {
-    rows.push(['worker value, saved state aiming at now',
-               num(self.cross.fromSaved)],
-              ['worker value, now aiming back at saved',
-               num(self.cross.fromNow)]);
-  }
   const before = saved.vals, after = self.values.get(keyOf(now));
+  const dl = [
+    ['class steps', `${fmt(steps)} <span style="color:var(--faint)">(${blocks} blocks)</span>`],
+    ['goal distance', paired ? num(self.pair.dist) : '…'],
+    ['image difference', saved.img && nowimg ? num(pixelDiff(saved.img, nowimg)) : '…'],
+    ['Δ manager task value', before && after
+        ? signed(after.mgr_extr - before.mgr_extr) : '…'],
+  ];
   const cell = (spec, v) => `<td>${valueText(spec, v)}</td>`;
   const change = spec => {
     if (!before || !after) return '<td>…</td>';
@@ -1055,25 +873,30 @@ function paintCompare(self) {
     return `<td>${spec.pct ? (d >= 0 ? '+' : '−') +
         Math.abs(100 * d).toFixed(1) + '%' : signed(d)}</td>`;
   };
-  self.dom.cmp.innerHTML = `
-    <table>
-      <caption>saved state vs. now</caption>
-      <tbody>${rows.map(([k, v]) =>
-        `<tr><td class="lbl">${k}</td><td>${v}</td></tr>`).join('')}
-      </tbody>
-    </table>
-    ${self.hasValues ? `<table>
-      <tbody>
-        <tr><th class="lbl">critic</th><th>saved</th><th>now</th>
-            <th>change</th></tr>
-        ${VALUE_KEYS.map(spec => `<tr>
-          <td class="lbl" title="${spec.head}">${spec.label}</td>
+  const cross = self.cross && paired ? `
+      <tr><td>worker: saved → now</td><td></td><td></td><td>${num(self.cross.fromSaved)}</td></tr>
+      <tr><td>worker: now → saved</td><td></td><td></td><td>${num(self.cross.fromNow)}</td></tr>` : '';
+  const open = el.querySelector('details') && el.querySelector('details').open;
+  el.innerHTML = `
+    <div class="head">
+      <canvas class="simg" width="64" height="64"></canvas>
+      <canvas class="sdet" width="32" height="32"></canvas>
+      <div class="t"><b>Saved state</b><br>${saved.code.map(fmt).join(' ')}</div>
+    </div>
+    <dl>${dl.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+    <details${open ? ' open' : ''}><summary>All values</summary>
+      <table>
+        <tr><th></th><th>saved</th><th>now</th><th>change</th></tr>
+        ${VALUE_KEYS.map(spec => `<tr><td title="${spec.label}">${spec.short}</td>
           ${cell(spec, before && before[spec.key])}
-          ${cell(spec, after && after[spec.key])}
-          ${change(spec)}</tr>`).join('')}
-      </tbody>
-    </table>` : ''}`;
-  self.dom.cmp.hidden = false;
+          ${cell(spec, after && after[spec.key])}${change(spec)}</tr>`).join('')}
+        ${paired ? `<tr><td>goal cosine</td><td></td><td></td><td>${num(self.pair.cos)}</td></tr>` : ''}
+        ${cross}
+      </table>
+    </details>`;
+  if (saved.img) blit(el.querySelector('.simg'), saved.img);
+  if (saved.vals) drawDeter(self, saved.vals, el.querySelector('.sdet'), null);
+  el.hidden = false;
 }
 
 /* ---------- prefetch ----------
@@ -1148,7 +971,8 @@ function prefetch(self, codes) {
 function reportError(err) {
   if (err.name === 'AbortError') return;
   console.error(err);
-  setStatus('error: ' + err.message, false);
+  els.status.textContent = 'error: ' + err.message;
+  els.status.className = 'err';
 }
 
 /* ---------- boot ---------- */
@@ -1160,7 +984,7 @@ async function waitReady(task) {
     if (keys.some(k => st[k] === 'error')) throw new Error(
         'a checkpoint failed to load; see the server log');
     const n = keys.filter(k => st[k] === 'ready').length;
-    setStatus(`loading checkpoints (${n}/${keys.length}) — about 15-30s each…`, true);
+    setStatus(`loading checkpoints ${n}/${keys.length}…`, true);
     await new Promise(r => setTimeout(r, 1200));
   }
 }
@@ -1170,8 +994,7 @@ async function loadTask(task) {
   els.panels.innerHTML = '';
   state.arms = {};
   const info = state.meta.runs[task];
-  els.ckpt.textContent = `${stepLabel()}-step checkpoint · ` +
-      armIds().map(a => info[a].exp).join(' vs ');
+  els.ckpt.textContent = `${stepLabel()} checkpoint · best of 5 seeds`;
   await waitReady(task);
   setStatus('ready', false);
   for (const arm of armIds()) {
@@ -1184,7 +1007,20 @@ async function loadTask(task) {
   }
 }
 
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark';
+  try { localStorage.setItem('goal-demo-theme', theme); } catch (e) {}
+  readHeatColors();
+  for (const self of Object.values(state.arms)) { paintDeter(self); paintCompare(self); }
+}
+
 async function boot() {
+  let theme = 'light';
+  try { theme = localStorage.getItem('goal-demo-theme') || 'light'; } catch (e) {}
+  setTheme(theme);
+  document.getElementById('theme').addEventListener('click', () => setTheme(
+      document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
   state.meta = await (await fetch('/api/meta')).json();
   state.extra = state.meta.extra;
   els.task.innerHTML = state.meta.tasks
