@@ -1,4 +1,4 @@
-"""Health check for the UCB-in-imagination batch (e1760-e1819, arms A and B).
+"""Health check for the UCB-in-imagination batch (e1820-e1879, arms A and B, c=3; c=10 attempt e1760-e1771 archived).
 
 One line per run dir: env step, steps/hour since the previous check, late score,
 the imagination-tilt diagnostics, and red flags.
@@ -43,7 +43,7 @@ KEYS = {
 
 def main():
   pattern = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-      WORK, 'e1[78][0-9][0-9]_*ucb_imag_*')
+      WORK, 'e18[2-7][0-9]_*ucb_imag_*')
   prev = {}
   if os.path.exists(STATE):
     try:

@@ -527,7 +527,7 @@ parallel envs (was 8), 5 seeds. Both our agents:
 cartpole, cheetah, hopper; +12 per seed). Launcher: `RUN_ENVS=4
 DMC_PROPRIO=False`. A100, 128G (`job_logs/pubmatch_*.tsv`).
 
-### e1300–e1329: now+v3 — DreamerV3 actor-critic on the matched protocol (launched 2026-10-09, array 4751548)
+### e1300–e1329: OG+v3 — DreamerV3 actor-critic on the matched protocol (launched 2026-10-09, array 4751548)
 
 **"+v3" tag (fixed 2026-10-09):** an HRL arm's actor-critic settings taken from
 DreamerV3 instead of TF Director — return normalization (perc 5–95, floor
@@ -550,12 +550,12 @@ seeds; whole-curve shape and stability as secondary). Take +v3 as the base for
 the goal-AE arms only if it is better overall; equal or slightly worse -> keep
 `director_og`. Next: SOM, LiP, SOM+LiP on the chosen base, 6 tasks x 5 seeds.
 
-### Decision, now vs now+v3 (2026-10-11 01:40): keep `now`
+### Decision, OG vs OG+v3 (2026-10-11 01:40): keep `OG`
 
 Taken with 24/30 v3 runs finished (5v3 to 5v5 seeds per task), when the last v3
 task started. `tools/collapse_study/compare_v3.py`; late = 3–4M mean, p = exact permutation.
 
-| task | now | now+v3 | diff | p |
+| task | OG | OG+v3 | diff | p |
 |---|---|---|---|---|
 | pinpad_four | 271 ± 9 | 217 ± 80 | −54 | 0.14 |
 | pinpad_five | 210 ± 12 | 192 ± 45 | −18 | 0.44 |
@@ -573,12 +573,12 @@ e1330–e1419 stay on `director_og` as queued; no change to array 4751562.
 Final 5v5 (2026-10-11 09:50) confirms it: pinpad_five 210 vs 200, cartpole 692 vs 736 (p=0.03),
 cheetah 511 vs 374 (p=0.008), hopper 333 vs 179 (p=0.024); mean normalized −0.32.
 
-### e1600–e1659: now + goal mask / now + SOM + goal mask (2026-10-16, array 4763638)
+### e1600–e1659: OG + goal mask / OG + SOM + goal mask (2026-10-16, array 4763638)
 
-`goal_mask8` layered on `now` (`director director_og goal_mask8 pubmatch`,
-e1600–e1629) and on now+SOM (`... goal_som_line goal_mask8 ...`, e1630–e1659),
+`goal_mask8` layered on `OG` (`director director_og goal_mask8 pubmatch`,
+e1600–e1629) and on OG+SOM (`... goal_som_line goal_mask8 ...`, e1630–e1659),
 6 tasks x 5 seeds, seed-major (`sbatch/pubmask_params.txt`), A100 128G,
-`RUN_ENVS=4 DMC_PROPRIO=False`, %8; array order runs all now+mask before
+`RUN_ENVS=4 DMC_PROPRIO=False`, %8; array order runs all OG+mask before
 som+mask. Mechanism (`hrl/goal_mask.py`): the goal code also decodes a
 keep/ignore flag for each of the 8 RSSM deter blocks (128 dims each); the
 goal AE trains on random masks (whole goal w.p. 0.5, else 1–7 groups) with
@@ -592,7 +592,7 @@ Pre-check: offline GAE on e1432 deter, mask acc 0.86 / loss 2.29 (marginal
 chance 0.78 / 4.2) after 4k updates and rising, kept-dim rec 0.0136 vs 0.0110
 unmasked.
 Hypothesis: partial goals help where one factor matters — pinpad five/six —
-and do not hurt DMC. Compare against now (e1230–e1289) and now+SOM
+and do not hurt DMC. Compare against OG (e1230–e1289) and OG+SOM
 (e1330–e1419). Watch `goal/mask_keep_mgr` (fraction of groups the manager
 keeps) and `goal/mask_acc`. If the manager always keeps everything
 (`mask_full_mgr` → 1) the arm reduces to its base. Status: complete.
@@ -601,7 +601,7 @@ keeps) and `goal/mask_acc`. If the manager always keeps everything
 seed's 3–4M mean; pin pads also give seeds crossing sustained-50 and the
 median crossing step; p = exact permutation test vs the arm without masking:
 
-| task | now | now+mask | p | now+SOM | SOM+mask | p |
+| task | OG | OG+mask | p | OG+SOM | SOM+mask | p |
 |---|---|---|---|---|---|---|
 | pinpad_four | 270.7 ± 8.1, 5/5 @0.23M | 289.9 ± 8.3, 5/5 @0.19M | 0.016 | 273.9 ± 8.2, 5/5 @0.22M | 297.1 ± 5.3, 5/5 @0.20M | 0.008 |
 | pinpad_five | 210.1 ± 10.8, 5/5 @0.33M | 221.5 ± 10.3, 5/5 @0.26M | 0.190 | 216.1 ± 4.7, 5/5 @0.43M | 217.8 ± 2.9, 5/5 @0.78M | 0.579 |
@@ -621,23 +621,56 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e1430–e1459: now + SOM + UCB (2026-10-15, array 4762301)
+### e1820–e1879: OG + SOM + UCB inside imagination, c=3, arms A / B (2026-10-20, array 4767281)
+
+`director director_og goal_som_line ucb_imag_{a,b} ucb_imag_c3 pubmatch`, 6 tasks
+x 5 seeds per arm, A (e1820–e1849) all seeds first, then B (e1850–e1879)
+(`sbatch/pubucbimag_c3_params.txt`), A100 128G, `RUN_ENVS=4 DMC_PROPRIO=False`,
+%8; names in `bench_droplist.txt` so the bench watchdog does not adopt them.
+Mechanism (`hrl/explore.py:ImagCounts`, `agent.mgr_ucb_imag_c`): at every
+manager decision **in imagination training** (~2,048 per update, ~512M per run
+vs ~500k real), draw 8 policy samples and pick one with the Gumbel rule (weights
+exp(c·bonus)), bonus 1/sqrt(n+1) from a table of IMAGINED picks, decaying
+(half-life 0.5M env steps; the codebook drifts) and smeared one class wide over
+SOM neighbours. The manager trains on the picked goal with no importance
+correction (a fully corrected tilt would leave the expected update unchanged;
+the bias is the point). Env-time UCB off. A = goal code at 8 bins (8^8 = 16.7M
+cells); B = (start-state SOM code, 2 bins) x (goal, 4 bins) = 16.7M cells,
+i.e. "rarely tried from here". Why: env-time UCB (e1430–e1459) added nothing
+over SOM, and goal discovery happens in imagination, which it never touches.
+Hypothesis: earlier pin-pad sequence discovery and ≥ OG+SOM late scores; B ≥ A
+on the pin pads. Compare to OG+SOM (e1330–e1419) and OG+SOM+UCB (e1430–e1459).
+-> if `imag_ucb/novelty_gain` ~1 past 300k, raise c; if A and B still trail
+OG+SOM on DMC by 1M, the count tilt in imagination is a dead end -> scored
+Gumbel-MuZero version over the 8 candidates.
+**First attempt at c=10 (array 4766820, e1760–e1819), cancelled 2026-10-20.**
+e1760–e1771 ran 0.1–1.5M (archived, replay skipped); the rest never started.
+Every DMC run fell below the full OG+SOM 5-seed range (250k-window mean, this
+vs OG+SOM mean [min–max]): cartpole e1763 202 vs 504 [338–593] @0.58M, cheetah
+e1764 219 vs 333 [297–399] @0.52M, hopper e1765 1 vs 53 [6–92] @0.53M; seed 1
+the same at 0.1M; pin pad four e1760 221 vs 262 [238–276] @1.46M; pin pad five
+e1761 better (213 vs 155 [0–203]). Diagnostics behaved as designed (gain
+1.07–1.23, logp shift −0.35 to −1.2 nats), so the pull was too strong, not
+broken; c=3 (`ucb_imag_c3`) cuts it roughly threefold.
+Watch: `python tools/watch_pubucbimag.py`.
+
+### e1430–e1459: OG + SOM + UCB (2026-10-15, array 4762301)
 
 `director director_og goal_som_line mgr_ucb pubmatch`, 6 tasks x 5 seeds,
 seed-major (`sbatch/pubucb_params.txt`), A100 128G, `RUN_ENVS=4
 DMC_PROPRIO=False`, %8. UCB = tilted sampling among 8 manager candidates,
 `mgr_ucb_c` 10, `select_bins` 4 (the only setting with valid prior runs,
-e706–e717; c=20 runs e660–e675 used the retired argmax rule), with now's
+e706–e717; c=20 runs e660–e675 used the retired argmax rule), with OG's
 `mgr_expl_weight` 0.1 (e706–e717 used 0.15) and SOM alone, not SOM+LiP.
-Compared against now (e1230–e1289) and now+SOM (e1330–e1419).
+Compared against OG (e1230–e1289) and OG+SOM (e1330–e1419).
 Hypothesis: the selection-time count bonus adds exploration without changing
 the manager's objective; expected gain on cheetah (e714/e715 beat every
 Director seed) and on the long pin pads. Status: queued.
 
-### e1330–e1419: SOM / LiP / SOM+LiP on `now`, queued early (2026-10-09, array 4751562)
+### e1330–e1419: SOM / LiP / SOM+LiP on `OG`, queued early (2026-10-09, array 4751562)
 
-Queued behind e1300–e1329 to hold queue age; base is `now` (`director
-director_og pubmatch`) unless now+v3 wins the comparison above, in which case
+Queued behind e1300–e1329 to hold queue age; base is `OG` (`director
+director_og pubmatch`) unless OG+v3 wins the comparison above, in which case
 `director_og` is swapped for `mgr_expl_perc002` in `sbatch/pubgae_params.txt`
 for every task not yet started (the launcher re-reads PARAMS at task start)
 and started ones are relaunched. Tags, each layered on the base:
