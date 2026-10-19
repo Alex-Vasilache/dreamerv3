@@ -307,6 +307,7 @@ class GoalRenderer:
       ).pred() * scale + offset
       if self.mask_groups:
         out['keep'], out['keep_prob'] = keep_flags(inp)
+      out['goal'] = goal                      # unmasked deter, for display
       out['reward'] = model.rew(tensor, 1).pred()
       out['cont'] = model.con(tensor, 1).prob(1)
       return {k: v.astype(jnp.float32) for k, v in out.items()}
@@ -479,7 +480,10 @@ class GoalRenderer:
     moved[rows, blocks] += np.where(moved[rows, blocks] < self.classes - 1, 1, -1)
     step = float(np.median(np.linalg.norm(
         self.goal_vectors(moved) - goals, axis=-1)))
-    return dict(step=step, span=span)
+    # Colour scale for the page's deter heatmap: fixed per checkpoint so two
+    # codes on the same panel are drawn on the same scale.
+    deter_abs = float(np.percentile(np.abs(goals), 99))
+    return dict(step=step, span=span, deter_abs=deter_abs)
 
   def codebook(self):
     """``(L, C, D)`` codebook table, or ``None`` for the Director arm."""

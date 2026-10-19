@@ -95,12 +95,19 @@
      grids stay distinguishable, and ring it so the extrapolation still shows. */
   .cell.on.out { background: var(--arm); border: 1px solid var(--warn); }
   .grid.dragging .cell:hover { border-color: transparent; }
-  /* Mask arm: a block whose deter group the decoded goal ignores. The row stays
-     editable -- the code still selects a class there -- but it is dimmed and
-     its label says the worker will not be asked to match it. */
-  .grid .rowlabel.ign { color: var(--warn); }
-  .grid .cell.ign:not(.on) { opacity: .35; }
-  .grid .cell.on.ign { background: transparent; border: 2px solid var(--arm); }
+  /* ---- WM goal (deter) ---- */
+  /* The decoded goal itself, 1024 dims as the RSSM's 8 blocks x 128, one row
+     per block. For the mask arm the right-hand labels say which blocks the goal
+     keeps; ignored rows are drawn faded. */
+  .deter { display: flex; gap: 6px; align-items: stretch; justify-content: center;
+           margin-top: 8px; }
+  canvas.deter { width: 240px; height: 96px; image-rendering: pixelated;
+                 border: 1px solid var(--line); border-radius: 4px; }
+  .deter .dlabels { display: grid; grid-template-rows: repeat(8, 1fr);
+                    font-size: 10px; color: var(--dim); line-height: 1;
+                    font-variant-numeric: tabular-nums; }
+  .deter .dlabels span { align-self: center; white-space: nowrap; }
+  .deter .dlabels span.ign { color: var(--warn); }
 
   /* ---- frames ---- */
   /* The current frame, centred, with the saved one beside it once there is one.
@@ -223,40 +230,23 @@
   comparison plots: <span class="swatch" style="background:#E69F00"></span>
   Director (<code>now</code>), <span class="swatch" style="background:#CC79A7"></span>
   now + SOM-line, <span class="swatch" style="background:#56B4E9"></span>
-  now + SOM-line + mask. A selected cell outside the trained range keeps that
-  colour and gains an orange ring.</p>
+  now + SOM-line + mask. Only the 8 trained classes are shown.</p>
 
   <p><b>Mask.</b> In the mask arm the code also decodes a keep/ignore flag for
-  each of the 8 deter blocks (<code>hrl/goal_mask.py</code>). Rows whose block
-  the goal ignores are dimmed and marked ✕; hover a row label for the keep
-  probability. The frame and the goal-space distance use the unmasked decode,
+  each of the 8 deter blocks of the world model's hidden state
+  (<code>hrl/goal_mask.py</code>), decided by the code as a whole. They are shown
+  beside the WM goal heatmap under the frame: ✓ kept, ✕ ignored (drawn faded);
+  hover for the keep probability. The frame and the goal-space distance use the unmasked decode,
   because a deter with whole blocks set to zero is not a state the image decoder
   has ever seen; the worker critic gets the masked goal, as in training. Block
-  <i>b</i> of the code and deter block <i>b</i> are not the same thing — the
-  flags are decoded from the whole code — but both happen to number 8.</p>
+  <i>b</i> of the code and deter block <i>b</i> are not the same thing; both
+  just happen to number 8.</p>
 
-  <p><b><span class="swatch" style="background:#ffb454"></span>Extrapolation.</b>
-  Columns outside 0–7 are class indices the model never saw, and the two arms
-  reach them differently, because only one of them has a geometry to extend.</p>
-
-  <p><b>The two SOM arms</b> work in the codebook. Inside the range the block walks the
-  path through its 8 embeddings, so every integer still lands exactly on a
-  trained entry. Outside, it leaves the end entry along the block's
-  <b>fitted line</b> — the principal direction of all 8 entries — moving one
-  <b>average segment length</b> per class:
-  <code>z(t) = e₀ + t·s·d</code> below 0 and
-  <code>z(t) = e₇ + (t−7)·s·d</code> above 7. Anchoring on the real end entries
-  keeps the path unbroken at 0 and 7. Using the average step and the overall
-  direction, rather than repeating whichever end segment happens to be there,
-  matters: the two end gaps are the shortest in the block in all four
-  environments, so repeating them made extrapolation crawl.</p>
-
-  <p><b>Director</b> has no embedding, and its 8 one-hots are all the same
-  distance apart, so there is no line to fit. It extends the one-hot family
-  instead — <code>i = clip(⌊t⌋, 0, 6), u = t − i, w[i] = 1−u, w[i+1] = u</code>,
-  giving <code>[2, −1, …]</code> at <i>t</i> = −1 — and those 64 numbers go
-  straight into the decoder MLP as input activations. Defined, but with no
-  learned metric behind it.</p>
+  <p><b>WM goal.</b> Under each frame is the decoded goal itself, the 1024-dim
+  deter vector laid out as the RSSM's 8 blocks × 128 dims, one row per block:
+  orange above zero, blue below, on a scale fixed per checkpoint (99th
+  percentile of |deter| over random codes). The frame is this vector pushed
+  through the dynamics prior and the image decoder.</p>
 
   <p><b>Distant jump.</b> The paper's ε-greedy exploration move, on a button
   instead of firing with probability ε. From the current code <i>c</i>, a block
@@ -446,9 +436,9 @@ function buildPanel(arm, info, model) {
       `p95 ${(cb.pc1_random_p95 * 100).toFixed(0)}%)`
     : 'no embedding: the 8×8 code goes straight into the decoder MLP as 64 inputs';
   const maskNote = model.mask_groups
-    ? `<br>+ mask head: the code also decodes keep/ignore for each of the ` +
-      `${model.mask_groups} deter blocks. Ignored rows are dimmed; the frame ` +
-      `shows the unmasked decode.`
+    ? `<br>+ mask head: the whole code also decodes keep/ignore for each of ` +
+      `the ${model.mask_groups} WM deter blocks (✓/✕ beside the WM goal). The ` +
+      `frame shows the unmasked decode.`
     : '';
   panel.innerHTML = `
     <h2>${info.label}
@@ -460,10 +450,15 @@ function buildPanel(arm, info, model) {
       <div class="framebox now">
         <canvas class="main" width="64" height="64"></canvas>
         <div class="cap"></div>
+        <div class="deter"><canvas class="deter" width="128" height="8"></canvas>
+          <div class="dlabels"></div></div>
+        <div class="cap">WM goal (deter): 8 blocks × 128</div>
       </div>
       <div class="framebox past" hidden>
         <canvas class="main past" width="64" height="64"></canvas>
         <div class="cap"></div>
+        <div class="deter"><canvas class="deter" width="128" height="8"></canvas>
+          <div class="dlabels"></div></div>
       </div>
     </div>
     <div class="vals">${VALUE_KEYS.map(v => `
@@ -499,10 +494,14 @@ function buildPanel(arm, info, model) {
   return {
     panel,
     grid: panel.querySelector('.grid'),
-    main: panel.querySelector('.framebox.now canvas'),
+    main: panel.querySelector('.framebox.now canvas.main'),
+    deter: panel.querySelector('.framebox.now canvas.deter'),
+    dlabels: panel.querySelector('.framebox.now .dlabels'),
+    pastDeter: panel.querySelector('.framebox.past canvas.deter'),
+    pastDlabels: panel.querySelector('.framebox.past .dlabels'),
     cap: panel.querySelector('.framebox.now .cap'),
     pastbox: panel.querySelector('.framebox.past'),
-    past: panel.querySelector('.framebox.past canvas'),
+    past: panel.querySelector('.framebox.past canvas.main'),
     pastcap: panel.querySelector('.framebox.past .cap'),
     vals: panel.querySelector('.vals'),
     codeline: panel.querySelector('.codeline'),
@@ -535,7 +534,6 @@ function wireGrid(self) {
     label.className = 'rowlabel';
     label.textContent = b;
     grid.appendChild(label);
-    (self.labels = self.labels || []).push(label);
     const row = [];
     for (const c of cols) {
       const cell = document.createElement('div');
@@ -806,20 +804,45 @@ function paintGrid(self) {
   paintMask(self);
 }
 
-/* Which deter blocks the decoded goal keeps, for the code on screen. Comes with
-   the critic readings (one request), so it shows up as soon as they do. */
+/* The decoded WM goal for the code on screen, as an 8 x 128 heatmap: one row
+   per RSSM deter block, diverging colour around 0 on a scale fixed per
+   checkpoint (p99 of |deter| over random codes, ``goal_scale``). The mask arm's
+   keep flags belong HERE, on the deter blocks: the whole code decides them, so
+   code row b and deter block b are unrelated. Comes with the critic readings
+   (one request), so it shows up as soon as they do. */
 function paintMask(self) {
-  if (!self.maskGroups) return;
   const row = self.values.get(keyOf(self.preview || self.code));
-  const keep = row && row.keep;
-  for (let b = 0; b < state.blocks; b++) {
-    const ign = !!keep && keep[b] < 0.5;
-    self.labels[b].classList.toggle('ign', ign);
-    self.labels[b].textContent = ign ? `${b} ✕` : b;
-    self.labels[b].title = keep
-        ? `keep p = ${(100 * row.keep_prob[b]).toFixed(0)}%` : '';
-    for (const cell of self.cells[b]) cell.classList.toggle('ign', ign);
+  drawDeter(self, row, self.dom.deter, self.dom.dlabels);
+}
+
+function drawDeter(self, row, canvas, labels) {
+  const blocks = 8;
+  if (!row || !row.goal) return;
+  const g = row.goal, width = g.length / blocks;
+  canvas.width = width;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(width, blocks);
+  const lim = (self.scale && self.scale.deter_abs) || 1;
+  // Okabe-Ito blue below zero, orange above, dark grey at zero (dark page).
+  const neg = [0, 114, 178], pos = [230, 159, 0], mid = [38, 43, 51];
+  for (let b = 0; b < blocks; b++) {
+    const ign = row.keep && row.keep[b] < 0.5;
+    for (let i = 0; i < width; i++) {
+      const v = Math.max(-1, Math.min(1, g[b * width + i] / lim));
+      const end = v < 0 ? neg : pos, t = Math.abs(v);
+      const o = 4 * (b * width + i);
+      for (let c = 0; c < 3; c++) img.data[o + c] = mid[c] + t * (end[c] - mid[c]);
+      img.data[o + 3] = ign ? 70 : 255;
+    }
   }
+  ctx.putImageData(img, 0, 0);
+  labels.innerHTML = range(0, blocks).map(b => {
+    if (!row.keep) return `<span>${b}</span>`;
+    const ign = row.keep[b] < 0.5;
+    const p = (100 * row.keep_prob[b]).toFixed(0);
+    return `<span class="${ign ? 'ign' : ''}" title="keep p = ${p}%">` +
+           `${b} ${ign ? '✕' : '✓'}</span>`;
+  }).join('');
 }
 
 /* Hover preview is served from the prefetch cache only. Firing a request per
@@ -975,6 +998,8 @@ function clearSaved(self) {
 
 function paintSaved(self) {
   if (self.saved && self.saved.img) blit(self.dom.past, self.saved.img);
+  if (self.saved && self.saved.vals) drawDeter(
+      self, self.saved.vals, self.dom.pastDeter, self.dom.pastDlabels);
 }
 
 /* Mean absolute channel difference between two frames, 0-255. The one thing in

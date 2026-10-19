@@ -41,8 +41,9 @@ if _HERE not in sys.path:
 
 import runs as runsmod  # noqa: E402
 
-# Four classes of headroom on each side of the eight the model was trained on.
-EXTRA = 4
+# Columns beyond the trained classes. 0 since 2026-10-19: only the 8 classes the
+# model was trained on are shown (extrapolation dropped from the page).
+EXTRA = 0
 CACHE_PER_MODEL = 6000  # ~74MB of frames each
 BUCKETS = (1, 2, 4, 8, 16, 24, 32, 48, 64, 128)
 
@@ -171,7 +172,7 @@ class Registry:
     n = len(codes)
     with self._render_lock:
       vals = model.values(_bucketed(codes), _bucketed(goals))
-      out = [{k: (v[i].tolist() if np.ndim(v[i]) else float(v[i]))
+      out = [{k: (np.round(v[i], 4).tolist() if np.ndim(v[i]) else float(v[i]))
               for k, v in vals.items()} for i in range(n)]
       if ref is not None:
         vectors = model.goal_vectors(_bucketed(codes))[:n]
