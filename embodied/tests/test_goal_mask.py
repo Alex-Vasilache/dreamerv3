@@ -3,7 +3,7 @@
 The wiring test exists because a mask head that never receives a gradient
 looks exactly like a slow one in a short run: its loss sits at chance either
 way. So it asserts the head's parameters actually MOVE under real train steps,
-on both goal autoencoders the batch uses (Director AE = `now`, VQ/SOM = `now+SOM`).
+on both goal autoencoders the batch uses (Director AE = `OG`, VQ/SOM = `OG+SOM`).
 """
 import jax
 import jax.numpy as jnp
@@ -38,7 +38,7 @@ def _mdec_params(agent):
           if k.startswith('goal_mdec/')}
 
 
-@pytest.mark.parametrize('arm', [(), ('goal_som_line',)], ids=['now', 'som'])
+@pytest.mark.parametrize('arm', [(), ('goal_som_line',)], ids=['og', 'som'])
 def test_mask_head_trains_and_metrics_are_finite(arm):
   # debug deter is 8 (rssm.blocks 4), so 4 groups of 2 dims.
   a = make_agent(*arm, 'goal_mask8', agent={'goal_mask_groups': 4})

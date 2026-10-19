@@ -1,15 +1,15 @@
-# The 'now' Director on the simulated phone robot (e1480–e1747, 2026-10-16/17)
+# The OG Director on the simulated phone robot (e1480–e1747, 2026-10-16/17)
 
 ## Summary
 
-The question: how fast can the HRL agent (the 'now' Director: `director
+The question: how fast can the HRL agent (the OG Director: `director
 director_og`, the late-collapse fix) learn the robot's two tasks in real time,
 and which control rate should we deploy at, 25 Hz or 65 Hz?
 
 - **Deploy at 65 Hz.** Every agent learns faster and better there. At 25 Hz
   the simulated body is barely controllable through the one-tick action delay;
   flat DreamerV3 tops out at 0.34 on balance, and HRL fails on 2 of 3 seeds.
-- **The 'now' Director needs one real change for the robot**, and it is
+- **The OG Director needs one real change for the robot**, and it is
   goal-only (the worker still gets only the goal reward): a fixed worker
   entropy. Config block `hrl_robot_fast` = `worker_actent_adapt False` +
   `mgr_expl_weight 0` (the second is neutral within seed noise; see below).
@@ -26,10 +26,10 @@ and which control rate should we deploy at, 25 Hz or 65 Hz?
 
 Reward per step (episode score / steps, trailing 5 episodes) against minutes
 of real time, mean ±1 std over seeds. 65 Hz runs on V100s, 25 Hz on P100s, one
-GPU per run, 125 min. The 'now' baseline is from round 1 (70 min, one V100
+GPU per run, 125 min. The OG baseline is from round 1 (70 min, one V100
 and one P100 seed).
 
-| 60–115 min mean | flat DreamerV3 | HRL tuned (`hrl_robot_fast`) | HRL 'now' (≤70 min) |
+| 60–115 min mean | flat DreamerV3 | HRL tuned (`hrl_robot_fast`) | HRL OG (≤70 min) |
 |---|---|---|---|
 | balance, 65 Hz | 0.84, 0.84, 0.85 | 0.76, 0.77, 0.79 | 0.51, 0.48 |
 | command, 65 Hz (5 s horizon) | 0.78, 0.88, 0.81 | 0.59, 0.67, 0.53 | 0.56, 0.30 |
@@ -115,7 +115,7 @@ results); params files `sbatch/sim_robot_*.txt`, launcher
 
 | exps | round | what |
 |---|---|---|
-| e1480–e1495 | R1 | flat vs 'now' HRL, 4 cells, 2 seeds, 70 min |
+| e1480–e1495 | R1 | flat vs OG HRL, 4 cells, 2 seeds, 70 min |
 | e1496–e1511 | R2 | HRL single factors per cell (worker task reward, K 4, no expl., lr 1e-4) |
 | e1512–e1520 | R3 | 65 Hz: fixed worker entropy, + no expl., K 16, batch 16 |
 | e1521–e1526 | R4 | tuned at 25 Hz; + fixed manager entropy, + advnorm off |

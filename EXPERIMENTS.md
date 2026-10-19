@@ -527,7 +527,7 @@ parallel envs (was 8), 5 seeds. Both our agents:
 cartpole, cheetah, hopper; +12 per seed). Launcher: `RUN_ENVS=4
 DMC_PROPRIO=False`. A100, 128G (`job_logs/pubmatch_*.tsv`).
 
-### e1300–e1329: now+v3 — DreamerV3 actor-critic on the matched protocol (launched 2026-10-09, array 4751548)
+### e1300–e1329: OG+v3 — DreamerV3 actor-critic on the matched protocol (launched 2026-10-09, array 4751548)
 
 **"+v3" tag (fixed 2026-10-09):** an HRL arm's actor-critic settings taken from
 DreamerV3 instead of TF Director — return normalization (perc 5–95, floor
@@ -550,12 +550,12 @@ seeds; whole-curve shape and stability as secondary). Take +v3 as the base for
 the goal-AE arms only if it is better overall; equal or slightly worse -> keep
 `director_og`. Next: SOM, LiP, SOM+LiP on the chosen base, 6 tasks x 5 seeds.
 
-### Decision, now vs now+v3 (2026-10-11 01:40): keep `now`
+### Decision, OG vs OG+v3 (2026-10-11 01:40): keep `OG`
 
 Taken with 24/30 v3 runs finished (5v3 to 5v5 seeds per task), when the last v3
 task started. `tools/collapse_study/compare_v3.py`; late = 3–4M mean, p = exact permutation.
 
-| task | now | now+v3 | diff | p |
+| task | OG | OG+v3 | diff | p |
 |---|---|---|---|---|
 | pinpad_four | 271 ± 9 | 217 ± 80 | −54 | 0.14 |
 | pinpad_five | 210 ± 12 | 192 ± 45 | −18 | 0.44 |
@@ -575,10 +575,10 @@ cheetah 511 vs 374 (p=0.008), hopper 333 vs 179 (p=0.024); mean normalized −0.
 
 ### e1600–e1659: now + goal mask / now + SOM + goal mask (2026-10-16, array 4763638)
 
-`goal_mask8` layered on `now` (`director director_og goal_mask8 pubmatch`,
-e1600–e1629) and on now+SOM (`... goal_som_line goal_mask8 ...`, e1630–e1659),
+`goal_mask8` layered on `OG` (`director director_og goal_mask8 pubmatch`,
+e1600–e1629) and on OG+SOM (`... goal_som_line goal_mask8 ...`, e1630–e1659),
 6 tasks x 5 seeds, seed-major (`sbatch/pubmask_params.txt`), A100 128G,
-`RUN_ENVS=4 DMC_PROPRIO=False`, %8; array order runs all now+mask before
+`RUN_ENVS=4 DMC_PROPRIO=False`, %8; array order runs all OG+mask before
 som+mask. Mechanism (`hrl/goal_mask.py`): the goal code also decodes a
 keep/ignore flag for each of the 8 RSSM deter blocks (128 dims each); the
 goal AE trains on random masks (whole goal w.p. 0.5, else 1–7 groups) with
@@ -592,17 +592,17 @@ Pre-check: offline GAE on e1432 deter, mask acc 0.86 / loss 2.29 (marginal
 chance 0.78 / 4.2) after 4k updates and rising, kept-dim rec 0.0136 vs 0.0110
 unmasked.
 Hypothesis: partial goals help where one factor matters — pinpad five/six —
-and do not hurt DMC. Compare against now (e1230–e1289) and now+SOM
+and do not hurt DMC. Compare against OG (e1230–e1289) and OG+SOM
 (e1330–e1419). Watch `goal/mask_keep_mgr` (fraction of groups the manager
 keeps) and `goal/mask_acc`. If the manager always keeps everything
-(`mask_full_mgr` → 1) the arm reduces to its base. Status: now+mask done, som+mask running.
+(`mask_full_mgr` → 1) the arm reduces to its base. Status: OG+mask done, som+mask running.
 
-**Interim result, now+mask complete (2026-10-18 17:00; som+mask running).**
+**Interim result, OG+mask complete (2026-10-18 17:00; som+mask running).**
 Mean ± sd over 5 seeds of each seed's 3–4M mean; pin pads also give seeds
 crossing sustained-50 and the median crossing step; p = exact permutation
 test vs now:
 
-| task | now | now+mask | p |
+| task | OG | OG+mask | p |
 |---|---|---|---|
 | pinpad_four | 270.7 ± 8.1, 5/5 @0.23M | **289.9 ± 8.3**, 5/5 @0.19M | 0.016 |
 | pinpad_five | 210.1 ± 10.8, 5/5 @0.33M | 221.5 ± 10.3, 5/5 @0.26M | 0.19 |
@@ -626,17 +626,17 @@ restarted from scratch after a retry left a proprio-model checkpoint.
 seed-major (`sbatch/pubucb_params.txt`), A100 128G, `RUN_ENVS=4
 DMC_PROPRIO=False`, %8. UCB = tilted sampling among 8 manager candidates,
 `mgr_ucb_c` 10, `select_bins` 4 (the only setting with valid prior runs,
-e706–e717; c=20 runs e660–e675 used the retired argmax rule), with now's
+e706–e717; c=20 runs e660–e675 used the retired argmax rule), with OG's
 `mgr_expl_weight` 0.1 (e706–e717 used 0.15) and SOM alone, not SOM+LiP.
-Compared against now (e1230–e1289) and now+SOM (e1330–e1419).
+Compared against OG (e1230–e1289) and OG+SOM (e1330–e1419).
 Hypothesis: the selection-time count bonus adds exploration without changing
 the manager's objective; expected gain on cheetah (e714/e715 beat every
 Director seed) and on the long pin pads. Status: queued.
 
-### e1330–e1419: SOM / LiP / SOM+LiP on `now`, queued early (2026-10-09, array 4751562)
+### e1330–e1419: SOM / LiP / SOM+LiP on `OG`, queued early (2026-10-09, array 4751562)
 
-Queued behind e1300–e1329 to hold queue age; base is `now` (`director
-director_og pubmatch`) unless now+v3 wins the comparison above, in which case
+Queued behind e1300–e1329 to hold queue age; base is `OG` (`director
+director_og pubmatch`) unless OG+v3 wins the comparison above, in which case
 `director_og` is swapped for `mgr_expl_perc002` in `sbatch/pubgae_params.txt`
 for every task not yet started (the launcher re-reads PARAMS at task start)
 and started ones are relaunched. Tags, each layered on the base:
@@ -1494,7 +1494,7 @@ Getting under 24 h therefore requires changing something that *is* a parameter
 across 2 GPUs --- which does not help throughput here, since the 8-GPU quota
 already runs all 8 seeds concurrently.
 
-### e1480–e1535, e1700–e1747: 'now' Director on the simulated phone robot (2026-10-16/17, robot branch)
+### e1480–e1535, e1700–e1747: OG Director on the simulated phone robot (2026-10-16/17, robot branch)
 
 Branch `smartphone-robot-bridge` (main merged in). A real-time simulated
 two-wheeled robot (`embodied/envs/robot_sim.py`, `env.robot.sim`) with the
@@ -1505,7 +1505,7 @@ per run. Write-up and figures: `docs/robot/SIM_ROBOT.md` on that branch.
 Result (reward per step, 60–115 min mean, 3 seeds): at 65 Hz tuned HRL
 (`hrl_robot_fast` = `worker_actent_adapt False` + `mgr_expl_weight 0`, goal-only
 worker) balance 0.76–0.79 vs flat DreamerV3 0.84–0.85, command 0.53–0.67 vs
-0.78–0.88 (2 s horizon: HRL 0.71 n=6, flat 0.87 n=4). Untuned 'now' Director:
+0.78–0.88 (2 s horizon: HRL 0.71 n=6, flat 0.87 n=4). Untuned OG Director:
 balance ~0.5. The fix is the worker entropy: director_og's adaptive target
 kept the worker at +0.2 nats vs −1.8 for the flat policy. 25 Hz: HRL fails on
 2 of 3 seeds; flat 0.33 balance. Deploy at 65 Hz. e1724–e1727: same gap at

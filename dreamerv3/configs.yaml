@@ -1312,7 +1312,7 @@ goal_som_lipvq_line_mgr:
 
 # Line (open path) instead of a ring, no manager changes.
 goal_mask8:
-  # Goal-space masking over the 8 RSSM blocks; layers on either AE (now / now+SOM).
+  # Goal-space masking over the 8 RSSM blocks; layers on either AE (OG / OG+SOM).
   agent:
     goal_mask_groups: 8
 
@@ -2218,7 +2218,7 @@ sim_65hz:
   env.robot.sim_hz: 65.0
   env.realtime_hz: 65.0
 
-# The 'now' Director (director director_og, the late-collapse fix) on the
+# The OG Director (director director_og, the late-collapse fix) on the
 # robot. robot_daydreamer inherits `robot`, which turns HRL off, so this goes
 # after the robot blocks. Order:
 #   CONFIGS="director director_og robot_daydreamer robot_fast robot_<N>hz
@@ -2227,7 +2227,7 @@ hrl_robot:
   agent.use_hrl: True
 
 
-# The 'now' Director tuned for the robot in real time (docs/robot/SIM_ROBOT.md,
+# The OG Director tuned for the robot in real time (docs/robot/SIM_ROBOT.md,
 # e1480-e1747). Goal-only worker (no task reward). Two changes from
 # director_og, tested on the simulated robot at 65 Hz:
 # - worker_actent_adapt False: director_og's adaptive worker entropy (target
