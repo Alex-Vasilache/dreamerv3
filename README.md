@@ -1,15 +1,49 @@
-# Mastering Diverse Domains through World Models
+# DreamerV3 on the OIST Smartphone Robot
 
-> **Smartphone robot:** this branch (`smartphone-robot-bridge`) trains
-> DreamerV3 on the OIST smartphone robot. Start at [ROBOT.md](ROBOT.md).
+This branch (`smartphone-robot-bridge`) trains [DreamerV3][paper] on the
+[OIST smartphone robot](https://github.com/oist/smartphone-robot/wiki): a phone
+on a two-wheeled base that learns to balance and to follow joystick commands.
+The policy runs on the phone; a learner on a GPU (a laptop or a Slurm cluster)
+trains on what the phone records and pushes it new weights every few seconds.
 
-A reimplementation of [DreamerV3][paper], a scalable and general reinforcement
-learning algorithm that masters a wide range of applications with fixed
-hyperparameters.
+**Start at [ROBOT.md](ROBOT.md)** -- install, training, monitoring, configs and
+troubleshooting.
 
-![DreamerV3 Tasks](https://user-images.githubusercontent.com/2111293/217647148-cbc522e2-61ad-4553-8e14-1ecdc8d9438b.gif)
+## Repos
 
-If you find this code useful, please reference in your paper:
+The robot setup spans three repos, all forks:
+
+| repo | branch | what |
+|---|---|---|
+| [Alex-Vasilache/dreamerv3](https://github.com/Alex-Vasilache/dreamerv3/tree/smartphone-robot-bridge) | `smartphone-robot-bridge` | learner, robot env, simulator, tools ([ROBOT.md](ROBOT.md)) |
+| [Alex-Vasilache/smartphone-robot-android](https://github.com/Alex-Vasilache/smartphone-robot-android/tree/dreamer-bridge) | `dreamer-bridge` | phone app `dreamerBridge` (fork of [oist/smartphone-robot-android](https://github.com/oist/smartphone-robot-android)) |
+| [Alex-Vasilache/smartphone-robot-firmware](https://github.com/Alex-Vasilache/smartphone-robot-firmware/tree/telemetry-cache) | `telemetry-cache` | base firmware with a motor watchdog and I2C recovery (fork of [oist/smartphone-robot-firmware](https://github.com/oist/smartphone-robot-firmware)) |
+
+## DreamerV3
+
+DreamerV3 learns a world model from experiences and uses it to train an actor
+critic policy from imagined trajectories. The world model encodes sensory
+inputs into categorical representations and predicts future representations and
+rewards given actions.
+
+![DreamerV3 Method Diagram](https://user-images.githubusercontent.com/2111293/217355673-4abc0ce5-1a4b-4366-a08d-64754289d659.png)
+
+On the robot, the observations are the body's tilt and tilt rate, the two
+wheel speeds and, for command following, the joystick command; the actions are
+the two wheel commands. The world model and actor-critic train on the learner; only the
+actor runs on the phone.
+
+The branch also contains a simulated robot (`sim_robot`, pure numpy) and a
+Director-style hierarchical agent (`hrl_robot`); results comparing it with flat
+DreamerV3 are in [docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md).
+
+## Credit
+
+The DreamerV3 code is Danijar Hafner's
+[reimplementation](https://github.com/danijar/dreamerv3) ([paper][paper],
+[website][website]); the robot hardware, firmware and Android framework are
+from the [OIST smartphone robot project](https://github.com/oist/smartphone-robot/wiki).
+If you use DreamerV3, please cite:
 
 ```
 @article{hafner2025dreamerv3,
@@ -22,34 +56,10 @@ If you find this code useful, please reference in your paper:
 }
 ```
 
-To learn more:
+# Instructions (general DreamerV3)
 
-- [Research paper][paper]
-- [Project website][website]
-- [Twitter summary][tweet]
-
-## DreamerV3
-
-DreamerV3 learns a world model from experiences and uses it to train an actor
-critic policy from imagined trajectories. The world model encodes sensory
-inputs into categorical representations and predicts future representations and
-rewards given actions.
-
-![DreamerV3 Method Diagram](https://user-images.githubusercontent.com/2111293/217355673-4abc0ce5-1a4b-4366-a08d-64754289d659.png)
-
-DreamerV3 masters a wide range of domains with a fixed set of hyperparameters,
-outperforming specialized methods. Removing the need for tuning reduces the
-amount of expert knowledge and computational resources needed to apply
-reinforcement learning.
-
-![DreamerV3 Benchmark Scores](https://github.com/danijar/dreamerv3/assets/2111293/0fe8f1cf-6970-41ea-9efc-e2e2477e7861)
-
-Due to its robustness, DreamerV3 shows favorable scaling properties. Notably,
-using larger models consistently increases not only its final performance but
-also its data-efficiency. Increasing the number of gradient steps further
-increases data efficiency.
-
-![DreamerV3 Scaling Behavior](https://user-images.githubusercontent.com/2111293/217356063-0cf06b17-89f0-4d5f-85a9-b583438c98dd.png)
+For the robot, follow [ROBOT.md](ROBOT.md) instead. The rest of this file is the
+original DreamerV3 usage, for other tasks.
 
 # Instructions
 
@@ -123,4 +133,3 @@ environments.
 [jax]: https://github.com/google/jax#pip-installation-gpu-cuda
 [paper]: https://arxiv.org/pdf/2301.04104
 [website]: https://danijar.com/dreamerv3
-[tweet]: https://twitter.com/danijarh/status/1613161946223677441

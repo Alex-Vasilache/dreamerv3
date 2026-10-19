@@ -35,7 +35,7 @@ Contents: [Repos](#repos) · [Install](#install) · [Train](#train) ·
 |---|---|---|
 | [Alex-Vasilache/dreamerv3](https://github.com/Alex-Vasilache/dreamerv3) | `smartphone-robot-bridge` | learner, robot env, these tools |
 | [Alex-Vasilache/smartphone-robot-android](https://github.com/Alex-Vasilache/smartphone-robot-android) | `dreamer-bridge` | phone app `dreamerBridge` (fork of [oist/smartphone-robot-android](https://github.com/oist/smartphone-robot-android)) |
-| [Alex-Vasilache/smartphone-robot-firmware](https://github.com/Alex-Vasilache/smartphone-robot-firmware) | `telemetry-cache` | base firmware: fast replies, motor watchdog (fork of [oist/smartphone-robot-firmware](https://github.com/oist/smartphone-robot-firmware)) |
+| [Alex-Vasilache/smartphone-robot-firmware](https://github.com/Alex-Vasilache/smartphone-robot-firmware) | `telemetry-cache` | base firmware: motor watchdog and I2C recovery on top of upstream's fast-reply telemetry cache (fork of [oist/smartphone-robot-firmware](https://github.com/oist/smartphone-robot-firmware)) |
 
 All commands below run from the dreamerv3 checkout.
 
@@ -120,8 +120,9 @@ port and connects; set `PHONE_IP` in `robot.env` first. Over a cable, plain
 
 ### 3. Base firmware
 
-Bases need the firmware from `telemetry-cache` (fast ~7 ms serial replies,
-wheels stop by themselves when commands stop). A base with the stock firmware
+Bases need the firmware from `telemetry-cache`: ~7 ms serial replies (from
+upstream's telemetry-cache work), plus this fork's motor watchdog, so the wheels
+stop by themselves when commands stop. A base with the stock firmware
 balances poorly and can spin a wheel at power-up. See [Flash a base](#flash-a-base).
 
 ## Train
