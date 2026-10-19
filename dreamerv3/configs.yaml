@@ -1274,7 +1274,7 @@ goal_som_lipvq_line_mgr:
 
 # Line (open path) instead of a ring, no manager changes.
 goal_mask8:
-  # Goal-space masking over the 8 RSSM blocks; layers on either AE (now / now+SOM).
+  # Goal-space masking over the 8 RSSM blocks; layers on either AE (OG / OG+SOM).
   agent:
     goal_mask_groups: 8
 
