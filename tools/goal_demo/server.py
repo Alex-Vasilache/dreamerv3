@@ -112,7 +112,7 @@ class Registry:
     return self._models[key]
 
   def prepare(self, task):
-    """Start building both arms of ``task`` if they are not up yet."""
+    """Start building every arm of ``task`` that is not up yet."""
     todo = [a for a in runsmod.ARMS if (task, a) not in self._models]
     if not todo or self._preparing:
       return
@@ -171,7 +171,8 @@ class Registry:
     n = len(codes)
     with self._render_lock:
       vals = model.values(_bucketed(codes), _bucketed(goals))
-      out = [{k: float(v[i]) for k, v in vals.items()} for i in range(n)]
+      out = [{k: (v[i].tolist() if np.ndim(v[i]) else float(v[i]))
+              for k, v in vals.items()} for i in range(n)]
       if ref is not None:
         vectors = model.goal_vectors(_bucketed(codes))[:n]
         base = model.goal_vectors(np.asarray(ref, np.float32))[0]
@@ -203,6 +204,7 @@ class Registry:
                   dim=int(table.shape[-1]), **PC1_RANDOM)
     return dict(
         blocks=model.blocks, classes=model.classes, values=model.has_values,
+        mask_groups=model.mask_groups,
         codebook=line, scale=self._scales[(task, arm)],
         **runsmod.info(task, arm))
 
@@ -254,11 +256,12 @@ class Handler(BaseHTTPRequestHandler):
           self._send(200, f.read(), 'text/html; charset=utf-8')
       elif path == '/api/meta':
         self._json(dict(
-            tasks=[dict(id=t, label=runsmod.RUNS[t]['label'])
+            tasks=[dict(id=t, label=runsmod.TASK_LABELS[t])
                    for t in runsmod.TASKS],
             arms=[dict(id=a, label=runsmod.ARM_LABELS[a])
                   for a in runsmod.ARMS],
             step=int(runsmod.STEP), extra=EXTRA,
+            colors=runsmod.ARM_COLORS,
             runs={t: {a: runsmod.info(t, a) for a in runsmod.ARMS}
                   for t in runsmod.TASKS}))
       elif path == '/api/status':

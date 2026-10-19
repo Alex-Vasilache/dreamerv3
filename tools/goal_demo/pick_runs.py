@@ -1,18 +1,19 @@
-"""Re-derive the seed choice in ``runs.py`` from the runs on /work.
+"""Re-derive the seed choice in ``runs.py`` from the finished runs.
 
-``runs.py`` pins one seed per environment per arm: the better-scoring one at the
-3M checkpoint the demo loads. Seeds keep training and new ones get launched, so
-this recomputes the scores and says whether any pin has gone stale.
+``runs.py`` pins one seed per environment per arm: the best-scoring one at the
+checkpoint the demo loads. Seeds keep finishing, so this recomputes the scores
+and says whether any pin has gone stale (or prints a fresh RUNS block).
 
-    python tools/goal_demo/pick_runs.py
+    python tools/goal_demo/pick_runs.py           # check the pins
+    python tools/goal_demo/pick_runs.py --emit    # print a RUNS dict to paste
 
-Score is the mean episode return over env steps 2.7M-3.0M -- the 300k steps
-ending at the checkpoint -- which is steadier than the value at the single step.
+Score is the mean episode return over the 300k env steps that end at the
+checkpoint (``scores.jsonl``), which is steadier than the value at one step.
+Runs are looked up on /work first, then in the bucket.
 """
 import glob
 import json
 import os
-import re
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -21,86 +22,64 @@ if _HERE not in sys.path:
 
 import runs as runsmod  # noqa: E402
 
-LO, HI = 2.7e6, 3.0e6
-SCORE_KEYS = ('episode/score', 'eval/episode/score', 'stats/score')
-
-# What a run directory name has between the task and the '_BIG_' suffix. These
-# are anchored because 'dmc_cartpole_swingup' is a prefix of
-# 'dmc_cartpole_swingup_sparse', which is a different task.
-ARM_SUFFIX = {
-    'director': re.compile(r'^_director_s\d+$'),
-    'ours': re.compile(r'^_som_lipvq_line_relu_gaussian_s\d+$'),
-}
+WINDOW = 3e5
 
 
-def score_at_3m(run_dir):
-  """Mean episode return over ``[LO, HI]``, or None if the run is not there yet."""
-  path = os.path.join(run_dir, 'logdir', 'metrics.jsonl')
+def score(run_dir, step):
+  path = os.path.join(run_dir, 'logdir', 'scores.jsonl')
   if not os.path.exists(path):
-    return None, 0
-  vals, last = [], 0
-  with open(path) as f:
-    for line in f:
-      try:
-        row = json.loads(line)
-      except ValueError:
-        continue
-      step = row.get('step')
-      if step is None:
-        continue
-      last = max(last, step)
-      if not LO <= step <= HI:
-        continue
-      for key in SCORE_KEYS:
-        if key in row:
-          vals.append(row[key])
-          break
-  return (sum(vals) / len(vals) if vals else None), last
-
-
-def has_ckpt(run_dir):
-  return os.path.exists(os.path.join(
-      run_dir, 'logdir', 'ckpt_milestones', runsmod.STEP, 'agent.pkl'))
+    return None
+  vals = []
+  for line in open(path):
+    try:
+      row = json.loads(line)
+    except ValueError:
+      continue
+    if row.get('episode/score') is not None and step - WINDOW <= row['step'] <= step:
+      vals.append(row['episode/score'])
+  return sum(vals) / len(vals) if vals else None
 
 
 def candidates(task, arm):
-  """Every run on /work for this task and arm, pinned or not."""
-  out = []
-  for path in sorted(glob.glob(os.path.join(runsmod.WORK, 'e*_BIG_*'))):
-    body = os.path.basename(path).split('_BIG_')[0]
-    match = re.match(r'^e\d+_(.*)$', body)
-    if not match or not match.group(1).startswith(task):
-      continue
-    if ARM_SUFFIX[arm].match(match.group(1)[len(task):]):
-      out.append(path)
-  return out
+  got = {}
+  for root in (runsmod.BUCKET, runsmod.WORK):   # /work wins
+    for d in glob.glob(os.path.join(root, runsmod.PATTERNS[arm].format(t=task))):
+      if os.path.exists(os.path.join(d, 'logdir', 'ckpt_milestones', runsmod.STEP,
+                                     'agent.pkl')):
+        got[os.path.basename(d)] = d
+  return sorted(got.items())
+
+
+def best(task, arm):
+  rows = [(name, score(d, int(runsmod.STEP))) for name, d in candidates(task, arm)]
+  rows = [r for r in rows if r[1] is not None]
+  return sorted(rows, key=lambda r: -r[1])
 
 
 def main():
-  stale = 0
-  for task in runsmod.TASKS:
-    print(f'{runsmod.RUNS[task]["label"]}')
+  emit = '--emit' in sys.argv
+  stale, out = 0, {}
+  for task in runsmod.TASK_LABELS:
+    out[task] = {}
+    print(runsmod.TASK_LABELS[task])
     for arm in runsmod.ARMS:
-      pinned = runsmod.RUNS[task][arm][0]
-      rows = []
-      for path in candidates(task, arm):
-        score, last = score_at_3m(path)
-        rows.append((os.path.basename(path), score, last, has_ckpt(path)))
-      usable = [r for r in rows if r[1] is not None and r[3]]
-      usable.sort(key=lambda r: -r[1])
-      for name, score, last, ckpt in sorted(rows, key=lambda r: -(r[1] or -1)):
-        mark = '<-- pinned' if name == pinned else ''
-        note = '' if ckpt else '  (no 3M checkpoint)'
-        shown = f'{score:7.1f}' if score is not None else '      -'
-        print(f'  {arm:9s} {shown}  {name[:62]:62s}'
-              f' last {last/1e6:.2f}M{note} {mark}')
-      if usable and usable[0][0] != pinned:
-        print(f'  ** {arm}: {usable[0][0]} now scores higher than the pinned '
-              f'{pinned}')
-        stale += 1
-    print()
-  print('runs.py is up to date' if not stale else
-        f'{stale} pinned seed(s) are no longer the best -- update runs.py')
+      rows = best(task, arm)
+      pinned = runsmod.RUNS.get(task, {}).get(arm, ('',))[0]
+      for name, s in rows:
+        print(f'  {arm:8s} {s:7.1f}  {name[:70]}' + ('  <-- pinned' if name == pinned else ''))
+      if rows:
+        out[task][arm] = rows[0]
+        if rows[0][0] != pinned:
+          stale += 1
+  if emit:
+    print('\nRUNS = {')
+    for task, arms in out.items():
+      print(f"    '{task}': {{")
+      for arm, (name, s) in arms.items():
+        print(f"        '{arm}': ('{name}', {s:.1f}),")
+      print('    },')
+    print('}')
+  print('runs.py is up to date' if not stale else f'{stale} pin(s) differ from the best seed')
   return 1 if stale else 0
 
 

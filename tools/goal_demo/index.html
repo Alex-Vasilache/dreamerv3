@@ -43,10 +43,10 @@
   #status.busy { color: var(--accent2); }
 
   main {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px; padding: 16px 20px 8px;
   }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  @media (max-width: 1250px) { main { grid-template-columns: 1fr; } }
 
   .panel {
     background: var(--panel); border: 1px solid var(--line);
@@ -54,10 +54,8 @@
     min-width: 0;
     --arm: var(--accent);
   }
-  /* One colour per arm, matching Figure 10 of the paper (block_distributions):
-     Director grey, ours blue. */
-  .panel[data-arm="director"] { --arm: #74736f; }
-  .panel[data-arm="ours"]     { --arm: #498cdc; }
+  /* One colour per arm, sent by the server (runs.ARM_COLORS) so it matches the
+     comparison plots; set inline on each panel. */
   .panel h2 {
     font-size: 14px; margin: 0 0 2px; font-weight: 600;
     display: flex; align-items: baseline; gap: 8px;
@@ -97,6 +95,12 @@
      grids stay distinguishable, and ring it so the extrapolation still shows. */
   .cell.on.out { background: var(--arm); border: 1px solid var(--warn); }
   .grid.dragging .cell:hover { border-color: transparent; }
+  /* Mask arm: a block whose deter group the decoded goal ignores. The row stays
+     editable -- the code still selects a class there -- but it is dimmed and
+     its label says the worker will not be asked to match it. */
+  .grid .rowlabel.ign { color: var(--warn); }
+  .grid .cell.ign:not(.on) { opacity: .35; }
+  .grid .cell.on.ign { background: transparent; border: 2px solid var(--arm); }
 
   /* ---- frames ---- */
   /* The current frame, centred, with the saved one beside it once there is one.
@@ -199,7 +203,7 @@
 <header>
   <h1>Goal code explorer</h1>
   <select id="task"></select>
-  <label class="check"><input type="checkbox" id="link"> link both grids</label>
+  <label class="check"><input type="checkbox" id="link"> link all grids</label>
   <label class="check"><input type="checkbox" id="fine"> fine drag (¼ class)</label>
   <span class="sub" id="ckpt"></span>
   <span id="status">starting…</span>
@@ -215,18 +219,27 @@
   <code>code → goal_dec → deter → dyn prior → image decoder</code>, the same
   path the agent renders its goals with.</p>
 
-  <p><b>Colours.</b> Each grid is filled in its arm's colour, the same two as
-  Figure 10 of the paper: <span class="swatch" style="background:#74736f"></span>
-  grey for Director's independent categorical per block,
-  <span class="swatch" style="background:#498cdc"></span> blue for our
-  discretized Gaussian. A selected cell outside the trained range keeps that
+  <p><b>Colours.</b> Each grid is filled in its arm's colour, the same as the
+  comparison plots: <span class="swatch" style="background:#E69F00"></span>
+  Director (<code>now</code>), <span class="swatch" style="background:#CC79A7"></span>
+  now + SOM-line, <span class="swatch" style="background:#56B4E9"></span>
+  now + SOM-line + mask. A selected cell outside the trained range keeps that
   colour and gains an orange ring.</p>
+
+  <p><b>Mask.</b> In the mask arm the code also decodes a keep/ignore flag for
+  each of the 8 deter blocks (<code>hrl/goal_mask.py</code>). Rows whose block
+  the goal ignores are dimmed and marked ✕; hover a row label for the keep
+  probability. The frame and the goal-space distance use the unmasked decode,
+  because a deter with whole blocks set to zero is not a state the image decoder
+  has ever seen; the worker critic gets the masked goal, as in training. Block
+  <i>b</i> of the code and deter block <i>b</i> are not the same thing — the
+  flags are decoded from the whole code — but both happen to number 8.</p>
 
   <p><b><span class="swatch" style="background:#ffb454"></span>Extrapolation.</b>
   Columns outside 0–7 are class indices the model never saw, and the two arms
   reach them differently, because only one of them has a geometry to extend.</p>
 
-  <p><b>Ours</b> works in the codebook. Inside the range the block walks the
+  <p><b>The two SOM arms</b> work in the codebook. Inside the range the block walks the
   path through its 8 embeddings, so every integer still lands exactly on a
   trained entry. Outside, it leaves the end entry along the block's
   <b>fitted line</b> — the principal direction of all 8 entries — moving one
@@ -256,7 +269,7 @@
   constant — over uniform codes it averages 44, and only a code with every block
   already at 0 or 7 reaches 56 — so the rule draws <i>d</i> ≈ 30 in practice.</p>
 
-  <p>Try it on both sides. It is only worth doing because our index is ordered:
+  <p>Try it on every panel. It is only worth doing because our index is ordered:
   on Director's code a large index gap does not imply a distant goal, so the
   same jump buys nothing there. That is the comparison the button is for.</p>
 
@@ -297,8 +310,9 @@
   goal, and the reverse. A large index gap with a small goal distance, or a big
   goal distance the pictures barely reflect, is the interesting case.</p>
 
-  <p>Both panels load the <b>3M-step milestone checkpoint</b> of the
-  better-scoring seed we ran for that environment. Rendering runs in float32
+  <p>All panels load the <b>4M-step milestone checkpoint</b> of the
+  best-scoring seed (of 5) we ran for that arm and environment, scored over the
+  last 300k steps (<code>runs.py</code>, <code>pick_runs.py</code>). Rendering runs in float32
   rather than the bfloat16 the runs trained in; the two differ by at most 4/255
   per pixel (<code>check_render.py</code>).</p>
 </footer>
@@ -343,6 +357,9 @@ const num = v => {
   const a = Math.abs(v);
   return v.toFixed(a >= 100 ? 1 : a >= 10 ? 2 : 3);
 };
+const armIds = () => state.meta.arms.map(a => a.id);
+const others = self => Object.values(state.arms).filter(o => o !== self);
+const stepLabel = () => `${state.meta.step / 1e6}M`;
 const signed = v => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v));
 
 function setStatus(text, busy) {
@@ -405,6 +422,7 @@ function makeArm(arm, info, model) {
     // frozen state to compare against, and ``pair`` / ``cross`` are the two
     // things that depend on both codes and so cannot be cached per code.
     values: new Map(), scale: model.scale, hasValues: model.values !== false,
+    maskGroups: model.mask_groups || 0,
     saved: null, pair: null, cross: null, pairKey: null,
     vtoken: 0, vtimer: 0,
   };
@@ -417,7 +435,8 @@ function makeArm(arm, info, model) {
 function buildPanel(arm, info, model) {
   const panel = document.createElement('section');
   panel.className = 'panel';
-  panel.dataset.arm = arm;       // selects the arm colour, see the CSS
+  panel.dataset.arm = arm;
+  panel.style.setProperty('--arm', state.meta.colors[arm]);
   const cb = model.codebook;
   const geom = cb
     ? `codebook: 8 entries per block in ℝ<sup>${cb.dim}</sup>. One axis holds ` +
@@ -426,11 +445,16 @@ function buildPanel(arm, info, model) {
       `(8 random points would give ${(cb.pc1_random_mean * 100).toFixed(0)}%, ` +
       `p95 ${(cb.pc1_random_p95 * 100).toFixed(0)}%)`
     : 'no embedding: the 8×8 code goes straight into the decoder MLP as 64 inputs';
+  const maskNote = model.mask_groups
+    ? `<br>+ mask head: the code also decodes keep/ignore for each of the ` +
+      `${model.mask_groups} deter blocks. Ignored rows are dimmed; the frame ` +
+      `shows the unmasked decode.`
+    : '';
   panel.innerHTML = `
     <h2>${info.label}
-      <span class="tag">${info.exp} · seed ${info.seed} · ${info.score} @3M</span>
+      <span class="tag">${info.exp} · seed ${info.seed} · ${info.score} @${stepLabel()}</span>
     </h2>
-    <div class="geom">${geom}</div>
+    <div class="geom">${geom}${maskNote}</div>
     <div class="grid"></div>
     <div class="frames">
       <div class="framebox now">
@@ -452,7 +476,7 @@ function buildPanel(arm, info, model) {
       <button data-act="reset">reset</button>
       <button data-act="random">random</button>
       <button class="jump" data-act="jump">distant jump</button>
-      <button data-act="copy">copy to other side</button>
+      <button data-act="copy">copy to the others</button>
     </div>
     <div class="tools">
       <span class="lbl">new state at distance</span>
@@ -511,6 +535,7 @@ function wireGrid(self) {
     label.className = 'rowlabel';
     label.textContent = b;
     grid.appendChild(label);
+    (self.labels = self.labels || []).push(label);
     const row = [];
     for (const c of cols) {
       const cell = document.createElement('div');
@@ -584,8 +609,9 @@ function wireTools(self) {
           from.map(v => fmt(Math.round(v))).join(' '));
     }
     if (act === 'copy') {
-      const other = state.arms[self.arm === 'ours' ? 'director' : 'ours'];
-      if (other) { setCode(other, self.code.slice()); setNote(other, ''); }
+      for (const other of others(self)) {
+        setCode(other, self.code.slice()); setNote(other, '');
+      }
     }
     if (act === 'atdist') generateAt(self).catch(reportError);
     if (act === 'save') saveState(self);
@@ -755,8 +781,8 @@ function setCode(self, code, activeBlock) {
   paintGrid(self);
   drawCurrent(self);
   if (state.link) {
-    const other = state.arms[self.arm === 'ours' ? 'director' : 'ours'];
-    if (other && keyOf(other.code) !== keyOf(code)) {
+    for (const other of others(self)) {
+      if (keyOf(other.code) === keyOf(code)) continue;
       other.code = code.slice();
       other.active = self.active;
       paintGrid(other); drawCurrent(other);
@@ -776,6 +802,23 @@ function paintGrid(self) {
       const on = Math.round(shown[b]) === cols[i];
       self.cells[b][i].classList.toggle('on', on);
     }
+  }
+  paintMask(self);
+}
+
+/* Which deter blocks the decoded goal keeps, for the code on screen. Comes with
+   the critic readings (one request), so it shows up as soon as they do. */
+function paintMask(self) {
+  if (!self.maskGroups) return;
+  const row = self.values.get(keyOf(self.preview || self.code));
+  const keep = row && row.keep;
+  for (let b = 0; b < state.blocks; b++) {
+    const ign = !!keep && keep[b] < 0.5;
+    self.labels[b].classList.toggle('ign', ign);
+    self.labels[b].textContent = ign ? `${b} ✕` : b;
+    self.labels[b].title = keep
+        ? `keep p = ${(100 * row.keep_prob[b]).toFixed(0)}%` : '';
+    for (const cell of self.cells[b]) cell.classList.toggle('ign', ign);
   }
 }
 
@@ -877,6 +920,7 @@ function valueText(spec, v) {
 }
 
 function paintValues(self) {
+  paintMask(self);
   if (!self.hasValues) return self.dom.vals.setAttribute('hidden', '');
   const row = self.values.get(keyOf(self.preview || self.code));
   for (const spec of VALUE_KEYS) {
@@ -1078,12 +1122,12 @@ function reportError(err) {
 async function waitReady(task) {
   for (;;) {
     const st = await (await fetch(`/api/prepare?task=${task}`)).json();
-    const keys = ['director', 'ours'].map(a => `${task}/${a}`);
+    const keys = armIds().map(a => `${task}/${a}`);
     if (keys.every(k => st[k] === 'ready')) return;
     if (keys.some(k => st[k] === 'error')) throw new Error(
         'a checkpoint failed to load; see the server log');
     const n = keys.filter(k => st[k] === 'ready').length;
-    setStatus(`loading checkpoints (${n}/2) — about 15s each…`, true);
+    setStatus(`loading checkpoints (${n}/${keys.length}) — about 15-30s each…`, true);
     await new Promise(r => setTimeout(r, 1200));
   }
 }
@@ -1093,11 +1137,11 @@ async function loadTask(task) {
   els.panels.innerHTML = '';
   state.arms = {};
   const info = state.meta.runs[task];
-  els.ckpt.textContent =
-      `3M-step checkpoint · ${info.director.exp} vs ${info.ours.exp}`;
+  els.ckpt.textContent = `${stepLabel()}-step checkpoint · ` +
+      armIds().map(a => info[a].exp).join(' vs ');
   await waitReady(task);
   setStatus('ready', false);
-  for (const arm of ['director', 'ours']) {
+  for (const arm of armIds()) {
     const model = await (await fetch(
         `/api/model?task=${task}&arm=${arm}`)).json();
     state.blocks = model.blocks;

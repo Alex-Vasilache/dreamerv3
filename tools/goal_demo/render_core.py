@@ -171,28 +171,32 @@ def class_embeddings(idx, table, dirs, steps):
   return z.astype(np.float32)
 
 
-def _env_spaces(task):
-  """Observation/action spaces for a task, cached so MuJoCo runs once ever."""
+def _env_spaces(task, config):
+  """Observation/action spaces as the run built them, cached so envs start once.
+
+  Built with ``main.make_env`` from the run's own config, so the decoder sees
+  exactly the observation keys it was trained on (image-only DMC here, and the
+  pin pads, which the old hand-built DMC call could not make).
+  """
   cache = {}
   if os.path.exists(SPACE_CACHE):
     with open(SPACE_CACHE, 'rb') as f:
       cache = pickle.load(f)
-  if task not in cache:
+  key = ('make_env', task)
+  if key not in cache:
     os.environ.setdefault('MUJOCO_GL', 'osmesa')
-    from embodied.envs import dmc
-    suite, rest = task.split('_', 1)
-    assert suite == 'dmc', task
-    env = dmc.DMC(rest, repeat=2, size=(64, 64))
+    from dreamerv3 import main as mainmod
+    env = mainmod.make_env(config, 0)
     notlog = lambda k: not k.startswith('log/')
     obs = {k: v for k, v in env.obs_space.items() if notlog(k)}
     act = {k: v for k, v in env.act_space.items() if k != 'reset'}
     env.close()
-    cache[task] = (obs, act)
+    cache[key] = (obs, act)
     tmp = SPACE_CACHE + '.tmp'
     with open(tmp, 'wb') as f:
       pickle.dump(cache, f)
     os.replace(tmp, SPACE_CACHE)
-  return cache[task]
+  return cache[key]
 
 
 class GoalRenderer:
@@ -204,6 +208,7 @@ class GoalRenderer:
     import jax
     import jax.numpy as jnp
     from embodied.jax import internal
+    from dreamerv3.hrl import goal_mask
     from dreamerv3.agent import Agent as AgentCls
 
     self.task, self.arm = task, arm
@@ -219,7 +224,7 @@ class GoalRenderer:
       setup.update(compute_dtype=compute_dtype)
     internal.setup(**setup)
     self.compute_dtype = str(setup['compute_dtype'])
-    obs_space, act_space = _env_spaces(task)
+    obs_space, act_space = _env_spaces(task, config)
     agent_cfg = elements.Config(
         **config.agent, logdir=config.logdir, seed=config.seed,
         jax=config.jax, batch_size=config.batch_size,
@@ -244,9 +249,31 @@ class GoalRenderer:
     self.is_vq = hasattr(model.goal_dec, 'from_latent')
     self.dim = int(model.goal_dec.dim) if self.is_vq else None
 
+    # Goal masking (hrl/goal_mask.py): the code also decodes a keep flag per
+    # group of ``deter``, and training zeroes the ignored groups. The frame and
+    # the goal-space distance use the UNMASKED decode -- a deter with whole
+    # groups at zero is not a state the image decoder has ever seen -- and the
+    # flags are reported beside it. The worker critic gets the masked goal,
+    # exactly as in training.
+    self.mask_groups = int(getattr(model, 'goal_mask_groups', 0) or 0)
+
     def decode(inp):
       return (model.goal_dec.from_latent(inp, 1) if self.is_vq
               else model.goal_dec(inp, 1)).pred()
+
+    def keep_flags(inp):
+      # The mask head reads the code's codebook embeddings (VQ) or the one-hot
+      # code (Director), which is exactly what ``inp`` already is here.
+      logit = model.goal_mdec(inp, 1).output.logit
+      return goal_mask.hard_keep(logit), jax.nn.sigmoid(
+          logit.astype(jnp.float32))
+
+    def masked(inp, goal):
+      if not self.mask_groups:
+        return goal
+      keep, _ = keep_flags(inp)
+      return goal * goal_mask.expand_groups(keep, goal.shape[-1]).astype(
+          goal.dtype)
 
     def render(inp):
       goal = decode(inp)
@@ -276,8 +303,10 @@ class GoalRenderer:
         out[name] = head(tensor, 1).pred() * scale + offset
       offset, scale = model.wkr_goal_valnorm.stats()
       out['wkr_goal'] = model.wkr_goal_val(
-          model._feat_goal2tensor(feat, decode(target)), 1
+          model._feat_goal2tensor(feat, masked(target, decode(target))), 1
       ).pred() * scale + offset
+      if self.mask_groups:
+        out['keep'], out['keep_prob'] = keep_flags(inp)
       out['reward'] = model.rew(tensor, 1).pred()
       out['cont'] = model.con(tensor, 1).prob(1)
       return {k: v.astype(jnp.float32) for k, v in out.items()}
@@ -367,6 +396,12 @@ class GoalRenderer:
                     self._jnp.asarray(self.decoder_input(idx)),
                     self._jnp.asarray(self.decoder_input(tgt)))
     return {k: np.asarray(v, np.float32) for k, v in out.items()}
+
+  def keep(self, idx):
+    """Class indices ``(B, L)`` -> ``(B, G)`` hard keep flags, or ``None``."""
+    if not self.mask_groups:
+      return None
+    return self.values(idx)['keep']
 
   def code_at_goal_distance(self, code, target, span, rng,
                             points=SEARCH_POINTS, rounds=3):
