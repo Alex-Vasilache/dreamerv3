@@ -20,6 +20,7 @@
     --warn: #b55f12;
     --canvas: #e9e8e4;
     --neg: #2a78d6; --mid: #f0efec; --pos: #e34948;
+    --veil: rgba(255, 255, 255, .72); --hatch: #b55f12;
     --side: 256px;               /* the one width the panel's column is built on */
     --radius: 10px;
     color-scheme: light;
@@ -36,6 +37,7 @@
     --warn: #e6a35c;
     --canvas: #0c0d10;
     --neg: #3987e5; --mid: #383835; --pos: #e66767;
+    --veil: rgba(18, 20, 24, .72); --hatch: #e6a35c;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -681,23 +683,50 @@ function readHeatColors() {
   catch (e) { /* keep the light defaults */ }
 }
 
+/* Drawn at 8 screen pixels per value so ignored WM blocks can be marked with a
+   veil and diagonal hatching -- fading alone vanished on the light theme, where
+   a faded band looks exactly like values near zero. */
+const DETER_RES = 256;
+
 function drawDeter(self, row, canvas, labels) {
   if (!row || !row.goal) return;
   const g = row.goal, side = Math.round(Math.sqrt(g.length));
-  const per = g.length / DETER_BLOCKS;
-  if (canvas.width !== side) canvas.width = canvas.height = side;
-  const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(side, side);
+  const band = DETER_RES / DETER_BLOCKS;
+  const off = document.createElement('canvas');
+  off.width = off.height = side;
+  const octx = off.getContext('2d');
+  const img = octx.createImageData(side, side);
   const lim = (self.scale && self.scale.deter_abs) || 1;
   for (let j = 0; j < g.length; j++) {
-    const b = Math.floor(j / per);
-    const ign = row.keep && row.keep[b] < 0.5;
     const v = Math.max(-1, Math.min(1, g[j] / lim));
     const end = v < 0 ? NEG : POS, t = Math.abs(v);
     for (let c = 0; c < 3; c++) img.data[4 * j + c] = MID[c] + t * (end[c] - MID[c]);
-    img.data[4 * j + 3] = ign ? 60 : 255;
+    img.data[4 * j + 3] = 255;
   }
-  ctx.putImageData(img, 0, 0);
+  octx.putImageData(img, 0, 0);
+  if (canvas.width !== DETER_RES) canvas.width = canvas.height = DETER_RES;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, DETER_RES, DETER_RES);
+  ctx.drawImage(off, 0, 0, DETER_RES, DETER_RES);
+  if (row.keep) {
+    const css = getComputedStyle(document.documentElement);
+    for (let b = 0; b < DETER_BLOCKS; b++) {
+      if (row.keep[b] >= 0.5) continue;
+      const y = b * band;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(0, y, DETER_RES, band); ctx.clip();
+      ctx.fillStyle = css.getPropertyValue('--veil').trim();
+      ctx.fillRect(0, y, DETER_RES, band);
+      ctx.strokeStyle = css.getPropertyValue('--hatch').trim();
+      ctx.lineWidth = 1.5;
+      for (let x = -band; x < DETER_RES + band; x += 7) {
+        ctx.moveTo(x, y + band); ctx.lineTo(x + band, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
   if (!labels) return;
   labels.innerHTML = range(0, DETER_BLOCKS).map(b => {
     if (!row.keep) return `<span>${b}</span>`;

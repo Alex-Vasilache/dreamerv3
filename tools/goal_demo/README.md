@@ -1,8 +1,8 @@
 # Goal code explorer
 
 Edit a goal code by hand and watch what the world model decodes it into, for
-three arms side by side on the same environment: Director (`now`), now +
-SOM-line, and now + SOM-line + goal mask (`goal_mask8`). Six environments: the
+three arms side by side on the same environment: Director (`OG`), OG +
+SOM-line, and OG + SOM-line + goal mask (`goal_mask8`). Six environments: the
 three pin pads, cartpole swingup, cheetah run, hopper hop. (Until 2026-10-19 it
 compared Director against SOM-line + LipVQ on the old BIG runs, which have since
 been archived; see git history.)

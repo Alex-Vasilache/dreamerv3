@@ -1,10 +1,10 @@
-"""now against other arms on the matched protocol, figure + markdown table.
+"""OG against other arms on the matched protocol, figure + markdown table.
 
-  SET=v3   now vs now+v3                   -> now_vs_v3.{png,pdf}
-  SET=gae  now vs SOM / LiP / SOM+LiP      -> now_vs_goal_ae.{png,pdf}
+  SET=v3   OG vs OG+v3                   -> now_vs_v3.{png,pdf}
+  SET=gae  OG vs SOM / LiP / SOM+LiP      -> now_vs_goal_ae.{png,pdf}
 
 Per task and seed: late = mean raw episode score over 3-4M; auc = mean of the
-100k-binned curve over 0-4M. Difference vs now: Welch t p and exact two-sided
+100k-binned curve over 0-4M. Difference vs OG: Welch t p and exact two-sided
 permutation p (252 relabelings for 5 v 5). Same statistics as
 code/dreamerv3/tools/collapse_study/compare_v3.py.
 """
@@ -18,14 +18,14 @@ W = '/work/DoyaU/vasilache/work'
 B = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
 TASKS = [('pinpad_four', 'Pin Pad Four'), ('pinpad_five', 'Pin Pad Five'), ('pinpad_six', 'Pin Pad Six'),
          ('dmc_cartpole_swingup', 'Cartpole Swingup'), ('dmc_cheetah_run', 'Cheetah Run'), ('dmc_hopper_hop', 'Hopper Hop')]
-NOW = ('now', 'Director, ours (now)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*')
+NOW = ('og', 'Director, ours (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*')
 SETS = {
     'v3': ('now_vs_v3', [
-        ('now+v3', 'Director, ours (now+v3)', '#009E73', 'e13[0-2]?_{t}_director-mgr_expl_perc002-pubmatch_s*')]),
+        ('OG+v3', 'Director, ours (OG+v3)', '#009E73', 'e13[0-2]?_{t}_director-mgr_expl_perc002-pubmatch_s*')]),
     'gae': ('now_vs_goal_ae', [
-        ('SOM', 'now + SOM', '#0072B2', 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*'),
-        ('LiP', 'now + LiP', '#009E73', 'e1[34]??_{t}_director-director_og-goal_lipvq_prod-lip_relu-goal_vq_f32-pubmatch_s*'),
-        ('SOM+LiP', 'now + SOM+LiP', '#CC79A7',
+        ('SOM', 'OG + SOM', '#0072B2', 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*'),
+        ('LiP', 'OG + LiP', '#009E73', 'e1[34]??_{t}_director-director_og-goal_lipvq_prod-lip_relu-goal_vq_f32-pubmatch_s*'),
+        ('SOM+LiP', 'OG + SOM+LiP', '#CC79A7',
          'e1[34]??_{t}_director-director_og-goal_som_lipvq_line_prod-lip_relu-goal_vq_f32-pubmatch_s*')]),
     'dv3': ('now_vs_dreamerv3', [
         ('DreamerV3', 'DreamerV3, ours', '#0072B2', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*')]),
@@ -144,13 +144,13 @@ for ax, (task, title) in zip(axes, TASKS):
 for ax in (axes[0], axes[3]):
   ax.set_ylabel('episode return', fontsize=15)
 # Legend: each arm's overall late score (% of max achievable, mean of 6 tasks)
-# under its name, with the change relative to now and the stratified perm p.
+# under its name, with the change relative to OG and the stratified perm p.
 h, l = axes[0].get_legend_handles_labels()
-base = {t: stats[t, 'now']['late'] for t, _ in TASKS}
+base = {t: stats[t, 'og']['late'] for t, _ in TASKS}
 nb = np.mean([np.mean(base[t]) / MAXRET[t] for t in base])
 lab = []
 for (key, *_), name in zip(arms, l):
-  if key == 'now':
+  if key == 'og':
     lab.append('%s\n%.0f%%' % (name, 100 * nb)); continue
   arm = {t: stats[t, key]['late'] for t, _ in TASKS}
   na = np.mean([np.mean(arm[t]) / MAXRET[t] for t in arm])
@@ -163,11 +163,11 @@ fig.savefig(out, dpi=200, facecolor='white'); fig.savefig(out.replace('.png', '.
 print(out)
 
 f = lambda v: '%.0f ± %.0f' % (np.mean(v), np.std(v, ddof=1))
-# Percent table: late score as % of max achievable, change relative to now, perm p.
-print('\n| Task | now | ' + ' | '.join(k for k, *_ in others) + ' |')
+# Percent table: late score as % of max achievable, change relative to OG, perm p.
+print('\n| Task | OG | ' + ' | '.join(k for k, *_ in others) + ' |')
 print('|---' * (2 + len(others)) + '|')
 for task, title in TASKS:
-  a = stats[task, 'now']['late']; cells = [title, '%.0f%%' % (100 * np.mean(a) / MAXRET[task])]
+  a = stats[task, 'og']['late']; cells = [title, '%.0f%%' % (100 * np.mean(a) / MAXRET[task])]
   for k, *_ in others:
     b = stats[task, k]['late']
     ch = '%+.0f%%' % (100 * (np.mean(b) - np.mean(a)) / np.mean(a)) if np.mean(a) > 1 else 'n/a'
@@ -175,11 +175,11 @@ for task, title in TASKS:
   print('| ' + ' | '.join(cells) + ' |')
 for metric in ('late', 'auc'):
   print(f'\n{metric} ({"mean score 3-4M" if metric == "late" else "mean of whole curve 0-4M"})\n')
-  print('| Task | now | ' + ' | '.join(f'{k} | Δ | p (Welch / perm)' for k, *_ in others) + ' |')
+  print('| Task | OG | ' + ' | '.join(f'{k} | Δ | p (Welch / perm)' for k, *_ in others) + ' |')
   print('|---' * (2 + 3 * len(others)) + '|')
   norm = {k: [] for k, *_ in others}
   for task, title in TASKS:
-    a = stats[task, 'now'][metric]; cells = [title, f(a)]
+    a = stats[task, 'og'][metric]; cells = [title, f(a)]
     for k, *_ in others:
       b = stats[task, k][metric]
       d = np.mean(b) - np.mean(a)
@@ -187,10 +187,10 @@ for metric in ('late', 'auc'):
       cells += [f(b) + f' ({len(b)})', '%+.0f (%s)' % (d, pct), '%.3f / %.3f' % (welch(a, b), perm_p(a, b))]
       norm[k].append(d / max(np.mean(a), np.mean(b), 1e-9))
     print('| ' + ' | '.join(cells) + ' |')
-  base = {t: stats[t, 'now'][metric] for t, _ in TASKS}
+  base = {t: stats[t, 'og'][metric] for t, _ in TASKS}
   nb = np.mean([np.mean(base[t]) / MAXRET[t] for t in base])
   print('\noverall, normalized by max achievable (DMC 1000, pin pad 411/352/292), mean of 6 tasks:')
-  print('  now %.3f' % nb)
+  print('  OG %.3f' % nb)
   for k, *_ in others:
     arm = {t: stats[t, k][metric] for t, _ in TASKS}
     d, ci, pv = overall(base, arm)

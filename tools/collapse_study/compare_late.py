@@ -1,13 +1,13 @@
-"""Return curves + late-score table for the goal-AE add-ons on `now`.
+"""Return curves + late-score table for the goal-AE add-ons on `OG`.
 
-  ucb   now (e1230-e1289) | now+SOM (e1330-e1419) | now+SOM+UCB (e1430-e1459)
-  mask  now | now+mask (e1600-e1629) | now+SOM | now+SOM+mask (e1630-e1659)
+  ucb   OG (e1230-e1289) | OG+SOM (e1330-e1419) | OG+SOM+UCB (e1430-e1459)
+  mask  OG | OG+mask (e1600-e1629) | OG+SOM | OG+SOM+mask (e1630-e1659)
 
 Per task and seed: late = mean episode score over 3-4M, only for runs that
 reached 3.98M (an unfinished run is drawn but not scored). Pin pads also give
 the sustained-50 crossing (first 50k bin from which the next 4 bins all average
 >= 50): seeds crossing and the median step. p = exact two-sided permutation
-test of each arm against `now`. Also draws the arm's own diagnostics over
+test of each arm against `OG`. Also draws the arm's own diagnostics over
 training (UCB: count/tilt metrics; mask: what the manager keeps).
 
   /work/DoyaU/vasilache/work/plotenv/bin/python tools/collapse_study/compare_late.py ucb
@@ -27,13 +27,13 @@ OUT = f'{W}/collapse_figs'
 TASKS = [('pinpad_four', 'Pin Pad Four', '#000000'), ('pinpad_five', 'Pin Pad Five', '#E69F00'),
          ('pinpad_six', 'Pin Pad Six', '#56B4E9'), ('dmc_cartpole_swingup', 'Cartpole Swingup', '#009E73'),
          ('dmc_cheetah_run', 'Cheetah Run', '#0072B2'), ('dmc_hopper_hop', 'Hopper Hop', '#CC79A7')]
-NOW = ('now', 'Director (now)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*')
-SOM = ('som', 'now + SOM', '#CC79A7', 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*')
+NOW = ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*')
+SOM = ('som', 'OG + SOM', '#CC79A7', 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*')
 SETS = {
     'ucb': [NOW, SOM,
-            ('ucb', 'now + SOM + UCB', '#0072B2', 'e14[3-5]?_{t}_director-director_og-goal_som_line-mgr_ucb-pubmatch_s*')],
-    'mask': [NOW, ('mask', 'now + mask', '#000000', 'e16[0-2]?_{t}_director-director_og-goal_mask8-pubmatch_s*'),
-             SOM, ('sommask', 'now + SOM + mask', '#56B4E9', 'e16[3-5]?_{t}_director-director_og-goal_som_line-goal_mask8-pubmatch_s*')],
+            ('ucb', 'OG + SOM + UCB', '#0072B2', 'e14[3-5]?_{t}_director-director_og-goal_som_line-mgr_ucb-pubmatch_s*')],
+    'mask': [NOW, ('mask', 'OG + mask', '#000000', 'e16[0-2]?_{t}_director-director_og-goal_mask8-pubmatch_s*'),
+             SOM, ('sommask', 'OG + SOM + mask', '#56B4E9', 'e16[3-5]?_{t}_director-director_og-goal_som_line-goal_mask8-pubmatch_s*')],
 }
 DIAG = {
     'ucb': ['ucb', [('train/novel/ucb_logp_shift', 'log-prob shift of picked goal (nats)'),
@@ -151,8 +151,8 @@ def main(which):
       if task.startswith('pinpad') and lt:
         ok = [c for c in cr if c is not None]
         cell += f', {len(ok)}/{len(lt)}' + (f' @{np.median(ok) / 1e6:.2f}M' if ok else '')
-      if key != 'now' and len(lt) >= 2 and len(late['now']) >= 2:
-        cell += f' (p={perm_p(late["now"], lt):.2f})'
+      if key != 'og' and len(lt) >= 2 and len(late['og']) >= 2:
+        cell += f' (p={perm_p(late["og"], lt):.2f})'
       if len(lt) < len(steps):
         cell += f' [n={len(lt)}, {len(steps) - len(lt)} running]'
       cells.append(cell)

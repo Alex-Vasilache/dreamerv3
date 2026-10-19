@@ -86,7 +86,7 @@ def main():
   for d in sorted(glob.glob(pattern)):
     name = os.path.basename(d)
     exp = name.split('_')[0]
-    arm = 'som' if 'goal_som_line' in name else 'now'
+    arm = 'som' if 'goal_som_line' in name else 'og'
     task = re.sub(r'^e\d+_|_director.*$', '', name)
     mrows = tail_rows(os.path.join(d, 'logdir', 'metrics.jsonl'))
     srows = tail_rows(os.path.join(d, 'logdir', 'scores.jsonl'), 50)

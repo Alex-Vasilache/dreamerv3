@@ -1,7 +1,7 @@
-"""now vs now+v3 on the matched protocol: the base choice for the goal-AE arms.
+"""OG vs OG+v3 on the matched protocol: the base choice for the goal-AE arms.
 
-  now      director director_og pubmatch      e1230-e1289 (Director rows)
-  now+v3   director mgr_expl_perc002 pubmatch e1300-e1329
+  OG       director director_og pubmatch      e1230-e1289 (Director rows)
+  OG+v3   director mgr_expl_perc002 pubmatch e1300-e1329
 
 Per task and seed: late = mean episode score over 3-4M; auc = mean of the
 100k-binned curve over 0-4M; drop = best 500k-window mean minus late (a
@@ -23,8 +23,8 @@ B = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
 OUT = f'{W}/collapse_figs/now_vs_v3.png'
 TASKS = [('pinpad_four', 'Pin Pad Four'), ('pinpad_five', 'Pin Pad Five'), ('pinpad_six', 'Pin Pad Six'),
          ('dmc_cartpole_swingup', 'Cartpole Swingup'), ('dmc_cheetah_run', 'Cheetah Run'), ('dmc_hopper_hop', 'Hopper Hop')]
-ARMS = [('now', 'Director, ours (now)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
-        ('v3', 'Director, ours (now+v3)', '#009E73', 'e13[0-2]?_{t}_director-mgr_expl_perc002-pubmatch_s*')]
+ARMS = [('og', 'Director, ours (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('v3', 'Director, ours (OG+v3)', '#009E73', 'e13[0-2]?_{t}_director-mgr_expl_perc002-pubmatch_s*')]
 BW, XMAX, FULL = 1e5, 4e6, 3.98e6
 
 
@@ -82,7 +82,7 @@ def perm_p(x, y):
 
 fig, axes = plt.subplots(2, 3, figsize=(13, 8.2)); axes = axes.ravel()
 x = (np.arange(0, XMAX, BW) + BW / 2) / 1e6
-print(f'{"task":17s} {"metric":5s} | {"now":>14s} | {"now+v3":>14s} | {"diff":>7s}  t      p_welch p_perm  n')
+print(f'{"task":17s} {"metric":5s} | {"og":>14s} | {"OG+v3":>14s} | {"diff":>7s}  t      p_welch p_perm  n')
 summary = []
 for ax, (task, title) in zip(axes, TASKS):
   stats = {}
@@ -109,7 +109,7 @@ for ax, (task, title) in zip(axes, TASKS):
       ax.fill_between(x, m - sd, m + sd, color=color, lw=0, alpha=0.15)
       ax.plot(x, m, color=color, lw=2.4, label=f'{label}')
   for metric in ('late', 'auc', 'drop'):
-    a, b = stats['now'][metric], stats['v3'][metric]
+    a, b = stats['og'][metric], stats['v3'][metric]
     if len(a) >= 2 and len(b) >= 2:
       t, pw = welch(a, b); pp = perm_p(a, b)
       print(f'{task:17s} {metric:5s} | {np.mean(a):6.0f} ± {np.std(a, ddof=1):5.0f} | {np.mean(b):6.0f} ± {np.std(b, ddof=1):5.0f} | {np.mean(b) - np.mean(a):+7.0f}  {t:+5.2f}  {pw:6.3f}  {pp:6.3f}  {len(a)}v{len(b)}')
@@ -133,5 +133,5 @@ fig.savefig(OUT, dpi=200, facecolor='white'); fig.savefig(OUT.replace('.png', '.
 if summary:
   # task-normalized late score: divide by the larger of the two arm means per task
   rel = [(b - a) / max(a, b, 1e-9) for _, a, b, _, _ in summary]
-  print('mean normalized late difference (v3 - now)/max: %+.3f over %d tasks' % (np.mean(rel), len(rel)))
+  print('mean normalized late difference (v3 - OG)/max: %+.3f over %d tasks' % (np.mean(rel), len(rel)))
 print(OUT)
