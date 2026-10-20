@@ -11,6 +11,8 @@ Writes /work/.../collapse_figs/ucb_fill/<exp>.npz with, per milestone:
   pair01      (G, G) share of count mass over blocks 0 and 1 (others summed out)
   frac_hi     fraction of cells with bonus > 0.5 (n < 3), > 0.25 (n < 15)
   mass        total decayed count mass
+  bands       share of cells well tried (bonus < 0.25) / partly / near untried (> 0.5)
+  block_marg  (8, G) per block, share of count mass on each class
 """
 import glob, os, pickle, sys
 import numpy as np
@@ -47,6 +49,17 @@ for run in sys.argv[1:]:
     res[f'{step}_pair01'] = pair.astype(np.float32)
     res[f'{step}_frac_hi'] = np.array([(full > 0.5).mean(), (full > 0.25).mean()])
     res[f'{step}_mass'] = np.array(tab.sum())
+    # How much has been tried: share of cells by bonus band (well tried / partly
+    # tried / near untried), over the full table (state x goal for arm B).
+    res[f'{step}_bands'] = np.array([(full < 0.25).mean(),
+                                     ((full >= 0.25) & (full <= 0.5)).mean(),
+                                     (full > 0.5).mean()])
+    # Where the tries go: per block, share of count mass on each class
+    # (the other seven blocks summed out). Rows = blocks, cols = classes; for
+    # arm B the goal grid has 4 bins, reported per bin.
+    res[f'{step}_block_marg'] = np.stack([
+        g.sum(axis=tuple(a for a in range(8) if a != b)) / g.sum()
+        for b in range(8)]).astype(np.float32)
     print(exp, step, 'mass %.3g' % tab.sum(), 'frac>0.5 %.3f >0.25 %.3f' % tuple(res[f'{step}_frac_hi']))
   os.makedirs(OUT, exist_ok=True)
   np.savez_compressed(os.path.join(OUT, f'{exp}.npz'), **res)
