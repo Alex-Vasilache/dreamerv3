@@ -17,7 +17,7 @@ WORK = '/work/DoyaU/vasilache/work'
 BUCKET = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
 STEP = '000004000000'
 
-ARMS = ('og', 'som', 'somlip', 'sommask')
+ARMS = ('og', 'som', 'sommask')
 ARM_LABELS = {'og': 'Director (OG)', 'som': 'OG + SOM-line',
               'somlip': 'OG + SOM-line + LiP',
               'sommask': 'OG + SOM-line + mask'}
