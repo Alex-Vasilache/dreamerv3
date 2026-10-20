@@ -643,6 +643,12 @@ SOM and the follow-ups on it; if DMC drops, consider it for pin pads only;
 if nothing moves, keep OG. (OG+v3, e1300–e1329, also had fixed entropy but changed
 seven things at once and lost, so it does not answer this.)
 Watch: `tools/collapse_study/compare_late.py wkrent`.
+**2026-10-20 16:55:** early read strongly positive -- e1880 pin pad four 330 at
+1.33M and e1881 pin pad five 252 at 1.22M (250k-window means) vs OG 275 / 196 and
+above every OG+SOM seed at the same step. The UCB-imag array 4767281 was put on
+HOLD (its 6 running tasks requeue-held, ≤15 min lost) so this batch has all 8
+GPUs (throttle 8). Release with `scontrol release 4767281` once this batch has
+nothing pending -- or cancel it if fixed worker entropy becomes the new base.
 
 ### e1820–e1879: OG + SOM + UCB inside imagination, c=3, arms A / B (2026-10-20, array 4767281)
 
