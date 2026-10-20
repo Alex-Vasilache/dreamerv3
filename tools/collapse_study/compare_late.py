@@ -32,6 +32,8 @@ SOM = ('som', 'OG + SOM', '#CC79A7', 'e1[34]??_{t}_director-director_og-goal_som
 SETS = {
     'ucb': [NOW, SOM,
             ('ucb', 'OG + SOM + UCB', '#0072B2', 'e14[3-5]?_{t}_director-director_og-goal_som_line-mgr_ucb-pubmatch_s*')],
+    'wkrent': [NOW, ('wkrent', 'OG + fixed worker entropy', '#0072B2',
+                     'e1[89][089]?_{t}_director-director_og-wkr_ent_fixed-pubmatch_s*')],
     'ucbimag': [NOW, SOM,
                 ('ucb', 'OG + SOM + UCB (env)', '#000000', 'e14[3-5]?_{t}_director-director_og-goal_som_line-mgr_ucb-pubmatch_s*'),
                 ('imagA', 'OG + SOM + UCB imag A', '#0072B2', 'e18[2-4]?_{t}_director-director_og-goal_som_line-ucb_imag_a-ucb_imag_c3-pubmatch_s*'),
@@ -40,6 +42,10 @@ SETS = {
              SOM, ('sommask', 'OG + SOM + mask', '#56B4E9', 'e16[3-5]?_{t}_director-director_og-goal_som_line-goal_mask8-pubmatch_s*')],
 }
 DIAG = {
+    'wkrent': [None, [('train/wkr_actent_action_mean', 'worker normalized entropy'),
+                      ('train/wkr_goal_rew', 'worker goal reward'),
+                      ('train/mgr_actent_skill_mean', 'manager normalized entropy'),
+                      ('train/wkr_ent/action', 'worker entropy (nats)')]],
     'ucbimag': [None, [('train/imag_ucb/novelty_gain', 'novelty gain (picked / mean candidate)'),
                        ('train/imag_ucb/logp_shift', 'log-prob shift of picked goal (nats)'),
                        ('train/imag_ucb/pick_bonus', 'UCB bonus of picked goal'),
@@ -180,7 +186,8 @@ def main(which):
   # each arm that logs them.
   only, metrics = DIAG[which]
   diag_arms = [a for a in arms if (a[0] == only if only else a[0] in (
-      ('imagA', 'imagB') if which == 'ucbimag' else ('mask', 'sommask')))]
+      ('imagA', 'imagB') if which == 'ucbimag' else ('wkrent',) if which == 'wkrent'
+      else ('mask', 'sommask')))]
   fig, axes = plt.subplots(2, 2, figsize=(13, 8.6 if len(diag_arms) == 1 else 11), sharex=True)
   xd = (np.arange(0, XMAX, 2e5) + 1e5) / 1e6
   for ax, (mkey, mtitle) in zip(axes.ravel(), metrics):

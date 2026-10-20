@@ -621,6 +621,29 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e1880–e1909: OG with fixed worker entropy (2026-10-20, array 4767814) -- base-arm check, runs first
+
+`director director_og wkr_ent_fixed pubmatch` (= OG with `worker_actent_adapt
+False`, so the worker uses the fixed `imag_loss.actent` 3e-4; manager entropy
+stays adaptive). 6 tasks x 5 seeds, pin pads first (e1880–e1894), then DMC
+(e1895–e1909) (`sbatch/pubwkrent_params.txt`), A100 128G, `RUN_ENVS=4
+DMC_PROPRIO=False`, %6; the UCB array 4767281 was throttled to 2 so this batch
+gets the slots first, since its outcome decides the base for UCB/masking.
+Why: on the robot (branch smartphone-robot-bridge, `hrl_robot_fast`) fixed worker
+entropy was the biggest single gain (balance 0.49 -> 0.75, command 0.41 -> 0.67);
+fixing the MANAGER's entropy hurt there, so only the worker changes. In OG the
+worker controller holds normalized entropy at 0.50 for the whole run on pin pads
+with a weight ~0.3 (pin pad four/five reach 271/411 and 210/352 of the
+shortest-path return), while on DMC it is nearly off (weight 0.002–0.015,
+entropy 0.56–0.62 sustained by minstd). Hypothesis: higher pin pad returns
+(four/five closer to the optimum, more pin pad six solves), DMC unchanged.
+Compare against OG (e1230–e1289), late 3–4M mean, exact permutation p.
+-> if pin pads improve and DMC does not drop: adopt as the new base, re-run
+SOM and the follow-ups on it; if DMC drops, consider it for pin pads only;
+if nothing moves, keep OG. (OG+v3, e1300–e1329, also had fixed entropy but changed
+seven things at once and lost, so it does not answer this.)
+Watch: `tools/collapse_study/compare_late.py wkrent`.
+
 ### e1820–e1879: OG + SOM + UCB inside imagination, c=3, arms A / B (2026-10-20, array 4767281)
 
 `director director_og goal_som_line ucb_imag_{a,b} ucb_imag_c3 pubmatch`, 6 tasks
