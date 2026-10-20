@@ -1522,6 +1522,16 @@ mgr_ucb:
 # UCB inside imagination, arm A: counts over the goal code alone at full
 # resolution, 8^8 = 16.7M cells (~30 picks/cell over a 4M run without decay,
 # ~4 at the 0.5M-step half-life). Environment-time UCB stays off.
+# Fixed worker entropy: turn the worker's adaptive entropy controller off, so the
+# worker uses the fixed imag_loss.actent (3e-4 under director_og). On the pin pads
+# the controller holds the worker at 50% of max entropy all run with a weight of
+# ~0.3; the robot sweep (code/robot, hrl_robot_fast) found fixed worker entropy
+# the single biggest gain (balance 0.49 -> 0.75). Manager entropy stays adaptive
+# (fixing it hurt on the robot).
+wkr_ent_fixed:
+  agent:
+    worker_actent_adapt: False
+
 ucb_imag_a:
   agent:
     mgr_ucb_c: 0.0
