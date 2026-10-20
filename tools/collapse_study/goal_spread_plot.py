@@ -49,10 +49,16 @@ for key in z.files:
   arm = next(a for a, _, _, f in ARMS if f(name))
   rows.setdefault(arm, {}).setdefault(int(ck), []).append(measures(z[key]))
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 5.6))
-for ax, j, ylab, title in (
-    (axes[0], 0, 'class-index distance (0-56)', 'Search width: goals proposed from the same state'),
-    (axes[1], 1, 'distinct regions (of 65,536)', 'Regions proposed across all probe states')):
+ARMS = [a for a in ARMS if a[0] != 'imagB']   # arm B: one seed at 0.5M only, dropped
+fig, axes = plt.subplots(1, 2, figsize=(14, 5.8))
+fig.subplots_adjust(left=0.07, right=0.9, top=0.8, bottom=0.13, wspace=0.42)
+PANELS = (
+    (axes[0], 0, 'goal distance (summed class gap, 0-56)',
+     'How far apart are goals the manager\nproposes from the same state?'),
+    (axes[1], 1, 'regions of goal space (4 bins per block)',
+     'How many regions of goal space does it\npropose across all probe states?'))
+for ax, j, ylab, title in PANELS:
+  ends = []
   for arm, label, color, _ in ARMS:
     if arm not in rows:
       continue
@@ -61,24 +67,38 @@ for ax, j, ylab, title in (
     vals = [np.array([r[j] for r in rows[arm][s]]) for s in st]
     m = np.array([v.mean() for v in vals]); n = np.array([len(v) for v in vals])
     sd = np.array([v.std(ddof=1) if len(v) > 1 else 0 for v in vals])
-    if (n > 1).any():
+    if (n > 1).sum() > 1:
       ax.fill_between(x, m - sd, m + sd, color=color, alpha=0.13, lw=0)
-    ax.plot(x, m, color=color, lw=2.4, marker='o', ms=5, label=f'{label} (n={n.max()})')
+    ax.plot(x, m, color=color, lw=2.6 if arm == 'imagA' else 2.0, marker='o', ms=4)
+    if arm == 'imagA':
+      # The 0.5M point averages 3 seeds; from 1M on it is one run (e1821).
+      v0 = vals[0]
+      ax.scatter(np.full(len(v0), x[0]), v0, s=14, color=color, alpha=0.5, zorder=3)
+    short = {'som': 'SOM', 'env': 'UCB env', 'imagA': 'UCB imag'}[arm]
+    n_txt = f'{n.max()} seeds' if arm != 'imagA' else '1 seed'
+    ends.append([m[-1], f'{short}\n({n_txt})', color])
+  # Direct labels at the right end, nudged apart so they do not overlap.
+  ends.sort(key=lambda e: e[0])
+  span = ax.get_ylim()[1] - ax.get_ylim()[0]
+  for i in range(1, len(ends)):
+    if ends[i][0] - ends[i - 1][0] < 0.12 * span:
+      ends[i][0] = ends[i - 1][0] + 0.12 * span
+  for yv, lab, color in ends:
+    ax.text(4.1, yv, lab, color=color, fontsize=12, va='center', linespacing=1.1)
   ax.set_title(title, fontsize=15, color=INK, loc='left')
   ax.set_xlabel('environment steps (M)', fontsize=15, color=INK)
-  ax.set_ylabel(ylab, fontsize=15, color=INK)
-  ax.set_xlim(0, 4.1)
+  ax.set_ylabel(ylab, fontsize=14, color=INK)
+  ax.set_xlim(0.4, 4.0)
   ax.tick_params(labelsize=13, colors=MUTED)
   ax.grid(True, color='#d5d5d2', lw=0.7); ax.set_axisbelow(True)
-  for sp in ax.spines.values():
-    sp.set_color('#999999')
-h, l = axes[0].get_legend_handles_labels()
-fig.legend(h, l, loc='lower center', ncol=4, fontsize=13, frameon=False, bbox_to_anchor=(0.5, -0.02))
-fig.suptitle(f'Which goals the manager proposes, {TITLE}: 16 samples at each of 800 fixed probe '
-             'states, untilted policy samples', fontsize=14, color=MUTED, x=0.07, ha='left')
-fig.tight_layout(rect=(0, 0.08, 1, 0.95))
+  for sp in ('top', 'right'):
+    ax.spines[sp].set_visible(False)
+  for sp in ('left', 'bottom'):
+    ax.spines[sp].set_color('#999999')
+fig.suptitle(f'{TITLE}: goals the manager proposes from 800 fixed probe states (16 per state), '
+             'same probe for every arm', fontsize=13, color=MUTED, x=0.02, ha='left')
 out = os.path.join(os.path.dirname(D), f'goal_spread_{TASK}')
-fig.savefig(out + '.png', dpi=200, facecolor='white'); fig.savefig(out + '.pdf')
+fig.savefig(out + '.png', dpi=200, facecolor='white', bbox_inches='tight'); fig.savefig(out + '.pdf', bbox_inches='tight')
 print(out + '.png')
 for arm in rows:
   for s in sorted(rows[arm]):
