@@ -2051,6 +2051,15 @@ robot_command_lean:
   env.robot.command_turn: 4900.0
   env.robot.obs_wheel_scale: -1.75e-4
 
+robot_balance_nomove:
+  env.robot.friction_comp: True
+  env.robot.turn_source: wheels
+  env.robot.forward_sign: -1.0
+  env.robot.obs_wheel_scale: -1.75e-4
+  env.robot.action_rate_penalty: 1.0
+  env.robot.wheel_penalty: 1.0  
+  env.robot.drift_penalty: 1.0
+
 # ---------------------------------------------------------------------------
 # Pinpad collapse causal study (e1031-e1042, 2026-09-30). Layer AFTER
 # `director director_og`. Question: is the worker's goal-following improvement
