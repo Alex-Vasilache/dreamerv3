@@ -650,6 +650,24 @@ HOLD (its 6 running tasks requeue-held, ≤15 min lost) so this batch has all 8
 GPUs (throttle 8). Release with `scontrol release 4767281` once this batch has
 nothing pending -- or cancel it if fixed worker entropy becomes the new base.
 
+**Result (2026-10-22, all 30 done; 3-4M mean ± sd over 5 seeds, exact permutation p vs OG).**
+
+| task | OG | OG + fixed worker entropy | p |
+|---|---|---|---|
+| pinpad_four | 271 ± 9, 5/5 @0.20M | **320 ± 10**, 5/5 @0.15M | 0.008 |
+| pinpad_five | 210 ± 12, 5/5 @0.30M | **283 ± 13**, 5/5 @0.35M | 0.008 |
+| pinpad_six | 69 ± 94, 2/5 @2.27M | 131 ± 119, 3/5 @1.60M | 0.29 |
+| cartpole | 692 ± 32 | 689 ± 108 | 0.98 |
+| cheetah | 511 ± 38 | 454 ± 38 | 0.06 |
+| hopper | 333 ± 82 | **225 ± 29** | 0.02 |
+
+Big, clean gain on the pin pads (four and five above every OG and OG+SOM seed;
+six solved earlier and more often), a loss on DMC (hopper −108, cheetah −57).
+On DMC the fixed 3e-4 is ~10x below what the controller settled at (0.002-0.015),
+and the worker still uses OG's mean/std return normalization, whereas DreamerV3's
+fixed 3e-4 is calibrated against percentile normalization with a floor of 1.
+-> not adopted as-is; next: the worker on DreamerV3 settings (e1910–e1969).
+
 ### e1820–e1879: OG + SOM + UCB inside imagination, c=3, arms A / B (2026-10-20, array 4767281)
 
 `director director_og goal_som_line ucb_imag_{a,b} ucb_imag_c3 pubmatch`, 6 tasks

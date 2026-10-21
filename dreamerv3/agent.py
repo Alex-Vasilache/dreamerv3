@@ -392,9 +392,15 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             source=self.mgr_novel_val, **config.slowvalue)
 
       self.wkr_goal_val = embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_val')
+      # Worker-only DreamerV3 settings (``wkr_own_*``): the manager keeps the
+      # shared ones. Off by default, so every earlier run is unchanged.
+      self._wkr_own_critic = bool(getattr(config, 'wkr_own_critic', False))
+      self._wkr_own_advnorm = bool(getattr(config, 'wkr_own_advnorm', False))
+      self._wkr_own_opt = bool(getattr(config, 'wkr_own_opt', False))
       self.wkr_goal_slowval = embodied.jax.SlowModel(
           embodied.jax.MLPHead(scalar, **config.value, name='wkr_goal_slowval'),
-          source=self.wkr_goal_val, **config.slowvalue)
+          source=self.wkr_goal_val,
+          **(config.wkr_slowvalue if self._wkr_own_critic else config.slowvalue))
 
       # DreamerV3 actor-critic normalization (``none`` valnorm / ``none`` advnorm).
       # The critics are symexp_twohot heads trained on RAW returns. The worker and
@@ -417,7 +423,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.wkr_goal_valnorm = embodied.jax.Normalize(**config.valnorm, name='wkr_goal_valnorm')
 
       self.mgr_advnorm = embodied.jax.Normalize(**config.advnorm, name='mgr_advnorm')
-      self.wkr_goal_advnorm = embodied.jax.Normalize(**config.advnorm, name='wkr_goal_advnorm')
+      self.wkr_goal_advnorm = embodied.jax.Normalize(
+          **(config.wkr_advnorm if self._wkr_own_advnorm else config.advnorm),
+          name='wkr_goal_advnorm')
 
       self.mgr_expl_weight = config.mgr_expl_weight
       # Negative = "same as mgr_expl_weight" (the original equal-weight
@@ -635,8 +643,16 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       groups = {
           'model': (model_modules, self._make_opt(**config.opt)),
           'goal': (goal_modules, self._make_opt(**config.goal_opt)),
-          'ac': (ac_modules, self._make_opt(**config.ac_opt)),
       }
+      if self._wkr_own_opt:
+        # Worker actor + critic on their own optimizer (``wkr_opt``); the manager
+        # keeps ``ac_opt``. Gradients are unchanged -- only the update rule differs.
+        wkr_modules = [self.pol, self.wkr_goal_val]
+        groups['ac'] = ([m for m in ac_modules if m not in wkr_modules],
+                        self._make_opt(**config.ac_opt))
+        groups['wkr'] = (wkr_modules, self._make_opt(**config.wkr_opt))
+      else:
+        groups['ac'] = (ac_modules, self._make_opt(**config.ac_opt))
     else:
       ac_modules = [self.pol, self.val]
       groups = {
@@ -1731,6 +1747,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     K = self.manager_sample_freq
     M = B * K_imag
     kwargs_wkr = {**self.config.imag_loss}
+    if self._wkr_own_critic:
+      kwargs_wkr.update(self.config.wkr_critic)
     kwargs_wkr.update(
         update=training,
         contdisc=self.config.contdisc,
@@ -2007,6 +2025,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
 
       # Worker Goal Replay Value Loss
       kwargs_repwkr_goal = {**self.config.repl_loss}
+      if self._wkr_own_critic:
+        kwargs_repwkr_goal.update(self.config.wkr_critic)
       kwargs_repwkr_goal.update(
           update=training,
           horizon=self.config.horizon,

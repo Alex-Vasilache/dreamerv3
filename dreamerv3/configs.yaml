@@ -652,6 +652,18 @@ defaults:
       slowreg: 1.0
     repl_loss: {slowtar: False, lam: 0.95, slowreg: 1.0}
     slowvalue: {rate: 0.02, every: 1}
+    # Worker-only actor-critic settings. Each switch makes the worker use its own
+    # block instead of the shared one above (which the manager keeps). The
+    # values are DreamerV3's defaults, so a block that layers a base (e.g.
+    # director_og) still gets v3 for the worker alone. Return normalization is
+    # already worker-only (``retnorm``; the managers use ``mgr_retnorm``).
+    wkr_own_critic: False
+    wkr_critic: {slowtar: False, slowreg: 1.0}     # applied to imag + replay losses
+    wkr_slowvalue: {rate: 0.02, every: 1}
+    wkr_own_advnorm: False
+    wkr_advnorm: {impl: none, rate: 0.01, limit: 1e-8}
+    wkr_own_opt: False
+    wkr_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     # Manager and worker actor-critics both use these DreamerV3 defaults: the
     # ``perc`` retnorm scales the advantage by the 5-95 percentile return range,
     # ``valnorm: none`` trains the symexp_twohot critic on RAW returns (the head's
@@ -1531,6 +1543,24 @@ mgr_ucb:
 wkr_ent_fixed:
   agent:
     worker_actent_adapt: False
+
+# Worker on DreamerV3 settings, layered after director_og + wkr_ent_fixed.
+# Horizon stays 100 (Director's; the worker is short-term).
+#   wkr_v3_retnorm: return normalization only (percentile 5-95, floor 1.0) --
+#     the fixed 3e-4 entropy was calibrated against this scale.
+#   wkr_v3: every worker-side v3 setting: + no advantage normalization, EMA
+#     target critic (0.02 every step, slow-reg 1.0, no slow targets), LaProp
+#     lr 4e-5 without weight decay.
+wkr_v3_retnorm:
+  agent:
+    retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
+
+wkr_v3:
+  agent:
+    retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
+    wkr_own_critic: True
+    wkr_own_advnorm: True
+    wkr_own_opt: True
 
 ucb_imag_a:
   agent:
