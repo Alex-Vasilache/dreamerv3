@@ -621,6 +621,25 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e1910–e1969: worker on DreamerV3 settings, on OG + fixed worker entropy (2026-10-22, array 4768718)
+
+Base `director director_og wkr_ent_fixed`, plus one of two arms, 6 tasks x 5
+seeds each, seed-major with both arms per seed (`sbatch/pubwkrv3_params.txt`),
+A100, %8. Manager settings unchanged; horizon stays 100.
+- **R = `wkr_v3_retnorm`**: worker return normalization percentile 5-95, floor 1.0
+  (DreamerV3), the scale its fixed 3e-4 entropy is calibrated against.
+- **V = `wkr_v3`**: R + no worker advantage normalization + worker EMA target
+  critic (0.02 every step, slow-reg 1.0, no slow targets) + worker LaProp lr 4e-5,
+  wd 0 on its own optimizer (`wkr_own_critic/advnorm/opt`, new, default off).
+Why: fixed worker entropy (e1880–e1909) won big on pin pads but lost on DMC
+(hopper −108, cheetah −57). Hypothesis: R recovers DMC while keeping the pin pad
+gain; V at least as good as R. Compare to OG (e1230–e1289) and OG + fixed worker
+entropy (e1880–e1909) with `compare_late.py wkrv3`.
+-> R (or V) ≥ OG on DMC and ≈ e1880 on pin pads: new base; then re-run SOM,
+mask and UCB-imag on it. V > R: ablate V's parts. Neither fixes DMC: consider
+fixed worker entropy for discrete-action tasks only, or a higher DMC coefficient.
+The UCB-imag array 4767281 (old base) stays on hold until this is decided.
+
 ### e1880–e1909: OG with fixed worker entropy (2026-10-20, array 4767814) -- base-arm check, runs first
 
 `director director_og wkr_ent_fixed pubmatch` (= OG with `worker_actent_adapt
