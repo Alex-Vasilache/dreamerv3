@@ -263,7 +263,7 @@ def vq_goal_loss(
     enc, dec, deter, bdims, som=False, ste=None, agg='sum',
     codebook_scale=1.0, commit_scale=1.0, som_scale=0.9, lip_scale=0.03,
     lip_impl='logprod', rec_scale=1.0, z_e=None, commit_joint=False,
-    commit_adapt=None):
+    commit_adapt=None, rec_mask=None):
   """Assemble the full goal-autoencoder objective for the VQ arms.
 
   Returns ``(loss, metrics)`` where ``loss`` has the leading batch dims of
@@ -298,9 +298,18 @@ def vq_goal_loss(
   Under the straight-through path the codebook receives no reconstruction
   gradient (the ``sg`` blocks it) and is trained by the codebook term, exactly
   as in VQ-VAE.
+
+  ``rec_mask`` (same shape as ``deter``) restricts both reconstructions to the
+  kept dims of a masked goal (hrl/goal_mask.py); ``z_e`` is then expected to
+  come from the masked input, while ``deter`` stays the full target.
   """
   ste = (not som) if ste is None else bool(ste)
   target = sg(deter.astype(f32))
+
+  def rec_loss(out):
+    if rec_mask is None:
+      return out.loss(target)
+    return (jnp.square(out.pred() - target) * rec_mask).sum(-1)
   # ``z_e`` may be supplied by a caller that already ran the encoder (the agent
   # needs the code for its entropy / geometry diagnostics); recomputing it here
   # would double the encoder cost every train step.
@@ -308,10 +317,10 @@ def vq_goal_loss(
   quant = dec.codebook.quantize(z_e)
 
   z_rec = z_e + sg(quant['z_q'] - z_e) if ste else quant['z_q']
-  rec_q = dec.from_latent(z_rec, bdims).loss(target)
+  rec_q = rec_loss(dec.from_latent(z_rec, bdims))
   rec = rec_q
   if som:
-    rec_e = dec.from_latent(z_e, bdims).loss(target)
+    rec_e = rec_loss(dec.from_latent(z_e, bdims))
     rec = rec + rec_e
 
   neighbors = dec.codebook.neighbors(quant['ids']) if som else None

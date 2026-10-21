@@ -16,6 +16,7 @@ import embodied.jax.nets as nn
 import embodied.jax.outs as outs
 
 from . import explore as mgr_explore
+from . import goal_mask
 from .tensors import (
     aggregate_mgr_cont,
     aggregate_mgr_extr_rew,
@@ -77,6 +78,11 @@ class ManagerMixin:
     else:
       goal = nn.cast(y.reshape((*y.shape[:-2], -1)))
     parts = [deter, stoch, goal]
+    groups = getattr(self, 'goal_mask_groups', 0)
+    if groups and goal.shape[-1] == deter.shape[-1]:
+      # The keep pattern, explicitly: zeros in a goal group are how the mask
+      # is stored, but the worker should not have to infer that.
+      parts.append(nn.cast(goal_mask.group_keep(f32(goal), groups)))
     if self.worker_timed_goals:
       if countdown is None:
         countdown = jnp.ones(deter.shape[:-1] + (1,), f32)

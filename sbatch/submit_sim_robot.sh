@@ -4,7 +4,7 @@
 #
 #   <exp> <arm> <task: balance|command> <hz: 25|65> <gpu: v100|p100> [main.py flags...]
 #
-# with <arm> 'flat' (DreamerV3), 'hrl' (the 'now' Director) or 'hrlfast'
+# with <arm> 'flat' (DreamerV3), 'hrl' (the OG Director) or 'hrlfast'
 # (hrl + hrl_robot_fast, the tuned goal-only recipe). Flags after the
 # GPU go to main.py, e.g. --agent.manager_sample_freq 16 --seed 1.
 #

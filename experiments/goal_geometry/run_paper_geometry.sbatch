@@ -13,7 +13,7 @@
 # code_sim (final + 1M/2M/3M/4M milestones) and idx_dist, per run, read
 # straight from the bucket. RUNS is "arm:run_dir arm:run_dir ...".
 #
-#   RUNS="now:/bucket/.../e1233_... som:/bucket/.../e1333_..." \
+#   RUNS="og:/bucket/.../e1233_... som:/bucket/.../e1333_..." \
 #     sbatch experiments/goal_geometry/run_paper_geometry.sbatch
 #
 # Output: $OUT/code_sim/<arm>/<run>.npz, $OUT/code_sim_ckpt/<arm>/<step>/<run>.npz,

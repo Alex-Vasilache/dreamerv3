@@ -1,0 +1,62 @@
+array_job	task_idx	exp	config	task	seed
+4763638	0	e1600	director director_og goal_mask8 pubmatch	pinpad_four	0
+4763638	1	e1601	director director_og goal_mask8 pubmatch	pinpad_five	0
+4763638	2	e1602	director director_og goal_mask8 pubmatch	pinpad_six	0
+4763638	3	e1603	director director_og goal_mask8 pubmatch	dmc_cartpole_swingup	0
+4763638	4	e1604	director director_og goal_mask8 pubmatch	dmc_cheetah_run	0
+4763638	5	e1605	director director_og goal_mask8 pubmatch	dmc_hopper_hop	0
+4763638	6	e1606	director director_og goal_mask8 pubmatch	pinpad_four	1
+4763638	7	e1607	director director_og goal_mask8 pubmatch	pinpad_five	1
+4763638	8	e1608	director director_og goal_mask8 pubmatch	pinpad_six	1
+4763638	9	e1609	director director_og goal_mask8 pubmatch	dmc_cartpole_swingup	1
+4763638	10	e1610	director director_og goal_mask8 pubmatch	dmc_cheetah_run	1
+4763638	11	e1611	director director_og goal_mask8 pubmatch	dmc_hopper_hop	1
+4763638	12	e1612	director director_og goal_mask8 pubmatch	pinpad_four	2
+4763638	13	e1613	director director_og goal_mask8 pubmatch	pinpad_five	2
+4763638	14	e1614	director director_og goal_mask8 pubmatch	pinpad_six	2
+4763638	15	e1615	director director_og goal_mask8 pubmatch	dmc_cartpole_swingup	2
+4763638	16	e1616	director director_og goal_mask8 pubmatch	dmc_cheetah_run	2
+4763638	17	e1617	director director_og goal_mask8 pubmatch	dmc_hopper_hop	2
+4763638	18	e1618	director director_og goal_mask8 pubmatch	pinpad_four	3
+4763638	19	e1619	director director_og goal_mask8 pubmatch	pinpad_five	3
+4763638	20	e1620	director director_og goal_mask8 pubmatch	pinpad_six	3
+4763638	21	e1621	director director_og goal_mask8 pubmatch	dmc_cartpole_swingup	3
+4763638	22	e1622	director director_og goal_mask8 pubmatch	dmc_cheetah_run	3
+4763638	23	e1623	director director_og goal_mask8 pubmatch	dmc_hopper_hop	3
+4763638	24	e1624	director director_og goal_mask8 pubmatch	pinpad_four	4
+4763638	25	e1625	director director_og goal_mask8 pubmatch	pinpad_five	4
+4763638	26	e1626	director director_og goal_mask8 pubmatch	pinpad_six	4
+4763638	27	e1627	director director_og goal_mask8 pubmatch	dmc_cartpole_swingup	4
+4763638	28	e1628	director director_og goal_mask8 pubmatch	dmc_cheetah_run	4
+4763638	29	e1629	director director_og goal_mask8 pubmatch	dmc_hopper_hop	4
+4763638	30	e1630	director director_og goal_som_line goal_mask8 pubmatch	pinpad_four	0
+4763638	31	e1631	director director_og goal_som_line goal_mask8 pubmatch	pinpad_five	0
+4763638	32	e1632	director director_og goal_som_line goal_mask8 pubmatch	pinpad_six	0
+4763638	33	e1633	director director_og goal_som_line goal_mask8 pubmatch	dmc_cartpole_swingup	0
+4763638	34	e1634	director director_og goal_som_line goal_mask8 pubmatch	dmc_cheetah_run	0
+4763638	35	e1635	director director_og goal_som_line goal_mask8 pubmatch	dmc_hopper_hop	0
+4763638	36	e1636	director director_og goal_som_line goal_mask8 pubmatch	pinpad_four	1
+4763638	37	e1637	director director_og goal_som_line goal_mask8 pubmatch	pinpad_five	1
+4763638	38	e1638	director director_og goal_som_line goal_mask8 pubmatch	pinpad_six	1
+4763638	39	e1639	director director_og goal_som_line goal_mask8 pubmatch	dmc_cartpole_swingup	1
+4763638	40	e1640	director director_og goal_som_line goal_mask8 pubmatch	dmc_cheetah_run	1
+4763638	41	e1641	director director_og goal_som_line goal_mask8 pubmatch	dmc_hopper_hop	1
+4763638	42	e1642	director director_og goal_som_line goal_mask8 pubmatch	pinpad_four	2
+4763638	43	e1643	director director_og goal_som_line goal_mask8 pubmatch	pinpad_five	2
+4763638	44	e1644	director director_og goal_som_line goal_mask8 pubmatch	pinpad_six	2
+4763638	45	e1645	director director_og goal_som_line goal_mask8 pubmatch	dmc_cartpole_swingup	2
+4763638	46	e1646	director director_og goal_som_line goal_mask8 pubmatch	dmc_cheetah_run	2
+4763638	47	e1647	director director_og goal_som_line goal_mask8 pubmatch	dmc_hopper_hop	2
+4763638	48	e1648	director director_og goal_som_line goal_mask8 pubmatch	pinpad_four	3
+4763638	49	e1649	director director_og goal_som_line goal_mask8 pubmatch	pinpad_five	3
+4763638	50	e1650	director director_og goal_som_line goal_mask8 pubmatch	pinpad_six	3
+4763638	51	e1651	director director_og goal_som_line goal_mask8 pubmatch	dmc_cartpole_swingup	3
+4763638	52	e1652	director director_og goal_som_line goal_mask8 pubmatch	dmc_cheetah_run	3
+4763638	53	e1653	director director_og goal_som_line goal_mask8 pubmatch	dmc_hopper_hop	3
+4763638	54	e1654	director director_og goal_som_line goal_mask8 pubmatch	pinpad_four	4
+4763638	55	e1655	director director_og goal_som_line goal_mask8 pubmatch	pinpad_five	4
+4763638	56	e1656	director director_og goal_som_line goal_mask8 pubmatch	pinpad_six	4
+4763638	57	e1657	director director_og goal_som_line goal_mask8 pubmatch	dmc_cartpole_swingup	4
+4763638	58	e1658	director director_og goal_som_line goal_mask8 pubmatch	dmc_cheetah_run	4
+4763638	59	e1659	director director_og goal_som_line goal_mask8 pubmatch	dmc_hopper_hop	4
+4765383	22	e1622	director director_og goal_mask8 pubmatch	dmc_cheetah_run	3

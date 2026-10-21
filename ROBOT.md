@@ -194,7 +194,7 @@ Config blocks in `dreamerv3/configs.yaml`, layered left to right:
 | `robot_25hz`, `_50hz`, `_65hz`, `_100hz` | 2 s horizon and 20 s episodes at that rate |
 | `robot_command` (+ `_cur`, `_sum`, `_taper_sum`, `_lean`) | balance while following a command, see below |
 | `sim_phone`, `sim_phone_fast` | cartpole paced to real time, no robot |
-| `hrl_robot`, `hrl_robot_fast` | after the robot blocks, with `director director_og` first: the HRL agent ('now' Director), tuned for the robot ([docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md)); acts from the trainer, not the phone |
+| `hrl_robot`, `hrl_robot_fast` | after the robot blocks, with `director director_og` first: the HRL agent (OG Director), tuned for the robot ([docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md)); acts from the trainer, not the phone |
 | `sim_robot` + `sim_25hz` / `sim_65hz` | the robot task against a simulated balancing body, paced to real time, no robot |
 
 Reward and motor flags, passed after the name:
