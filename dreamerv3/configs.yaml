@@ -91,7 +91,7 @@ defaults:
     # pipeline True lets the phone free-run on its own clock instead of
     # blocking on us for every action; see embodied/envs/robot.py. False falls
     # back to the lock-step protocol without reinstalling the phone app.
-    robot: {pipeline: True, host: '0.0.0.0', port: 3000, hz: 65.0, horizon_s: 2.0, episode_s: 20.0, length: 0, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, action_rate_penalty: 0.0, command_scale: 1.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, command_speed: 1500.0, command_turn: 1000.0, command_sigma: 0.5, command_reward: product, command_track_weight: 2.0, command_balance_weight: 1.0, forward_sign: -1.0, command_step: 0.0, command_zeta_steps: 40000, command_bias: 0.0, command_ramp: 0.0, friction_comp: False, bumper_lo: -0.120, bumper_hi: 0.161, bumper_margin: 0.0175, bumper_penalty: 1.0, turn_source: wheels, yaw_rate_max: 1.5, yaw_axis: y, yaw_sign: -1.0, command_mode: auto, command_hold_min: 2.0, command_hold_max: 5.0, command_p_zero: 0.3, command_p_axis: 0.4, repeat: 1, use_logdir: True, onboard: False, weights_every: 0.0, sim: False, sim_model: mujoco, sim_wheel_omega: 6.3, sim_stall_torque: 0.06, sim_armature: 5e-4, sim_air_speed: 5700.0, sim_w0: 12.0, balance_reward: shaped, still_speed_sigma: 1960.0, still_chatter_sigma: 0.3, still_accel_sigma: 0.0}
+    robot: {pipeline: True, host: '0.0.0.0', port: 3000, hz: 65.0, horizon_s: 2.0, episode_s: 20.0, length: 0, discrete: True, timeout: 20.0, speed_scale: 1e-4, fall_angle: 0.0, spin_penalty: 0.1, rate_penalty: 0.05, theta_zero: 0.0, theta_lo: -0.122, theta_hi: 0.182, drift_clip: 1.0, symmetric: False, obs_theta_scale: 0.18, obs_rate_scale: 3.0, obs_wheel_scale: 3.3e-4, obs_clip: 3.0, theta_sigma: 0.05, drift_penalty: 0.1, wheel_penalty: 0.0, action_rate_penalty: 0.0, command_scale: 1.0, ref_range: 0.09, ref_hold: 100, status_every: 0, recover_gain: 0.0, recover_k: 4.0, recover_tol: 0.05, recover_max: 250, recover_min: 0.6, command_speed: 1500.0, command_turn: 1000.0, command_sigma: 0.5, command_reward: product, command_track_weight: 2.0, command_balance_weight: 1.0, forward_sign: -1.0, command_step: 0.0, command_zeta_steps: 40000, command_bias: 0.0, command_ramp: 0.0, friction_comp: False, bumper_lo: -0.120, bumper_hi: 0.161, bumper_margin: 0.0175, bumper_penalty: 1.0, turn_source: wheels, yaw_rate_max: 1.5, yaw_axis: y, yaw_sign: -1.0, command_mode: auto, command_hold_min: 2.0, command_hold_max: 5.0, command_p_zero: 0.3, command_p_axis: 0.4, repeat: 1, use_logdir: True, onboard: False, weights_every: 0.0, sim: False, sim_model: mujoco, sim_wheel_omega: 6.3, sim_stall_torque: 0.06, sim_armature: 5e-4, sim_air_speed: 5700.0, sim_w0: 12.0, balance_reward: shaped, still_speed_sigma: 1960.0, still_chatter_sigma: 0.3, still_accel_sigma: 0.0, still_kernel: gauss, still_upright: False}
 
   replay:
     size: 5e6
@@ -1824,21 +1824,27 @@ sim_phone_fast:
   batch_size: 32
   run.train_ratio: 8192
 
-# Balance with still wheels: the zero-command reward of the command runs,
-# which balanced with almost no wheel movement, made the whole goal. One
-# Gaussian on wheel speed (sigma 1960 mm/s, as there), chatter (sigma 0.3 of
-# the action range per step) and, if still_accel_sigma > 0, wheel
-# acceleration; -2 within 1.5 deg of a bumper. See robot.py:_still_reward.
-# The motor settings are those of the command runs.
+# Balance with still wheels: upright x exp(-(|v| / 1000 mm/s + |da| / 0.2)),
+# zero wheel speed and zero chatter (change of action per step) as targets,
+# upright the balance task's score around theta_zero; -2 within 1.5 deg of a
+# bumper. See robot.py:_still_reward.
+# e1978 (2026-10-22, real robot) used a Gaussian (sigma 1960 / 0.3) with
+# friction_comp, and balanced with constant small chatter where the shaped
+# `robot` reward (e1971, no friction_comp) was smooth: the Gaussian is flat
+# near zero, so small chatter was free, and friction_comp turns every small
+# action into a real motor kick past the dead zone. It also leaned +4.5 deg
+# on average against the back bumper, just inside the penalty zone, where the
+# body is held up and the wheels can rest. Hence the Laplace kernel, tighter
+# widths, the upright factor and no friction_comp.
 robot_still:
   env.robot.balance_reward: still
-  env.robot.still_speed_sigma: 1960.0
-  env.robot.still_chatter_sigma: 0.3
+  env.robot.still_kernel: laplace
+  env.robot.still_upright: True
+  env.robot.still_speed_sigma: 1000.0
+  env.robot.still_chatter_sigma: 0.2
   env.robot.still_accel_sigma: 0.0
   env.robot.bumper_margin: 0.0262
   env.robot.bumper_penalty: 2.0
-  env.robot.friction_comp: True
-  env.robot.obs_wheel_scale: -1.75e-4
 
 # Balance while following a command: forward speed and turn rate, each in
 # [-1, 1], an extra 'command' observation the phone fills. While training the

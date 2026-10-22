@@ -309,7 +309,8 @@ class SmartphoneRobot(embodied.Env):
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       balance_reward='shaped', still_speed_sigma=1960.0,
-      still_chatter_sigma=0.3, still_accel_sigma=0.0,
+      still_chatter_sigma=0.3, still_accel_sigma=0.0, still_kernel='gauss',
+      still_upright=False,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
       pace=None):
@@ -392,9 +393,12 @@ class SmartphoneRobot(embodied.Env):
     # 'still': the command task's zero-command reward made the whole goal.
     #   Standing still means three targets, all zero: wheel speed, change of
     #   action between steps (chatter) and, optionally, wheel acceleration.
-    #   They pay one Gaussian on the joint error, exp(-sum (x / sigma)^2), so
-    #   small errors cost much and large ones saturate, unlike a linear cost
-    #   that hardly minds a slow drift. A sigma of 0 drops that target.
+    #   still_kernel 'gauss' pays exp(-sum (x / sigma)^2): large errors
+    #   saturate, but the top is flat, so errors well under sigma cost almost
+    #   nothing -- e1978 (2026-10-22) balanced with constant small chatter
+    #   that way. 'laplace' pays exp(-sum |x| / sigma): the same saturation,
+    #   with a slope at zero, so the first bit of chatter or drift already
+    #   costs (|x| = sigma / 10 loses 10%). A sigma of 0 drops that target.
     #   Within bumper_margin of a bumper it is -bumper_penalty instead. Balance
     #   is implied, as for 'bumper_track': the body cannot stay off the bumpers
     #   with still wheels unless it is upright.
@@ -403,6 +407,13 @@ class SmartphoneRobot(embodied.Env):
     self.still_speed_sigma = float(still_speed_sigma)      # mm/s, RMS wheel
     self.still_chatter_sigma = float(still_chatter_sigma)  # action units
     self.still_accel_sigma = float(still_accel_sigma)      # mm/s^2, RMS wheel
+    assert still_kernel in ('gauss', 'laplace'), still_kernel
+    self.still_kernel = still_kernel
+    # Multiply by the balance task's upright score (0.5 linear + 0.5 narrow
+    # bonus around theta_zero). Without it e1978 leaned +4.5 deg on average
+    # and rested against the back bumper just inside the penalty zone: a body
+    # held up by its bumper keeps its wheels still for free.
+    self.still_upright = bool(still_upright)
     # The phone multiplies every wheel command by this before driving, so the
     # policy keeps its whole [-1, 1] range while the motors stay off full
     # power, the only regime where a driver was seen to cut out under load.
@@ -955,9 +966,15 @@ class SmartphoneRobot(embodied.Env):
         (self._chatter, self.still_chatter_sigma),
         (np.sqrt(np.mean(accel ** 2)), self.still_accel_sigma)):
       if sigma:
-        err += (value / sigma) ** 2
-    return float(np.exp(-err)
-                 - self.rate_penalty * abs(float(sensors['angular_velocity'])))
+        err += (value / sigma) ** 2 if self.still_kernel == 'gauss' \
+            else abs(value) / sigma
+    score = float(np.exp(-err))
+    if self.still_upright:
+      reach = self.theta_hi if offset > 0 else abs(self.theta_lo)
+      linear = 1.0 - min(1.0, abs(offset) / max(reach, 1e-6))
+      score *= 0.5 * linear + 0.5 * np.exp(-((offset / self.theta_sigma) ** 2))
+    return float(
+        score - self.rate_penalty * abs(float(sensors['angular_velocity'])))
 
   def _wheel_effort(self, speed_l, speed_r):
     return 0.5 * (
@@ -1106,6 +1123,7 @@ class SmartphoneRobot(embodied.Env):
         still_speed_sigma=self.still_speed_sigma,
         still_chatter_sigma=self.still_chatter_sigma,
         still_accel_sigma=self.still_accel_sigma,
+        still_kernel=self.still_kernel, still_upright=self.still_upright,
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,
