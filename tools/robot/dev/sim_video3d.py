@@ -1,10 +1,12 @@
 """3D replay of two `sim_rollout.py` recordings, side by side, in MuJoCo.
 
-The simulator is planar (pitch, wheel speeds); this replays its recorded
-states kinematically on a 3D robot: the body pitches by the recorded tilt,
-each wheel turns by its own travelled distance, and the robot drives and
-turns on a checkered floor by integrating the two wheel speeds. One camera per
-robot follows it at a fixed world angle. 1920x1080, 30 fps, real time.
+Recordings of the MuJoCo robot (env.robot.sim_model mujoco) carry the body's
+full state and are replayed exactly, on the same model. Recordings of the
+planar model (pendulum) are replayed kinematically on a stand-in 3D robot: the
+body pitches by the recorded tilt, each wheel turns by its own travelled
+distance, and the robot drives and turns on a checkered floor by integrating
+the two wheel speeds. One camera per robot follows it at a fixed world angle.
+1920x1080, 30 fps, real time.
 
 Needs MuJoCo rendering (MUJOCO_GL=egl on a GPU node) and an ffmpeg binary
 (--ffmpeg, e.g. from imageio-ffmpeg).
@@ -17,9 +19,15 @@ import argparse
 import math
 import subprocess
 
+import pathlib
+import sys
+
 import mujoco
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3]))
+from embodied.envs import robot_mujoco  # noqa: E402
 
 W, H = 1920, 1080
 HEAD = 110
@@ -141,7 +149,12 @@ def main():
 
   scenes = []
   for run, rgb in zip(runs, colours):
-    model = mujoco.MjModel.from_xml_string(xml(rgb))
+    if 'qpos' in run:
+      lo, hi = float(run['bumper_lo']), float(run['bumper_hi'])
+      model = mujoco.MjModel.from_xml_string(robot_mujoco.model_xml(
+          bumper_back=hi, bumper_front=-lo, visual=rgb))
+    else:
+      model = mujoco.MjModel.from_xml_string(xml(rgb))
     data = mujoco.MjData(model)
     renderer = mujoco.Renderer(model, VIEW_H, VIEW_W)
     geoms = {k: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, k)
@@ -170,11 +183,14 @@ def main():
     for col, (s, label, hexc) in enumerate(zip(scenes, args.labels, hexes)):
       run, tr, m, d = s['run'], s['traj'], s['model'], s['data']
       theta = float(run['theta'][i])
-      d.qpos[:3] = [tr['px'][i], tr['py'][i], R]
-      # Positive tilt is a backward lean: the top tips toward -x.
-      d.qpos[3:7] = quat(tr['yaw'][i], -theta)
-      d.qpos[7] = tr['wl'][i] + theta
-      d.qpos[8] = tr['wr'][i] + theta
+      if 'qpos' in run:
+        d.qpos[:] = run['qpos'][i]
+      else:
+        d.qpos[:3] = [tr['px'][i], tr['py'][i], R]
+        # Positive tilt is a backward lean: the top tips toward -x.
+        d.qpos[3:7] = quat(tr['yaw'][i], -theta)
+        d.qpos[7] = tr['wl'][i] + theta
+        d.qpos[8] = tr['wr'][i] + theta
       mujoco.mj_kinematics(m, d)
       mujoco.mj_comPos(m, d)
       mujoco.mj_camlight(m, d)

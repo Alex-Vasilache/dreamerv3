@@ -57,11 +57,46 @@ def _bumper_z(angle):
 
 
 def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
-              armature=5e-4, friction=1.0):
+              armature=5e-4, friction=1.0, visual=None):
   """MJCF of the robot. bumper_back > 0 and bumper_front > 0 are the pitch
   magnitudes (rad, from geometric upright) at which the body rests on the rear
-  and front bumper."""
+  and front bumper. `visual` (an RGB phone colour) adds what a video needs --
+  the phone, a checkered floor, a camera following from the side, push
+  arrows -- none of which touches the physics."""
   zb, zf = _bumper_z(bumper_back), _bumper_z(bumper_front)
+  extra = world = asset = ''
+  if visual is not None:
+    r, g, b = visual
+    asset = """
+  <visual><global offwidth="1920" offheight="1080"/>
+    <quality shadowsize="4096"/>
+    <headlight ambient=".45 .45 .45" diffuse=".4 .4 .4" specular="0 0 0"/>
+  </visual>
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512"
+             rgb1=".95 .95 .93" rgb2=".84 .85 .83"/>
+    <material name="floor" texture="grid" texrepeat="4 4" texuniform="true"/>
+    <texture name="sky" type="skybox" builtin="gradient" rgb1="1 1 1"
+             rgb2=".85 .88 .9" width="64" height="64"/>
+  </asset>"""
+    world = 'material="floor"'
+    # Arrows in the body frame: a backward push tips the top toward -y.
+    arrow = lambda name, y0, y1: f"""
+      <geom name="{name}" type="capsule" fromto="0 {y0} 0.16 0 {y1} 0.16"
+            size="0.008" rgba=".84 .37 0 0" contype="0" conaffinity="0"/>
+      <geom name="{name}_tip" type="sphere" pos="0 {y1} 0.16" size="0.016"
+            rgba=".84 .37 0 0" contype="0" conaffinity="0"/>"""
+    extra = f"""
+      <light mode="trackcom" pos="-0.4 -0.4 1.2" dir="0.3 0.3 -1"
+             diffuse=".6 .6 .6" specular=".1 .1 .1" castshadow="true"/>
+      <camera name="follow" mode="trackcom" pos="0.85 -0.25 0.32"
+              xyaxes="0.282 0.959 0 -0.261 0.077 0.962"/>
+      <geom type="box" size="0.037 0.005 0.075" pos="0 0.01 0.085"
+            density="0" contype="0" conaffinity="0" rgba="{r} {g} {b} 1"/>
+      <geom type="box" size="0.033 0.0005 0.068" pos="0 0.0157 0.085"
+            density="0" contype="0" conaffinity="0" rgba=".34 .71 .91 .9"/>
+      {arrow('push_back', 0.20, 0.04)}
+      {arrow('push_fwd', -0.20, -0.04)}"""
   wheel = lambda name, x: f"""
       <body name="{name}" pos="{x} 0 0">
         <joint name="{name}" type="hinge" axis="1 0 0" armature="{armature}"
@@ -72,9 +107,9 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
       </body>"""
   return f"""
 <mujoco model="spr">
-  <option timestep="{timestep}" integrator="implicitfast"/>
+  <option timestep="{timestep}" integrator="implicitfast"/>{asset}
   <worldbody>
-    <geom name="floor" type="plane" size="50 50 0.1" rgba=".8 .8 .8 1"/>
+    <geom name="floor" type="plane" size="50 50 0.1" rgba=".8 .8 .8 1" {world}/>
     <body name="robot" pos="0 0 {WHEEL_R}">
       <freejoint name="robot"/>
       <inertial pos="0 0 {com_z}" mass="0.514"
@@ -87,6 +122,7 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
       <geom name="bumper_front" type="capsule" size="{CAPSULE_R}"
             fromto="-0.03 {BUMPER_ARM} {zf} 0.03 {BUMPER_ARM} {zf}"
             density="0" friction="0.5 0.005 0.0001" rgba=".9 .3 .2 1"/>
+      {extra}
       {wheel('left', -HALF_TRACK)}
       {wheel('right', HALF_TRACK)}
     </body>

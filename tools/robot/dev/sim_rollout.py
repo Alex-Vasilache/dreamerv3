@@ -92,6 +92,10 @@ def main():
   rec = {k: [] for k in ('t', 'theta', 'omega', 'v_l', 'v_r', 'x', 'yaw',
                          'cmd_f', 'cmd_t', 'reward', 'act_l', 'act_r',
                          'pushed')}
+  # The MuJoCo body's full state, for sim_video3d.py to replay exactly.
+  mj = hasattr(sim, 'data')
+  if mj:
+    rec['qpos'] = []
   x = yaw = 0.0
   pushes = list(PUSHES) if task != 'command' else []
   steps = int(args.seconds * hz)
@@ -126,8 +130,11 @@ def main():
     rec['act_l'].append(float(a[0]))
     rec['act_r'].append(float(a[1]))
     rec['pushed'].append(pushed)
+    if mj:
+      rec['qpos'].append(sim.data.qpos.copy())
   np.savez(args.out, hz=hz, task=task, run=pathlib.Path(args.run).name,
            bumper_lo=sim.bumper_lo, bumper_hi=sim.bumper_hi,
+           theta_zero=sim.theta_zero,
            command_speed=sim.command_speed, command_turn=sim.command_turn,
            **{k: np.array(v) for k, v in rec.items()})
   r = np.array(rec['reward'])
