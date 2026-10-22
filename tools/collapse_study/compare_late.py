@@ -34,7 +34,7 @@ SETS = {
             ('ucb', 'OG + SOM + UCB', '#0072B2', 'e14[3-5]?_{t}_director-director_og-goal_som_line-mgr_ucb-pubmatch_s*')],
     'wkrent': [NOW, ('wkrent', 'OG + fixed worker entropy', '#0072B2',
                      'e1[89][089]?_{t}_director-director_og-wkr_ent_fixed-pubmatch_s*')],
-    'wkrv3': [NOW, ('wkrent', 'OG + fixed worker entropy', '#E69F00'.replace('E69F00', '999999'),
+    'wkrv3': [NOW, ('wkrent', 'OG + fixed worker entropy', '#999999',
                     'e1[89][089]?_{t}_director-director_og-wkr_ent_fixed-pubmatch_s*'),
               ('wkrR', '+ worker v3 return norm', '#0072B2',
                'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3_retnorm-pubmatch_s*'),
@@ -48,6 +48,10 @@ SETS = {
              SOM, ('sommask', 'OG + SOM + mask', '#56B4E9', 'e16[3-5]?_{t}_director-director_og-goal_som_line-goal_mask8-pubmatch_s*')],
 }
 DIAG = {
+    'wkrv3': [None, [('train/wkr_actent_action_mean', 'worker normalized entropy'),
+                     ('train/wkr_goal_rew', 'worker goal reward'),
+                     ('train/mgr_actent_skill_mean', 'manager normalized entropy'),
+                     ('train/wkr_ent/action', 'worker entropy (nats)')]],
     'wkrent': [None, [('train/wkr_actent_action_mean', 'worker normalized entropy'),
                       ('train/wkr_goal_rew', 'worker goal reward'),
                       ('train/mgr_actent_skill_mean', 'manager normalized entropy'),
@@ -167,10 +171,13 @@ def main(which):
         st = np.stack(curves)
         with np.errstate(all='ignore'):
           n_ok = (~np.isnan(st)).sum(0)
-          m = np.where(n_ok >= 2, np.nanmean(st, 0), np.nan)
+          # Draw the mean wherever at least one seed has data, so an arm that is
+          # still on its first seed shows up; the band needs two.
+          m = np.where(n_ok >= 1, np.nanmean(st, 0), np.nan)
           sd = np.where(n_ok >= 2, np.nanstd(st, 0, ddof=1), np.nan)
         ax.fill_between(x, m - sd, m + sd, color=color, lw=0, alpha=0.15)
-        ax.plot(x, m, color=color, lw=2.4, label=label)
+        ax.plot(x, m, color=color, lw=2.4, label=f'{label} (n={len(curves)})' if len(curves) < 5 else label,
+                ls='-' if len(curves) >= 2 else '--')
       cell = f'{np.mean(lt):.0f} ± {np.std(lt, ddof=1) if len(lt) > 1 else 0:.0f}' if lt else '-'
       if task.startswith('pinpad') and lt:
         ok = [c for c in cr if c is not None]
@@ -193,6 +200,7 @@ def main(which):
   only, metrics = DIAG[which]
   diag_arms = [a for a in arms if (a[0] == only if only else a[0] in (
       ('imagA', 'imagB') if which == 'ucbimag' else ('wkrent',) if which == 'wkrent'
+      else ('og', 'wkrent', 'wkrR', 'wkrV') if which == 'wkrv3'
       else ('mask', 'sommask')))]
   fig, axes = plt.subplots(2, 2, figsize=(13, 8.6 if len(diag_arms) == 1 else 11), sharex=True)
   xd = (np.arange(0, XMAX, 2e5) + 1e5) / 1e6
