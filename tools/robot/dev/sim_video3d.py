@@ -6,7 +6,8 @@ planar model (pendulum) are replayed kinematically on a stand-in 3D robot: the
 body pitches by the recorded tilt, each wheel turns by its own travelled
 distance, and the robot drives and turns on a checkered floor by integrating
 the two wheel speeds. One camera per robot follows it at a fixed world angle.
-1920x1080, 30 fps, real time.
+1920x1080, 30 fps, real time. --meshes draws the MuJoCo robot with the real
+body, phone and wheel meshes (tools/robot/dev/fetch_spr_meshes.sh).
 
 Needs MuJoCo rendering (MUJOCO_GL=egl on a GPU node) and an ffmpeg binary
 (--ffmpeg, e.g. from imageio-ffmpeg).
@@ -135,6 +136,8 @@ def main():
   parser.add_argument('--labels', nargs=2, default=['Flat DreamerV3', 'HRL'])
   parser.add_argument('--title', default='')
   parser.add_argument('--ffmpeg', default='ffmpeg')
+  parser.add_argument('--meshes', default=None,
+                      help='directory of the robot STLs (fetch_spr_meshes.sh)')
   args = parser.parse_args()
   runs = [dict(np.load(p, allow_pickle=True)) for p in (args.a, args.b)]
   colours = [(0.1, 0.1, 0.1), (0.0, 0.45, 0.70)]
@@ -152,7 +155,7 @@ def main():
     if 'qpos' in run:
       lo, hi = float(run['bumper_lo']), float(run['bumper_hi'])
       model = mujoco.MjModel.from_xml_string(robot_mujoco.model_xml(
-          bumper_back=hi, bumper_front=-lo, visual=rgb))
+          bumper_back=hi, bumper_front=-lo, visual=rgb, meshdir=args.meshes))
     else:
       model = mujoco.MjModel.from_xml_string(xml(rgb))
     data = mujoco.MjData(model)

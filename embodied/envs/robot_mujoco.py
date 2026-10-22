@@ -56,73 +56,104 @@ def _bumper_z(angle):
   return (CAPSULE_R - WHEEL_R + BUMPER_ARM * math.sin(angle)) / math.cos(angle)
 
 
+# The rlSim2Real STL meshes (mm), for videos only: fetch them with
+# tools/robot/dev/fetch_spr_meshes.sh. Poses as in its generate_xml.py.
+MESHES = {
+    'spr_body': ('mesh_spr_body.stl', '0 0 0', '0 0 180'),
+    'spr_phone': ('mesh_spr_phone.stl', '-0.03965 0.02205 0', '180 0 0'),
+    'spr_wheel_left': ('mesh_spr_wheel_left.stl', '0 0 0', '0 0 -90'),
+    'spr_wheel_right': ('mesh_spr_wheel_right.stl', '0 0 0', '0 0 90'),
+}
+
+
 def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
-              armature=5e-4, friction=1.0, visual=None):
+              armature=5e-4, friction=1.0, visual=None, meshdir=None):
   """MJCF of the robot. bumper_back > 0 and bumper_front > 0 are the pitch
   magnitudes (rad, from geometric upright) at which the body rests on the rear
   and front bumper. `visual` (an RGB phone colour) adds what a video needs --
-  the phone, a checkered floor, a camera following from the side, push
-  arrows -- none of which touches the physics."""
+  a checkered floor, a camera following from the side, push arrows -- and
+  `meshdir` draws the robot with the rlSim2Real meshes (MESHES), hiding the
+  physics shapes; without it a box stands in for the phone. None of this
+  touches the physics: every visual geom is massless and collides with
+  nothing."""
   zb, zf = _bumper_z(bumper_back), _bumper_z(bumper_front)
-  extra = world = asset = ''
+  meshes = visual is not None and meshdir is not None
+  show = lambda rgba: 'rgba="0 0 0 0"' if meshes else f'rgba="{rgba}"'
+  ghost = 'density="0" contype="0" conaffinity="0"'
+
+  def mesh(name, rgba):
+    if not meshes:
+      return ''
+    _, pos, euler = MESHES[name]
+    return (f'<geom type="mesh" mesh="{name}" pos="{pos}" euler="{euler}" '
+            f'rgba="{rgba}" {ghost}/>')
+
+  head = body_extra = floor = ''
   if visual is not None:
     r, g, b = visual
-    asset = """
+    assets = ''.join(
+        f'<mesh name="{name}" file="{meshdir}/{file}" scale=".001 .001 .001"/>'
+        for name, (file, _, _) in MESHES.items()) if meshes else ''
+    head = f"""
   <visual><global offwidth="1920" offheight="1080"/>
     <quality shadowsize="4096"/>
     <headlight ambient=".45 .45 .45" diffuse=".4 .4 .4" specular="0 0 0"/>
   </visual>
-  <asset>
+  <asset>{assets}
     <texture name="grid" type="2d" builtin="checker" width="512" height="512"
              rgb1=".95 .95 .93" rgb2=".84 .85 .83"/>
     <material name="floor" texture="grid" texrepeat="4 4" texuniform="true"/>
     <texture name="sky" type="skybox" builtin="gradient" rgb1="1 1 1"
              rgb2=".85 .88 .9" width="64" height="64"/>
   </asset>"""
-    world = 'material="floor"'
+    floor = 'material="floor"'
     # Arrows in the body frame: a backward push tips the top toward -y.
     arrow = lambda name, y0, y1: f"""
       <geom name="{name}" type="capsule" fromto="0 {y0} 0.16 0 {y1} 0.16"
-            size="0.008" rgba=".84 .37 0 0" contype="0" conaffinity="0"/>
+            size="0.008" rgba=".84 .37 0 0" {ghost}/>
       <geom name="{name}_tip" type="sphere" pos="0 {y1} 0.16" size="0.016"
-            rgba=".84 .37 0 0" contype="0" conaffinity="0"/>"""
-    extra = f"""
+            rgba=".84 .37 0 0" {ghost}/>"""
+    phone = mesh('spr_body', '.85 .85 .85 1') + mesh(
+        'spr_phone', f'{r} {g} {b} 1') if meshes else f"""
+      <geom type="box" size="0.037 0.005 0.075" pos="0 0.01 0.085"
+            rgba="{r} {g} {b} 1" {ghost}/>
+      <geom type="box" size="0.033 0.0005 0.068" pos="0 0.0157 0.085"
+            rgba=".34 .71 .91 .9" {ghost}/>"""
+    body_extra = f"""
       <light mode="trackcom" pos="-0.4 -0.4 1.2" dir="0.3 0.3 -1"
              diffuse=".6 .6 .6" specular=".1 .1 .1" castshadow="true"/>
-      <camera name="follow" mode="trackcom" pos="0.85 -0.25 0.32"
-              xyaxes="0.282 0.959 0 -0.261 0.077 0.962"/>
-      <geom type="box" size="0.037 0.005 0.075" pos="0 0.01 0.085"
-            density="0" contype="0" conaffinity="0" rgba="{r} {g} {b} 1"/>
-      <geom type="box" size="0.033 0.0005 0.068" pos="0 0.0157 0.085"
-            density="0" contype="0" conaffinity="0" rgba=".34 .71 .91 .9"/>
+      <camera name="follow" mode="trackcom" pos="0.42 -0.14 0.17"
+              xyaxes="0.316 0.949 0 -0.229 0.076 0.970"/>
+      {phone}
       {arrow('push_back', 0.20, 0.04)}
       {arrow('push_fwd', -0.20, -0.04)}"""
+
   wheel = lambda name, x: f"""
       <body name="{name}" pos="{x} 0 0">
         <joint name="{name}" type="hinge" axis="1 0 0" armature="{armature}"
                damping="1e-5" frictionloss="0.001"/>
         <geom type="cylinder" size="{WHEEL_R} 0.0084" euler="0 90 0"
-              friction="{friction} 0.005 0.0001" rgba=".15 .15 .15 1"/>
+              friction="{friction} 0.005 0.0001" {show('.15 .15 .15 1')}/>
+        {mesh('spr_wheel_' + name, '.15 .15 .15 1')}
         <inertial pos="0 0 0" mass="0.035" diaginertia="3.54e-05 1.85e-05 1.85e-05"/>
       </body>"""
   return f"""
 <mujoco model="spr">
-  <option timestep="{timestep}" integrator="implicitfast"/>{asset}
+  <option timestep="{timestep}" integrator="implicitfast"/>{head}
   <worldbody>
-    <geom name="floor" type="plane" size="50 50 0.1" rgba=".8 .8 .8 1" {world}/>
+    <geom name="floor" type="plane" size="50 50 0.1" rgba=".8 .8 .8 1" {floor}/>
     <body name="robot" pos="0 0 {WHEEL_R}">
       <freejoint name="robot"/>
       <inertial pos="0 0 {com_z}" mass="0.514"
                 diaginertia="0.000648 0.000759 0.00037"/>
       <geom name="chassis" type="box" size="0.042 0.075 0.006" pos="0 0 -0.025"
-            density="0" contype="0" conaffinity="0" rgba=".85 .85 .85 1"/>
+            {show('.85 .85 .85 1')} {ghost}/>
       <geom name="bumper_back" type="capsule" size="{CAPSULE_R}"
             fromto="-0.03 {-BUMPER_ARM} {zb} 0.03 {-BUMPER_ARM} {zb}"
-            density="0" friction="0.5 0.005 0.0001" rgba=".9 .3 .2 1"/>
+            density="0" friction="0.5 0.005 0.0001" {show('.9 .3 .2 1')}/>
       <geom name="bumper_front" type="capsule" size="{CAPSULE_R}"
             fromto="-0.03 {BUMPER_ARM} {zf} 0.03 {BUMPER_ARM} {zf}"
-            density="0" friction="0.5 0.005 0.0001" rgba=".9 .3 .2 1"/>
-      {extra}
+            density="0" friction="0.5 0.005 0.0001" {show('.9 .3 .2 1')}/>{body_extra}
       {wheel('left', -HALF_TRACK)}
       {wheel('right', HALF_TRACK)}
     </body>
