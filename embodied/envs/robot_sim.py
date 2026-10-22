@@ -28,6 +28,8 @@ The plant, in the phone's units and signs (docs/ROBOT_BRIDGE_FINDINGS.md):
 * The body is not reset between episodes, as on the robot: an episode that
   ends on a bumper is followed by one that starts there.
 
+Superseded by the MuJoCo body in robot_mujoco.py (env.robot.sim_model:
+mujoco, the default); kept as `sim_model: pendulum` for the runs made with it.
 It is a stand-in for tuning learning speed, not a calibrated twin: w0, L and
 the motor lag are estimates, and the true balance point theta_eq is drawn per
 run within +-1 deg of theta_zero, as it is unknown on the real robot.
@@ -48,6 +50,11 @@ class RobotSim(robot_env.SmartphoneRobot):
       sim_noise=1.0, sim_eq_range=0.0175, sim_substep=0.002, seed=0, **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'pace', 'config', 'policy_dir'):
+      kwargs.pop(key, None)
+    # Keys of the MuJoCo model (robot_mujoco.py); not used here.
+    for key in ('sim_wheel_omega', 'sim_stall_torque', 'sim_armature',
+                'sim_air_speed',
+                'sim_friction'):
       kwargs.pop(key, None)
     if sim_hz:  # config.yaml of a run from before env.robot.hz
       kwargs['hz'] = sim_hz

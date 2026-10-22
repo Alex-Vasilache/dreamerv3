@@ -275,11 +275,16 @@ Copies are kept in `~/logdir/robot_policies/`.
 - **No robot at all:** `sim_phone` trains cartpole swingup paced to wall-clock
   time through the same code path (needs `dm-control`, which needs Python
   ≤ 3.12): `.venv/bin/python dreamerv3/main.py --configs sim_phone --logdir ~/logdir/sim`.
-- **Simulated robot:** `sim_robot` swaps the phone for a two-wheeled
-  inverted-pendulum model with the robot's own observations and rewards
-  (pure numpy, no `dm-control`); layer it last with `sim_25hz` or `sim_65hz`:
-  `--configs robot robot_sim` (rate: `--env.robot.hz 25`).
-  Results for flat DreamerV3 vs HRL at 25/65 Hz: [docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md).
+- **Simulated robot:** `robot_sim` swaps the phone for a MuJoCo model of the
+  robot with its own observations and rewards, paced to real time; layer it
+  last: `--configs robot robot_sim` (rate: `--env.robot.hz 25`). The body
+  (geometry, mass, inertia) is from tojo-soraai's
+  [rlSim2Real](https://github.com/tojo-soraai/smartphone-robot-android/tree/rl-sim2real/apps/rlSim2Real/mujoco)
+  model; bumpers, motors (top speed, dead zone, stiction), the one-tick delay
+  and sensor noise are calibrated to our measurements
+  (`embodied/envs/robot_mujoco.py`). `--env.robot.sim_model pendulum` is the
+  older planar model, used for the flat DreamerV3 vs HRL results in
+  [docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md).
 
 ## Flash a base
 

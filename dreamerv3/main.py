@@ -475,9 +475,15 @@ def make_env(config, index, **overrides):
     kwargs.pop('horizon_s', None)  # agent-side, see robot_timing
     # env.robot.sim: the same task against a simulated body (robot_sim.py).
     sim = {k: kwargs.pop(k) for k in list(kwargs) if k.startswith('sim')}
+    model = sim.pop('sim_model', 'pendulum')  # runs from before MuJoCo
     if sim.pop('sim', False):
-      from embodied.envs import robot_sim
-      ctor = bind(robot_sim.RobotSim, **sim)
+      if model == 'mujoco':
+        from embodied.envs import robot_mujoco
+        ctor = bind(robot_mujoco.RobotMujoco, **sim)
+      else:
+        assert model == 'pendulum', model
+        from embodied.envs import robot_sim
+        ctor = bind(robot_sim.RobotSim, **sim)
   env = ctor(task, **kwargs)
   if repeat > 1:
     env = embodied.wrappers.ActionRepeat(env, repeat)

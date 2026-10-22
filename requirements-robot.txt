@@ -7,6 +7,7 @@ einops
 elements>=3.19.1
 granular>=0.20.3
 jaxtyping
+mujoco
 ninjax>=3.5.1
 numpy<2
 optax
