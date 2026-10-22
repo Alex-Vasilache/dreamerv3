@@ -135,11 +135,11 @@ balances poorly and can spin a wheel at power-up. See [Flash a base](#flash-a-ba
    ```
 3. Stand the robot upright with room to move, and start:
 
-   | rate | command |
-   |---|---|
-   | 25 Hz | `tools/robot/train.sh` |
-   | 50 Hz | `HZ=50 tools/robot/train.sh` |
-   | 100 Hz | `HZ=100 tools/robot/train.sh` |
+   ```bash
+   tools/robot/train.sh                          # balance at 65 Hz
+   CONFIGS="robot robot_still" tools/robot/train.sh still   # still wheels
+   HZ=25 tools/robot/train.sh                    # another rate
+   ```
 
    It starts the learner (locally, or submits the Slurm job), waits for it to
    listen, writes its address into the phone's `trainer.json`, starts the app
@@ -152,9 +152,9 @@ balances poorly and can spin a wheel at power-up. See [Flash a base](#flash-a-ba
 **Resume** a run with the same rate and configs:
 `RUN_DIR=<its run dir> tools/robot/train.sh resume`.
 
-**Settings** (environment variables): `HZ` (25; picks the `robot_<HZ>hz`
-preset), `CONFIGS` (default `robot_daydreamer robot_fast robot_<HZ>hz`),
-`STEPS` (100000: ~67 min at 25 Hz, ~33 at 50, ~17 at 100), `GPU` (Slurm:
+**Settings** (environment variables): `HZ` (65; the phone's rate, passed
+to the learner as `--env.robot.hz`), `CONFIGS` (default `robot`),
+`STEPS` (100000: ~26 min at 65 Hz, ~67 at 25), `GPU` (Slurm:
 use `ROBOT_SLURM_FLAGS_<GPU>` from robot.env), `NO_BASE=1` (phone alone, for
 testing the link). Runs land in `$ROBOT_RUNS/<name>_<date>/`.
 
@@ -188,14 +188,26 @@ Config blocks in `dreamerv3/configs.yaml`, layered left to right:
 
 | block | what |
 |---|---|
-| `robot` | base: flat DreamerV3 (no HRL), size1m, online learning |
-| `robot_daydreamer` | balancing task, continuous per-wheel actions |
-| `robot_fast` | faster-learning hyperparameters from the real-time cartpole sweep ([docs/robot/SIM_PHONE.md](docs/robot/SIM_PHONE.md)) |
-| `robot_25hz`, `_50hz`, `_65hz`, `_100hz` | 2 s horizon and 20 s episodes at that rate |
-| `robot_command` (+ `_cur`, `_sum`, `_taper_sum`, `_lean`) | balance while following a command, see below |
+| `robot` | the default, complete on its own: balancing, flat DreamerV3, continuous per-wheel actions, the fast settings from the real-time cartpole sweep ([docs/robot/SIM_PHONE.md](docs/robot/SIM_PHONE.md)) |
+| `robot_still` | after `robot`: balance with still wheels (reward below) |
+| `robot_command` | after `robot`: balance while following a command, see below |
+| `robot_hrl` | after `robot`, with `director director_og` first: the HRL agent (OG Director), tuned for the robot ([docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md)); acts from the trainer, not the phone |
+| `robot_sim` | last: the robot task against a simulated balancing body, paced to real time, no robot |
 | `sim_phone`, `sim_phone_fast` | cartpole paced to real time, no robot |
-| `hrl_robot`, `hrl_robot_fast` | after the robot blocks, with `director director_og` first: the HRL agent (OG Director), tuned for the robot ([docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md)); acts from the trainer, not the phone |
-| `sim_robot` + `sim_25hz` / `sim_65hz` | the robot task against a simulated balancing body, paced to real time, no robot |
+
+The rate is never set in a block: it is `env.robot.hz` (65), which
+`train.sh` sets from `HZ`. The return horizon (`env.robot.horizon_s`, 2 s;
+5 s for `robot_command`) and the episode (`env.robot.episode_s`, 20 s) are in
+seconds and converted to steps at that rate.
+
+**Rewards.** `robot` pays an upright score in [0, 1] minus linear costs on
+tilt rate, drift and wheel speed. `robot_still` (`env.robot.balance_reward
+still`) instead pays exp(−Σ (x/σ)²) over targets that are all zero: RMS wheel
+speed (`still_speed_sigma`, 1960 mm/s), chatter |aₜ − aₜ₋₁|
+(`still_chatter_sigma`, 0.3) and optionally RMS wheel acceleration
+(`still_accel_sigma`, 0 = off), and −2 within 1.5° of a bumper. This is the
+command task's reward at a zero command, which balanced with almost still
+wheels; small errors cost much and large ones saturate.
 
 Reward and motor flags, passed after the name:
 
@@ -222,14 +234,15 @@ Off that WiFi: `adb forward tcp:8080 tcp:8080`, then http://localhost:8080.
 Only a policy trained on the command task follows it:
 
 ```bash
-CONFIGS="robot_daydreamer robot_fast robot_25hz robot_command" \
-  tools/robot/train.sh cmd_25hz --env.robot.action_rate_penalty 0.05
+CONFIGS="robot robot_command" tools/robot/train.sh cmd
 ```
 
 The policy sees a command (forward, turn) in [-1, 1]. While training, the
-phone holds a random one for 2-5 s (zero 30% of the time); touching the stick
-overrides it. Reward: balance × exp(-(error/0.5)²) tracking of forward speed
-and turn rate. In TensorBoard compare `epstats/log/cmd_forward` with
+phone holds a random one for 4-8 s (zero 25% of the time), ramped at 0.5/s;
+touching the stick overrides it. Reward: exp(-(error/0.4)²) tracking of the
+command as a wheel-speed vector (full stick ≈ 4900 mm/s), −2 within 1.5° of a
+bumper. Other command rewards are one flag away
+(`--env.robot.command_reward`, see `robot.py:_command_reward`). In TensorBoard compare `epstats/log/cmd_forward` with
 `epstats/log/forward`, likewise `turn`. The variants and their parameters are
 documented beside each block in `configs.yaml`.
 
@@ -265,7 +278,7 @@ Copies are kept in `~/logdir/robot_policies/`.
 - **Simulated robot:** `sim_robot` swaps the phone for a two-wheeled
   inverted-pendulum model with the robot's own observations and rewards
   (pure numpy, no `dm-control`); layer it last with `sim_25hz` or `sim_65hz`:
-  `--configs robot_daydreamer robot_fast robot_65hz sim_robot sim_65hz`.
+  `--configs robot robot_sim` (rate: `--env.robot.hz 25`).
   Results for flat DreamerV3 vs HRL at 25/65 Hz: [docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md).
 
 ## Flash a base

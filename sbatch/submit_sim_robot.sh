@@ -2,10 +2,10 @@
 # Launch a round of the simulated-robot sweep (docs/SIM_ROBOT.md): each line
 # of PARAMS is one run,
 #
-#   <exp> <arm> <task: balance|command> <hz: 25|65> <gpu: v100|p100> [main.py flags...]
+#   <exp> <arm> <task: balance|still|command> <hz: 25|65> <gpu: v100|p100> [main.py flags...]
 #
 # with <arm> 'flat' (DreamerV3), 'hrl' (the OG Director) or 'hrlfast'
-# (hrl + hrl_robot_fast, the tuned goal-only recipe). Flags after the
+# (hrl + robot_hrl, the tuned goal-only recipe). Flags after the
 # GPU go to main.py, e.g. --agent.manager_sample_freq 16 --seed 1.
 #
 #   PARAMS=sbatch/sim_robot_r1.txt sbatch/submit_sim_robot.sh
@@ -19,20 +19,22 @@ mkdir -p job_logs
 
 while read -r exp arm task hz gpu extra; do
   [[ -z "$exp" || "$exp" == \#* ]] && continue
-  configs="robot_daydreamer robot_fast robot_${hz}hz"
-  flags=""
-  if [ "$task" = command ]; then
-    configs="$configs robot_command robot_command_lean"
-    # robot_command_lean's 5 s return horizon is 325 steps at 65 Hz.
-    flags="--agent.horizon $((5 * hz))"
-  fi
+  configs="robot"
+  flags="--env.robot.hz $hz"
+  case $task in
+    balance) ;;
+    still) configs="$configs robot_still" ;;
+    command) configs="$configs robot_command" ;;
+    *) echo "unknown task $task"; exit 1 ;;
+  esac
   case $arm in
     flat) ;;
-    hrl) configs="director director_og $configs hrl_robot" ;;
-    hrlfast) configs="director director_og $configs hrl_robot hrl_robot_fast" ;;
+    # 'hrl' is the plain director_og arm of rounds 1-2 (no robot_hrl tuning).
+    hrl) configs="director director_og $configs"; flags="$flags --agent.use_hrl True" ;;
+    hrlfast) configs="director director_og $configs robot_hrl" ;;
     *) echo "unknown arm $arm"; exit 1 ;;
   esac
-  configs="$configs sim_robot sim_${hz}hz"
+  configs="$configs robot_sim"
   case $gpu in
     v100) gflags="-p gpu-v100 --gres=gpu:v100:1 --exclude=saion-gpu20" ;;
     p100) gflags="-p gpu-p100 --gres=gpu:p100:1 --exclude=saion-gpu[01,02,04,06,07-10]" ;;

@@ -73,7 +73,7 @@ def build_reference(config, obs_space, act_space):
 def main():
   ap = argparse.ArgumentParser()
   ap.add_argument('--weights', required=True)
-  ap.add_argument('--configs', nargs='+', default=['robot_daydreamer'])
+  ap.add_argument('--configs', nargs='+', default=['robot'])
   ap.add_argument('--steps', type=int, default=6)
   ap.add_argument('--tol', type=float, default=2e-2)
   args = ap.parse_args()

@@ -33,7 +33,7 @@ wheel speeds and, for command following, the joystick command; the actions are
 the two wheel commands. The world model and actor-critic train on the learner; only the
 actor runs on the phone.
 
-The branch also contains a simulated robot (`sim_robot`) for trying things
+The branch also contains a simulated robot (`robot_sim`) for trying things
 without hardware; see [ROBOT.md](ROBOT.md#without-hardware).
 
 ## Credit

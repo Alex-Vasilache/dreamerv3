@@ -621,7 +621,7 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
         replay.update(outs['replay'])
       train_agg.add(mets, prefix='train')
       # Checked per train step, not per chunk: a chunk is up to
-      # online_max_train_repeats steps, ~30 s at robot_fast's batch on a V100,
+      # online_max_train_repeats steps, ~30 s at the robot's batch on a V100,
       # which would floor the publish cadence there whatever it is set to.
       if should_sync_policy(step):
         with elements.timer.section('publish'):

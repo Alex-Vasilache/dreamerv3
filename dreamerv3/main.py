@@ -115,6 +115,7 @@ def main(argv=None):
   for name in parsed.configs:
     config = config.update(configs[name])
   config = elements.Flags(config).parse(other)
+  config = robot_timing(config)
   config = config.update(logdir=(
       config.logdir.format(timestamp=elements.timestamp())))
 
@@ -471,6 +472,7 @@ def make_env(config, index, **overrides):
   # full rate while the agent decides less often.
   repeat = kwargs.pop('repeat', 1) if suite == 'robot' else 1
   if suite == 'robot':
+    kwargs.pop('horizon_s', None)  # agent-side, see robot_timing
     # env.robot.sim: the same task against a simulated body (robot_sim.py).
     sim = {k: kwargs.pop(k) for k in list(kwargs) if k.startswith('sim')}
     if sim.pop('sim', False):
@@ -480,6 +482,25 @@ def make_env(config, index, **overrides):
   if repeat > 1:
     env = embodied.wrappers.ActionRepeat(env, repeat)
   return wrap_env(env, config)
+
+
+def robot_timing(config):
+  """Derive the robot's step-counted settings from env.robot.hz.
+
+  The control rate is one number, env.robot.hz. The return horizon is given in
+  seconds (env.robot.horizon_s; 0 keeps agent.horizon as set) and the
+  episode too (env.robot.episode_s, applied in the env), so neither needs
+  changing with the rate. The simulated robot is paced to the same rate.
+  """
+  if not config.task.startswith('robot_') or 'hz' not in config.env.robot:
+    return config
+  robot = config.env.robot
+  update = {}
+  if robot.horizon_s:
+    update['agent.horizon'] = int(round(robot.hz * robot.horizon_s))
+  if robot.sim:
+    update['env.realtime_hz'] = float(robot.hz)
+  return config.update(update) if update else config
 
 
 def wrap_env(env, config):

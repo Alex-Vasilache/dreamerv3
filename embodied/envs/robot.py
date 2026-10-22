@@ -273,8 +273,8 @@ class SmartphoneRobot(embodied.Env):
   """
 
   def __init__(
-      self, task='drive', host='0.0.0.0', port=3000, length=200,
-      discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
+      self, task='drive', host='0.0.0.0', port=3000, hz=65.0, episode_s=20.0,
+      length=0, discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
       drift_clip=1.0, wheel_penalty=0.0, action_rate_penalty=0.0,
@@ -291,6 +291,8 @@ class SmartphoneRobot(embodied.Env):
       bumper_margin=0.0175, bumper_penalty=1.0, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
+      balance_reward='shaped', still_speed_sigma=1960.0,
+      still_chatter_sigma=0.3, still_accel_sigma=0.0,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
       pace=None):
@@ -324,7 +326,11 @@ class SmartphoneRobot(embodied.Env):
     # 'serial' -- one decision per reply -- is what gets every action applied.
     self.pace = pace
     self._seq = None  # the phone's observation counter, echoed in each action
-    self.length = int(length)
+    # The control rate the phone runs at (its trainer.json max_hz, which
+    # tools/robot/train.sh writes from the same value). Episodes are set in
+    # seconds so they last as long at any rate; `length` in steps overrides.
+    self.hz = float(hz)
+    self.length = int(length) or int(round(self.hz * float(episode_s)))
     self.discrete = bool(discrete)
     self.timeout = float(timeout)
     self.pipeline = bool(pipeline)
@@ -357,7 +363,26 @@ class SmartphoneRobot(embodied.Env):
     # A penalty, not a low-pass filter, so no delay is added to the loop.
     self.action_rate_penalty = float(action_rate_penalty)
     self._prev_act = np.zeros(2, np.float32)
+    self._chatter = 0.0
+    self._prev_speed = None
     self._sent_act = (0.0, 0.0)
+    # Task 'balance' scores either way:
+    # 'shaped': an upright score in [0, 1] minus linear costs on tilt rate,
+    #   drift and wheel speed (the reward every balance run up to e1747 used).
+    # 'still': the command task's zero-command reward made the whole goal.
+    #   Standing still means three targets, all zero: wheel speed, change of
+    #   action between steps (chatter) and, optionally, wheel acceleration.
+    #   They pay one Gaussian on the joint error, exp(-sum (x / sigma)^2), so
+    #   small errors cost much and large ones saturate, unlike a linear cost
+    #   that hardly minds a slow drift. A sigma of 0 drops that target.
+    #   Within bumper_margin of a bumper it is -bumper_penalty instead. Balance
+    #   is implied, as for 'bumper_track': the body cannot stay off the bumpers
+    #   with still wheels unless it is upright.
+    assert balance_reward in ('shaped', 'still'), balance_reward
+    self.balance_reward = balance_reward
+    self.still_speed_sigma = float(still_speed_sigma)      # mm/s, RMS wheel
+    self.still_chatter_sigma = float(still_chatter_sigma)  # action units
+    self.still_accel_sigma = float(still_accel_sigma)      # mm/s^2, RMS wheel
     # The phone multiplies every wheel command by this before driving, so the
     # policy keeps its whole [-1, 1] range while the motors stay off full
     # power, the only regime where a driver was seen to cut out under load.
@@ -591,6 +616,8 @@ class SmartphoneRobot(embodied.Env):
         self._reward = 0.0
         self._ref = float(self.theta_zero)
         self._prev_act = np.zeros(2, np.float32)
+        self._chatter = 0.0
+        self._prev_speed = None
         self._sent_act = (0.0, 0.0)
         return self._obs(sensors, latency, 0.0, is_first=True)
       except LINKLOST as e:
@@ -670,13 +697,15 @@ class SmartphoneRobot(embodied.Env):
             flush=True)
     if self.task == 'command' and self.turn_source == 'gyro':
       self._check_yaw(sensors)
+    # Chatter: the change in each wheel's command since the last step, mean
+    # over the wheels, of the action the motors really got.
+    act = (np.resize(self._onboard_act, 2)
+           if self._onboard and self._onboard_act is not None
+           else np.array([left, right], np.float32))
+    self._chatter = float(np.mean(np.abs(act - self._prev_act)))
+    self._prev_act = act
     reward, terminal = self._evaluate(sensors)
-    if self.action_rate_penalty:
-      act = (np.resize(self._onboard_act, 2)
-             if self._onboard and self._onboard_act is not None
-             else np.array([left, right], np.float32))
-      reward -= self.action_rate_penalty * float(np.mean(np.abs(act - self._prev_act)))
-      self._prev_act = act
+    reward -= self.action_rate_penalty * self._chatter
     self._reward = reward
     self._done = terminal or self._step >= self.length
     return self._obs(
@@ -747,6 +776,8 @@ class SmartphoneRobot(embodied.Env):
       rate = float(sensors['angular_velocity'])
       # Without this a constant forward acceleration holds a constant tilt
       # forever, which scores perfectly while driving off the bench.
+      if self.balance_reward == 'still':
+        return self._still_reward(sensors), fallen
       drift = min(abs(0.5 * (speed_l + speed_r)), self.drift_clip)
       reward = (
           0.5 * linear + 0.5 * bonus
@@ -882,6 +913,32 @@ class SmartphoneRobot(embodied.Env):
     return float(
         score - self.rate_penalty * abs(float(sensors['angular_velocity'])))
 
+  def _still_reward(self, sensors):
+    """Balance in place: zero wheel speed, chatter and wheel acceleration.
+
+    The reward of e1465-style command runs ('bumper_track') at a zero command,
+    which balanced with almost still wheels: its tracking term was
+    exp(-(RMS wheel speed / 1960 mm/s)^2), the default still_speed_sigma.
+    """
+    offset = float(sensors['theta']) - self.theta_zero
+    speed = np.array([float(sensors['wheel_speed_l']),
+                      float(sensors['wheel_speed_r'])])
+    accel = (np.zeros(2) if self._prev_speed is None
+             else (speed - self._prev_speed) * self.hz)
+    self._prev_speed = speed
+    if (offset >= self.bumper_hi - self.bumper_margin
+        or offset <= self.bumper_lo + self.bumper_margin):
+      return -self.bumper_penalty
+    err = 0.0
+    for value, sigma in (
+        (np.sqrt(np.mean(speed ** 2)), self.still_speed_sigma),
+        (self._chatter, self.still_chatter_sigma),
+        (np.sqrt(np.mean(accel ** 2)), self.still_accel_sigma)):
+      if sigma:
+        err += (value / sigma) ** 2
+    return float(np.exp(-err)
+                 - self.rate_penalty * abs(float(sensors['angular_velocity'])))
+
   def _wheel_effort(self, speed_l, speed_r):
     return 0.5 * (
         min(abs(speed_l), self.drift_clip) + min(abs(speed_r), self.drift_clip))
@@ -1015,7 +1072,7 @@ class SmartphoneRobot(embodied.Env):
   def _settings(self):
     """What a player needs to pace and score steps the way training did."""
     return dict(
-        task=self.task, length=self.length, theta_zero=self.theta_zero,
+        task=self.task, hz=self.hz, length=self.length, theta_zero=self.theta_zero,
         theta_lo=self.theta_lo, theta_hi=self.theta_hi,
         theta_sigma=self.theta_sigma, speed_scale=self.speed_scale,
         drift_penalty=self.drift_penalty, drift_clip=self.drift_clip,
@@ -1025,6 +1082,10 @@ class SmartphoneRobot(embodied.Env):
         friction_comp=self.friction_comp, bumper_lo=self.bumper_lo,
         bumper_hi=self.bumper_hi, bumper_margin=self.bumper_margin,
         bumper_penalty=self.bumper_penalty,
+        balance_reward=self.balance_reward,
+        still_speed_sigma=self.still_speed_sigma,
+        still_chatter_sigma=self.still_chatter_sigma,
+        still_accel_sigma=self.still_accel_sigma,
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,

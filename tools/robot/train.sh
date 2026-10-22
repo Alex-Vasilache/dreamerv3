@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Start a robot training run and point the phone at it.
 #
-#   tools/robot/train.sh                          # 25 Hz balancing, default name
-#   HZ=50 tools/robot/train.sh [name] [extra main.py flags]
-#   CONFIGS="robot_daydreamer robot_fast robot_25hz robot_command" tools/robot/train.sh cmd
+#   tools/robot/train.sh                          # 65 Hz balancing, default name
+#   HZ=25 tools/robot/train.sh [name] [extra main.py flags]
+#   CONFIGS="robot robot_still" tools/robot/train.sh still
+#   CONFIGS="robot robot_command" tools/robot/train.sh cmd
 #   RUN_DIR=<previous run dir> tools/robot/train.sh resume   # continue a run
 #   NO_BASE=1 HZ=100 tools/robot/train.sh linktest           # phone alone, no wheels
 #   GPU=p100 tools/robot/train.sh                 # Slurm: use ROBOT_SLURM_FLAGS_p100
@@ -15,13 +16,24 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
-# Without HZ, take it from a robot_<N>hz block in CONFIGS: the phone's rate
-# comes only from trainer.json, so CONFIGS="... robot_100hz" alone ran at 25.
-if [ -z "${HZ:-}" ] && [[ ${CONFIGS:-} =~ robot_([0-9]+)hz ]]; then
-  HZ=${BASH_REMATCH[1]}
+# The control rate, one number for both sides: the phone gets it as max_hz in
+# trainer.json, the learner as --env.robot.hz (which sets the step-counted
+# horizon and episode length; configs.yaml, `robot`). HZ, else an
+# --env.robot.hz among the flags, else 65.
+prev=
+for a in "$@"; do
+  case $a in --env.robot.hz=*) FLAG_HZ=${a#*=} ;; esac
+  [ "$prev" = --env.robot.hz ] && FLAG_HZ=$a
+  prev=$a
+done
+if [ -n "${FLAG_HZ:-}" ] && [ -n "${HZ:-}" ] && [ "${FLAG_HZ%.*}" != "${HZ%.*}" ]; then
+  robot_die "HZ=$HZ but --env.robot.hz $FLAG_HZ; give the rate once"
 fi
-HZ=${HZ:-25}
-CONFIGS=${CONFIGS:-robot_daydreamer robot_fast robot_${HZ}hz}
+HZ=${HZ:-${FLAG_HZ:-65}}
+HZ=${HZ%.*}
+[[ $HZ =~ ^[0-9]+$ ]] || robot_die "HZ must be a whole number of Hz, not '$HZ'"
+[ -n "${FLAG_HZ:-}" ] || set -- "$@" --env.robot.hz "$HZ"
+CONFIGS=${CONFIGS:-robot}
 STEPS=${STEPS:-100000}
 NO_BASE=${NO_BASE:-}
 

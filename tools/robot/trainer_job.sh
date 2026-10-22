@@ -27,7 +27,7 @@ set -uo pipefail
 # nothing; train.sh submits from the checkout, which is SLURM_SUBMIT_DIR.
 CODE="${CODE:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}}"
 ROBOT_RUNS="${ROBOT_RUNS:-$HOME/logdir/robot}"
-CONFIGS="${CONFIGS:-robot_daydreamer robot_fast robot_25hz}"
+CONFIGS="${CONFIGS:-robot}"
 STEPS="${STEPS:-100000}"
 JOB="${SLURM_JOB_ID:-local$$}"
 NAME="${SLURM_JOB_NAME:-${NAME:-robot}}"

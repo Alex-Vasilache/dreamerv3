@@ -4,9 +4,8 @@ Same observations, actions, rewards and episode handling as
 `embodied.envs.robot.SmartphoneRobot` -- it subclasses it and replaces only
 the link to the phone with a physics model -- so every `env.robot.*` key and
 every robot_* config block applies unchanged. Turned on by
-`env.robot.sim: True` (config block `sim_robot`); wrap it in
-`env.realtime_hz` = `env.robot.sim_hz` to make it cost real time like the
-robot does.
+`env.robot.sim: True` (config block `robot_sim`), which also paces it to
+real time at `env.robot.hz`, like the robot.
 
 The plant, in the phone's units and signs (docs/ROBOT_BRIDGE_FINDINGS.md):
 
@@ -44,14 +43,15 @@ from embodied.envs import robot as robot_env
 class RobotSim(robot_env.SmartphoneRobot):
 
   def __init__(
-      self, task, sim_hz=25.0, sim_w0=12.0, sim_length=0.08, sim_damping=0.5,
+      self, task, sim_hz=None, sim_w0=12.0, sim_length=0.08, sim_damping=0.5,
       sim_motor_tau=0.05, sim_top_speed=4900.0, sim_track=0.12,
       sim_noise=1.0, sim_eq_range=0.0175, sim_substep=0.002, seed=0, **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'pace', 'config', 'policy_dir'):
       kwargs.pop(key, None)
+    if sim_hz:  # config.yaml of a run from before env.robot.hz
+      kwargs['hz'] = sim_hz
     super().__init__(task, seed=seed, onboard=False, reconnect=False, **kwargs)
-    self.hz = float(sim_hz)
     self.w0 = float(sim_w0)
     self.arm = float(sim_length)
     self.damping = float(sim_damping)

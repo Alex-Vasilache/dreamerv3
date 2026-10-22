@@ -14,7 +14,7 @@ per shape.
   .venv/bin/python tools/robot/dev/bench_learner.py                       # default grid
   .venv/bin/python tools/robot/dev/bench_learner.py --batches 16 64 256 1024
   .venv/bin/python tools/robot/dev/bench_learner.py --deters 256 512 --units 256
-  .venv/bin/python tools/robot/dev/bench_learner.py --configs robot_daydreamer
+  .venv/bin/python tools/robot/dev/bench_learner.py --configs robot
 
 `ratio at N Hz` is what train_ratio would actually achieve against an actor
 stepping at N Hz, since train_ratio counts samples per agent step.
@@ -167,7 +167,7 @@ def bench(config, deter, units, batch_size, seconds, warmup, actor_hz):
 
 def main(argv=None):
   parser = argparse.ArgumentParser()
-  parser.add_argument('--configs', nargs='+', default=['robot_daydreamer'])
+  parser.add_argument('--configs', nargs='+', default=['robot'])
   parser.add_argument('--deters', nargs='+', type=int, default=[256])
   parser.add_argument('--units', nargs='+', type=int, default=[256])
   parser.add_argument('--batches', nargs='+', type=int, default=[16, 64, 256, 1024])

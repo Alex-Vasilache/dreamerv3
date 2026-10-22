@@ -91,7 +91,7 @@ def main():
   ap = argparse.ArgumentParser()
   ap.add_argument('--checkpoint', required=True)
   ap.add_argument('--out', required=True)
-  ap.add_argument('--configs', nargs='+', default=['robot_daydreamer'])
+  ap.add_argument('--configs', nargs='+', default=['robot'])
   args = ap.parse_args()
 
   import dreamerv3.main as main_mod
