@@ -57,10 +57,16 @@ def _bumper_z(angle):
 
 
 # The rlSim2Real STL meshes (mm), for videos only: fetch them with
-# tools/robot/dev/fetch_spr_meshes.sh. Poses as in its generate_xml.py.
+# tools/robot/dev/fetch_spr_meshes.sh. Poses as in its generate_xml.py,
+# except that the body and phone sit MESH_DROP lower: placed as there, the
+# body's lowest edges clear the floor by 11.4 mm at the tilts where the real
+# robot rests on its bumpers (+9.2 / -6.9 deg). This drop makes both touch
+# (it would take 11.65 mm at the front, 11.45 at the back).
+MESH_DROP = 0.0115    # m
 MESHES = {
-    'spr_body': ('mesh_spr_body.stl', '0 0 0', '0 0 180'),
-    'spr_phone': ('mesh_spr_phone.stl', '-0.03965 0.02205 0', '180 0 0'),
+    'spr_body': ('mesh_spr_body.stl', f'0 0 {-MESH_DROP}', '0 0 180'),
+    'spr_phone': ('mesh_spr_phone.stl', f'-0.03965 0.02205 {-MESH_DROP}',
+                  '180 0 0'),
     'spr_wheel_left': ('mesh_spr_wheel_left.stl', '0 0 0', '0 0 -90'),
     'spr_wheel_right': ('mesh_spr_wheel_right.stl', '0 0 0', '0 0 90'),
 }
