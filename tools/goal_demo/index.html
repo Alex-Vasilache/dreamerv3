@@ -19,7 +19,7 @@
     --focus: #2a78d6;
     --warn: #b55f12;
     --canvas: #e9e8e4;
-    --neg: #2a78d6; --mid: #f0efec; --pos: #e34948;
+    --neg: #2a78d6; --mid: #f0efec; --pos: #e34948; --heat: #1c5cab;
     --veil: rgba(255, 255, 255, .72); --hatch: #b55f12;
     --side: 188px;               /* one picture; image and WM goal sit side by side */
     --gap: 12px;
@@ -37,7 +37,7 @@
     --focus: #8ab4ff;
     --warn: #e6a35c;
     --canvas: #0c0d10;
-    --neg: #3987e5; --mid: #383835; --pos: #e66767;
+    --neg: #3987e5; --mid: #383835; --pos: #e66767; --heat: #86b6ef;
     --veil: rgba(18, 20, 24, .72); --hatch: #e6a35c;
     color-scheme: dark;
   }
@@ -126,6 +126,23 @@
   .cell:hover { border-color: var(--arm); }
   .cell.on { background: var(--arm); }
   .grid.dragging .cell:hover { border-color: transparent; }
+  /* UCB-in-imagination panels: cells are shaded by the count table, so the
+     chosen class is a ring rather than a fill. */
+  .panel.counts .cell.on { box-shadow: inset 0 0 0 3px var(--arm); }
+  .heatrow { display: flex; align-items: center; gap: 8px; margin-top: 6px;
+             font-size: 11.5px; color: var(--dim); }
+  .heatrow select { padding: 2px 4px; font-size: 11.5px; }
+  .heatrow i { flex: 1; height: 6px; border-radius: 3px;
+               background: linear-gradient(90deg, var(--raised), var(--heat)); }
+  .startgrid { display: grid; grid-template-columns: repeat(8, 1fr);
+               grid-auto-rows: 12px; gap: 2px; }
+  .startgrid .cell.half { opacity: .55; }
+  .startinfo { font-size: 11.5px; color: var(--dim); line-height: 1.4; }
+  .startinfo b { color: var(--ink); font-weight: 600; }
+  #arms { display: inline-flex; gap: 10px; }
+  #arms label { display: inline-flex; gap: 4px; align-items: center;
+                color: var(--dim); cursor: pointer; font-size: 12.5px; }
+  #arms i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 
   canvas { display: block; image-rendering: pixelated; }
   canvas.frame, canvas.deter {
@@ -201,6 +218,7 @@
 <header>
   <h1>Goal code explorer</h1>
   <select id="task" aria-label="environment"></select>
+  <span id="arms"></span>
   <label class="check"><input type="checkbox" id="link"> link grids</label>
   <label class="check"><input type="checkbox" id="fine"> ¼-class drag</label>
   <span class="sub" id="ckpt"></span>
@@ -251,7 +269,7 @@ const VALUE_KEYS = [
 
 const state = {
   meta: null, task: null, extra: 0, classes: 8, blocks: 8,
-  arms: {}, link: false, fine: false, gen: 0,
+  arms: {}, link: false, fine: false, gen: 0, armSel: new Set(),
 };
 const els = {
   task: document.getElementById('task'),
@@ -271,7 +289,8 @@ const num = v => {
   const a = Math.abs(v);
   return v.toFixed(a >= 100 ? 1 : a >= 10 ? 2 : 3);
 };
-const armIds = () => state.meta.arms.map(a => a.id);
+const armIds = () => state.meta.arms.map(a => a.id)
+    .filter(a => state.armSel.has(a) && state.meta.runs[state.task] && state.meta.runs[state.task][a]);
 const others = self => Object.values(state.arms).filter(o => o !== self);
 const stepLabel = () => `${state.meta.step / 1e6}M`;
 const signed = v => (v > 0 ? '+' : v < 0 ? '−' : '') + num(Math.abs(v));
@@ -336,10 +355,14 @@ function makeArm(arm, info, model) {
     maskGroups: model.mask_groups || 0,
     saved: null, pair: null, cross: null, pairKey: null,
     vtoken: 0, vtimer: 0,
+    counts: model.counts, countsView: null, ctoken: 0, ctimer: 0,
+    start: model.counts && model.counts.state_bins
+        ? new Array(state.blocks).fill(2) : null,
   };
   state.arms[arm] = self;
   wireGrid(self);
   wireTools(self);
+  if (self.counts) wireCounts(self);
   return self;
 }
 
@@ -347,18 +370,40 @@ function buildPanel(arm, info, model) {
   const panel = document.createElement('section');
   panel.className = 'panel';
   panel.dataset.arm = arm;
+  if (model.counts) panel.classList.add('counts');
   panel.style.setProperty('--arm', state.meta.colors[arm]);
   const ticks = range(0, 8).map(b => `<span>${b}</span>`).join('');
   panel.innerHTML = `
     <h2>${info.label}<span class="tag"
-        title="${info.run}">${info.exp} · seed ${info.seed} · ${info.score}</span></h2>
+        title="${info.run}">${info.exp} · seed ${info.seed} · ${
+          info.score === null ? `${info.step / 1e6}M ckpt` : info.score}</span></h2>
     <div class="stack">
+      ${model.counts && model.counts.state_bins ? `
+      <div class="lbl">Start state<span class="r">arm B counts are per start region</span></div>
+      <div class="side">
+        <div class="ticks left">${ticks}</div>
+        <div class="startgrid"></div>
+      </div>
+      <div class="pair" style="margin-top: 10px">
+        <div><canvas class="frame startframe" width="64" height="64"></canvas></div>
+        <div class="startinfo"></div>
+      </div>` : ''}
       <div class="lbl">Goal code<span class="r">${model.mask_groups
-          ? 'decides the mask' : ''}</span></div>
+          ? 'decides the mask' : model.counts ? 'shaded by imagined tries' : ''}</span></div>
       <div class="side">
         <div class="ticks left">${ticks}</div>
         <div class="grid"></div>
       </div>
+      ${model.counts ? `
+      <div class="heatrow">
+        <select class="heatmode" title="what the cell shading shows">
+          <option value="bonus">tried from here</option>
+          <option value="share">class share</option>
+          <option value="off">no shading</option>
+        </select>
+        <span class="heatlo">least</span><i></i><span class="heathi">most tried (on screen)</span>
+      </div>
+      <div class="note heatnote"></div>` : ''}
       <div class="pair">
         <div>
           <div class="lbl">Image</div>
@@ -405,11 +450,14 @@ function buildPanel(arm, info, model) {
   els.panels.appendChild(panel);
   const q = s => panel.querySelector(s);
   return {
-    panel, grid: q('.grid'), main: q('canvas.frame'), cap: q('.cap'),
+    panel, grid: q('.grid'), main: q('canvas.frame:not(.startframe)'), cap: q('.cap'),
+    startgrid: q('.startgrid'), startframe: q('canvas.startframe'),
+    startinfo: q('.startinfo'), heatmode: q('select.heatmode'),
+    heatnote: q('.heatnote'),
     deter: q('canvas.deter'), dlabels: q('.ticks.right'),
     vals: q('.vals'), target: q('input.target'), metric: q('select.metric'),
     restore: q('[data-act="restore"]'), unsave: q('[data-act="unsave"]'),
-    cmp: q('.cmp'), note: q('.note'),
+    cmp: q('.cmp'), note: q('.note:not(.heatnote)'),
   };
 }
 
@@ -500,6 +548,10 @@ function wireTools(self) {
       setNote(self, 'back on the saved state');
     }
     if (act === 'unsave') clearSaved(self);
+    if (act === 'goalasstart' && self.start) {
+      self.start = self.code.map(v => Math.max(0, Math.min(state.classes - 1, Math.round(v))));
+      setStart(self);
+    }
   });
   self.dom.metric.addEventListener('change', () => setMetric(self));
   setMetric(self);
@@ -667,11 +719,124 @@ function setCode(self, code, activeBlock) {
 function paintGrid(self) {
   const cols = columns();
   const shown = self.preview || self.code;
+  const heat = heatValues(self);
   for (let b = 0; b < state.blocks; b++) {
     for (let i = 0; i < cols.length; i++) {
       // A fractional value lights the nearest column so the row still reads.
-      self.cells[b][i].classList.toggle('on', Math.round(shown[b]) === cols[i]);
+      const cell = self.cells[b][i];
+      cell.classList.toggle('on', Math.round(shown[b]) === cols[i]);
+      cell.style.background = heat ? heatColor(heat.t[b][i]) : '';
+      if (heat) cell.title = heat.tip(b, i);
     }
+  }
+}
+
+/* ---------- UCB-in-imagination count table ----------
+   "tried from here": shade of cell (b, c) = how much the code that equals the
+   current one except block b = c was tried in imagination lately (bonus
+   1/sqrt(n+1); dark = tried a lot). For arm B this is from the chosen start
+   region. "class share": share of all recent tries whose block b was class c,
+   relative to an even spread. */
+function heatValues(self) {
+  const v = self.countsView;
+  const mode = self.dom.heatmode ? self.dom.heatmode.value : 'off';
+  if (!self.counts || !v || mode === 'off') return null;
+  if (mode === 'bonus') {
+    // Stretched between the least and the most tried cell on screen: absolute
+    // bonuses cluster (e.g. 0.4-0.65) and would all paint the same shade.
+    const flat = v.bonus.flat(), hi = Math.max(...flat), lo = Math.min(...flat);
+    const t = v.bonus.map(row => row.map(b => hi > lo ? (hi - b) / (hi - lo) : 0));
+    return {t, tip: (b, c) => {
+      const bo = v.bonus[b][c], n = 1 / (bo * bo) - 1;
+      return `block ${b} = ${c}: bonus ${bo.toFixed(2)} (≈${n.toFixed(1)} recent tries)`;
+    }};
+  }
+  const C = state.classes;
+  const smax = Math.max(...v.share.flat());
+  const t = v.share.map(row => row.map(x => x / smax));
+  return {t, tip: (b, c) => `block ${b} = ${c}: ${(100 * v.share[b][c]).toFixed(1)}% of tries ` +
+      `(${(v.share[b][c] * C).toFixed(2)}x even)`};
+}
+
+let HEAT_LO = null, HEAT_HI = null;
+function heatColor(t) {
+  if (!HEAT_LO) { HEAT_LO = rgbVar('--raised'); HEAT_HI = rgbVar('--heat'); }
+  const c = HEAT_LO.map((lo, i) => Math.round(lo + t * (HEAT_HI[i] - lo)));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+
+function wireCounts(self) {
+  self.dom.heatmode.addEventListener('change', () => { paintGrid(self); paintCounts(self); });
+  if (!self.dom.startgrid) return;
+  const g = self.dom.startgrid;
+  self.startCells = [];
+  for (let b = 0; b < state.blocks; b++) {
+    const row = [];
+    for (let c = 0; c < state.classes; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.title = `start block ${b} = ${c} (counted as the ${c < state.classes / 2 ? 'low' : 'high'} half)`;
+      cell.addEventListener('click', () => { self.start[b] = c; setStart(self); });
+      g.appendChild(cell); row.push(cell);
+    }
+    self.startCells.push(row);
+  }
+  setStart(self);
+}
+
+function setStart(self) {
+  const half = state.classes / self.counts.state_bins;
+  for (let b = 0; b < state.blocks; b++) {
+    const bin = Math.floor(self.start[b] / half);
+    self.startCells[b].forEach((cell, c) => {
+      cell.classList.toggle('on', c === self.start[b]);
+      // The table only sees which half: shade the whole half that counts.
+      cell.classList.toggle('half', c !== self.start[b] && Math.floor(c / half) === bin);
+      cell.style.background = Math.floor(c / half) === bin && c !== self.start[b]
+          ? 'var(--arm)' : '';
+    });
+  }
+  const key = keyOf(self.start);
+  const hit = self.cache.get(key);
+  if (hit) blit(self.dom.startframe, hit);
+  else post(self.arm, [self.start]).then(imgs => {
+    self.cache.set(key, imgs[0]);
+    if (keyOf(self.start) === key) blit(self.dom.startframe, imgs[0]);
+  }).catch(reportError);
+  refreshCounts(self);
+}
+
+function refreshCounts(self) {
+  if (!self.counts) return;
+  clearTimeout(self.ctimer);
+  self.ctimer = setTimeout(() => {
+    const token = ++self.ctoken;
+    postJSON('/api/counts', {arm: self.arm, code: self.preview || self.code,
+                             start: self.start}).then(out => {
+      if (token !== self.ctoken || !out.counts) return;
+      self.countsView = out.counts;
+      paintGrid(self);
+      paintCounts(self);
+    }).catch(reportError);
+  }, 60);
+}
+
+function paintCounts(self) {
+  const v = self.countsView;
+  if (!v) return;
+  const n = 1 / (v.here * v.here) - 1;
+  self.dom.heatnote.innerHTML = `this goal: bonus <b>${v.here.toFixed(2)}</b> ` +
+      `(≈${n.toFixed(1)} recent tries${self.start ? ' from this start region' : ''})` +
+      ` · table: ${v.goal_bins} bins/block${v.state_bins ? `, start ${v.state_bins} bins` : ''}`;
+  if (self.dom.startinfo) {
+    const half = state.classes / v.state_bins;
+    const bins = self.start.map(c => c < half ? 'L' : 'H').join(' ');
+    self.dom.startinfo.innerHTML = `start region <b>${bins}</b><br>` +
+        `(low/high half of each block)<br><br>` +
+        `<b>${(100 * v.start_mass).toFixed(2)}%</b> of all imagined tries started here ` +
+        `(even: ${(100 / 256).toFixed(2)}%)<br><br>` +
+        `Goal shading below = tries from this start region. ` +
+        `<button data-act="goalasstart">use goal as start</button>`;
   }
 }
 
@@ -779,6 +944,7 @@ function drawCurrent(self) { drawCode(self, self.code, false); }
 
 function drawCode(self, code, isPreview) {
   const key = keyOf(code);
+  refreshCounts(self);
   self.dom.cap.textContent = (isPreview ? 'preview · ' : '') +
       'code ' + code.map(v => fmt(v)).join(' ');
   refreshValues(self);
@@ -1017,7 +1183,7 @@ function reportError(err) {
 /* ---------- boot ---------- */
 async function waitReady(task) {
   for (;;) {
-    const st = await (await fetch(`/api/prepare?task=${task}`)).json();
+    const st = await (await fetch(`/api/prepare?task=${task}&arms=${armIds().join(',')}`)).json();
     const keys = armIds().map(a => `${task}/${a}`);
     if (keys.every(k => st[k] === 'ready')) return;
     if (keys.some(k => st[k] === 'error')) throw new Error(
@@ -1029,16 +1195,22 @@ async function waitReady(task) {
 }
 
 async function loadTask(task) {
+  // A newer call (task switch, arm toggle) supersedes this one, so overlapping
+  // loads never append two sets of panels.
+  const gen = ++state.gen;
   state.task = task;
   els.panels.innerHTML = '';
   state.arms = {};
   const info = state.meta.runs[task];
-  els.ckpt.textContent = `${stepLabel()} checkpoint · best of 5 seeds`;
+  els.ckpt.textContent = `${stepLabel()} checkpoint · best of 5 seeds`
+      + (armIds().some(a => a.startsWith('ucb')) ? ' (UCB arms: latest milestone)' : '');
   await waitReady(task);
+  if (gen !== state.gen) return;
   setStatus('ready', false);
   for (const arm of armIds()) {
     const model = await (await fetch(
         `/api/model?task=${task}&arm=${arm}`)).json();
+    if (gen !== state.gen) return;
     state.blocks = model.blocks;
     state.classes = model.classes;
     const self = makeArm(arm, info[arm], model);
@@ -1051,7 +1223,8 @@ function setTheme(theme) {
   document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark';
   try { localStorage.setItem('goal-demo-theme', theme); } catch (e) {}
   readHeatColors();
-  for (const self of Object.values(state.arms)) { paintDeter(self); paintCompare(self); }
+  HEAT_LO = HEAT_HI = null;
+  for (const self of Object.values(state.arms)) { paintDeter(self); paintCompare(self); paintGrid(self); }
 }
 
 async function boot() {
@@ -1062,6 +1235,17 @@ async function boot() {
       document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
   state.meta = await (await fetch('/api/meta')).json();
   state.extra = state.meta.extra;
+  let sel = null;
+  try { sel = JSON.parse(localStorage.getItem('goal-demo-arms') || 'null'); } catch (e) {}
+  state.armSel = new Set(sel || state.meta.arms.filter(a => a.default).map(a => a.id));
+  const armsEl = document.getElementById('arms');
+  armsEl.innerHTML = state.meta.arms.map(a => `<label><input type="checkbox" value="${a.id}"
+      ${state.armSel.has(a.id) ? 'checked' : ''}><i style="background:${state.meta.colors[a.id]}"></i>${a.label}</label>`).join('');
+  armsEl.addEventListener('change', ev => {
+    ev.target.checked ? state.armSel.add(ev.target.value) : state.armSel.delete(ev.target.value);
+    try { localStorage.setItem('goal-demo-arms', JSON.stringify([...state.armSel])); } catch (e) {}
+    loadTask(state.task).catch(reportError);
+  });
   els.task.innerHTML = state.meta.tasks
       .map(t => `<option value="${t.id}">${t.label}</option>`).join('');
   els.task.addEventListener('change', () => loadTask(els.task.value)

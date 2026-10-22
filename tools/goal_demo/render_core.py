@@ -202,7 +202,7 @@ def _env_spaces(task, config):
 class GoalRenderer:
   """One checkpoint, loaded once, rendering goal codes on demand."""
 
-  def __init__(self, task, arm, step=runsmod.STEP, platform='cpu',
+  def __init__(self, task, arm, step=None, platform='cpu',
                compute_dtype=None):
     os.environ.setdefault('JAX_PLATFORMS', platform)
     import jax
@@ -231,7 +231,9 @@ class GoalRenderer:
         batch_length=config.batch_length,
         replay_context=config.replay_context,
         report_length=config.report_length,
-        replica=config.replica, replicas=config.replicas)
+        replica=config.replica, replicas=config.replicas,
+        # The code-count modules derive decay/weights from these two.
+        train_ratio=config.run.train_ratio, replay_size=config.replay.size)
 
     # Bypass embodied.jax.Agent.__new__, which additionally builds the
     # sharded/JIT-compiled train+policy wrapper we have no use for here.
@@ -330,9 +332,18 @@ class GoalRenderer:
     # fetch it alongside the render parameters instead of reading the
     # checkpoint a second time.
     extra = ('goal_dec/codebook/table',) if self.is_vq else ()
+    # UCB-in-imagination arms: the decaying count table of imagined picks
+    # (hrl/explore.py:ImagCounts), read straight from the checkpoint.
+    self.imag = getattr(model, 'imag_counts', None) if getattr(
+        model, 'mgr_ucb_imag_c', 0.0) > 0.0 else None
+    if self.imag is not None:
+      extra = extra + ('imag_counts/tab/value',)
     loaded, extras = _load_params(
         runsmod.ckpt_path(task, arm, step), params, extra)
     self.codebook_table = extras.get('goal_dec/codebook/table')
+    self.imag_tab = extras.get('imag_counts/tab/value')
+    if self.imag_tab is not None:
+      self._imag_prepare()
     self.line_dirs, self.line_steps = (
         fit_lines(self.codebook_table) if self.is_vq else (None, None))
     # Keep the ~220MB of weights resident on the device: passing host arrays
@@ -360,6 +371,73 @@ class GoalRenderer:
       if self.has_values and size <= 4:
         self.values(probe)
     self.render(np.zeros((1, self.blocks), np.float32))
+
+  # --- UCB-in-imagination count table -------------------------------------
+  def _imag_prepare(self):
+    im = self.imag
+    self.imag_goal_bins, self.imag_state_bins = im.goal_bins, im.state_bins
+    shape = im.shape
+    self._imag_strides = np.cumprod((shape[1:] + (1,))[::-1])[::-1].astype(np.int64)
+    L = self.blocks
+    t = self.imag_tab.reshape(shape)
+    if self.imag_state_bins:
+      # (state cells, goal cells): marginals are computed per start cell on demand.
+      self._imag_rows = self.imag_tab.reshape(self.imag_state_bins ** L, -1)
+    else:
+      self._imag_marg_all = self._goal_marginals(t)
+
+  def _goal_marginals(self, g):
+    """(G,)*L goal table -> (L, classes) share of count mass per class."""
+    L, gb = self.blocks, self.imag_goal_bins
+    out = np.zeros((L, self.classes), np.float32)
+    total = max(float(g.sum()), 1e-12)
+    for b in range(L):
+      per_bin = g.sum(axis=tuple(a for a in range(L) if a != b)) / total
+      for c in range(self.classes):
+        q = min(c * gb // self.classes, gb - 1)
+        out[b, c] = per_bin[q] / (self.classes / gb)   # spread a bin over its classes
+    return out
+
+  def _imag_bins(self, ids, bins):
+    ids = np.clip(np.round(np.asarray(ids, np.float64)), 0, self.classes - 1).astype(np.int64)
+    return np.minimum(ids * bins // self.classes, bins - 1)
+
+  def _imag_key(self, goal, start=None):
+    q = self._imag_bins(goal, self.imag_goal_bins)
+    if self.imag_state_bins:
+      q = np.concatenate([self._imag_bins(start, self.imag_state_bins), q], -1)
+    return (q * self._imag_strides).sum(-1)
+
+  def imag_view(self, code, start=None):
+    """What the count table says around ``code`` (and ``start`` for arm B).
+
+    ``bonus[b, c]``: UCB bonus 1/sqrt(n+1) of the code that equals ``code``
+    except block ``b`` set to class ``c`` -- how much it was tried in
+    imagination lately, from this start region for arm B. ``share[b, c]``: the
+    share of all recent tries whose block ``b`` was class ``c`` (1/C = even).
+    """
+    code = np.asarray(code, np.float64).reshape(-1)
+    var = np.repeat(code[None, None], self.classes, 1).repeat(self.blocks, 0)
+    for b in range(self.blocks):
+      var[b, :, b] = np.arange(self.classes)
+    st = None
+    if self.imag_state_bins:
+      st = np.broadcast_to(np.asarray(start, np.float64).reshape(-1), var.shape)
+    n = self.imag_tab[self._imag_key(var, st)]
+    out = dict(bonus=(1.0 / np.sqrt(n + 1.0)).tolist(),
+               here=float(1.0 / np.sqrt(self.imag_tab[self._imag_key(
+                   code[None], None if st is None else st[0, :1])][0] + 1.0)),
+               goal_bins=self.imag_goal_bins, state_bins=self.imag_state_bins)
+    if self.imag_state_bins:
+      cell = int((self._imag_bins(start, self.imag_state_bins)
+                  * (self.imag_state_bins ** np.arange(self.blocks)[::-1])).sum())
+      row = self._imag_rows[cell]
+      out['share'] = self._goal_marginals(row.reshape((self.imag_goal_bins,) * self.blocks)).tolist()
+      out['start_mass'] = float(row.sum() / max(self.imag_tab.sum(), 1e-12))
+      out['start_cell'] = cell
+    else:
+      out['share'] = self._imag_marg_all.tolist()
+    return out
 
   def decoder_input(self, idx):
     """Class indices ``(B, L)`` -> whatever this arm's goal decoder takes."""

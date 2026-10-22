@@ -28,6 +28,12 @@ MAXRET = {'pinpad_four': 411, 'pinpad_five': 352, 'pinpad_six': 292,
 WINDOW = 5e5
 MIN_REACH = 1e6
 SETS = {
+    'base3': [
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('dv3', 'DreamerV3 (flat)', '#000000', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
+        ('ent', 'OG + fixed worker entropy', '#0072B2',
+         'e1[89][089]?_{t}_director-director_og-wkr_ent_fixed-pubmatch_s*'),
+    ],
     'ucbimag': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('som', 'OG + SOM', '#CC79A7', 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*'),
@@ -53,8 +59,12 @@ def window_mean(a, lo, hi):
   return a[m, 1].mean() if m.sum() > 3 else np.nan
 
 
+LATE = {'base3': 1e6}   # window length for sets whose runs are all finished
+
+
 def main(which):
   arms = SETS[which]
+  window = LATE.get(which, WINDOW)
   data = {(k, t): [scores(d) for d in runs(p.format(t=t))] for k, _, _, p in arms for t, _, _ in TASKS}
   data = {key: [a for a in v if len(a)] for key, v in data.items()}
   fig, axes = plt.subplots(2, 3, figsize=(13, 8.2))
@@ -66,7 +76,7 @@ def main(which):
     # earlier than that it would drag the shared window back to the first steps.
     reach = {k: min(max(a[:, 0].max() for a in data[k, task]), XMAX) for k, *_ in arms if data[k, task]}
     counted = {k for k, r in reach.items() if r >= MIN_REACH}
-    hi = min(reach[k] for k in counted); lo = hi - WINDOW
+    hi = min(reach[k] for k in counted); lo = hi - window
     cells = []
     for key, label, color, _ in arms:
       seeds = data[key, task]
@@ -107,8 +117,9 @@ def main(which):
   order = [l.index(lab) for _, lab, *_ in arms if lab in l]
   fig.legend([h[i] for i in order], labels, loc='lower center', ncol=3, fontsize=12.5,
              frameon=False, bbox_to_anchor=(0.5, 0.0))
-  fig.text(0.5, 0.165, 'environment steps (M)   (shaded: scoring window; dashed: one seed so far)',
-           ha='center', fontsize=14)
+  fig.text(0.5, 0.165, 'environment steps (M)' + (
+      '   (shaded: scoring window; dashed: one seed so far)' if which not in LATE else
+      '   (scores: mean over 3-4M, % of max achievable)'), ha='center', fontsize=14)
   fig.tight_layout(rect=(0, 0.19, 1, 1), h_pad=2.0)
   out = f'{OUT}/{which}_matched'
   fig.savefig(out + '.png', dpi=200, facecolor='white'); fig.savefig(out + '.pdf')

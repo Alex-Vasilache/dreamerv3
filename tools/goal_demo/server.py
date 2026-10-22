@@ -80,7 +80,8 @@ class Registry:
     self.last_request = 0.0
 
   def status(self):
-    keys = [(t, a) for t in runsmod.TASKS for a in runsmod.ARMS]
+    keys = [(t, a) for t in runsmod.TASKS for a in runsmod.ALL_ARMS
+            if a in runsmod.RUNS[t]]
     return {f'{t}/{a}': (
         'error' if (t, a) in self._errors else
         'ready' if (t, a) in self._models else 'pending') for t, a in keys}
@@ -112,9 +113,10 @@ class Registry:
               f'({runsmod.info(task, arm)["exp"]})', flush=True)
     return self._models[key]
 
-  def prepare(self, task):
-    """Start building every arm of ``task`` that is not up yet."""
-    todo = [a for a in runsmod.ARMS if (task, a) not in self._models]
+  def prepare(self, task, arms=None):
+    """Start building the requested arms of ``task`` that are not up yet."""
+    arms = arms or runsmod.ARMS
+    todo = [a for a in arms if (task, a) not in self._models]
     if not todo or self._preparing:
       return
     def run():
@@ -191,6 +193,14 @@ class Registry:
     with self._render_lock:
       return model.code_at_goal_distance(code, target, span, rng)
 
+  def counts(self, task, arm, code, start=None):
+    """Count-table view around ``code`` (UCB-in-imagination arms only)."""
+    self.last_request = time.time()
+    model = self.get(task, arm)
+    if getattr(model, 'imag_tab', None) is None:
+      return dict(counts=None)
+    return dict(counts=model.imag_view(code, start))
+
   def meta(self, task, arm):
     model = self.get(task, arm)
     table = model.codebook()
@@ -205,6 +215,8 @@ class Registry:
                   dim=int(table.shape[-1]), **PC1_RANDOM)
     return dict(
         blocks=model.blocks, classes=model.classes, values=model.has_values,
+        counts=(None if getattr(model, 'imag_tab', None) is None else
+                dict(goal_bins=model.imag_goal_bins, state_bins=model.imag_state_bins)),
         mask_groups=model.mask_groups,
         codebook=line, scale=self._scales[(task, arm)],
         **runsmod.info(task, arm))
@@ -259,11 +271,12 @@ class Handler(BaseHTTPRequestHandler):
         self._json(dict(
             tasks=[dict(id=t, label=runsmod.TASK_LABELS[t])
                    for t in runsmod.TASKS],
-            arms=[dict(id=a, label=runsmod.ARM_LABELS[a])
-                  for a in runsmod.ARMS],
+            arms=[dict(id=a, label=runsmod.ARM_LABELS[a], default=a in runsmod.ARMS)
+                  for a in runsmod.ALL_ARMS],
             step=int(runsmod.STEP), extra=EXTRA,
             colors=runsmod.ARM_COLORS,
-            runs={t: {a: runsmod.info(t, a) for a in runsmod.ARMS}
+            runs={t: {a: runsmod.info(t, a) for a in runsmod.ALL_ARMS
+                      if a in runsmod.RUNS[t]}
                   for t in runsmod.TASKS}))
       elif path == '/api/status':
         self._json(self.registry.status())
@@ -271,7 +284,7 @@ class Handler(BaseHTTPRequestHandler):
         # Put the environment the user just picked at the front of the build
         # queue, ahead of whatever the idle warmer would have done next.
         args = dict(p.split('=') for p in self.path.split('?')[1].split('&'))
-        self.registry.prepare(args['task'])
+        self.registry.prepare(args['task'], args.get('arms', '').split(',') if args.get('arms') else None)
         self._json(self.registry.status())
       elif path == '/api/model':
         args = dict(p.split('=') for p in self.path.split('?')[1].split('&'))
@@ -294,6 +307,9 @@ class Handler(BaseHTTPRequestHandler):
         self._json(self.registry.values(
             req['task'], req['arm'], req['codes'],
             req.get('goals'), req.get('ref')))
+      elif path == '/api/counts':
+        self._json(self.registry.counts(
+            req['task'], req['arm'], req['code'], req.get('start')))
       elif path == '/api/at_goal_distance':
         self._json(self.registry.at_goal_distance(
             req['task'], req['arm'], req['code'], req['target'],

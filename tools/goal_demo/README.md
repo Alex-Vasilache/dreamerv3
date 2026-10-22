@@ -7,6 +7,15 @@ three pin pads, cartpole swingup, cheetah run, hopper hop. (Until 2026-10-19 it
 compared Director against SOM-line + LipVQ on the old BIG runs, which have since
 been archived; see git history.)
 
+The header also switches on the two UCB-in-imagination arms (e1820-e1879, latest
+milestone per task; the batch was cancelled mid-run). Their goal grid is shaded
+from the run's own count table: "tried from here" = how much each one-block
+change of the current code was tried in imagination lately (bonus 1/sqrt(n+1),
+stretched between the least and most tried cell on screen), "class share" = each
+block's spread of tries over its classes. Arm B counts per start region, so its
+panel adds a start-state code (only the low/high half of each block matters)
+with its decoded image, and the goal shading is conditioned on that start.
+
 In the mask arm the code also decodes a keep/ignore flag per deter block. Rows
 the goal ignores are dimmed; the frame and goal distance use the unmasked
 decode, and the worker critic gets the masked goal, as in training.

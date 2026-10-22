@@ -17,13 +17,16 @@ WORK = '/work/DoyaU/vasilache/work'
 BUCKET = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
 STEP = '000004000000'
 
+# Panels shown by default; the page can switch on any arm in ALL_ARMS.
 ARMS = ('og', 'som', 'sommask')
+ALL_ARMS = ('og', 'som', 'sommask', 'ucbA', 'ucbB')
 ARM_LABELS = {'og': 'Director (OG)', 'som': 'OG + SOM-line',
               'somlip': 'OG + SOM-line + LiP',
-              'sommask': 'OG + SOM-line + mask'}
+              'sommask': 'OG + SOM-line + mask',
+              'ucbA': 'OG + SOM + UCB imag A', 'ucbB': 'OG + SOM + UCB imag B'}
 # Same colours as the comparison plots (collapse_study/compare_late.py).
 ARM_COLORS = {'og': '#E69F00', 'som': '#CC79A7', 'somlip': '#0072B2',
-              'sommask': '#56B4E9'}
+              'sommask': '#56B4E9', 'ucbA': '#0072B2', 'ucbB': '#009E73'}
 PATTERNS = {
     'og': 'e12[3-8]?_{t}_director-director_og-pubmatch_s*',
     'som': 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*',
@@ -76,6 +79,33 @@ RUNS = {
     },
 }
 
+# UCB-in-imagination arms (e1820-e1879, c=3; cancelled 2026-10-22 before most
+# runs finished): per task the most advanced run and its latest milestone, so
+# these panels load a checkpoint other than STEP. (name, score, milestone step)
+UCB_RUNS = {
+    'pinpad_four': {
+        'ucbA': ('e1820_pinpad_four_director-director_og-goal_som_line-ucb_imag_a-ucb_imag_c3-pubmatch_s0_j4767281_0', None, '000004000000'),
+        'ucbB': ('e1862_pinpad_four_director-director_og-goal_som_line-ucb_imag_b-ucb_imag_c3-pubmatch_s2_j4767281_42', None, '000001000000')},
+    'pinpad_five': {
+        'ucbA': ('e1821_pinpad_five_director-director_og-goal_som_line-ucb_imag_a-ucb_imag_c3-pubmatch_s0_j4767281_1', None, '000004000000'),
+        'ucbB': ('e1863_pinpad_five_director-director_og-goal_som_line-ucb_imag_b-ucb_imag_c3-pubmatch_s2_j4767281_43', None, '000000500000')},
+    'pinpad_six': {
+        'ucbA': ('e1822_pinpad_six_director-director_og-goal_som_line-ucb_imag_a-ucb_imag_c3-pubmatch_s0_j4767281_2', None, '000003000000'),
+        'ucbB': ('e1864_pinpad_six_director-director_og-goal_som_line-ucb_imag_b-ucb_imag_c3-pubmatch_s2_j4767281_44', None, '000000500000')},
+    'dmc_cartpole_swingup': {
+        'ucbA': ('e1823_dmc_cartpole_swingup_director-director_og-goal_som_line-ucb_imag_a-ucb_imag_c3-pubmatch_s0_j4767281_3', None, '000002500000'),
+        'ucbB': ('e1853_dmc_cartpole_swingup_director-director_og-goal_som_line-ucb_imag_b-ucb_imag_c3-pubmatch_s0_j4767281_33', None, '000004000000')},
+    'dmc_cheetah_run': {
+        'ucbA': ('e1824_dmc_cheetah_run_director-director_og-goal_som_line-ucb_imag_a-ucb_imag_c3-pubmatch_s0_j4767281_4', None, '000002500000'),
+        'ucbB': ('e1854_dmc_cheetah_run_director-director_og-goal_som_line-ucb_imag_b-ucb_imag_c3-pubmatch_s0_j4767281_34', None, '000004000000')},
+    'dmc_hopper_hop': {
+        'ucbA': ('e1825_dmc_hopper_hop_director-director_og-goal_som_line-ucb_imag_a-ucb_imag_c3-pubmatch_s0_j4767281_5', None, '000002500000'),
+        'ucbB': ('e1879_dmc_hopper_hop_director-director_og-goal_som_line-ucb_imag_b-ucb_imag_c3-pubmatch_s4_j4767281_59', None, '000002500000')},
+}
+for _t, _arms in UCB_RUNS.items():
+  if _t in RUNS:
+    RUNS[_t].update(_arms)
+
 TASKS = [t for t in TASK_LABELS if t in RUNS]
 
 
@@ -88,7 +118,13 @@ def run_dir(task, arm):
   raise FileNotFoundError(name)
 
 
-def ckpt_path(task, arm, step=STEP):
+def run_step(task, arm):
+  entry = RUNS[task][arm]
+  return entry[2] if len(entry) > 2 else STEP
+
+
+def ckpt_path(task, arm, step=None):
+  step = step or run_step(task, arm)
   return os.path.join(run_dir(task, arm), 'logdir', 'ckpt_milestones', step,
                       'agent.pkl')
 
@@ -98,7 +134,8 @@ def config_path(task, arm):
 
 
 def info(task, arm):
-  name, score = RUNS[task][arm]
+  name, score = RUNS[task][arm][:2]
   seed = int(name.split('_s')[-1].split('_')[0])
   return dict(run=name, exp=name.split('_')[0], seed=seed, score=score,
+              step=int(run_step(task, arm)),
               label=ARM_LABELS[arm], task_label=TASK_LABELS[task])
