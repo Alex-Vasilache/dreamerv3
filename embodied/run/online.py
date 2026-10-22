@@ -543,6 +543,14 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   carry_train = agent.init_train(args.batch_size)
   last_actor_step = -1
 
+  def write_logs():
+    logger.add(train_agg.result())
+    logger.add(replay.stats(), prefix='replay')
+    logger.add(usage.stats(), prefix='usage')
+    logger.add({'fps/train': train_fps.result()})
+    logger.add({'timer': elements.timer.stats()['summary']})
+    logger.write()
+
   cp = elements.Checkpoint(logdir / 'ckpt')
   cp.step = step
   cp.agent = agent
@@ -626,6 +634,10 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       if should_sync_policy(step):
         with elements.timer.section('publish'):
           shared_policy.publish(agent, background=True)
+      # Likewise per train step, so the learner's metrics (TensorBoard, and
+      # the phone's dashboard via env.robot) arrive every log_every seconds.
+      if should_log(step):
+        write_logs()
       if should_report(step) and len(replay):
         agg = elements.Agg()
         for _ in range(args.consec_report * args.report_batches):
@@ -636,12 +648,7 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       with elements.timer.section('publish'):
         shared_policy.publish(agent, background=True)
     if should_log(step):
-      logger.add(train_agg.result())
-      logger.add(replay.stats(), prefix='replay')
-      logger.add(usage.stats(), prefix='usage')
-      logger.add({'fps/train': train_fps.result()})
-      logger.add({'timer': elements.timer.stats()['summary']})
-      logger.write()
+      write_logs()
     if should_save(step):
       cp.save()
   _log_learner(

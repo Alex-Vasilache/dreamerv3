@@ -15,6 +15,23 @@ import numpy as np
 
 PROTOCOL = 3
 
+# Learner metrics forwarded to the phone for its web dashboard (/dash), as
+# (name on the page, metrics.jsonl keys summed). The world-model loss is its
+# prediction terms; the decoder terms are named after the observation keys.
+STATS = (
+    ('wm_loss', ('train/loss/dyn', 'train/loss/rep', 'train/loss/rew',
+                 'train/loss/con', 'train/loss/wheels',
+                 'train/loss/orientation', 'train/loss/command')),
+    ('policy_loss', ('train/loss/policy',)),
+    ('value_loss', ('train/loss/value',)),
+    ('entropy', ('train/ent/drive',)),
+    ('adv_mag', ('train/adv_mag',)),
+    ('ret', ('train/ret',)),
+    ('fps_train', ('fps/train',)),
+    ('updates', ('train/opt/updates',)),
+)
+STATS_EVERY = 3.0
+
 # Anything that means the link went away rather than that the code is
 # wrong: socket errors and timeouts (both OSError), plus a truncated or
 # garbled frame from a half-closed connection.
@@ -319,6 +336,9 @@ class SmartphoneRobot(embodied.Env):
     self._weights_stamp = None   # the policy the phone holds, as far as we know
     self._push_started = 0.0
     self._pusher = None
+    self._stats_at = 0.0
+    self._stats_offset = 0
+    self._stats_updates = 0.0
     self._closing = threading.Event()
     self._phone_stamp = None     # policy_stamp the phone reported last
     # 'serial' or 'clock', or None to take the phone's default. The phone's
@@ -1104,7 +1124,15 @@ class SmartphoneRobot(embodied.Env):
     """
     while not self._closing.wait(self._weights_poll):
       link = self._link
-      if link is None or link.pushing or link.error is not None:
+      if link is None or link.error is not None:
+        continue
+      if self._onboard and time.time() - self._stats_at > STATS_EVERY:
+        self._stats_at = time.time()
+        try:
+          self._send_stats(link)
+        except Exception as e:  # noqa: BLE001 -- display only
+          print(f'[robot] could not forward learner metrics: {e}', flush=True)
+      if link.pushing:
         continue
       if time.time() - self._push_started < self._weights_every:
         continue
@@ -1116,6 +1144,42 @@ class SmartphoneRobot(embodied.Env):
         # point of it holding them.
         print(f'[robot] could not push weights: {e}', flush=True)
         time.sleep(5.0)
+
+  def _send_stats(self, link):
+    """Forward the learner's newest metrics to the phone's dashboard.
+
+    Reads only what metrics.jsonl gained since the last call. Sent to an
+    onboard phone only: older apps ignore unknown messages there, but take
+    any message for an action in lock-step and pipelined mode.
+    """
+    if self._policy_dir is None:
+      return
+    path = self._policy_dir.parent / 'metrics.jsonl'
+    if not path.exists():
+      return
+    with open(str(path), 'rb') as f:
+      f.seek(self._stats_offset)
+      chunk = f.read()
+    end = chunk.rfind(b'\n') + 1
+    self._stats_offset += end
+    stats = {}
+    for line in chunk[:end].splitlines():
+      try:
+        row = json.loads(line)
+      except ValueError:
+        continue
+      for name, keys in STATS:
+        if not any(k in row for k in keys):
+          continue
+        value = sum(float(row[k]) for k in keys if k in row)
+        if name == 'updates':
+          self._stats_updates += value
+          value = self._stats_updates
+        stats[name] = value
+      if 'step' in row and any(k.startswith('train/') for k in row):
+        stats['train_step'] = float(row['step'])
+    if stats:
+      link.send(dict(type='stats', stats=stats))
 
   def _push_newest(self, link):
     if self._config is None or self._policy_dir is None:

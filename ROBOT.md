@@ -231,6 +231,12 @@ The app serves a page at `http://<phone's WiFi address>:8080` (shown on the
 robot's screen): **DRIVE** is a joystick, **SCREEN** mirrors the display.
 Off that WiFi: `adb forward tcp:8080 tcp:8080`, then http://localhost:8080.
 
+`http://<phone>:8080/dash` is a dashboard for showing training to an
+audience: the reward curve since the run started, the age of each weight
+push, the learner's losses (forwarded by the trainer every ~10 s) and a live
+blueprint of the robot from the side, front and top. `?theme=dark` or
+`?theme=light` picks the look; the button toggles it.
+
 Only a policy trained on the command task follows it:
 
 ```bash
