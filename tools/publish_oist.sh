@@ -67,7 +67,7 @@ if [ -n "${DRY_RUN:-}" ]; then
 fi
 
 source=$(git rev-parse --short HEAD)
-commit=$(git commit-tree "$snapshot" "${parent[@]}" -F - <<EOF
+commit=$(git commit-tree "$snapshot" ${parent[@]+"${parent[@]}"} -F - <<EOF
 Snapshot of smartphone-robot-bridge $source
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
