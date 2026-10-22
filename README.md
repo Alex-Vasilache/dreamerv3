@@ -1,6 +1,6 @@
 # DreamerV3 on the OIST Smartphone Robot
 
-This branch (`smartphone-robot-bridge`) trains [DreamerV3][paper] on the
+This repo trains [DreamerV3][paper] on the
 [OIST smartphone robot](https://github.com/oist/smartphone-robot/wiki): a phone
 on a two-wheeled base that learns to balance and to follow joystick commands.
 The policy runs on the phone; a learner on a GPU (a laptop or a Slurm cluster)
@@ -11,11 +11,11 @@ troubleshooting.
 
 ## Repos
 
-The robot setup spans three repos, all forks:
+The robot setup spans three repos:
 
 | repo | branch | what |
 |---|---|---|
-| [Alex-Vasilache/dreamerv3](https://github.com/Alex-Vasilache/dreamerv3/tree/smartphone-robot-bridge) | `smartphone-robot-bridge` | learner, robot env, simulator, tools ([ROBOT.md](ROBOT.md)) |
+| [oist/dreamerv3](https://github.com/oist/dreamerv3) | `main` | learner, robot env, simulator, tools ([ROBOT.md](ROBOT.md)) |
 | [Alex-Vasilache/smartphone-robot-android](https://github.com/Alex-Vasilache/smartphone-robot-android/tree/dreamer-bridge) | `dreamer-bridge` | phone app `dreamerBridge` (fork of [oist/smartphone-robot-android](https://github.com/oist/smartphone-robot-android)) |
 | [Alex-Vasilache/smartphone-robot-firmware](https://github.com/Alex-Vasilache/smartphone-robot-firmware/tree/telemetry-cache) | `telemetry-cache` | base firmware with a motor watchdog and I2C recovery (fork of [oist/smartphone-robot-firmware](https://github.com/oist/smartphone-robot-firmware)) |
 
@@ -33,7 +33,7 @@ wheel speeds and, for command following, the joystick command; the actions are
 the two wheel commands. The world model and actor-critic train on the learner; only the
 actor runs on the phone.
 
-The branch also contains a simulated robot (`robot_sim`) for trying things
+The repo also contains a simulated robot (`robot_sim`) for trying things
 without hardware; see [ROBOT.md](ROBOT.md#without-hardware).
 
 ## Credit

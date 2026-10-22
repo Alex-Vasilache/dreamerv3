@@ -1,6 +1,6 @@
 # DreamerV3 on the OIST smartphone robot
 
-This branch (`smartphone-robot-bridge`) trains DreamerV3 on the real
+This repo trains DreamerV3 on the real
 smartphone robot: a phone on a two-wheeled base, learning to balance and to
 follow joystick commands. The policy runs **on the phone**; a learner on a GPU
 (your computer or a Slurm cluster) trains on everything the phone records and
@@ -33,7 +33,7 @@ Contents: [Repos](#repos) · [Install](#install) · [Train](#train) ·
 
 | repo | branch | what |
 |---|---|---|
-| [Alex-Vasilache/dreamerv3](https://github.com/Alex-Vasilache/dreamerv3) | `smartphone-robot-bridge` | learner, robot env, these tools |
+| [oist/dreamerv3](https://github.com/oist/dreamerv3) | `main` | learner, robot env, these tools |
 | [Alex-Vasilache/smartphone-robot-android](https://github.com/Alex-Vasilache/smartphone-robot-android) | `dreamer-bridge` | phone app `dreamerBridge` (fork of [oist/smartphone-robot-android](https://github.com/oist/smartphone-robot-android)) |
 | [Alex-Vasilache/smartphone-robot-firmware](https://github.com/Alex-Vasilache/smartphone-robot-firmware) | `telemetry-cache` | base firmware: motor watchdog and I2C recovery on top of upstream's fast-reply telemetry cache (fork of [oist/smartphone-robot-firmware](https://github.com/oist/smartphone-robot-firmware)) |
 
@@ -44,7 +44,7 @@ All commands below run from the dreamerv3 checkout.
 ### 1. Learner
 
 ```bash
-git clone -b smartphone-robot-bridge https://github.com/Alex-Vasilache/dreamerv3.git
+git clone https://github.com/oist/dreamerv3.git
 cd dreamerv3
 python3 -m venv .venv          # Python 3.10-3.13 (tested on 3.13)
 ```
@@ -73,7 +73,7 @@ and edit it; every key is explained there. With `ROBOT_TRAINER=local` (the
 default) nothing else is needed. You also need `adb` (Android
 platform-tools: `brew install --cask android-platform-tools`, or from Android Studio).
 
-**On a Slurm cluster** (optional): clone the same branch there, make a Python
+**On a Slurm cluster** (optional): clone this repo there, make a Python
 environment with the CUDA JAX above, and set in `robot.env`:
 `ROBOT_TRAINER=slurm`, `ROBOT_SSH` (an ssh alias that logs in without a
 password prompt), `ROBOT_REMOTE_CODE` (the clone), `ROBOT_RUNS` (a directory
