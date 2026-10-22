@@ -1840,6 +1840,11 @@ robot_still:
   env.robot.balance_reward: still
   env.robot.still_kernel: laplace
   env.robot.still_upright: True
+  # The actor samples a fresh action every step with std >= minstd, so at
+  # 65 Hz minstd sets a floor on chatter: e1979's entropy sat at the 0.1
+  # floor (-1.75 nats) from minute 5, still chattering. 0.02 leaves early
+  # exploration alone (the std starts near maxstd) and lowers only the floor.
+  agent.policy.minstd: 0.02
   env.robot.still_speed_sigma: 1000.0
   env.robot.still_chatter_sigma: 0.2
   env.robot.still_accel_sigma: 0.0
