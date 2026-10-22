@@ -54,6 +54,23 @@ def mesh_parts(meshdir):
   return out
 
 
+def disc(radius, x0, x1, n=180):
+  """Triangles of a closed cylinder along x (mm): the region a spinning
+  wheel sweeps, whatever its angle."""
+  a = np.linspace(0, 2 * np.pi, n + 1)
+  ring = np.stack([np.zeros_like(a), radius * np.cos(a), radius * np.sin(a)], -1)
+  tris = []
+  for x in (x0, x1):
+    c = np.array([x, 0, 0])
+    for i in range(n):
+      tris.append([c, ring[i] + [x, 0, 0], ring[i + 1] + [x, 0, 0]])
+  for i in range(n):
+    p, q = ring[i], ring[i + 1]
+    tris.append([p + [x0, 0, 0], q + [x0, 0, 0], q + [x1, 0, 0]])
+    tris.append([p + [x0, 0, 0], q + [x1, 0, 0], p + [x1, 0, 0]])
+  return np.array(tris)
+
+
 # view: (screen x axis, screen y axis, towards-viewer axis), all in body frame.
 # Side: front (+y) to the right, seen from the robot's right (+x).
 VIEWS = {
@@ -269,10 +286,13 @@ def main():
   left, right = parts['spr_wheel_left'], parts['spr_wheel_right']
   right_local = right - np.array([HALF_TRACK_MM, 0, 0])
   out = {}
-  # Side: the right wheel is in front of the body; it turns, so it is drawn
-  # about its own centre and occludes nothing it does not move with.
+  # Side: the right wheel is in front of the body and turns, so the body is
+  # hidden behind the whole disc it sweeps -- hiding it behind the spokes at
+  # one angle would bake a still copy of them into the body drawing.
+  wheel_r = robot_mujoco.WHEEL_R * 1e3
+  sweep = disc(wheel_r, right[..., 0].min(), right[..., 0].max())
   out['side'] = dict(
-      draw({'body': body}, 'side', args, occluders=[right]),
+      draw({'body': body}, 'side', args, occluders=[sweep]),
       **draw({'wheel': right_local}, 'side', args))
   out['front'] = draw({'body': body, 'wheel_l': left, 'wheel_r': right},
                       'front', args)
