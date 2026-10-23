@@ -19,9 +19,17 @@ HZ = 65.0
 MESHES = pathlib.Path.home() / '.cache' / 'spr_meshes'
 
 
-def make(model):
+def make(model, **kw):
   cls = robot_mujoco.RobotMujoco if model == 'mujoco' else robot_sim.RobotSim
-  return cls('balance', hz=HZ, discrete=False, symmetric=False, sim_noise=0.0)
+  return cls('balance', hz=HZ, discrete=False, symmetric=False, sim_noise=0.0,
+             **kw)
+
+
+# The carpet holds a lean of a few degrees (rolling stiction, as the real one
+# does) and the fitted table's soft contact lets the body sink 1.5 deg, so the
+# tests of where the body rests on its bumpers use fit2's carpet, a firm
+# floor without stiction.
+FALLS = dict(sim_surface='carpet_fit2')
 
 
 def run(env, actions):
@@ -47,7 +55,7 @@ def test_forward_output_tips_the_body_back(model):
 @pytest.mark.parametrize('model', ['mujoco', 'pendulum'])
 @pytest.mark.parametrize('side', ['front', 'back'])
 def test_it_comes_to_rest_on_each_bumper_at_its_measured_tilt(model, side):
-  env = make(model)
+  env = make(model, **(FALLS if model == 'mujoco' else {}))
   stop = env.bumper_hi if side == 'front' else env.bumper_lo
   env.theta = env.theta_zero + 0.5 * stop
   env.omega = 0.0
@@ -58,7 +66,7 @@ def test_it_comes_to_rest_on_each_bumper_at_its_measured_tilt(model, side):
 @pytest.mark.skipif(not MESHES.exists(), reason='tools/robot/dev/fetch_spr_meshes.sh')
 @pytest.mark.parametrize('side', ['front', 'back'])
 def test_the_drawn_body_touches_the_floor_on_its_bumpers(side):
-  env = make('mujoco')
+  env = make('mujoco', **FALLS)
   stop = env.bumper_hi if side == 'front' else env.bumper_lo
   env.theta = env.theta_zero + 0.5 * stop
   run(env, [(0, 0)] * int(3 * HZ))

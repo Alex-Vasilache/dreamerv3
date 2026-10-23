@@ -74,14 +74,29 @@ WHEEL_SPEED_MAX = 5700.0
 PHONE_WHEELS = ('right', 'left')
 
 # Fitted per floor (sysid_fit.py); any of them can be set as an env key.
-# fit2 (2026-10-23, motor and both floors together, global search): rolling
-# resistance on carpet ~140x the table's; `drag` came out alike on both, so
-# it acts more like speed-proportional loss in the drivetrain than a floor.
+# fit5/fit6 (2026-10-24): fit2's motor, each floor refitted on the probe's
+# bumper tests plus real balancing (e2060 s01 carpet; e2061 s01, e2078 s01
+# table) with rolling stiction free. Carpet (fit6, contact time constant
+# capped at 0.03 s): a still wheel takes 4.5x the rolling resistance to
+# start, so the carpet holds a 2-5 deg lean as the real one does (fit2's
+# tipped over to a bumper). Table (fit5): its stiction, 6x a tiny rolling
+# term, makes no difference; its soft contact (0.2 s) fits the table's
+# balancing best but lets the body rest at +7.7 deg on the front bumper, not
+# the measured +9.2 (capped at 0.03 s the table fits worse, 4.11 against
+# 3.74). Held-out balancing (e2060 s02, e2061 s02) error against fit2:
+# carpet 2.21 -> 2.00, table 3.90 -> 3.74.
 SURFACES = {
-    'carpet': dict(rolling=0.00505, contact_tc=0.041, bumper_friction=0.572,
-                   drag=4.0),
-    'table': dict(rolling=3.5e-5, contact_tc=0.148, bumper_friction=0.345,
-                  drag=4.52),
+    'carpet': dict(rolling=0.00432, contact_tc=0.0162, bumper_friction=0.357,
+                   drag=3.99, rolling_static=0.0194, noslip=20),
+    'table': dict(rolling=7e-5, contact_tc=0.197, bumper_friction=0.268,
+                  drag=1.83, rolling_static=4.2e-4, noslip=20),
+    # fit2 (2026-10-23, motor and both floors together, global search),
+    # the floors of the runs up to e2341: rolling resistance on carpet ~140x
+    # the table's, no stiction; `drag` alike on both.
+    'carpet_fit2': dict(rolling=0.00505, contact_tc=0.041,
+                        bumper_friction=0.572, drag=4.0),
+    'table_fit2': dict(rolling=3.5e-5, contact_tc=0.148,
+                       bumper_friction=0.345, drag=4.52),
     # Not fitted: carpet with 10x the rolling resistance, so that, like the
     # real carpet and unlike the fitted one, it holds the robot still where it
     # is left leaning 1-6 deg (sysid kicks: the real robot stops at 1-3 deg

@@ -46,7 +46,10 @@ FLOOR = dict(rolling=0.002, contact_tc=0.02, bumper_friction=0.5, drag=0.0, stic
 LOG = {'wheel_omega', 'stall', 'stick', 'slide', 'armature', 'rolling',
        'contact_tc', 'bumper_friction'}
 LIMITS = dict(stiction=(1.0, 10.0), delay=(0.0, 0.1), lean=(-0.05, 0.05), slide=(1e-3, 0.6),
-              stick=(1e-3, 0.9), rolling=(1e-6, 0.03), contact_tc=(0.002, 0.2),
+              stick=(1e-3, 0.9), rolling=(1e-6, 0.03),
+              # Up to 0.03 s: softer lets the body sink, and it rests short of the
+              # measured bumper tilts (fit5's table, 0.197 s: 7.7 deg, not 9.2).
+              contact_tc=(0.002, 0.03),
               bumper_friction=(0.05, 3.0), drag=(0.0, 30.0),
               wheel_omega=(5.0, 25.0), stall=(0.01, 0.5),
               armature=(1e-5, 5e-3))
