@@ -89,6 +89,14 @@ SURFACES = {
     # policy learnt on a floor that holds it up transfers to the table.
     'carpet_hold': dict(rolling=0.05, contact_tc=0.041, bumper_friction=0.572,
                         drag=4.0),
+    # Not fitted either: the fitted carpet plus rolling stiction. A still
+    # wheel takes 2.5x the fitted rolling resistance to start (holds a lean
+    # up to ~6 deg, as the real carpet holds 3-5); a rolling one the fitted
+    # value, so the robot drives as on carpet. carpet_hold, by contrast, is
+    # so stiff that the motors cannot drive at all.
+    'carpet_sticky': dict(rolling=0.00505, contact_tc=0.041,
+                          bumper_friction=0.572, drag=4.0,
+                          rolling_static=0.0125, noslip=20),
 }
 
 WHEEL_R = 0.045       # m
@@ -246,11 +254,13 @@ class Physics:
   base was sent. Wheel quantities are in the phone's order (_l first)."""
 
   STILL = 0.05  # rad/s: a wheel slower than this takes the sticking friction
+  ROLL_STILL = 0.3  # rad/s: a wheel rolling slower is held by rolling_static
 
   def __init__(self, bumper_back, bumper_front, timestep, wheel_omega=11.61,
                stall=0.0884, stick=0.385, slide=0.098, armature=4.16e-4,
                unit=548.0, friction=1.0, rolling=0.0, contact_tc=0.02,
-               bumper_friction=0.5, drag=0.0, fixed=False):
+               bumper_friction=0.5, drag=0.0, rolling_static=None,
+               noslip=0, fixed=False):
     self.omega_max = float(wheel_omega)
     self.stall = float(stall)
     self.stick = float(stick) * self.stall   # N m
@@ -270,15 +280,34 @@ class Physics:
       self.model.actuator_biasprm[act, 2] = -self.stall / self.omega_max
     self.bodies = [self.model.body(n).id for n in PHONE_WHEELS]
     self._vel = np.zeros(6)
+    # Each wheel's contact geom, in the same (phone) order as dofs.
+    self.wheel_geoms = [
+        next(g for g in range(self.model.ngeom)
+             if self.model.geom_bodyid[g] == body
+             and self.model.geom_contype[g])
+        for body in self.bodies]
+    self._set_rolling(rolling, rolling_static, noslip)
+
+  def _set_rolling(self, rolling, rolling_static, noslip):
+    # Rolling stiction (sim_surface carpet_sticky): a wheel standing still in
+    # the pile takes rolling_static to start, one that rolls takes `rolling`.
+    # With noslip iterations the static part holds instead of creeping, as
+    # MuJoCo's soft contacts otherwise let it.
+    self.rolling = float(rolling)
+    self.rolling_static = (self.rolling if rolling_static is None
+                           else float(rolling_static))
+    self.model.opt.noslip_iterations = int(noslip)
 
   @property
   def speed(self):
     """Wheel speeds in the phone's mm/s and sign (forward is negative)."""
     return np.array([self.data.qvel[i] for i in self.dofs]) * self.unit
 
-  def set_floor(self, rolling, contact_tc, bumper_friction, drag):
+  def set_floor(self, rolling, contact_tc, bumper_friction, drag,
+                rolling_static=None, noslip=0):
     """Change the floor in place: what model_xml sets per surface."""
     m = self.model
+    self._set_rolling(rolling, rolling_static, noslip)
     for body in self.bodies:
       for g in range(m.ngeom):
         if m.geom_bodyid[g] == body and m.geom_contype[g]:
@@ -300,6 +329,13 @@ class Physics:
             self.stick if abs(w) < self.STILL else self.slide)
       if self.drag:
         self._floor_drag()
+      if self.rolling_static != self.rolling:
+        for dof, geom in zip(self.dofs, self.wheel_geoms):
+          # The wheel's spin relative to the floor: its joint's plus the
+          # body's pitch rate (the free joint's, in the body frame).
+          spin = abs(float(d.qvel[dof]) + float(d.qvel[3]))
+          m.geom_friction[geom, 2] = (
+              self.rolling_static if spin < self.ROLL_STILL else self.rolling)
       mujoco.mj_step(m, d)
 
   def _floor_drag(self):
