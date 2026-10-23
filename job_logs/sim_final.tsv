@@ -1,0 +1,18 @@
+e2324	4770934	e2324_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 40
+e2325	4770935	e2325_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 41
+e2326	4770936	e2326_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 42
+e2327	4770937	e2327_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 40
+e2328	4770938	e2328_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 41
+e2329	4770939	e2329_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 42
+e2330	4770940	e2330_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_hold --seed 40
+e2331	4770941	e2331_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_hold --seed 41
+e2332	4770942	e2332_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_hold --seed 42
+e2333	4770943	e2333_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 40
+e2334	4770944	e2334_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 41
+e2335	4770945	e2335_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 42
+e2336	4770946	e2336_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 40
+e2337	4770947	e2337_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 41
+e2338	4770948	e2338_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 42
+e2339	4770949	e2339_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_hold --seed 40
+e2340	4770950	e2340_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_hold --seed 41
+e2341	4770951	e2341_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_hold --seed 42

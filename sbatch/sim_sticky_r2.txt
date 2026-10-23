@@ -1,0 +1,10 @@
+# Command following on carpet_sticky, round 2 (2026-10-24): fixes for weak forward tracking on a carpet with rolling stiction, n=3
+e2353 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 0
+e2354 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 1
+e2355 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 2
+e2356 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.friction_comp True --seed 0
+e2357 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.friction_comp True --seed 1
+e2358 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.friction_comp True --seed 2
+e2359 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.command_speed 2500 --env.robot.command_turn 2500 --env.robot.friction_comp True --seed 0
+e2360 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.command_speed 2500 --env.robot.command_turn 2500 --env.robot.friction_comp True --seed 1
+e2361 flat command 65 v100 --env.robot.sim_surface carpet_sticky --env.robot.command_speed 2500 --env.robot.command_turn 2500 --env.robot.friction_comp True --seed 2

@@ -40,12 +40,12 @@ SCALE = dict(theta=math.radians(2.0), rate=math.radians(30.0), wheel=300.0)
 
 MOTOR = dict(wheel_omega=11.4, stall=0.06, stick=0.27, slide=0.09,
              armature=5e-4, delay=0.01)
-FLOOR = dict(rolling=0.002, contact_tc=0.02, bumper_friction=0.5, drag=0.0,
+FLOOR = dict(rolling=0.002, contact_tc=0.02, bumper_friction=0.5, drag=0.0, stiction=1.0,
              lean=0.0)
 # Fitted in log space, so each stays positive.
 LOG = {'wheel_omega', 'stall', 'stick', 'slide', 'armature', 'rolling',
        'contact_tc', 'bumper_friction'}
-LIMITS = dict(delay=(0.0, 0.1), lean=(-0.05, 0.05), slide=(1e-3, 0.6),
+LIMITS = dict(stiction=(1.0, 10.0), delay=(0.0, 0.1), lean=(-0.05, 0.05), slide=(1e-3, 0.6),
               stick=(1e-3, 0.9), rolling=(1e-6, 0.03), contact_tc=(0.002, 0.2),
               bumper_friction=(0.05, 3.0), drag=(0.0, 30.0),
               wheel_omega=(5.0, 25.0), stall=(0.01, 0.5),
@@ -94,7 +94,10 @@ def simulate(params, floor, rows, fixed):
       stall=p['stall'], stick=p['stick'], slide=p['slide'],
       armature=p['armature'], rolling=f['rolling'],
       contact_tc=f['contact_tc'], bumper_friction=f['bumper_friction'],
-      drag=f['drag'], fixed=fixed)
+      drag=f['drag'],
+      # Rolling stiction: a still wheel takes `stiction` x rolling to start.
+      rolling_static=f['rolling'] * f.get('stiction', 1.0),
+      noslip=20 if f.get('stiction', 1.0) > 1.0 else 0, fixed=fixed)
   m, d = phys.model, phys.data
   r0 = {c: v[0] for c, v in rows.items()}
   wheels = np.array([r0['wheel_speed_l'], r0['wheel_speed_r']]) / phys.unit
@@ -274,6 +277,8 @@ def main():
                   help='seconds per window; closed-loop balance data '
                        'diverges open loop, so shorter (0.3) suits it')
   ap.add_argument('--balance_window', type=float, default=0.3)
+  ap.add_argument('--stiction', action='store_true',
+                  help='also fit rolling stiction per floor (static/rolling)')
   ap.add_argument('--balance_every', type=float, default=2.0)
   ap.add_argument('--phases', default='bumper',
                   help='on-floor phases to use: bumper (the probe), balance '
@@ -335,7 +340,8 @@ def main():
       print('== floors: ' + ', '.join(surfaces))
       motor, floors = fit(Problem(ground, pool), motor, floors, [],
                           ['rolling', 'contact_tc', 'bumper_friction', 'drag',
-                           'lean'], surfaces, args.iters, args.method)
+                           'lean'] + (['stiction'] if args.stiction else []),
+                          surfaces, args.iters, args.method)
     report(Problem(air + ground, pool), motor, floors)
   result = dict(motor=motor, floors=floors)
   print(json.dumps(result, indent=1))

@@ -1,0 +1,12 @@
+# carpet_sticky (rolling stiction, 2026-10-24): command following, and the switch to the table
+e2342 flat command 65 v100 --env.robot.sim_surface carpet_sticky --seed 0
+e2343 flat command 65 v100 --env.robot.sim_surface carpet_sticky --seed 1
+e2344 flat command 65 v100 --env.robot.sim_surface carpet_sticky --seed 2
+e2345 flat command 65 v100 --env.robot.sim_surface carpet_sticky --seed 3
+e2346 flat balance 65 p100 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 0
+e2347 flat balance 65 p100 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 1
+e2348 flat balance 65 p100 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 2
+e2349 flat balance 65 p100 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 3
+e2350 flat balance 65 p100 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 4
+e2351 flat balance 65 p100 --env.robot.sim_surface carpet_sticky --seed 0
+e2352 flat balance 65 p100 --env.robot.sim_surface carpet_sticky --seed 1

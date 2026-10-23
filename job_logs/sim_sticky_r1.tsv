@@ -1,0 +1,11 @@
+e2342	4770984	e2342_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_sticky --seed 0
+e2343	4770985	e2343_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_sticky --seed 1
+e2344	4770986	e2344_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_sticky --seed 2
+e2345	4770987	e2345_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_sticky --seed 3
+e2346	4770988	e2346_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 0
+e2347	4770989	e2347_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 1
+e2348	4770990	e2348_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 2
+e2349	4770991	e2349_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 3
+e2350	4770992	e2350_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet_sticky:15,table:20,carpet_sticky --seed 4
+e2351	4770993	e2351_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_sticky --seed 0
+e2352	4770994	e2352_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet_sticky --seed 1

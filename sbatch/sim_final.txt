@@ -1,0 +1,19 @@
+# Final recipe validation (1798105, 2026-10-24): exact blocks, no extra flags but floor and seed
+e2324 flat command 65 v100 --env.robot.sim_surface carpet --seed 40
+e2325 flat command 65 v100 --env.robot.sim_surface carpet --seed 41
+e2326 flat command 65 v100 --env.robot.sim_surface carpet --seed 42
+e2327 flat command 65 v100 --env.robot.sim_surface table --seed 40
+e2328 flat command 65 v100 --env.robot.sim_surface table --seed 41
+e2329 flat command 65 v100 --env.robot.sim_surface table --seed 42
+e2330 flat command 65 v100 --env.robot.sim_surface carpet_hold --seed 40
+e2331 flat command 65 v100 --env.robot.sim_surface carpet_hold --seed 41
+e2332 flat command 65 v100 --env.robot.sim_surface carpet_hold --seed 42
+e2333 flat balance 65 p100 --env.robot.sim_surface carpet --seed 40
+e2334 flat balance 65 p100 --env.robot.sim_surface carpet --seed 41
+e2335 flat balance 65 p100 --env.robot.sim_surface carpet --seed 42
+e2336 flat balance 65 p100 --env.robot.sim_surface table --seed 40
+e2337 flat balance 65 p100 --env.robot.sim_surface table --seed 41
+e2338 flat balance 65 p100 --env.robot.sim_surface table --seed 42
+e2339 flat balance 65 p100 --env.robot.sim_surface carpet_hold --seed 40
+e2340 flat balance 65 p100 --env.robot.sim_surface carpet_hold --seed 41
+e2341 flat balance 65 p100 --env.robot.sim_surface carpet_hold --seed 42
