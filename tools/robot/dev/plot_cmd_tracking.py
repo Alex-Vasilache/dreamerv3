@@ -126,7 +126,15 @@ def main():
 
   results = {}
   print(f'{"run":>6} {"min":>5} {"fwd":>6} {"turn":>6} {"gain":>6} '
-        f'{"bumper":>6} {"reward":>7}')
+        f'{"bumper":>6} {"reward":>7} {"t_fwd.7":>8} {"t_turn.7":>8}')
+
+  def reach(w, key, level=0.7, hold=4):
+    v = np.nan_to_num(w[key], nan=-1)
+    for i in range(len(v) - hold + 1):
+      if (v[i:i + hold] >= level).all():
+        return w['minute'][i]
+    return np.nan
+  times = {}
   for _, _, exps in series:
     for e in exps:
       if find(e) is None:
@@ -141,7 +149,21 @@ def main():
               f'{np.nanmean(w["turn"][late]):+6.2f} '
               f'{np.nanmean(w["gain"][late]):+6.2f} '
               f'{np.nanmean(w["bumper"][late]):6.2f} '
-              f'{np.nanmean(w["reward"][late]):+7.3f}')
+              f'{np.nanmean(w["reward"][late]):+7.3f} '
+              f'{reach(w, "forward"):8.1f} {reach(w, "turn"):8.1f}')
+        times[e] = (reach(w, 'forward'), reach(w, 'turn'))
+
+  print(f'{"series":28s} {"min to fwd corr 0.7":>22s} {"min to turn corr 0.7":>22s}')
+  for label, _, exps in series:
+    tf = np.array([times[e][0] for e in exps if e in times])
+    tt = np.array([times[e][1] for e in exps if e in times])
+    def fmt(t):
+      ok = np.isfinite(t)
+      if not ok.any():
+        return '   never'
+      out = f'{t[ok].mean():5.1f} ± {t[ok].std():4.1f}'
+      return out + (f' ({ok.sum()}/{len(t)})' if not ok.all() else '')
+    print(f'{label:28s} {fmt(tf):>22s} {fmt(tt):>22s}  n={len(tf)}')
 
   fig, axes = plt.subplots(2, 2, figsize=(13, 8.5), sharex=True)
   for ax, (key, title, ylim) in zip(axes.flat, PANELS):

@@ -170,9 +170,9 @@ defaults:
     # use any hyperparameter annealing, prioritized replay, weight decay, or
     # dropout", and the 09-01 rationale for wd (a growing `deter` scale inflating
     # goal/rec_mean) is false -- the GRU bounds deter to [-1, 1] by construction.
-    opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
-    goal_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
-    ac_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, wdinit: False, schedule: const, warmup: 1000, anneal: 0}
+    goal_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, wdinit: False, schedule: const, warmup: 1000, anneal: 0}
+    ac_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, wdinit: False, schedule: const, warmup: 1000, anneal: 0}
     ac_grads: False
     dyn:
       typ: rssm

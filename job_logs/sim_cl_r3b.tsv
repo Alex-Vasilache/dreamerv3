@@ -1,0 +1,7 @@
+e2188	4770275	e2188_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 0
+e2189	4770276	e2189_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 1
+e2190	4770277	e2190_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 2
+e2191	4770278	e2191_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 3
+e2192	4770279	e2192_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 4
+e2193	4770280	e2193_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 3
+e2194	4770281	e2194_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 4

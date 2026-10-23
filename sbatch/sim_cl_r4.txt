@@ -1,0 +1,19 @@
+# Floor switch, round 4 (fit2 sim, 2026-10-23): alternating floors every 10 min, and a 30-min carpet phase; weight decay and replay size
+e2207 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet  --seed 0
+e2208 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet  --seed 1
+e2209 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet  --seed 2
+e2210 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 0
+e2211 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 1
+e2212 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 2
+e2213 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --replay.size 1e6 --online_actor_replay_size 1000000 --seed 0
+e2214 flat balance 65 p100 --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --replay.size 1e6 --online_actor_replay_size 1000000 --seed 1
+e2215 flat balance 65 a100s --env.robot.sim_schedule carpet:10,table:10,carpet:10,table:10,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --replay.size 1e6 --online_actor_replay_size 1000000 --seed 2
+e2216 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table  --seed 0
+e2217 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table  --seed 1
+e2218 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table  --seed 2
+e2219 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 0
+e2220 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 1
+e2221 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 2
+e2222 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --replay.size 1e6 --online_actor_replay_size 1000000 --seed 0
+e2223 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --replay.size 1e6 --online_actor_replay_size 1000000 --seed 1
+e2224 flat balance 65 a100s --env.robot.sim_schedule carpet:30,table --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --replay.size 1e6 --online_actor_replay_size 1000000 --seed 2

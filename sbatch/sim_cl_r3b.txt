@@ -1,0 +1,8 @@
+# Floor switch, round 3b (fit2 sim, 2026-10-23): recency arm rerun after the selector fix (e2125-e2127 invalid), more seeds for replay 1e6 and baseline
+e2188 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 0
+e2189 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 1
+e2190 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 2
+e2191 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 3
+e2192 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 4
+e2193 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 3
+e2194 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 4

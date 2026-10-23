@@ -2078,6 +2078,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       nesterov: bool = False,
       wd: float = 0.0,
       wdregex: str = r'/kernel$',
+      wdinit: bool = False,
       schedule: str = 'const',
       warmup: int = 1000,
       anneal: int = 0,
@@ -2091,7 +2092,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       assert not wdregex[0].isnumeric(), wdregex
       pattern = re.compile(wdregex)
       wdmask = lambda params: {k: bool(pattern.search(k)) for k in params}
-      chain.append(optax.add_decayed_weights(wd, wdmask))
+      if wdinit:
+        # Decay toward the initial weights instead of zero (L2-init,
+        # "regenerative regularization", Kumar et al. 2023): keeps the
+        # weights near where they were trainable, against loss of
+        # plasticity, without shrinking them all toward zero.
+        chain.append(_decay_toward_init(wd, wdmask))
+      else:
+        chain.append(optax.add_decayed_weights(wd, wdmask))
     assert anneal > 0 or schedule == 'const'
     if schedule == 'const':
       sched = optax.constant_schedule(lr)
@@ -2106,3 +2114,20 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       sched = optax.join_schedules([ramp, sched], [warmup])
     chain.append(optax.scale_by_learning_rate(sched))
     return optax.chain(*chain)
+
+
+def _decay_toward_init(rate, mask):
+  """optax transform: updates += rate * (params - params at init), masked."""
+
+  def init_fn(params):
+    return {'init': jax.tree.map(jnp.array, params)}
+
+  def update_fn(updates, state, params):
+    keep = mask(params)
+    updates = {
+        k: (u + rate * (params[k] - state['init'][k]).astype(u.dtype)
+            if keep[k] else u)
+        for k, u in updates.items()}
+    return updates, state
+
+  return optax.GradientTransformation(init_fn, update_fn)
