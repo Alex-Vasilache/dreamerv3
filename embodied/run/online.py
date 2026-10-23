@@ -587,6 +587,11 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
     elements.checkpoint.load(args.from_checkpoint, dict(
         agent=bind(agent.load, regex=args.from_checkpoint_regex)))
   cp.load_or_save()
+  # Permanent snapshots on the env-step grid (run.save_every_steps), so a run
+  # can be filmed or evaluated at several points of its training.
+  from embodied.run import milestones
+  save_milestone = milestones.make_saver(
+      cp, logdir, getattr(args, 'save_every_steps', 0))
   shared_policy.publish(agent)
   _park(logdir)
   if coordination is not None:
@@ -681,6 +686,7 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       write_logs()
     if should_save(step):
       cp.save()
+    save_milestone(step)
   _log_learner(
       logdir,
       f'learner stop step={int(step)} actor_step={_read_actor_step(paths.actor_step)}')

@@ -1,0 +1,22 @@
+# Still balance, round 3 (fit2 sim, 2026-10-23): more seeds for the candidates, table and carpet
+e2143 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 1.0 --seed 2
+e2144 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 1.0 --seed 3
+e2145 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 1.0 --seed 4
+e2146 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 1.5 --seed 2
+e2147 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 1.5 --seed 3
+e2148 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 1.5 --seed 4
+e2149 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 2.0 --seed 2
+e2150 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 2.0 --seed 3
+e2151 flat balance 65 p100 --env.robot.sim_surface table --env.robot.wheel_penalty 2.0 --seed 4
+e2152 flat balance 65 p100 --env.robot.sim_surface table --env.robot.still_speed 2000 --seed 2
+e2153 flat balance 65 p100 --env.robot.sim_surface table --env.robot.still_speed 2000 --seed 3
+e2154 flat balance 65 p100 --env.robot.sim_surface table --env.robot.still_speed 2000 --seed 4
+e2155 flat balance 65 p100 --env.robot.sim_surface table --env.robot.still_speed 3000 --seed 2
+e2156 flat balance 65 p100 --env.robot.sim_surface table --env.robot.still_speed 3000 --seed 3
+e2157 flat balance 65 p100 --env.robot.sim_surface table --env.robot.still_speed 3000 --seed 4
+e2158 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.wheel_penalty 1.5 --seed 2
+e2159 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.wheel_penalty 1.5 --seed 3
+e2160 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.wheel_penalty 1.5 --seed 4
+e2161 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.still_speed 2000 --seed 2
+e2162 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.still_speed 2000 --seed 3
+e2163 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.still_speed 2000 --seed 4

@@ -1,0 +1,18 @@
+e2125	4770058	e2125_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 0
+e2126	4770059	e2126_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 1
+e2127	4770060	e2127_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 2
+e2128	4770061	e2128_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 0
+e2129	4770062	e2129_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 1
+e2130	4770063	e2130_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 2
+e2131	4770064	e2131_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-2 --agent.ac_opt.wd 1e-2 --seed 0
+e2132	4770065	e2132_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-2 --agent.ac_opt.wd 1e-2 --seed 1
+e2133	4770066	e2133_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-2 --agent.ac_opt.wd 1e-2 --seed 2
+e2134	4770067	e2134_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 0
+e2135	4770068	e2135_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 1
+e2136	4770069	e2136_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 2
+e2137	4770070	e2137_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --run.train_ratio 128 --seed 0
+e2138	4770071	e2138_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --run.train_ratio 128 --seed 1
+e2139	4770072	e2139_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --run.train_ratio 128 --seed 2
+e2140	4770073	e2140_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.beta2 0.99 --agent.ac_opt.beta2 0.99 --seed 0
+e2141	4770074	e2141_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.beta2 0.99 --agent.ac_opt.beta2 0.99 --seed 1
+e2142	4770075	e2142_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.beta2 0.99 --agent.ac_opt.beta2 0.99 --seed 2

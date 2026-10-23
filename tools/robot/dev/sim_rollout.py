@@ -51,6 +51,11 @@ def main():
   parser.add_argument('--seconds', type=float, default=32.0)
   parser.add_argument('--seed', type=int, default=0)
   parser.add_argument('--gpu', action='store_true')
+  parser.add_argument('--ckpt', default='latest',
+                      help="'latest', or a logdir/ckpt_milestones/ step (e.g. "
+                           "19500) to replay the policy at that point")
+  parser.add_argument('--surface', default=None,
+                      help='floor to replay on (default: the run\'s own)')
   args = parser.parse_args()
 
   import elements
@@ -64,11 +69,17 @@ def main():
   config = elements.Flags(config).parse([
       '--env.realtime_hz', '0', '--logdir', tempfile.mkdtemp(),
       '--jax.platform', 'cuda' if args.gpu else 'cpu', '--jax.prealloc', 'False',
-      '--env.robot.length', '1000000', '--seed', str(args.seed)])
+      '--env.robot.length', '1000000', '--seed', str(args.seed)] + (
+      ['--env.robot.sim_schedule', '']
+      if 'sim_schedule' in raw['env']['robot'] else []) + (
+      ['--env.robot.sim_surface', args.surface] if args.surface else []))
   agent = dmain.make_agent(config)
   cp = elements.Checkpoint()
   cp.agent = agent
-  ckpt = logdir / 'ckpt' / (logdir / 'ckpt' / 'latest').read_text().strip()
+  if args.ckpt == 'latest':
+    ckpt = logdir / 'ckpt' / (logdir / 'ckpt' / 'latest').read_text().strip()
+  else:
+    ckpt = logdir / 'ckpt_milestones' / f'{int(args.ckpt):012d}'
   cp.load(str(ckpt), keys=['agent'])
 
   env = dmain.make_env(config, 0)

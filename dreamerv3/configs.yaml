@@ -2008,6 +2008,9 @@ robot_sim:
   env.robot.sim: True
   env.robot.use_logdir: False
   run.steps: 1e7
+  # A snapshot of the agent every 5 min of real time at 65 Hz, for videos of
+  # the policy as it learns (tools/robot/dev/sim_rollout.py --ckpt).
+  run.save_every_steps: 19500
   jax: {prealloc: False}
   logger: {outputs: [jsonl, scope]}
 

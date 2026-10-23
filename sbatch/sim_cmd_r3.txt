@@ -1,0 +1,17 @@
+# Command following, round 3 (fit2 sim, 2026-10-23): what speeds it up; friction_comp off throughout
+e2164 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_hold_min 2 --env.robot.command_hold_max 4 --seed 0
+e2165 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_hold_min 2 --env.robot.command_hold_max 4 --seed 1
+e2166 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_hold_min 2 --env.robot.command_hold_max 4 --seed 0
+e2167 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_hold_min 2 --env.robot.command_hold_max 4 --seed 1
+e2168 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 0
+e2169 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 1
+e2170 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 0
+e2171 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 1
+e2172 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 0
+e2173 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 1
+e2174 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 0
+e2175 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 1
+e2176 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_ramp 1.0 --seed 0
+e2177 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_ramp 1.0 --seed 1
+e2178 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_ramp 1.0 --seed 0
+e2179 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_ramp 1.0 --seed 1
