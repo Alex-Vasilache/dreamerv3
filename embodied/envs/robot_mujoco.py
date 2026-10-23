@@ -13,9 +13,15 @@ axle and inertia (0.648, 0.759, 0.370) g m^2, wheels 35 g of radius 45 mm,
 59.33 mm either side of the centre, rolling on contact cylinders. Only those
 physical numbers are taken; the meshes are visual and left out. What is ours:
 
-* Bumpers. The rear "tail" capsule of that model, plus one at the front,
-  placed so the body rests at bumper_hi / bumper_lo from theta_zero, as the
-  robot does (-6.9 / +9.2 deg measured; their robot measured -6.4 / +8.5).
+* Bumpers. One capsule under each end of the body's base plate, 64 mm in
+  front of the axle and 86 mm behind it (the mesh's lowest edges), at the
+  heights where the body rests on them at bumper_hi (front, +9.2 deg
+  measured) and bumper_lo (back, -6.9) from theta_zero; their robot measured
+  +8.5 / -6.4. The meshes, drawn for videos only, touch the floor there too.
+* Signs. Positive tilt is a forward lean, toward +y, the way forward motor
+  output (negative wheel speed) drives: on the robot (e1982 replay), forward
+  output tips the body back, theta'' < 0, a tick after the wheels respond.
+  Up to 2026-10-23 this model and robot_sim.py had it the other way round.
 * The balance point theta_eq, drawn per run within +-sim_eq_range of
   theta_zero by shifting the CoM fore and aft, since the real one is unknown.
 * The motors. Their model drives the wheels with an ideal torque source,
@@ -48,12 +54,13 @@ from embodied.envs import robot_sim
 WHEEL_R = 0.045       # m
 HALF_TRACK = 0.05933  # m, axle centre to wheel centre
 CAPSULE_R = 0.005     # m, bumper capsule radius
-BUMPER_ARM = 0.0962   # m, bumpers' distance fore and aft of the axle
+FRONT_ARM = 0.0644    # m, front bumper ahead of the axle (+y)
+BACK_ARM = 0.0857     # m, back bumper behind it (-y)
 
 
-def _bumper_z(angle):
-  """Body-frame height of a bumper BUMPER_ARM along that rests at `angle`."""
-  return (CAPSULE_R - WHEEL_R + BUMPER_ARM * math.sin(angle)) / math.cos(angle)
+def _bumper_z(arm, angle):
+  """Body-frame height of a bumper `arm` from the axle that rests at `angle`."""
+  return (CAPSULE_R - WHEEL_R + arm * math.sin(angle)) / math.cos(angle)
 
 
 # The rlSim2Real STL meshes (mm), for videos only: fetch them with
@@ -61,7 +68,7 @@ def _bumper_z(angle):
 # except that the body and phone sit MESH_DROP lower: placed as there, the
 # body's lowest edges clear the floor by 11.4 mm at the tilts where the real
 # robot rests on its bumpers (+9.2 / -6.9 deg). This drop makes both touch
-# (it would take 11.65 mm at the front, 11.45 at the back).
+# (it would take 11.65 mm at the front, 11.45 at the back). +y is the front.
 MESH_DROP = 0.0115    # m
 MESHES = {
     'spr_body': ('mesh_spr_body.stl', f'0 0 {-MESH_DROP}', '0 0 180'),
@@ -82,7 +89,7 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
   physics shapes; without it a box stands in for the phone. None of this
   touches the physics: every visual geom is massless and collides with
   nothing."""
-  zb, zf = _bumper_z(bumper_back), _bumper_z(bumper_front)
+  zb, zf = _bumper_z(BACK_ARM, bumper_back), _bumper_z(FRONT_ARM, bumper_front)
   meshes = visual is not None and meshdir is not None
   show = lambda rgba: 'rgba="0 0 0 0"' if meshes else f'rgba="{rgba}"'
   ghost = 'density="0" contype="0" conaffinity="0"'
@@ -155,10 +162,10 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
       <geom name="chassis" type="box" size="0.042 0.075 0.006" pos="0 0 -0.025"
             {show('.85 .85 .85 1')} {ghost}/>
       <geom name="bumper_back" type="capsule" size="{CAPSULE_R}"
-            fromto="-0.03 {-BUMPER_ARM} {zb} 0.03 {-BUMPER_ARM} {zb}"
+            fromto="-0.03 {-BACK_ARM} {zb} 0.03 {-BACK_ARM} {zb}"
             density="0" friction="0.5 0.005 0.0001" {show('.9 .3 .2 1')}/>
       <geom name="bumper_front" type="capsule" size="{CAPSULE_R}"
-            fromto="-0.03 {BUMPER_ARM} {zf} 0.03 {BUMPER_ARM} {zf}"
+            fromto="-0.03 {FRONT_ARM} {zf} 0.03 {FRONT_ARM} {zf}"
             density="0" friction="0.5 0.005 0.0001" {show('.9 .3 .2 1')}/>{body_extra}
       {wheel('left', -HALF_TRACK)}
       {wheel('right', HALF_TRACK)}
@@ -197,7 +204,7 @@ class RobotMujoco(robot_sim.RobotSim):
     self.substeps = max(1, int(round(1.0 / self.hz / float(sim_substep))))
     self.sim_rng = np.random.RandomState(seed + 7919)
     self.model = mujoco.MjModel.from_xml_string(model_xml(
-        bumper_back=self.bumper_hi, bumper_front=-self.bumper_lo,
+        bumper_back=-self.bumper_lo, bumper_front=self.bumper_hi,
         timestep=1.0 / self.hz / self.substeps, armature=float(sim_armature),
         friction=float(sim_friction)))
     self.data = mujoco.MjData(self.model)
@@ -230,22 +237,25 @@ class RobotMujoco(robot_sim.RobotSim):
   @theta_eq.setter
   def theta_eq(self, value):
     self._theta_eq = float(value)
-    # CoM straight above the axle at pitch theta_eq - theta_zero.
+    # CoM straight above the axle at tilt theta_eq - theta_zero, i.e. a
+    # rotation about x by minus that (forward, toward +y, is positive).
     lean = self._theta_eq - self.theta_zero
     self.model.body_ipos[self._body] = (
-        0.0, self._com[2] * math.tan(lean), self._com[2])
+        0.0, -self._com[2] * math.tan(lean), self._com[2])
     mujoco.mj_setConst(self.model, self.data)
 
+  # Tilt is minus the rotation about the body's x axis: a forward lean takes
+  # the top toward +y.
   @property
   def theta(self):
     w, x, y, z = self.data.qpos[3:7]
-    return self.theta_zero + math.atan2(2 * (w * x + y * z),
+    return self.theta_zero - math.atan2(2 * (w * x + y * z),
                                         1 - 2 * (x * x + y * y))
 
   @theta.setter
   def theta(self, value):
     yaw = self._yaw()
-    pitch = float(value) - self.theta_zero
+    pitch = self.theta_zero - float(value)
     cy, sy = math.cos(yaw / 2), math.sin(yaw / 2)
     cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
     self.data.qpos[3:7] = (cy * cp, cy * sp, sy * sp, sy * cp)
@@ -254,11 +264,11 @@ class RobotMujoco(robot_sim.RobotSim):
 
   @property
   def omega(self):
-    return float(self.data.qvel[3])
+    return -float(self.data.qvel[3])
 
   @omega.setter
   def omega(self, value):
-    self.data.qvel[3] = float(value)
+    self.data.qvel[3] = -float(value)
 
   @property
   def speed(self):

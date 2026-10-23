@@ -148,8 +148,8 @@ def main():
       roll = -x / WHEEL_R
       a['spoke'].set_data([0, WHEEL_R * math.cos(roll)],
                           [WHEEL_R, WHEEL_R + WHEEL_R * math.sin(roll)])
-      # Positive tilt is a backward lean: the body tips left (forward = right).
-      rot = transforms.Affine2D().rotate_around(0, WHEEL_R, th) + a['ax'].transData
+      # Positive tilt is a forward lean: the body tips right (forward = right).
+      rot = transforms.Affine2D().rotate_around(0, WHEEL_R, -th) + a['ax'].transData
       a['body'].set_transform(rot)
       a['screen'].set_transform(rot)
       win = slice(max(0, i - int(hz)), i + 1)

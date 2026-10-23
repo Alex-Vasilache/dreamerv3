@@ -9,11 +9,15 @@ real time at `env.robot.hz`, like the robot.
 
 The plant, in the phone's units and signs (docs/ROBOT_BRIDGE_FINDINGS.md):
 
-* Tilt theta in rad, positive is a backward lean. Bumper stops at
-  bumper_lo/bumper_hi from theta_zero (-6.9 / +9.2 deg measured), inelastic.
-* A positive motor output gives a negative wheel speed (forward_sign -1), and
-  positive wheel acceleration catches a positive lean (recover_gain -1):
-      theta'' = w0^2 sin(theta - theta_eq) - (a / L) cos(theta) - c theta'
+* Tilt theta in rad, positive is a forward lean. Bumper stops at
+  bumper_lo/bumper_hi from theta_zero (-6.9 back / +9.2 front, measured),
+  inelastic.
+* A positive motor output gives a negative wheel speed, which is forward
+  (forward_sign -1), and forward acceleration tips the body back:
+      theta'' = w0^2 sin(theta - theta_eq) + (a / L) cos(theta) - c theta'
+  with a the wheel acceleration in the phone's sign. Measured on the robot
+  (e1982 replay): forward output is followed by theta'' < 0 a tick after the
+  wheels respond. Up to 2026-10-23 the coupling had the other sign.
   with w0 = 12/s, L = 0.08 m: a point mass ~6.5 cm above the axle. The
   closed-loop replay estimate (tau ~ 50 ms, w0 ~ 20, docs/ONDEVICE_POLICY.md)
   mixes in policy noise; at w0 20 even a tuned linear controller cannot hold
@@ -114,7 +118,7 @@ class RobotSim(robot_env.SmartphoneRobot):
       self.distance += self.speed * h
       a = 1e-3 * accel.mean()                           # m/s^2
       alpha = (self.w0 ** 2 * math.sin(self.theta - self.theta_eq)
-               - a / self.arm * math.cos(self.theta)
+               + a / self.arm * math.cos(self.theta)
                - self.damping * self.omega)
       self.omega += alpha * h
       self.theta += self.omega * h

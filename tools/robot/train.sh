@@ -3,10 +3,10 @@
 #
 #   tools/robot/train.sh                          # 65 Hz balancing, default name
 #   HZ=25 tools/robot/train.sh [name] [extra main.py flags]
-#   CONFIGS="robot robot_still" tools/robot/train.sh still
 #   CONFIGS="robot robot_command" tools/robot/train.sh cmd
 #   RUN_DIR=<previous run dir> tools/robot/train.sh resume   # continue a run
 #   NO_BASE=1 HZ=100 tools/robot/train.sh linktest           # phone alone, no wheels
+#   DEMO=1 tools/robot/train.sh demo   # restartable from the dashboard (demo.sh)
 #   GPU=p100 tools/robot/train.sh                 # Slurm: use ROBOT_SLURM_FLAGS_p100
 #
 # Where the learner runs (this computer or a Slurm cluster) and where runs are
@@ -60,7 +60,7 @@ adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard
 
 # Variables the job reads. Quoted for the remote shell.
 q() { printf '%q' "$1"; }
-JOB_ENV="ROBOT_RUNS=$(q "$ROBOT_RUNS") ROBOT_SETUP=$(q "$ROBOT_SETUP") CONFIGS=$(q "$CONFIGS") STEPS=$STEPS"
+JOB_ENV="ROBOT_RUNS=$(q "$ROBOT_RUNS") ROBOT_SETUP=$(q "$ROBOT_SETUP") CONFIGS=$(q "$CONFIGS") STEPS=$STEPS${DEMO:+ DEMO=1}"
 [ -n "${RUN_DIR:-}" ] && JOB_ENV+=" RUN_DIR=$(q "$RUN_DIR")"
 ARGS=""; for a in "$@"; do ARGS+=" $(q "$a")"; done
 # Leftovers of a crashed or stopped run that block a resume: the learner exits

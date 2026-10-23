@@ -57,8 +57,11 @@ class _Link:
   a push never holds the env thread or a reset behind it.
   """
 
-  def __init__(self, sock, timeout):
+  def __init__(self, sock, timeout, on_restart=None):
     self.sock = sock
+    # Called on the reader thread when the phone asks for a fresh run; such a
+    # frame is not queued, so the env thread only ever sees observations.
+    self._on_restart = on_restart
     self.sock.settimeout(timeout)
     self.frames = queue.Queue()
     self.error = None
@@ -152,6 +155,9 @@ class _Link:
           frame = _parse(buffer)
           if frame is None:
             break
+          if frame[0].get('type') == 'restart' and self._on_restart:
+            self._on_restart()
+            continue
           self.frames.put(frame)
     except BaseException as e:  # noqa: BLE001 -- handed to the env thread
       self._fail(e if isinstance(e, LINKLOST) else ConnectionError(repr(e)))
@@ -308,9 +314,6 @@ class SmartphoneRobot(embodied.Env):
       bumper_margin=0.0175, bumper_penalty=1.0, turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
-      balance_reward='shaped', still_speed_sigma=1960.0,
-      still_chatter_sigma=0.3, still_accel_sigma=0.0, still_kernel='gauss',
-      still_upright=False,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
       pace=None):
@@ -328,6 +331,9 @@ class SmartphoneRobot(embodied.Env):
     self._base_health = {}
     self._config = config
     self._policy_dir = elements.Path(policy_dir) if policy_dir else None
+    # Set by tools/robot/demo_supervisor.py: where to ask it for a fresh run
+    # when the phone's dashboard says so. Unset, the phone is not offered it.
+    self._restart_file = os.environ.get('ROBOT_RESTART_FILE') or None
     # Pushes run on a thread of their own (`_push_loop`), so they can go as
     # often as the learner publishes: `weights_every` is only a floor on the
     # time between two push starts, 0 meaning back to back, and the learner's
@@ -385,35 +391,7 @@ class SmartphoneRobot(embodied.Env):
     self.action_rate_penalty = float(action_rate_penalty)
     self._prev_act = np.zeros(2, np.float32)
     self._chatter = 0.0
-    self._prev_speed = None
     self._sent_act = (0.0, 0.0)
-    # Task 'balance' scores either way:
-    # 'shaped': an upright score in [0, 1] minus linear costs on tilt rate,
-    #   drift and wheel speed (the reward every balance run up to e1747 used).
-    # 'still': the command task's zero-command reward made the whole goal.
-    #   Standing still means three targets, all zero: wheel speed, change of
-    #   action between steps (chatter) and, optionally, wheel acceleration.
-    #   still_kernel 'gauss' pays exp(-sum (x / sigma)^2): large errors
-    #   saturate, but the top is flat, so errors well under sigma cost almost
-    #   nothing -- e1978 (2026-10-22) balanced with constant small chatter
-    #   that way. 'laplace' pays exp(-sum |x| / sigma): the same saturation,
-    #   with a slope at zero, so the first bit of chatter or drift already
-    #   costs (|x| = sigma / 10 loses 10%). A sigma of 0 drops that target.
-    #   Within bumper_margin of a bumper it is -bumper_penalty instead. Balance
-    #   is implied, as for 'bumper_track': the body cannot stay off the bumpers
-    #   with still wheels unless it is upright.
-    assert balance_reward in ('shaped', 'still'), balance_reward
-    self.balance_reward = balance_reward
-    self.still_speed_sigma = float(still_speed_sigma)      # mm/s, RMS wheel
-    self.still_chatter_sigma = float(still_chatter_sigma)  # action units
-    self.still_accel_sigma = float(still_accel_sigma)      # mm/s^2, RMS wheel
-    assert still_kernel in ('gauss', 'laplace'), still_kernel
-    self.still_kernel = still_kernel
-    # Multiply by the balance task's upright score (0.5 linear + 0.5 narrow
-    # bonus around theta_zero). Without it e1978 leaned +4.5 deg on average
-    # and rested against the back bumper just inside the penalty zone: a body
-    # held up by its bumper keeps its wheels still for free.
-    self.still_upright = bool(still_upright)
     # The phone multiplies every wheel command by this before driving, so the
     # policy keeps its whole [-1, 1] range while the motors stay off full
     # power, the only regime where a driver was seen to cut out under load.
@@ -436,8 +414,11 @@ class SmartphoneRobot(embodied.Env):
     # pendulum when the tilt sign and the PWM sign agree. It is set per rig
     # from two observations -- which way a hand lean reads, and which way
     # positive PWM rolls -- because it cannot be recovered from logs: measured
-    # 2026-09-02, action-conditioned tilt response was 0.5 sigma. 0 disables
-    # recovery, leaving the robot wherever the last episode ended.
+    # 2026-09-02, action-conditioned tilt response was 0.5 sigma. At 65 Hz it
+    # can: in e1982's replay positive output (forward, negative wheel speed)
+    # is followed by tilt acceleration of the opposite sign (r = -0.5), so
+    # positive tilt is a forward lean and the gain for this rig is +1. 0
+    # disables recovery, leaving the robot wherever the last episode ended.
     self.recover_gain = float(recover_gain)
     self.recover_k = float(recover_k)
     self.recover_tol = float(recover_tol)
@@ -648,7 +629,6 @@ class SmartphoneRobot(embodied.Env):
         self._ref = float(self.theta_zero)
         self._prev_act = np.zeros(2, np.float32)
         self._chatter = 0.0
-        self._prev_speed = None
         self._sent_act = (0.0, 0.0)
         return self._obs(sensors, latency, 0.0, is_first=True)
       except LINKLOST as e:
@@ -807,8 +787,6 @@ class SmartphoneRobot(embodied.Env):
       rate = float(sensors['angular_velocity'])
       # Without this a constant forward acceleration holds a constant tilt
       # forever, which scores perfectly while driving off the bench.
-      if self.balance_reward == 'still':
-        return self._still_reward(sensors), fallen
       drift = min(abs(0.5 * (speed_l + speed_r)), self.drift_clip)
       reward = (
           0.5 * linear + 0.5 * bonus
@@ -944,38 +922,6 @@ class SmartphoneRobot(embodied.Env):
     return float(
         score - self.rate_penalty * abs(float(sensors['angular_velocity'])))
 
-  def _still_reward(self, sensors):
-    """Balance in place: zero wheel speed, chatter and wheel acceleration.
-
-    The reward of e1465-style command runs ('bumper_track') at a zero command,
-    which balanced with almost still wheels: its tracking term was
-    exp(-(RMS wheel speed / 1960 mm/s)^2), the default still_speed_sigma.
-    """
-    offset = float(sensors['theta']) - self.theta_zero
-    speed = np.array([float(sensors['wheel_speed_l']),
-                      float(sensors['wheel_speed_r'])])
-    accel = (np.zeros(2) if self._prev_speed is None
-             else (speed - self._prev_speed) * self.hz)
-    self._prev_speed = speed
-    if (offset >= self.bumper_hi - self.bumper_margin
-        or offset <= self.bumper_lo + self.bumper_margin):
-      return -self.bumper_penalty
-    err = 0.0
-    for value, sigma in (
-        (np.sqrt(np.mean(speed ** 2)), self.still_speed_sigma),
-        (self._chatter, self.still_chatter_sigma),
-        (np.sqrt(np.mean(accel ** 2)), self.still_accel_sigma)):
-      if sigma:
-        err += (value / sigma) ** 2 if self.still_kernel == 'gauss' \
-            else abs(value) / sigma
-    score = float(np.exp(-err))
-    if self.still_upright:
-      reach = self.theta_hi if offset > 0 else abs(self.theta_lo)
-      linear = 1.0 - min(1.0, abs(offset) / max(reach, 1e-6))
-      score *= 0.5 * linear + 0.5 * np.exp(-((offset / self.theta_sigma) ** 2))
-    return float(
-        score - self.rate_penalty * abs(float(sensors['angular_velocity'])))
-
   def _wheel_effort(self, speed_l, speed_r):
     return 0.5 * (
         min(abs(speed_l), self.drift_clip) + min(abs(speed_r), self.drift_clip))
@@ -1056,7 +1002,8 @@ class SmartphoneRobot(embodied.Env):
     print(f'Waiting for the robot to connect on {self.host}:{self.port}')
     sock, address = self._listener.accept()
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    link = _Link(sock, self.timeout)
+    link = _Link(sock, self.timeout, on_restart=(
+        self._request_restart if self._restart_file else None))
     try:
       hello, _ = link.get(self.timeout)
       if hello.get('type') != 'hello' or hello.get('protocol') != PROTOCOL:
@@ -1075,6 +1022,10 @@ class SmartphoneRobot(embodied.Env):
     self._chunked = bool(hello.get('wchunk', False))
     self._phone_stamp = hello.get('policy_stamp')
     self._weights_stamp = self._phone_stamp
+    # Weights this run did not publish are another run's, typically the one
+    # before a dashboard restart, and it would be that run's skill the phone
+    # shows until our first push lands. So it holds the wheels until then.
+    hold = self._onboard and not self._published(self._phone_stamp)
     link.send(dict(
         type='hello', protocol=PROTOCOL, discrete=self.discrete,
         pipeline=self.pipeline, onboard=self._onboard,
@@ -1085,6 +1036,7 @@ class SmartphoneRobot(embodied.Env):
         # The phone keeps this run's latest weights under `run`, with these
         # settings beside them, so it can replay the policy later on its own.
         run=self._run_name(), settings=self._settings(),
+        restart=bool(self._restart_file), hold=hold,
         **({'pace': self.pace} if self.pace else {})))
     self._link = link
     # Note `self.onboard`, not `self._onboard`: a phone that came up without
@@ -1095,9 +1047,25 @@ class SmartphoneRobot(embodied.Env):
           target=self._push_loop, name='robot_pusher', daemon=True)
       self._pusher.start()
 
+  def _published(self, stamp):
+    """Whether this run published the weights with this stamp."""
+    if self._policy_dir is None or not stamp:
+      return True   # nothing to compare against: trust the phone
+    return (self._policy_dir / 'policy' / f'policy_{stamp}.pkl').exists()
+
+  def _request_restart(self):
+    """The phone's dashboard asked for training from scratch. The supervisor
+    sees the file, stops this run and starts the next one in its place."""
+    print('[robot] the phone asked for a fresh run', flush=True)
+    path = self._restart_file
+    with open(path + '.tmp', 'w') as f:
+      f.write(f'{time.time():.3f}\n')
+    os.replace(path + '.tmp', path)
+
   def _run_name(self):
-    """The Slurm job name (e1293_robot_25hz) or, outside Slurm, the run dir."""
-    name = os.environ.get('SLURM_JOB_NAME')
+    """ROBOT_RUN_NAME, else the Slurm job name (e1293_robot_25hz), else the
+    run dir."""
+    name = os.environ.get('ROBOT_RUN_NAME') or os.environ.get('SLURM_JOB_NAME')
     if name:
       return name
     if self._policy_dir is not None:
@@ -1119,11 +1087,6 @@ class SmartphoneRobot(embodied.Env):
         friction_comp=self.friction_comp, bumper_lo=self.bumper_lo,
         bumper_hi=self.bumper_hi, bumper_margin=self.bumper_margin,
         bumper_penalty=self.bumper_penalty,
-        balance_reward=self.balance_reward,
-        still_speed_sigma=self.still_speed_sigma,
-        still_chatter_sigma=self.still_chatter_sigma,
-        still_accel_sigma=self.still_accel_sigma,
-        still_kernel=self.still_kernel, still_upright=self.still_upright,
         command_speed=self.command_speed, command_turn=self.command_turn,
         command_sigma=self.command_sigma, command_reward=self.command_reward,
         command_track_weight=self.command_track_weight,

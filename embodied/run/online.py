@@ -386,8 +386,6 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   shared_buffer = SharedExperienceBuffer(replay)
   shared_policy = SharedPolicyWeights(paths.policy)
 
-  if coordination is not None:
-    coordination.wait_learner_ready()
   step = logger.step
   usage = elements.Usage(**args.usage)
   epstats = elements.Agg()
@@ -459,6 +457,11 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   driver.on_step(shared_buffer.append)
   driver.on_step(logfn)
 
+  # After the envs exist, so a learner parked by _park has an actor that is
+  # ready to the last process; the robot env only listens once reset.
+  _mark_parked(args.logdir, 'actor')
+  if coordination is not None:
+    coordination.wait_learner_ready()
   shared_policy.load_into_agent(agent)
 
   print('Start actor loop')
@@ -512,6 +515,32 @@ def _actor_io(paths, step, shared_buffer, flush):
     shared_buffer.flush()
 
 
+def _park(logdir):
+  """Hold a fully built learner until $ONLINE_GO_FILE exists.
+
+  tools/robot/demo_supervisor.py keeps the next run started this far: agent
+  built and compiled, first weights published, actor waiting on it. Going
+  from here takes seconds where a cold start takes over a minute. Without the
+  variable this returns at once.
+  """
+  go = os.environ.get('ONLINE_GO_FILE')
+  if not go:
+    return
+  go = elements.Path(go)
+  _mark_parked(logdir, 'learner')
+  print(f'Parked until {go} exists', flush=True)
+  while not go.exists():
+    time.sleep(0.05)
+  _log_learner(logdir, 'go')
+
+
+def _mark_parked(logdir, role):
+  """Tell the supervisor this process is built and waiting (see _park); the
+  actor compiles an agent of its own and can be the slower of the two."""
+  if os.environ.get('ONLINE_GO_FILE'):
+    _atomic_write(elements.Path(logdir) / f'parked_{role}', b'1')
+
+
 def _log_learner(logdir, message):
   path = elements.Path(logdir) / 'online_learner.log'
   path.parent.mkdir(parents=True, exist_ok=True)
@@ -559,6 +588,7 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
         agent=bind(agent.load, regex=args.from_checkpoint_regex)))
   cp.load_or_save()
   shared_policy.publish(agent)
+  _park(logdir)
   if coordination is not None:
     coordination.set_learner_ready()
 

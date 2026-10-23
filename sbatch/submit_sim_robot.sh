@@ -23,7 +23,6 @@ while read -r exp arm task hz gpu extra; do
   flags="--env.robot.hz $hz"
   case $task in
     balance) ;;
-    still) configs="$configs robot_still" ;;
     command) configs="$configs robot_command" ;;
     *) echo "unknown task $task"; exit 1 ;;
   esac

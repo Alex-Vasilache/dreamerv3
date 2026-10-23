@@ -137,7 +137,6 @@ balances poorly and can spin a wheel at power-up. See [Flash a base](#flash-a-ba
 
    ```bash
    tools/robot/train.sh                          # balance at 65 Hz
-   CONFIGS="robot robot_still" tools/robot/train.sh still   # still wheels
    HZ=25 tools/robot/train.sh                    # another rate
    ```
 
@@ -151,6 +150,17 @@ balances poorly and can spin a wheel at power-up. See [Flash a base](#flash-a-ba
 
 **Resume** a run with the same rate and configs:
 `RUN_DIR=<its run dir> tools/robot/train.sh resume`.
+
+**Live demos.** `tools/robot/demo.sh` (same arguments as `train.sh`) starts
+a job that keeps its GPU between audiences: **RESTART TRAINING** on the
+dashboard (press twice) starts training again from random weights, with
+fresh graphs, in about a second and a half. The job keeps the next session
+started and parked beside the live one (`tools/robot/demo_supervisor.py`), so
+a restart skips the minute-long start of a new learner; the robot holds its
+wheels from the press until the new session's first weights arrive. Allow
+~1.5 min after starting the job, and after each restart, before the next
+restart is that fast. Sessions are `<run dir>/s01`, `s02`, ... and
+`<run dir>/sessions.tsv` lists them. Stop with `tools/robot/stop.sh`.
 
 **Settings** (environment variables): `HZ` (65; the phone's rate, passed
 to the learner as `--env.robot.hz`), `CONFIGS` (default `robot`),
@@ -189,7 +199,6 @@ Config blocks in `dreamerv3/configs.yaml`, layered left to right:
 | block | what |
 |---|---|
 | `robot` | the default, complete on its own: balancing, flat DreamerV3, continuous per-wheel actions, the fast settings from the real-time cartpole sweep ([docs/robot/SIM_PHONE.md](docs/robot/SIM_PHONE.md)) |
-| `robot_still` | after `robot`: balance with still wheels (reward below) |
 | `robot_command` | after `robot`: balance while following a command, see below |
 | `robot_hrl` | after `robot`, with `director director_og` first: the HRL agent (OG Director), tuned for the robot ([docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md)); acts from the trainer, not the phone |
 | `robot_sim` | last: the robot task against a simulated balancing body, paced to real time, no robot |
@@ -201,19 +210,14 @@ The rate is never set in a block: it is `env.robot.hz` (65), which
 seconds and converted to steps at that rate.
 
 **Rewards.** `robot` pays an upright score in [0, 1] minus linear costs on
-tilt rate, drift and wheel speed. `robot_still` (`env.robot.balance_reward
-still`) instead pays exp(−Σ (x/σ)²) over targets that are all zero: RMS wheel
-speed (`still_speed_sigma`, 1960 mm/s), chatter |aₜ − aₜ₋₁|
-(`still_chatter_sigma`, 0.3) and optionally RMS wheel acceleration
-(`still_accel_sigma`, 0 = off), and −2 within 1.5° of a bumper. This is the
-command task's reward at a zero command, which balanced with almost still
-wheels; small errors cost much and large ones saturate.
+tilt rate, drift and wheel speed, and on chatter: 0.2 × the mean change of
+each wheel's action per step (e1982, 2026-10-22).
 
 Reward and motor flags, passed after the name:
 
 | flag | default | meaning |
 |---|---|---|
-| `env.robot.action_rate_penalty` | 0 | chatter cost: flag × mean \|aₜ − aₜ₋₁\| over wheels |
+| `env.robot.action_rate_penalty` | 0.2 | chatter cost: flag × mean \|aₜ − aₜ₋₁\| over wheels |
 | `env.robot.command_scale` | 1.0 | phone scales every wheel command: caps motor power |
 | `env.robot.wheel_penalty` | 0.3 | cost on wheel speed |
 | `env.robot.drift_penalty` | 0.1 | cost on net forward speed |
@@ -234,8 +238,12 @@ Off that WiFi: `adb forward tcp:8080 tcp:8080`, then http://localhost:8080.
 `http://<phone>:8080/dash` is a dashboard for showing training to an
 audience: the reward curve since the run started, the age of each weight
 push, the learner's losses (forwarded by the trainer every ~10 s) and a live
-blueprint of the robot from the side, front and top. `?theme=dark` or
-`?theme=light` picks the look; the button toggles it.
+blueprint of the robot from the side, front and top, with the floor moving
+and turning under it in each. `?theme=dark` or `?theme=light` picks the
+look; the button toggles it. The tilt is drawn 30 ms ahead of the latest
+reading, from its rate, to make up for the trip to the page; `?lead=<ms>`
+changes that. Under `tools/robot/demo.sh` it has a **RESTART TRAINING**
+button (see Train).
 
 Only a policy trained on the command task follows it:
 
@@ -290,7 +298,11 @@ Copies are kept in `~/logdir/robot_policies/`.
   and sensor noise are calibrated to our measurements
   (`embodied/envs/robot_mujoco.py`). `--env.robot.sim_model pendulum` is the
   older planar model, used for the flat DreamerV3 vs HRL results in
-  [docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md).
+  [docs/robot/SIM_ROBOT.md](docs/robot/SIM_ROBOT.md). Positive tilt is a
+  forward lean and forward output tips the body back, as on the robot (e1982
+  replay); until 2026-10-23 both sims had that coupling backwards, which
+  mirrors the task but does not make it harder, so results within the sim
+  stand. `embodied/tests/test_robot_sim.py` checks signs and bumper stops.
 
 ## Flash a base
 
@@ -329,6 +341,7 @@ git clone -b telemetry-cache https://github.com/Alex-Vasilache/smartphone-robot-
 | | |
 |---|---|
 | `tools/robot/train.sh` | start a run and point the phone at it |
+| `tools/robot/demo.sh` | a run for live demos, restartable from the dashboard |
 | `tools/robot/stop.sh` | stop the learner and the app |
 | `tools/robot/tensorboard.sh` | live TensorBoard for local or cluster runs |
 | `tools/robot/save_policy.sh` | name and keep a run's current weights on the phone |
@@ -336,6 +349,7 @@ git clone -b telemetry-cache https://github.com/Alex-Vasilache/smartphone-robot-
 | `tools/robot/phone_allow_usb.sh` | tap OK on the USB permission dialog |
 | `tools/robot/flash_base.sh` | build and flash base firmware |
 | `tools/robot/trainer_job.sh` | the learner itself (Slurm job or local process) |
+| `tools/robot/demo_supervisor.py` | runs the learner as restartable sessions (`demo.sh`) |
 | `tools/robot/common.sh`, `robot.env.example` | shared settings |
 | `tools/robot/dev/` | development: fake phones, policy export and its numerical test, protocol test, latency probes, learner benchmark, sweep plots, and `check_app_copies.sh` (the app carries copies of three `dreamerv3/deploy/` modules; run it after changing them) |
 

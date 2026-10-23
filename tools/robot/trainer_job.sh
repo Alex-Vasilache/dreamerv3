@@ -19,8 +19,10 @@
 # the newest one.
 #
 # Environment: CODE (the dreamerv3 checkout), ROBOT_RUNS, ROBOT_SETUP,
-# CONFIGS, STEPS, RUN_DIR (resume that run), PORT. Extra arguments go to
-# dreamerv3/main.py.
+# CONFIGS, STEPS, RUN_DIR (resume that run), PORT, DEMO (1: run the learner
+# under tools/robot/demo_supervisor.py, which restarts training from scratch
+# whenever the phone's dashboard asks, inside this job; tools/robot/demo.sh).
+# Extra arguments go to dreamerv3/main.py.
 set -uo pipefail
 
 # Under sbatch the script runs from a spool copy, so its own path says
@@ -67,9 +69,15 @@ echo "[robot] configs=$CONFIGS steps=$STEPS args=$*"
 cd "$RUN_DIR"
 # --script train runs learner and actor in this one process; with
 # env.robot.onboard the "actor" is only the link to the phone, which runs the
-# policy itself. A run dir with a checkpoint resumes from it.
-"$PY" -u "$CODE/dreamerv3/main.py" \
-  --logdir "$RUN_DIR/logdir" \
+# policy itself. A run dir with a checkpoint resumes from it. Under DEMO the
+# supervisor runs it once per session, each with its own --logdir.
+if [ -n "${DEMO:-}" ]; then
+  LAUNCH=("$PY" -u "$CODE/tools/robot/demo_supervisor.py"
+          --run_dir "$RUN_DIR" --name "$NAME" -- "$PY" -u "$CODE/dreamerv3/main.py")
+else
+  LAUNCH=("$PY" -u "$CODE/dreamerv3/main.py" --logdir "$RUN_DIR/logdir")
+fi
+"${LAUNCH[@]}" \
   --configs $CONFIGS \
   --script train \
   --env.robot.host 0.0.0.0 \

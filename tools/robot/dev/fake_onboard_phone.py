@@ -12,6 +12,12 @@ held, how late ticks were and what the policy step cost, split by whether a
 weight push was arriving at the time, plus how many pushes were installed and
 how old the weights were.
 
+With --restart_every it also plays the dashboard's RESTART button against a
+tools/robot/demo.sh job: asks for a fresh run every so many seconds, follows
+the trainer to the next session and times each restart (to the new session's
+hello, and to its first weights), holding the wheels in between as the app
+does.
+
   .venv/bin/python tools/robot/dev/fake_onboard_phone.py --port 3000 --hz 50 --seconds 300
 """
 
@@ -63,8 +69,10 @@ def connect(args, runner, directory):
   hello, _ = receiver.get(timeout=60.0)
   assert hello['type'] == 'hello', hello
   onboard = bool(hello.get('onboard')) and runner.ready
-  print(f'connected ({"onboard" if onboard else "trainer drives"}): {hello}')
-  return sock, receiver, onboard
+  print(f'connected ({"onboard" if onboard else "trainer drives"}): '
+        f'run={hello.get("run")} restart={hello.get("restart")} '
+        f'hold={hello.get("hold")}', flush=True)
+  return sock, receiver, onboard, hello
 
 
 class Body:
@@ -122,6 +130,7 @@ def main(argv=None):
   parser.add_argument('--seconds', type=float, default=120.0)
   parser.add_argument('--connect_timeout', type=float, default=600.0)
   parser.add_argument('--out', default='')
+  parser.add_argument('--restart_every', type=float, default=0.0)
   args = parser.parse_args(argv)
 
   directory = tempfile.mkdtemp(prefix='fake_phone_weights_')
@@ -129,7 +138,10 @@ def main(argv=None):
   body = Body(1.0 / args.hz)
   commands = Commands()
   period = 1.0 / args.hz
-  sock, receiver, onboard = connect(args, runner, directory)
+  sock, receiver, onboard, hello = connect(args, runner, directory)
+  hold = bool(hello.get('hold'))
+  restarts = []        # [asked, new hello, first weights], monotonic s
+  last_restart = time.monotonic()
 
   late_ms, policy_ms, during = [], [], []
   installs, ages = [], []
@@ -154,10 +166,30 @@ def main(argv=None):
     tick = time.monotonic()
     # Whether a weight push was arriving: bytes for one landed this tick.
     pushing = receiver._partial is not None
+    if (args.restart_every and onboard and hello.get('restart')
+        and tick - last_restart >= args.restart_every):
+      last_restart = tick
+      print('asking for a fresh run', flush=True)
+      restarts.append([tick, None, None])
+      try:
+        write(sock, dict(type='restart'))
+        while True:   # until the trainer goes away
+          receiver.get(timeout=30.0)
+      except (OSError, ConnectionError):
+        pass
+      receiver.close()
+      sock.close()
+      sock, receiver, onboard, hello = connect(args, runner, directory)
+      restarts[-1][1] = time.monotonic()
+      hold = bool(hello.get('hold'))
+      next_tick = time.monotonic()
+      continue
     if onboard:
       snap = body.sensors()
       cmd = commands.tick()
       _, act = runner.act(snap, cmd)
+      if hold:
+        act = [0.0, 0.0]
       body.step(act[0], act[1])
       applied = time.monotonic()
       seq += 1
@@ -187,6 +219,13 @@ def main(argv=None):
       if kind == 'weights_ready':
         stamp = header.get('stamp')
         runner.install(payload, stamp)
+        if hold:
+          hold = False
+          if restarts and restarts[-1][2] is None:
+            restarts[-1][2] = time.monotonic()
+            r = restarts[-1]
+            print(f'restart: new session after {r[1] - r[0]:.1f}s, its '
+                  f'weights after {r[2] - r[0]:.1f}s', flush=True)
         try:
           ages.append(time.time() - int(stamp) / 1e9)
         except (TypeError, ValueError):
@@ -196,7 +235,7 @@ def main(argv=None):
           print('got a policy; reconnecting onboard')
           receiver.close()
           sock.close()
-          sock, receiver, onboard = connect(args, runner, directory)
+          sock, receiver, onboard, hello = connect(args, runner, directory)
           next_tick = time.monotonic()
           break
       elif kind == 'act':
@@ -222,6 +261,8 @@ def main(argv=None):
       build_ms_p50=pct(installs, 50),
       push_interval_s=(args.seconds / len(installs)) if installs else None,
       weight_age_p50_s=pct(ages, 50), weight_age_max_s=max(ages) if ages else None,
+      restarts=[[round(b - a, 2) if b else None, round(c - a, 2) if c else None]
+                for a, b, c in restarts],
   )
   print(json.dumps(stats, indent=1))
   if args.out:

@@ -190,10 +190,10 @@ def main():
         d.qpos[:] = run['qpos'][i]
       else:
         d.qpos[:3] = [tr['px'][i], tr['py'][i], R]
-        # Positive tilt is a backward lean: the top tips toward -x.
-        d.qpos[3:7] = quat(tr['yaw'][i], -theta)
-        d.qpos[7] = tr['wl'][i] + theta
-        d.qpos[8] = tr['wr'][i] + theta
+        # Positive tilt is a forward lean: the top tips toward +x.
+        d.qpos[3:7] = quat(tr['yaw'][i], theta)
+        d.qpos[7] = tr['wl'][i] - theta
+        d.qpos[8] = tr['wr'][i] - theta
       mujoco.mj_kinematics(m, d)
       mujoco.mj_comPos(m, d)
       mujoco.mj_camlight(m, d)
