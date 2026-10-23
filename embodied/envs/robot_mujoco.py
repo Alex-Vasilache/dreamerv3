@@ -82,6 +82,13 @@ SURFACES = {
                    drag=4.0),
     'table': dict(rolling=3.5e-5, contact_tc=0.148, bumper_friction=0.345,
                   drag=4.52),
+    # Not fitted: carpet with 10x the rolling resistance, so that, like the
+    # real carpet and unlike the fitted one, it holds the robot still where it
+    # is left leaning 1-6 deg (sysid kicks: the real robot stops at 1-3 deg
+    # after a kick; fit2's tips over to a bumper). For testing whether a
+    # policy learnt on a floor that holds it up transfers to the table.
+    'carpet_hold': dict(rolling=0.05, contact_tc=0.041, bumper_friction=0.572,
+                        drag=4.0),
 }
 
 WHEEL_R = 0.045       # m
