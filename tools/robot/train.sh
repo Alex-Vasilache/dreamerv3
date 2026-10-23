@@ -52,7 +52,10 @@ fi
 command -v adb >/dev/null || robot_die "adb not found (Android platform-tools)"
 adb get-state >/dev/null 2>&1 || robot_die "no phone on adb: run tools/robot/phone_connect.sh"
 if [ -z "$NO_BASE" ]; then
-  adb shell dumpsys usb | grep -q 'host_connected=true' \
+  # dumpsys usb can throw while dumping its connection records and never print
+  # host_connected, so a device node besides the root hubs (00N/001) also counts.
+  { adb shell dumpsys usb 2>&1 | grep 'host_connected=true' >/dev/null \
+    || adb shell 'ls -d /dev/bus/usb/*/*' 2>/dev/null | grep -v '/001$' >/dev/null; } \
     || robot_die "no base on the phone: seat it and switch the base on (or NO_BASE=1)"
 fi
 # A dozing phone blocks the app's network even with the app on screen.
