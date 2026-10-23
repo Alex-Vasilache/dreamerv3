@@ -1680,8 +1680,12 @@ robot:
   # repeat 1: every tick of the phone's clock is a decision.
   env.robot.repeat: 1
   # Penalise each wheel's speed, not just the net drift, so the policy pays for
-  # spinning the wheels against each other or chattering around zero.
-  env.robot.wheel_penalty: 0.3
+  # spinning the wheels against each other or chattering around zero. 1.5
+  # (was 0.3): on the table 0.3 and 0.6 balanced while pivoting on one wheel
+  # at 1000-3500 mm/s (real e2061, e2078; sim e2088), as the fitted sim does
+  # too; 1.5 keeps the median wheel speed at ~60 mm/s, for ~1 min longer to
+  # balance (sim e2102-e2148, 6.3 vs 5.2 min; carpet 2.4 vs 1.8).
+  env.robot.wheel_penalty: 1.5
   # And pay for chatter: minus this times the mean |change of action| per
   # step (robot.py:_advance). e1982 (2026-10-22, real robot, 0.2 on this
   # block) balanced well; the default before it was 0.
@@ -1831,25 +1835,31 @@ sim_phone_fast:
 # [-1, 1], an extra 'command' observation the phone fills. While training the
 # phone holds a random command for 4-8 s (zero 25%, one axis 50%), ramped at
 # 0.5/s so the policy has time to lean, and a joystick on the phone's web
-# page (http://<phone>:8080) overrides it while touched. The phone
-# compensates the motors' dead zone and stiction (friction_comp).
+# page (http://<phone>:8080) overrides it while touched.
 # Reward 'bumper_track': -2 on or within 1.5 deg of either bumper (at or
 # above +7.7 deg, at or below -5.4), else exp(-(err / 0.4)^2) tracking of the
 # command as a wheel-speed vector, full stick = ~4900 mm/s, the ground top
 # speed. Balance is implied: nothing else keeps the body off the bumpers.
-# Return horizon 5 s: leaning, then speeding up to a new command takes a few
-# seconds. The other command rewards (product, sum, curriculum, taper_sum,
+# In the fitted sim (2026-10-24) this learns to follow on both floors:
+# forward corr 0.7 after ~11 min on the table and ~18 on carpet, turn after
+# ~10 (docs/robot/SIM_COMMAND.md). The other command rewards (product, sum, curriculum, taper_sum,
 # gated, bumper; robot.py:_command_reward) are one flag away,
 # --env.robot.command_reward; their blocks up to 2026-10-21 are in git history.
 robot_command:
   task: robot_command
-  env.robot.horizon_s: 5.0
+  # 2 s, as for balance (was 5): in the fitted sim forward tracking reached
+  # corr 0.7 on carpet in 18.2 +- 1.3 min against 28.5 +- 8.6 (n=5, e2234-
+  # e2263), the same on the table.
+  env.robot.horizon_s: 2.0
   env.robot.command_reward: bumper_track
   env.robot.bumper_margin: 0.0262
   env.robot.bumper_penalty: 2.0
   env.robot.command_bias: 0.0
   env.robot.command_ramp: 0.5
-  env.robot.friction_comp: True
+  # Off (was on): the balance runs that work on the robot run without it,
+  # and in the fitted sim tracking was as good or better without
+  # (e2108-e2115).
+  env.robot.friction_comp: False
   env.robot.turn_source: wheels
   env.robot.command_hold_min: 4.0
   env.robot.command_hold_max: 8.0

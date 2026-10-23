@@ -1,0 +1,7 @@
+# Command following, round 7 (2026-10-24): on carpet_hold (holds a lean like the real carpet); friction_comp off and on
+e2296 flat command 65 v100 --env.robot.sim_surface carpet_hold --env.robot.friction_comp False --seed 0
+e2297 flat command 65 v100 --env.robot.sim_surface carpet_hold --env.robot.friction_comp False --seed 1
+e2298 flat command 65 v100 --env.robot.sim_surface carpet_hold --env.robot.friction_comp False --seed 2
+e2299 flat command 65 v100 --env.robot.sim_surface carpet_hold --env.robot.friction_comp True --seed 0
+e2300 flat command 65 v100 --env.robot.sim_surface carpet_hold --env.robot.friction_comp True --seed 1
+e2301 flat command 65 v100 --env.robot.sim_surface carpet_hold --env.robot.friction_comp True --seed 2

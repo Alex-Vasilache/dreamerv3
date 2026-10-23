@@ -205,8 +205,7 @@ Config blocks in `dreamerv3/configs.yaml`, layered left to right:
 | `sim_phone`, `sim_phone_fast` | cartpole paced to real time, no robot |
 
 The rate is never set in a block: it is `env.robot.hz` (65), which
-`train.sh` sets from `HZ`. The return horizon (`env.robot.horizon_s`, 2 s;
-5 s for `robot_command`) and the episode (`env.robot.episode_s`, 20 s) are in
+`train.sh` sets from `HZ`. The return horizon (`env.robot.horizon_s`, 2 s) and the episode (`env.robot.episode_s`, 20 s) are in
 seconds and converted to steps at that rate.
 
 **Rewards.** `robot` pays an upright score in [0, 1] minus linear costs on

@@ -1,0 +1,31 @@
+# Command following, round 6 (fit2 sim, 2026-10-23 night): n=5 per arm and floor, fresh seeds 10-14; friction_comp off
+e2234 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False  --seed 10
+e2235 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False  --seed 11
+e2236 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False  --seed 12
+e2237 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False  --seed 13
+e2238 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False  --seed 14
+e2239 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False  --seed 10
+e2240 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False  --seed 11
+e2241 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False  --seed 12
+e2242 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False  --seed 13
+e2243 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False  --seed 14
+e2244 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 10
+e2245 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 11
+e2246 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 12
+e2247 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 13
+e2248 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 14
+e2249 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 10
+e2250 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 11
+e2251 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 12
+e2252 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 13
+e2253 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_sigma 0.6 --seed 14
+e2254 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 10
+e2255 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 11
+e2256 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 12
+e2257 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 13
+e2258 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 14
+e2259 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 10
+e2260 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 11
+e2261 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 12
+e2262 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 13
+e2263 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.horizon_s 2.0 --seed 14

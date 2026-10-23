@@ -1,0 +1,9 @@
+# Floor switch, round 7 (2026-10-24): carpet_hold (holds a lean like the real carpet) -> table; does a policy learnt on a holding floor fail to re-learn?
+e2288 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:25,carpet_hold --seed 0
+e2289 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:25,carpet_hold --seed 1
+e2290 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:25,carpet_hold --seed 2
+e2291 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:25,carpet_hold --seed 3
+e2292 flat balance 65 p100 --env.robot.sim_surface carpet_hold --seed 0
+e2293 flat balance 65 p100 --env.robot.sim_surface carpet_hold --seed 1
+e2294 flat balance 65 p100 --env.robot.sim_surface carpet_hold --seed 2
+e2295 flat balance 65 p100 --env.robot.sim_surface carpet_hold --seed 3

@@ -1,0 +1,23 @@
+# Floor switch, round 8 (2026-10-24): interventions on the carpet_hold -> table switch, n=5; base seeds 4-5 extend r7
+e2302 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --seed 4
+e2303 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --seed 5
+e2304 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 0
+e2305 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 1
+e2306 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 2
+e2307 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 3
+e2308 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 4
+e2309 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 0
+e2310 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 1
+e2311 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 2
+e2312 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 3
+e2313 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 4
+e2314 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --replay.size 1e6 --online_actor_replay_size 1000000 --seed 0
+e2315 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --replay.size 1e6 --online_actor_replay_size 1000000 --seed 1
+e2316 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --replay.size 1e6 --online_actor_replay_size 1000000 --seed 2
+e2317 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --replay.size 1e6 --online_actor_replay_size 1000000 --seed 3
+e2318 flat balance 65 p100 --env.robot.sim_schedule carpet_hold:15,table:20,carpet_hold --replay.size 1e6 --online_actor_replay_size 1000000 --seed 4
+e2319 flat balance 65 v100 --env.robot.sim_surface table --seed 30
+e2320 flat balance 65 v100 --env.robot.sim_surface table --seed 31
+e2321 flat balance 65 v100 --env.robot.sim_surface table --seed 32
+e2322 flat balance 65 v100 --env.robot.sim_surface table --seed 33
+e2323 flat balance 65 v100 --env.robot.sim_surface table --seed 34

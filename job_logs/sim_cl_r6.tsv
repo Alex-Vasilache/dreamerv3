@@ -1,0 +1,24 @@
+e2264	4770754	e2264_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet  --seed 20
+e2265	4770755	e2265_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet  --seed 21
+e2266	4770756	e2266_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet  --seed 22
+e2267	4770757	e2267_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet  --seed 23
+e2268	4770758	e2268_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet  --seed 24
+e2269	4770759	e2269_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet  --seed 25
+e2270	4770760	e2270_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 20
+e2271	4770761	e2271_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 21
+e2272	4770762	e2272_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 22
+e2273	4770763	e2273_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 23
+e2274	4770764	e2274_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 24
+e2275	4770765	e2275_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --seed 25
+e2276	4770766	e2276_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 20
+e2277	4770767	e2277_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 21
+e2278	4770768	e2278_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 22
+e2279	4770769	e2279_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 23
+e2280	4770770	e2280_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 24
+e2281	4770771	e2281_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 25
+e2282	4770772	e2282_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 20
+e2283	4770773	e2283_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 21
+e2284	4770774	e2284_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 22
+e2285	4770775	e2285_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 23
+e2286	4770776	e2286_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 24
+e2287	4770777	e2287_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 25
