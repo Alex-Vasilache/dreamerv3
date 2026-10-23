@@ -639,6 +639,17 @@ entropy (e1880–e1909) with `compare_late.py wkrv3`.
 mask and UCB-imag on it. V > R: ablate V's parts. Neither fixes DMC: consider
 fixed worker entropy for discrete-action tasks only, or a higher DMC coefficient.
 The UCB-imag array 4767281 (old base) stays on hold until this is decided.
+**2026-10-24: V adopted as the base (as is); R cancelled after 3 seeds** (seeds 3-4
+of R, e1946-e1950 / e1958-e1963, cancelled; e1946-e1950 archived partial). V stays to 5
+seeds. 3-seed late means (R / V; OG; fixed ent): pin pad 4 310/308; 270; 321 · 5
+278/280; 210; 283 · 6 72/101; 70; 129 · cartpole 733/684; 691; 705 · cheetah
+452/537; 509; 463 · hopper 297/284; 335; 220. Why V: R keeps advantage
+normalization, so |A| ~0.6 and the 3e-4 entropy is ~0.05% of it (worker goes
+deterministic, cheetah -5.2 nats, as fixed ent); V's |A| is ~0.015-0.03 (returns
+/ P95-P5 spread of 12-65 read from the checkpoints -- the floor 1 never binds), so
+entropy is ~1% of |A|, the same regime as flat DreamerV3 (1-4%). Pin pads stay
+near-deterministic, cheetah recovers. (`tools/collapse_study/wkr_ent_balance.py`,
+`wkr_diag.py`.)
 
 ### e1880–e1909: OG with fixed worker entropy (2026-10-20, array 4767814) -- base-arm check, runs first
 
