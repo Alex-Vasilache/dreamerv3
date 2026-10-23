@@ -259,11 +259,68 @@ class GoalVQDecoder(nj.Module):
     return out
 
 
+def _cosmax_dist(x, y, tiny=1e-6):
+  """``1 - cosine_max(x, y)`` over the last axis; cosine_max is the worker reward."""
+  nx = jnp.sqrt(jnp.square(x).sum(-1) + tiny)
+  ny = jnp.sqrt(jnp.square(y).sum(-1) + tiny)
+  m = jnp.maximum(nx, ny)
+  return 1.0 - (x * y).sum(-1) / (m * m)
+
+
+def evenness_loss(dec, z_q, n=16):
+  """How unevenly one class step in a block moves the decoded goal.
+
+  The SOM orders each block's classes along a line, but the steps between
+  neighbours are not equal: the end classes sit about half as far apart as an
+  average step and whole blocks differ about 4x in how much they move the goal
+  (tools/collapse_study/ucb_kernel_plot.py). This measures the decoded goal,
+  not the codebook, because the decoder roughly doubles the unevenness the
+  codebook alone shows.
+
+  For ``n`` base codes from the batch, every block ``l`` and class ``c``: the
+  base code with block ``l``'s embedding replaced by entry ``c``, decoded. The
+  step ``s[l, c]`` is the mean over the bases of ``1 - cosine_max`` between the
+  goals for classes ``c`` and ``c + 1``. Returns
+
+    within  mean over blocks of the squared coefficient of variation of the
+            C - 1 steps of that block (0 = every step of a block equal),
+    across  squared coefficient of variation of the per-block mean step
+            (0 = every block moves the goal equally),
+
+  both scale-free, so neither can be lowered by shrinking or inflating the
+  whole codebook, plus stop-gradiented diagnostics. Gradient reaches the swept
+  codebook entries and the decoder; the base codes are held fixed.
+  """
+  table = dec.codebook.table().astype(f32)                         # (L, C, D)
+  L, C, D = table.shape
+  flat = sg(z_q.astype(f32)).reshape((-1, L, D))
+  base = flat[::max(1, flat.shape[0] // n)][:n]                     # (n, L, D)
+  eye = jnp.eye(L, dtype=f32)[:, None, :, None]                    # (L, 1, L, 1)
+  swept = eye * table[:, :, None, :]                               # (L, C, L, D)
+  z = base[:, None, None] * (1.0 - eye)[None] + swept[None]        # (n, L, C, L, D)
+  goal = dec.from_latent(z, 3).pred().astype(f32)                  # (n, L, C, G)
+  steps = _cosmax_dist(goal[:, :, :-1], goal[:, :, 1:]).mean(0)    # (L, C - 1)
+  tiny = 1e-8
+  block = steps.mean(1)
+  within = (steps.var(1) / (jnp.square(block) + tiny)).mean()
+  across = block.var() / (jnp.square(block.mean()) + tiny)
+  mets = {
+      'even_within': within,
+      'even_across': across,
+      'even_step_cv': jnp.sqrt(steps.var() / (jnp.square(steps.mean()) + tiny)),
+      'even_end_ratio': steps[:, jnp.array([0, C - 2])].mean() / (steps.mean() + tiny),
+      'even_block_ratio': block.max() / (block.min() + tiny),
+      'even_step_mean': steps.mean(),
+  }
+  return within, across, {k: sg(v) for k, v in mets.items()}
+
+
 def vq_goal_loss(
     enc, dec, deter, bdims, som=False, ste=None, agg='sum',
     codebook_scale=1.0, commit_scale=1.0, som_scale=0.9, lip_scale=0.03,
     lip_impl='logprod', rec_scale=1.0, z_e=None, commit_joint=False,
-    commit_adapt=None, rec_mask=None):
+    commit_adapt=None, rec_mask=None, even_within=0.0, even_across=0.0,
+    even_n=16):
   """Assemble the full goal-autoencoder objective for the VQ arms.
 
   Returns ``(loss, metrics)`` where ``loss`` has the leading batch dims of
@@ -358,6 +415,12 @@ def vq_goal_loss(
   penalty = lip_penalty(bounds, lip_impl)
   if bounds:
     loss = loss + lip_scale * penalty
+  # Evenness of the class steps (``evenness_loss``): one scalar for the whole
+  # batch, added to every element so the batch mean carries it once.
+  even_mets = {}
+  if even_within or even_across:
+    within, across, even_mets = evenness_loss(dec, quant['z_q'], even_n)
+    loss = loss + even_within * within + even_across * across
 
   # Diagnostics only. Every one of these is stop-gradiented, and the sqrt /
   # norm reductions are floored away from zero: d(sqrt(x))/dx is infinite at
@@ -407,6 +470,7 @@ def vq_goal_loss(
   if som:
     metrics['vq/rec_e'] = rec_e.mean()
   metrics.update({f'vq/{k}': v for k, v in usage.items()})
+  metrics.update({f'vq/{k}': v for k, v in even_mets.items()})
   if commit_adapt is not None:
     metrics['vq/commit_scale'] = commit_scale
   metrics = {k: sg(v) for k, v in metrics.items()}

@@ -1155,7 +1155,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         commit_scale=float(cfg.commit_scale),
         commit_joint=bool(_g(cfg, 'commit_joint', False)),
         som_scale=float(cfg.som_scale),
-        lip_scale=float(cfg.lip_scale), lip_impl=str(cfg.lip_impl))
+        lip_scale=float(cfg.lip_scale), lip_impl=str(cfg.lip_impl),
+        even_within=float(_g(cfg, 'even_within', 0.0)),
+        even_across=float(_g(cfg, 'even_across', 0.0)),
+        even_n=int(_g(cfg, 'even_n', 16)))
 
   def _goal_autoencoder_loss(self, repfeat, losses, metrics, B, T, training):
     """Goal VAE: reconstruct ``deter`` from a discrete skill code.
