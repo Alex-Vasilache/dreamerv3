@@ -686,7 +686,9 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       write_logs()
     if should_save(step):
       cp.save()
-    save_milestone(step)
+    # On the actor's env steps: the learner's own `step` counts trained
+    # samples (batch_steps per update), ~30x faster than the env at 65 Hz.
+    save_milestone(max(last_actor_step, 0))
   _log_learner(
       logdir,
       f'learner stop step={int(step)} actor_step={_read_actor_step(paths.actor_step)}')
