@@ -253,7 +253,7 @@ CONFIGS="robot robot_command" tools/robot/train.sh cmd
 The policy sees a command (forward, turn) in [-1, 1]. While training, the
 phone holds a random one for 4-8 s (zero 25% of the time), ramped at 0.5/s;
 touching the stick overrides it. Reward: exp(-(error/0.4)²) tracking of the
-command as a wheel-speed vector (full stick ≈ 4900 mm/s), −2 within 1.5° of a
+command as a wheel-speed vector (full stick = 2500 mm/s), −2 within 1.5° of a
 bumper. Other command rewards are one flag away
 (`--env.robot.command_reward`, see `robot.py:_command_reward`). In TensorBoard compare `epstats/log/cmd_forward` with
 `epstats/log/forward`, likewise `turn`. The variants and their parameters are

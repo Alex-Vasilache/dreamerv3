@@ -1838,8 +1838,8 @@ sim_phone_fast:
 # page (http://<phone>:8080) overrides it while touched.
 # Reward 'bumper_track': -2 on or within 1.5 deg of either bumper (at or
 # above +7.7 deg, at or below -5.4), else exp(-(err / 0.4)^2) tracking of the
-# command as a wheel-speed vector, full stick = ~4900 mm/s, the ground top
-# speed. Balance is implied: nothing else keeps the body off the bumpers.
+# command as a wheel-speed vector, full stick = 2500 mm/s (about half the
+# ground top speed). Balance is implied: nothing else keeps the body off the bumpers.
 # In the fitted sim (2026-10-24) this learns to follow on both floors:
 # forward corr 0.7 after ~11 min on the table and ~18 on carpet, turn after
 # ~10 (docs/robot/SIM_COMMAND.md). The other command rewards (product, sum, curriculum, taper_sum,
@@ -1868,8 +1868,12 @@ robot_command:
   env.robot.command_step: 0.0
   env.robot.forward_sign: -1.0
   env.robot.command_sigma: 0.4
-  env.robot.command_speed: 4900.0
-  env.robot.command_turn: 4900.0
+  # Full stick 2500 mm/s (was 4900, ~86% of the top speed): on a carpet that
+  # holds the wheels (rolling stiction, fit6) the robot reached ~0.6 of 4900
+  # and ~0.75 of 2500 after an hour (sim e2342-e2355); the table follows
+  # either (e2180-e2187).
+  env.robot.command_speed: 2500.0
+  env.robot.command_turn: 2500.0
   # Wheel observations as a fraction of the in-air top speed (1/5700),
   # negated so that, like the motor output, positive means forward.
   env.robot.obs_wheel_scale: -1.75e-4
