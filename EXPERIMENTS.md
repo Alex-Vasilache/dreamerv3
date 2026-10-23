@@ -644,6 +644,32 @@ worker goal reward; returns >= V+SOM. Checks every 4h: at 0.5M even loss on and
 falling, geometry from the 0.5M checkpoint, rec / goal reward vs V+SOM (cancel
 and rerun if broken); 1M/2M/3M matched scores, pin pad and DMC subsets.
 
+### e2070–e2124+: phone robot in the MuJoCo sim — command following, still balance, floor switches (2026-10-23, robot branch)
+
+Flat DreamerV3, `robot [robot_command] robot_sim`, 65 Hz, paced to real time,
+`sbatch/submit_sim_robot.sh` with `sbatch/sim_{cmd,still,cl}_r*.txt` (robot
+checkout). Asked for Monday 2026-10-26; list and figures in
+`/work/DoyaU/vasilache/work/realcmd/`. (e2078, e2079 are real-robot table demos
+from another session.)
+
+| batch | runs | question | expectation |
+|---|---|---|---|
+| cmd r1 | e2070–e2077 (V100, fit1 floors) | why does command following never train on the robot? full stick 4900 vs 1500/2500, carpet/table, product reward | if full stick is infeasible, slower commands track better |
+| still r1 | e2086–e2097 (A100) | fit2 sim: carpet vs table; table rewards that stop the one-wheel pivot (wheel_penalty 0.6, still_speed 1000/500, +friction_comp) | still_speed keeps the wheels still at some cost in learning time |
+| floor r1 | e2080–e2085 (P100, fit1 floors) | carpet 12 → table 25 → carpet: does the sim reproduce the robot's failure to re-learn after a move? | re-learning slower than a fresh table run |
+| still r2 | e2098–e2107 (A100) | still_speed 2000, still 1000 phased in over 5 min, wheel_penalty 1.5/3 | ramp recovers the learning speed |
+| cmd r2 | e2108–e2115 (V100, fit2) | current recipe on carpet vs table, friction_comp on/off | tracking on both floors; fc off as good or better |
+| floor r2 | e2116–e2124 (P100/A100, fit2) | carpet 15 → table 25 → carpet, carried 0/10/20 s between floors | carrying (policy acting in the air) is what breaks re-learning |
+
+Early results (2026-10-23 evening): cmd r1 learns command following in the sim
+with the current recipe (forward corr 0.82–0.95, turn 0.97 at 69 min); slower
+full stick does not help. fit2 sim reproduces the real floors' behaviour: the
+table policy pivots on one wheel (~3500 vs ~40 mm/s) as e2061/e2078 did, the
+carpet one stands nearly still. still_speed 1000 stops the pivot (both wheels
+< ~200) but takes ~10 min to balance (5 without). floor r1 does NOT reproduce
+the failure: re-learning after the move takes 2.6 ± 1.1 min (fresh table 3.8),
+back on carpet 1.2 min.
+
 ### e1910–e1969: worker on DreamerV3 settings, on OG + fixed worker entropy (2026-10-22, array 4768718)
 
 Base `director director_og wkr_ent_fixed`, plus one of two arms, 6 tasks x 5
