@@ -661,6 +661,23 @@ from another session.)
 | cmd r2 | e2108–e2115 (V100, fit2) | current recipe on carpet vs table, friction_comp on/off | tracking on both floors; fc off as good or better |
 | floor r2 | e2116–e2124 (P100/A100, fit2) | carpet 15 → table 25 → carpet, carried 0/10/20 s between floors | carrying (policy acting in the air) is what breaks re-learning |
 
+Later batches (all fit2 sim, robot checkout `sbatch/sim_*.txt`): still r3
+e2143–e2163, cmd r3 e2164–e2179 (hold, horizon, sigma, ramp), cmd r4
+e2180–e2187 (full stick 2500/3500), floor r3 e2125–e2142 (recency, replay 1e6,
+wd 1e-2/1e-1, train_ratio 128, beta2 0.99; e2125–e2127 invalid: the Recency
+selector crashed the learner, fixed in 5eeb3b1, rerun as e2188–e2190), floor
+r3b e2188–e2194, cmd r5 e2195–e2206 (combos), floor r4 e2207–e2224 (alternating
+floors, 30-min carpet; wd, replay 1e6), floor r5 e2225–e2233 (L2-init).
+
+Interim (21:40): table stillness — wheel_penalty 1.5 cuts the median wheel speed
+2662 → 59 mm/s (n=5) for 6.3 vs 5.2 min to balance; carpet unaffected (2.4 min).
+Floor switch, minutes to re-learn the table after 15 min of carpet: baseline
+6.9 ± 2.2 (n=5, fresh table 5.2), replay 1e6 4.5 ± 1.2 (n=5), wd 1e-1
+3.6 ± 0.7 (n=3), recency 0.5 6.3 ± 2.2, beta2 0.99 5.2 ± 1.2, carry 0/10/20 s
+no effect. Command following (min to forward corr 0.7, n=2): carpet base 32,
+sigma 0.6 16.5, horizon 2 s 20.8; table base 18, horizon 2 s 11.5, ramp 1.0
+11.8; full stick 2500 raises the carpet forward gain 0.45 → 0.77.
+
 Early results (2026-10-23 evening): cmd r1 learns command following in the sim
 with the current recipe (forward corr 0.82–0.95, turn 0.97 at 69 min); slower
 full stick does not help. fit2 sim reproduces the real floors' behaviour: the
