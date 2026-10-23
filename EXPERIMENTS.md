@@ -716,6 +716,10 @@ deterministic, cheetah -5.2 nats, as fixed ent); V's |A| is ~0.015-0.03 (returns
 entropy is ~1% of |A|, the same regime as flat DreamerV3 (1-4%). Pin pads stay
 near-deterministic, cheetah recovers. (`tools/collapse_study/wkr_ent_balance.py`,
 `wkr_diag.py`.)
+**V final, 5 seeds (late 3-4M; OG):** pin pad 4 312 (271), 5 278 (210), 6 40 (69),
+cartpole 747 (692), cheetah 529 (511), hopper 284 (333). Normalized vs OG: pin pads
++6.6 pts (p=0.32), DMC +0.8 (p=0.67), all +3.7 (p=0.29). Vs fixed entropy: DMC
++6.4 pts (p=0.0015), pin pads -11 (p=0.065, pin pad six 40 vs 129), all -2.5 (p=0.53).
 
 ### e1880–e1909: OG with fixed worker entropy (2026-10-20, array 4767814) -- base-arm check, runs first
 
