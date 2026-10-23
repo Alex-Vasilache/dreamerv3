@@ -71,7 +71,7 @@ def fit(states, run_dir, out, weights, steps=50000, batch=1024, lr=1e-4,
   import elements
   import embodied.jax.nets as nets
   from dreamerv3.hrl import goal_ae
-  from diag_goal_struct_corr import load_config
+  from diag_goal_geometry import load_config  # also puts the repo on sys.path
 
   nets.COMPUTE_DTYPE = jnp.float32
   config = load_config(run_dir)

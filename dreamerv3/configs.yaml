@@ -1568,6 +1568,16 @@ wkr_v3:
     wkr_own_advnorm: True
     wkr_own_opt: True
 
+# SOM class-step evenness (hrl/goal_ae.py evenness_loss), within blocks AND
+# across blocks; layer after goal_som_line. Weight from the offline sweep
+# (experiments/goal_geometry/even_sweep.py, 2026-10-23): at 1.0 the step CV
+# falls 0.69-1.36 -> 0.18-0.31, end steps 0.33-0.57 -> 0.69-0.89 of the mean,
+# block ratio 2.4-6.8 -> 1.2-1.7, reconstruction within -1..+12%; 10.0 is
+# evener still but costs up to +72% reconstruction and codebook use.
+goal_even:
+  agent:
+    goal_vq: {even_within: 1.0, even_across: 1.0}
+
 ucb_imag_a:
   agent:
     mgr_ucb_c: 0.0

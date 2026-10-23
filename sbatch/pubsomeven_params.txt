@@ -1,0 +1,60 @@
+director pinpad_four 0 e2000 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_five 0 e2001 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_six 0 e2002 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cartpole_swingup 0 e2003 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cheetah_run 0 e2004 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_hopper_hop 0 e2005 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_four 0 e2006 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_five 0 e2007 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 0 e2008 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cartpole_swingup 0 e2009 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 0 e2010 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 0 e2011 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_four 1 e2012 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_five 1 e2013 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_six 1 e2014 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cartpole_swingup 1 e2015 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cheetah_run 1 e2016 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_hopper_hop 1 e2017 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_four 1 e2018 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_five 1 e2019 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 1 e2020 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cartpole_swingup 1 e2021 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 1 e2022 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 1 e2023 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_four 2 e2024 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_five 2 e2025 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_six 2 e2026 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cartpole_swingup 2 e2027 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cheetah_run 2 e2028 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_hopper_hop 2 e2029 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_four 2 e2030 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_five 2 e2031 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 2 e2032 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cartpole_swingup 2 e2033 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 2 e2034 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 2 e2035 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_four 3 e2036 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_five 3 e2037 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_six 3 e2038 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cartpole_swingup 3 e2039 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cheetah_run 3 e2040 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_hopper_hop 3 e2041 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_four 3 e2042 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_five 3 e2043 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 3 e2044 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cartpole_swingup 3 e2045 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 3 e2046 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 3 e2047 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_four 4 e2048 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_five 4 e2049 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_six 4 e2050 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cartpole_swingup 4 e2051 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_cheetah_run 4 e2052 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director dmc_hopper_hop 4 e2053 director_og wkr_ent_fixed wkr_v3 goal_som_line pubmatch
+director pinpad_four 4 e2054 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_five 4 e2055 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 4 e2056 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cartpole_swingup 4 e2057 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 4 e2058 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 4 e2059 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch

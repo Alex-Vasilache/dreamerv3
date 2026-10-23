@@ -621,6 +621,29 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e2000–e2059: SOM class-step evenness loss on the V base (2026-10-23, array 4769800)
+
+Base V = `director director_og wkr_ent_fixed wkr_v3`, two arms, 6 tasks x 5 seeds,
+seed-major with both arms per seed (`sbatch/pubsomeven_params.txt`), A100, %8:
+- **V+SOM** = base + `goal_som_line` (SOM has not run on V before).
+- **V+SOM+even** = base + `goal_som_line goal_even`: new `evenness_loss`
+  (hrl/goal_ae.py), weight 1.0 within blocks and 1.0 across blocks. For 16 batch
+  codes it sweeps each block through its 8 classes, decodes, and penalizes the
+  squared CV of the 7 one-step goal distances (1 - cosine_max) per block, and
+  of the per-block mean step across blocks.
+Why: the SOM orders classes, but its end steps are ~0.5x an average step and
+blocks differ ~4x in how far they move the goal (`ucb_kernel_plot.py`, 90 runs);
+LiP cannot fix that (one-sided bound, penalty ~0.002 vs rec 6.4). Weight from an
+offline sweep (`experiments/goal_geometry/even_sweep.py`: fresh goal AE on 32k
+deter states of each task's OG+SOM seed-0 policy, 50k steps): at 1.0 step CV
+0.69-1.36 -> 0.18-0.31, end steps 0.33-0.57 -> 0.69-0.89 of the mean, block ratio
+2.4-6.8 -> 1.2-1.7, reconstruction -1..+12%, order kept (0.80-0.99); 10.0 costs
+up to +72% reconstruction.
+Hypothesis: evener geometry online (step CV ~0.3) at equal reconstruction and
+worker goal reward; returns >= V+SOM. Checks every 4h: at 0.5M even loss on and
+falling, geometry from the 0.5M checkpoint, rec / goal reward vs V+SOM (cancel
+and rerun if broken); 1M/2M/3M matched scores, pin pad and DMC subsets.
+
 ### e1910–e1969: worker on DreamerV3 settings, on OG + fixed worker entropy (2026-10-22, array 4768718)
 
 Base `director director_og wkr_ent_fixed`, plus one of two arms, 6 tasks x 5
