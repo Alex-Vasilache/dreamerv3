@@ -1,0 +1,9 @@
+# Command following, round 4 (fit2 sim, 2026-10-23): full-stick speed for both floors; friction_comp off
+e2180 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 0
+e2181 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 1
+e2182 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 0
+e2183 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 1
+e2184 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_speed 3500 --env.robot.command_turn 3500 --seed 0
+e2185 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --env.robot.command_speed 3500 --env.robot.command_turn 3500 --seed 1
+e2186 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_speed 3500 --env.robot.command_turn 3500 --seed 0
+e2187 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --env.robot.command_speed 3500 --env.robot.command_turn 3500 --seed 1

@@ -108,7 +108,7 @@ class Recency:
       p = prob
       for segment in path:
         p = p[segment]
-      index = rng.choice(len(segment), p=p)
+      index = rng.choice(len(p), p=p)
       path.append(index)
     index = sum(
         index * bfactor ** (len(tree) - level - 1)
@@ -217,6 +217,11 @@ class Mixture:
     self.selectors = [selectors[key] for key in keys]
     self.fractions = np.array([fractions[key] for key in keys], np.float32)
     self.rng = np.random.default_rng(seed)
+
+  def __len__(self):
+    # Every selector holds the same items; the online learner's prefill check
+    # (online.py shared_buffer.ready) asks for this.
+    return len(self.selectors[0])
 
   def __call__(self):
     return self.rng.choice(self.selectors, p=self.fractions)()

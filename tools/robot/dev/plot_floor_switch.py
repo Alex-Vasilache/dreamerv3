@@ -42,7 +42,7 @@ def find(exp):
     hits = sorted(pathlib.Path(root).glob(f'e{exp}_*'))
     if hits:
       return hits[-1]
-  raise FileNotFoundError(f'e{exp} not under {ROOTS}')
+  return None  # not started yet
 
 
 def schedule(r):
@@ -69,6 +69,8 @@ def load(run):
       continue
     for k, v in zip(keys, got):
       parts[k].append(v)
+  if not parts['reward']:
+    return dict(minute=np.zeros(0), schedule=schedule(r))
   d = {k: np.concatenate(v) for k, v in parts.items()}
   hz = r.get('hz', 65.0)
   theta = d['orientation'][:, 0] * r['obs_theta_scale']
@@ -131,7 +133,8 @@ def main():
     label, colour, exps = spec.rsplit(':', 2)
     series.append((label, COLOURS[colour], [int(e) for e in exps.split(',')]))
   check_colours([c for _, c, _ in series], args.out)
-  data = {e: load(find(e)) for _, _, exps in series for e in exps}
+  data = {e: load(find(e)) for _, _, exps in series for e in exps
+          if find(e) is not None}
   data = {e: d for e, d in data.items() if len(d['minute']) > 4}
   series = [(l, c, [e for e in exps if e in data]) for l, c, exps in series]
   series = [s for s in series if s[2]]

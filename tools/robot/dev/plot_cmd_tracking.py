@@ -48,7 +48,7 @@ def find(exp):
     hits = sorted(pathlib.Path(root).glob(f'e{exp}_*'))
     if hits:
       return hits[-1]
-  raise FileNotFoundError(f'e{exp} not under {ROOTS}')
+  return None  # not started yet
 
 
 def load(run):
@@ -129,6 +129,9 @@ def main():
         f'{"bumper":>6} {"reward":>7}')
   for _, _, exps in series:
     for e in exps:
+      if find(e) is None:
+        results[e] = dict(minute=[])
+        continue
       w = windows(load(find(e)))
       results[e] = w
       if len(w['minute']):
@@ -143,7 +146,7 @@ def main():
   fig, axes = plt.subplots(2, 2, figsize=(13, 8.5), sharex=True)
   for ax, (key, title, ylim) in zip(axes.flat, PANELS):
     for label, colour, exps in series:
-      runs = [results[e] for e in exps if len(results[e]['minute'])]
+      runs = [results[e] for e in exps if len(results[e]['minute']) > 2]
       if not runs:
         continue
       end = min(r['minute'][-1] for r in runs)
