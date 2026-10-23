@@ -1,0 +1,10 @@
+# Floor switch, round 2 (fit2 sim, 2026-10-23): carpet 15 min, table 25, carpet 20; does carrying the robot between floors break it?
+e2116 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 0
+e2117 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 1
+e2118 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 2
+e2119 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 10 --seed 0
+e2120 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 10 --seed 1
+e2121 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 10 --seed 2
+e2122 flat balance 65 a100s --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 20 --seed 0
+e2123 flat balance 65 a100s --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 20 --seed 1
+e2124 flat balance 65 a100s --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 20 --seed 2

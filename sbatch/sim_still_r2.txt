@@ -1,0 +1,11 @@
+# Still balance on the table, round 2 (fit2 sim, 2026-10-23): milder or phased-in stillness
+e2098 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 2000 --seed 0
+e2099 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 2000 --seed 1
+e2100 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 1000 --env.robot.still_ramp_s 300 --seed 0
+e2101 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 1000 --env.robot.still_ramp_s 300 --seed 1
+e2102 flat balance 65 a100s --env.robot.sim_surface table --env.robot.wheel_penalty 1.5 --seed 0
+e2103 flat balance 65 a100s --env.robot.sim_surface table --env.robot.wheel_penalty 1.5 --seed 1
+e2104 flat balance 65 a100s --env.robot.sim_surface table --env.robot.wheel_penalty 3.0 --seed 0
+e2105 flat balance 65 a100s --env.robot.sim_surface table --env.robot.wheel_penalty 3.0 --seed 1
+e2106 flat balance 65 a100s --env.robot.sim_surface carpet --env.robot.still_speed 1000 --env.robot.still_ramp_s 300 --seed 0
+e2107 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 1000 --env.robot.still_ramp_s 300 --seed 2

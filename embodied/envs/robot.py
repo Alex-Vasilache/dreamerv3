@@ -300,7 +300,8 @@ class SmartphoneRobot(embodied.Env):
       length=0, discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
-      drift_clip=1.0, wheel_penalty=0.0, action_rate_penalty=0.0,
+      drift_clip=1.0, wheel_penalty=0.0, still_speed=0.0, still_ramp_s=0.0,
+      action_rate_penalty=0.0,
       command_scale=1.0, symmetric=True,
       obs_theta_scale=0.18, obs_rate_scale=3.0, obs_wheel_scale=3.3e-4,
       obs_clip=3.0,
@@ -383,6 +384,19 @@ class SmartphoneRobot(embodied.Env):
     # motion, so wheels turning in opposite directions, or oscillating fast
     # around zero mean, cost nothing there. Clipped like drift per wheel.
     self.wheel_penalty = float(wheel_penalty)
+    # still_speed > 0 (phone mm/s): the balance task's upright score is
+    # multiplied by exp(-mean |wheel speed| / still_speed), per wheel, so
+    # moving costs a share of the whole reward rather than a small additive
+    # term. On the table e2061 and e2078 (wheel_penalty 0.3 and 0.6, clipped
+    # at speed_scale 1e-4) balanced while pivoting on one wheel at 1000-2000
+    # mm/s, which cost them 0.03-0.12 of a reward near 0.8; at still_speed
+    # 1000 the same pivot keeps a third to two thirds of it.
+    self.still_speed = float(still_speed)
+    # still_ramp_s: phase the stillness factor in over this many seconds of
+    # this process's steps (its scale shrinks from 10x still_speed), so
+    # balancing is learned first. Measured in the sim: still_speed 1000 from
+    # the start took ~10 min to balance on the table against ~5 without it.
+    self.still_ramp_s = float(still_ramp_s)
     self.symmetric = bool(symmetric)
     # Cost on the change in each wheel's command between steps, mean over the
     # wheels, in the policy's [-1, 1] units. At 50 Hz an exploring policy
@@ -788,8 +802,17 @@ class SmartphoneRobot(embodied.Env):
       # Without this a constant forward acceleration holds a constant tilt
       # forever, which scores perfectly while driving off the bench.
       drift = min(abs(0.5 * (speed_l + speed_r)), self.drift_clip)
+      upright = 0.5 * linear + 0.5 * bonus
+      if self.still_speed:
+        scale = self.still_speed
+        if self.still_ramp_s:
+          ramp = min(1.0, self._total_steps / (self.still_ramp_s * self.hz))
+          scale /= 0.1 + 0.9 * ramp
+        upright *= np.exp(-0.5 * (
+            abs(float(sensors['wheel_speed_l']))
+            + abs(float(sensors['wheel_speed_r']))) / scale)
       reward = (
-          0.5 * linear + 0.5 * bonus
+          upright
           - self.rate_penalty * abs(rate)
           - self.drift_penalty * drift
           - self.wheel_penalty * self._wheel_effort(speed_l, speed_r))
@@ -1081,7 +1104,8 @@ class SmartphoneRobot(embodied.Env):
         theta_lo=self.theta_lo, theta_hi=self.theta_hi,
         theta_sigma=self.theta_sigma, speed_scale=self.speed_scale,
         drift_penalty=self.drift_penalty, drift_clip=self.drift_clip,
-        wheel_penalty=self.wheel_penalty, rate_penalty=self.rate_penalty,
+        wheel_penalty=self.wheel_penalty, still_speed=self.still_speed,
+        rate_penalty=self.rate_penalty,
         action_rate_penalty=self.action_rate_penalty,
         command_scale=self.command_scale, command_bias=self.command_bias,
         friction_comp=self.friction_comp, bumper_lo=self.bumper_lo,

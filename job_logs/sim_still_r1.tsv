@@ -1,0 +1,12 @@
+e2086	4769892	e2086_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 0
+e2087	4769893	e2087_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 1
+e2088	4769894	e2088_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 0
+e2089	4769895	e2089_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 1
+e2090	4769896	e2090_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.wheel_penalty 0.6 --seed 0
+e2091	4769897	e2091_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.wheel_penalty 0.6 --seed 1
+e2092	4769898	e2092_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.still_speed 1000 --seed 0
+e2093	4769899	e2093_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.still_speed 1000 --seed 1
+e2094	4769900	e2094_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.still_speed 500 --seed 0
+e2095	4769901	e2095_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.still_speed 500 --seed 1
+e2096	4769902	e2096_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.still_speed 1000 --env.robot.friction_comp True --seed 0
+e2097	4769903	e2097_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.still_speed 1000 --env.robot.friction_comp True --seed 1

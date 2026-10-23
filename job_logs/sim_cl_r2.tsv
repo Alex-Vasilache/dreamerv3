@@ -1,0 +1,9 @@
+e2116	4769950	e2116_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 0
+e2117	4769951	e2117_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 1
+e2118	4769952	e2118_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --seed 2
+e2119	4769953	e2119_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 10 --seed 0
+e2120	4769954	e2120_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 10 --seed 1
+e2121	4769955	e2121_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 10 --seed 2
+e2122	4769956	e2122_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 20 --seed 0
+e2123	4769957	e2123_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 20 --seed 1
+e2124	4769958	e2124_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:25,carpet --env.robot.sim_carry_s 20 --seed 2

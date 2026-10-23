@@ -1,0 +1,9 @@
+# Command following, round 2 (fit2 sim, 2026-10-23): carpet vs table, with and without the phone's friction compensation
+e2108 flat command 65 v100 --env.robot.sim_surface carpet --seed 0
+e2109 flat command 65 v100 --env.robot.sim_surface carpet --seed 1
+e2110 flat command 65 v100 --env.robot.sim_surface table --seed 0
+e2111 flat command 65 v100 --env.robot.sim_surface table --seed 1
+e2112 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --seed 0
+e2113 flat command 65 v100 --env.robot.sim_surface carpet --env.robot.friction_comp False --seed 1
+e2114 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --seed 0
+e2115 flat command 65 v100 --env.robot.sim_surface table --env.robot.friction_comp False --seed 1

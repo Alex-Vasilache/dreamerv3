@@ -1,0 +1,6 @@
+e2080	4769877	e2080_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:12,table:25,carpet --seed 0
+e2081	4769878	e2081_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:12,table:25,carpet --seed 1
+e2082	4769879	e2082_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:12,table:25,carpet --seed 2
+e2083	4769880	e2083_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 0
+e2084	4769881	e2084_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 1
+e2085	4769882	e2085_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 0

@@ -1,0 +1,9 @@
+# Command following in the MuJoCo sim, round 1 (2026-10-23): why does it fail? 65 Hz, carpet unless set
+e2070 flat command 65 v100 --seed 0
+e2071 flat command 65 v100 --seed 1
+e2072 flat command 65 v100 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --seed 0
+e2073 flat command 65 v100 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --seed 1
+e2074 flat command 65 v100 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --env.robot.sim_surface table --seed 0
+e2075 flat command 65 v100 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --env.robot.sim_surface table --seed 1
+e2076 flat command 65 v100 --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 0
+e2077 flat command 65 v100 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --env.robot.command_reward product --seed 0

@@ -1,0 +1,8 @@
+e2108	4769940	e2108_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 0
+e2109	4769941	e2109_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 1
+e2110	4769942	e2110_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 0
+e2111	4769943	e2111_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 1
+e2112	4769944	e2112_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.friction_comp False --seed 0
+e2113	4769945	e2113_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.friction_comp False --seed 1
+e2114	4769946	e2114_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.friction_comp False --seed 0
+e2115	4769947	e2115_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.friction_comp False --seed 1

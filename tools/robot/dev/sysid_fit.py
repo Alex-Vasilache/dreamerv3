@@ -67,13 +67,15 @@ def arrays(df, a, b):
   return {c: df[c].values[a:b + 1].astype(np.float64) for c in COLUMNS}
 
 
-def windows(df, every=0.5):
-  """(start, end) row ranges of WINDOW seconds, every `every` seconds, that do
-  not span a gap in the recording or two tests of different kinds."""
+def windows(df, every=0.5, window=None):
+  """(start, end) row ranges of `window` (default WINDOW) seconds, every
+  `every` seconds, that do not span a gap in the recording or two tests of
+  different kinds."""
+  window = window or WINDOW
   t = df.t_obs.values
   out, i = [], 0
   while i < len(df):
-    j = np.searchsorted(t, t[i] + WINDOW)
+    j = np.searchsorted(t, t[i] + window)
     if j >= len(df):
       break
     if np.diff(t[i:j + 1]).max() < 0.3:
@@ -254,6 +256,7 @@ def report(problem, motor, floors):
 
 
 def main():
+  global WINDOW
   ap = argparse.ArgumentParser(
       description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
   ap.add_argument('dirs', nargs='+',
@@ -267,12 +270,21 @@ def main():
   ap.add_argument('--joint', action='store_true',
                   help='one fit of motor and floors together, on all data')
   ap.add_argument('--every', type=float, default=0.5)
+  ap.add_argument('--window', type=float, default=1.0,
+                  help='seconds per window; closed-loop balance data '
+                       'diverges open loop, so shorter (0.3) suits it')
+  ap.add_argument('--balance_window', type=float, default=0.3)
+  ap.add_argument('--balance_every', type=float, default=2.0)
+  ap.add_argument('--phases', default='bumper',
+                  help='on-floor phases to use: bumper (the probe), balance '
+                       '(a training run, tools/robot/dev/replay_to_sysid.py)')
   ap.add_argument('--skip', nargs='*', default=[],
                   help='surface:test to leave out, e.g. table:prbs0_0.6')
   ap.add_argument('--start', default=None, help='JSON of a previous result')
   ap.add_argument('--out', default=None, help='write the result as JSON')
   ap.add_argument('--workers', type=int, default=os.cpu_count())
   args = ap.parse_args()
+  WINDOW = args.window
 
   motor = dict(MOTOR)
   floors = {}
@@ -285,9 +297,15 @@ def main():
     if os.path.exists(os.path.join(path, 'air.csv')):
       df = load(path, 'air', ['wait'] + skip)
       air.append((df, windows(df, args.every), True, 'air'))
-    if os.path.exists(os.path.join(path, 'bumper.csv')):
-      df = load(path, 'bumper', ['wait'] + skip)
-      ground.append((df, windows(df, args.every), False, surface))
+    for phase in args.phases.split(','):
+      if os.path.exists(os.path.join(path, phase + '.csv')):
+        df = load(path, phase, ['wait'] + skip)
+        # Closed-loop balancing diverges open loop within a second, so its
+        # windows are shorter (--balance_window).
+        bal = phase == 'balance'
+        ground.append((df, windows(
+            df, args.balance_every if bal else args.every,
+            args.balance_window if bal else None), False, surface))
   if args.start:
     with open(args.start) as f:
       saved = json.load(f)

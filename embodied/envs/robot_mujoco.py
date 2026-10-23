@@ -74,11 +74,14 @@ WHEEL_SPEED_MAX = 5700.0
 PHONE_WHEELS = ('right', 'left')
 
 # Fitted per floor (sysid_fit.py); any of them can be set as an env key.
+# fit2 (2026-10-23, motor and both floors together, global search): rolling
+# resistance on carpet ~140x the table's; `drag` came out alike on both, so
+# it acts more like speed-proportional loss in the drivetrain than a floor.
 SURFACES = {
-    'carpet': dict(rolling=0.0023, contact_tc=0.0175, bumper_friction=0.51,
-                   drag=0.0),
-    'table': dict(rolling=8.2e-5, contact_tc=0.0188, bumper_friction=0.29,
-                  drag=0.0),
+    'carpet': dict(rolling=0.00505, contact_tc=0.041, bumper_friction=0.572,
+                   drag=4.0),
+    'table': dict(rolling=3.5e-5, contact_tc=0.148, bumper_friction=0.345,
+                  drag=4.52),
 }
 
 WHEEL_R = 0.045       # m
@@ -237,8 +240,8 @@ class Physics:
 
   STILL = 0.05  # rad/s: a wheel slower than this takes the sticking friction
 
-  def __init__(self, bumper_back, bumper_front, timestep, wheel_omega=11.4,
-               stall=0.06, stick=0.27, slide=0.09, armature=5e-4,
+  def __init__(self, bumper_back, bumper_front, timestep, wheel_omega=11.61,
+               stall=0.0884, stick=0.385, slide=0.098, armature=4.16e-4,
                unit=548.0, friction=1.0, rolling=0.0, contact_tc=0.02,
                bumper_friction=0.5, drag=0.0, fixed=False):
     self.omega_max = float(wheel_omega)
@@ -265,6 +268,19 @@ class Physics:
   def speed(self):
     """Wheel speeds in the phone's mm/s and sign (forward is negative)."""
     return np.array([self.data.qvel[i] for i in self.dofs]) * self.unit
+
+  def set_floor(self, rolling, contact_tc, bumper_friction, drag):
+    """Change the floor in place: what model_xml sets per surface."""
+    m = self.model
+    for body in self.bodies:
+      for g in range(m.ngeom):
+        if m.geom_bodyid[g] == body and m.geom_contype[g]:
+          m.geom_friction[g, 2] = rolling
+          m.geom_solref[g, 0] = contact_tc
+    for name in ('bumper_back', 'bumper_front'):
+      m.geom_friction[m.geom(name).id, 0] = bumper_friction
+    self.drag = float(drag)
+    self.data.qfrc_applied[:] = 0.0  # the old floor's drag, if any
 
   def step(self, sent, n):
     """`n` physics steps with outputs `sent` (phone order) at the motors."""
@@ -297,11 +313,11 @@ class Physics:
 class RobotMujoco(robot_sim.RobotSim):
 
   def __init__(
-      self, task, sim_hz=None, sim_wheel_omega=11.4, sim_stall_torque=0.06,
-      sim_stick=0.27, sim_slide=0.09, sim_armature=5e-4,
+      self, task, sim_hz=None, sim_wheel_omega=11.61, sim_stall_torque=0.0884,
+      sim_stick=0.385, sim_slide=0.098, sim_armature=4.16e-4,
       sim_speed_unit=548.0, sim_surface='carpet', sim_rolling=None,
       sim_contact_tc=None, sim_bumper_friction=None, sim_drag=None,
-      sim_noise=1.0,
+      sim_schedule='', sim_carry_s=0.0, sim_noise=1.0,
       sim_eq_range=0.0175, sim_substep=0.002, sim_friction=1.0, seed=0,
       **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
@@ -315,12 +331,34 @@ class RobotMujoco(robot_sim.RobotSim):
       kwargs['hz'] = sim_hz
     robot_env.SmartphoneRobot.__init__(
         self, task, seed=seed, onboard=False, reconnect=False, **kwargs)
-    floor = dict(SURFACES[sim_surface])
+    self._overrides = {}
     for key, value in (('rolling', sim_rolling), ('contact_tc', sim_contact_tc),
                        ('bumper_friction', sim_bumper_friction),
                        ('drag', sim_drag)):
       if value is not None:
-        floor[key] = float(value)
+        self._overrides[key] = float(value)
+    # sim_schedule: move the robot to another floor while it trains, as a
+    # person does with the real one: 'carpet:10,table:20,carpet' is 10 min
+    # on carpet, 20 on the table, then carpet for good (minutes of sim time).
+    # At each move the robot is picked up and set down on a bumper.
+    self._schedule = []
+    at = 0.0
+    for part in [p for p in str(sim_schedule).split(',') if p.strip()]:
+      name, _, minutes = part.strip().partition(':')
+      assert name in SURFACES, name
+      self._schedule.append((at, name))
+      at += float(minutes) * 60 if minutes else np.inf
+    if self._schedule:
+      sim_surface = self._schedule[0][1]
+    self.surface = sim_surface
+    self._sim_time = 0.0
+    # sim_carry_s: a move takes this long in someone's hands -- lifted, the
+    # wheels in the air under the policy's outputs, the body swinging through
+    # +-15 deg -- before it is set down on the new floor. Training goes on
+    # through it, as it does on the robot.
+    self.carry_s = float(sim_carry_s)
+    self._carry = None   # (seconds left, destination, phase)
+    floor = dict(SURFACES[sim_surface], **self._overrides)
     self.track = 2 * HALF_TRACK
     self.noise = float(sim_noise)
     self.substeps = max(1, int(round(1.0 / self.hz / float(sim_substep))))
@@ -398,6 +436,32 @@ class RobotMujoco(robot_sim.RobotSim):
     """Wheel speeds in the phone's mm/s and sign (forward is negative)."""
     return self.physics.speed
 
+  def _hold(self, dt):
+    """Carried: the body 12 cm up, swinging slowly; the wheels spin free."""
+    left, _, phase = self._carry
+    t = self.carry_s - left
+    swing = math.radians(15.0)
+    theta = self.theta_zero + swing * math.sin(2 * math.pi * 0.3 * t + phase)
+    rate = swing * 2 * math.pi * 0.3 * math.cos(2 * math.pi * 0.3 * t + phase)
+    self.theta = theta
+    self.data.qpos[2] = 0.12
+    self.data.qvel[0:3] = 0.0
+    self.data.qvel[3] = -rate
+    self.data.qvel[4:6] = 0.0
+    mujoco.mj_forward(self.model, self.data)
+
+  def move_to(self, surface):
+    """Pick the robot up and set it down on another floor, on a bumper."""
+    if hasattr(self, '_drag_saved'):
+      del self._drag_saved
+    self.physics.set_floor(**dict(SURFACES[surface], **self._overrides))
+    print(f'[robot sim] {self._sim_time / 60:.1f} min: moved from '
+          f'{self.surface} to {surface}', flush=True)
+    self.surface = surface
+    self.data.qvel[:] = 0.0
+    self.theta = self.theta_zero + (
+        self.bumper_hi if self.sim_rng.rand() < 0.5 else self.bumper_lo)
+
   def _compensate(self, a, speed, wheel):
     """The phone's friction_comp (main.py compensate), when the run asks."""
     if abs(a) < 0.02:
@@ -424,8 +488,30 @@ class RobotMujoco(robot_sim.RobotSim):
         u = self._compensate(u, speed[i], i)
       out, self.requested[i] = phone_output(u, speed[i], self.requested[i])
       sent.append(out)
+    if self._carry:
+      self._hold(dt)
     self.physics.step(sent, self.substeps)
+    if self._carry:
+      self._hold(dt)
     self._sample_command(dt)
+    self._sim_time += dt
+    if self._carry:
+      left, dest, phase = self._carry
+      self._carry = (left - dt, dest, phase) if left > dt else None
+      if not self._carry:
+        self.move_to(dest)
+    elif self._schedule:
+      due = [name for at, name in self._schedule if at <= self._sim_time][-1]
+      if due != self.surface:
+        if self.carry_s:
+          print(f'[robot sim] {self._sim_time / 60:.1f} min: picked up',
+                flush=True)
+          self._carry = (self.carry_s, due, self.sim_rng.uniform(0, 6.28))
+          self._drag_saved = self.physics.drag
+          self.physics.drag = 0.0
+          self.data.qfrc_applied[:] = 0.0
+        else:
+          self.move_to(due)
     speed = self.speed
     self.distance += speed * dt
     n = self.noise

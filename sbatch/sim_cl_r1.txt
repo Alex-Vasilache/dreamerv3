@@ -1,0 +1,7 @@
+# Continual learning in the MuJoCo sim, round 1 (2026-10-23): balance on carpet, moved to the table at 12 min, back to carpet at 37 min
+e2080 flat balance 65 p100 --env.robot.sim_schedule carpet:12,table:25,carpet --seed 0
+e2081 flat balance 65 p100 --env.robot.sim_schedule carpet:12,table:25,carpet --seed 1
+e2082 flat balance 65 p100 --env.robot.sim_schedule carpet:12,table:25,carpet --seed 2
+e2083 flat balance 65 p100 --env.robot.sim_surface table --seed 0
+e2084 flat balance 65 p100 --env.robot.sim_surface table --seed 1
+e2085 flat balance 65 p100 --env.robot.sim_surface carpet --seed 0

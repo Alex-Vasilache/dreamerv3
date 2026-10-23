@@ -1,0 +1,13 @@
+# fit2 sim (2026-10-23): how it balances on each floor, and rewards that keep the table robot still
+e2086 flat balance 65 a100s --env.robot.sim_surface carpet --seed 0
+e2087 flat balance 65 a100s --env.robot.sim_surface carpet --seed 1
+e2088 flat balance 65 a100s --env.robot.sim_surface table --seed 0
+e2089 flat balance 65 a100s --env.robot.sim_surface table --seed 1
+e2090 flat balance 65 a100s --env.robot.sim_surface table --env.robot.wheel_penalty 0.6 --seed 0
+e2091 flat balance 65 a100s --env.robot.sim_surface table --env.robot.wheel_penalty 0.6 --seed 1
+e2092 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 1000 --seed 0
+e2093 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 1000 --seed 1
+e2094 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 500 --seed 0
+e2095 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 500 --seed 1
+e2096 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 1000 --env.robot.friction_comp True --seed 0
+e2097 flat balance 65 a100s --env.robot.sim_surface table --env.robot.still_speed 1000 --env.robot.friction_comp True --seed 1

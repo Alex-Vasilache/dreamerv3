@@ -1,0 +1,8 @@
+e2070	4769865	e2070_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --seed 0
+e2071	4769866	e2071_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --seed 1
+e2072	4769867	e2072_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --seed 0
+e2073	4769868	e2073_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --seed 1
+e2074	4769869	e2074_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --env.robot.sim_surface table --seed 0
+e2075	4769870	e2075_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --env.robot.sim_surface table --seed 1
+e2076	4769871	e2076_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.command_speed 2500 --env.robot.command_turn 2500 --seed 0
+e2077	4769872	e2077_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.command_speed 1500 --env.robot.command_turn 1500 --env.robot.command_reward product --seed 0
