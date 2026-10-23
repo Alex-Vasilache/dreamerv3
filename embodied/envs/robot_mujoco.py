@@ -24,20 +24,34 @@ physical numbers are taken; the meshes are visual and left out. What is ours:
   Up to 2026-10-23 this model and robot_sim.py had it the other way round.
 * The balance point theta_eq, drawn per run within +-sim_eq_range of
   theta_zero by shifting the CoM fore and aft, since the real one is unknown.
-* The motors. Their model drives the wheels with an ideal torque source,
-  which their notes say overshoots the real top speed 2.8x. Here each wheel
-  is a DC gear motor: torque = stall * (target - omega) / omega_max with
-  target = -output * omega_max (positive output drives forward, which is
-  negative wheel speed), so a free wheel settles at its no-load speed with
-  the time constant set by the rotor inertia (armature), and a loaded one
-  slower -- the back-EMF that a torque source lacks. Without friction_comp the
-  measured dead zone (0.06) and stiction (0.3 to start a still wheel) apply.
-* Units. Wheel speeds come out in the phone's mm/s, which assume a 30 mm
-  wheel and count motor-side encoder ticks: sim_air_speed (5700, measured in
-  the air at full output) maps onto sim_wheel_omega, the true no-load wheel
-  speed in rad/s. 6.3 rad/s is ~0.28 m/s at the rim, consistent with their
-  hardware measurement of ~135 mm/s at half output. The ~20x between the two
-  is the gearbox the phone's conversion leaves out.
+* The motors (fitted 2026-10-23 to tools/robot/dev/sysid_probe.py
+  recordings, tools/robot/dev/sysid_fit.py). Their model drives the wheels
+  with an ideal torque source, which their notes say overshoots the real top
+  speed 2.8x. Here each wheel is a DC gear motor, torque = -stall * (u +
+  omega / omega_max) for output u (positive output drives forward, which is
+  negative wheel speed), against the gearbox's dry friction: sim_stick to
+  start a still wheel, sim_slide once it turns, both as fractions of stall.
+  The gearbox does not back-drive: with the motors at rest the encoders stay
+  put while the body falls, so the wheels turn with the body and the robot
+  rolls as one piece. The phone's own handling of an output comes first, as
+  on the robot: within CURRENT_GAP of the output that holds the wheel's
+  speed, and inside its dead zone +-MIN_DRIVE with the last output's sign
+  (dreamerBridge main.py: limit_current, zero_fix).
+* Units. Wheel speeds come out in the phone's mm/s, sim_speed_unit of them
+  per rad/s of true wheel speed. The phone counts motor-side encoder ticks
+  and assumes a 30 mm wheel; spinning in place, the gyro turned 1.65x faster
+  than the wheels would at 905 phone mm/s per rad/s, on carpet and on the
+  table alike and at every speed, so the unit is 548 and the wheels do not
+  slip in a turn. Full output in the air is 5690 phone mm/s, ~10.4 rad/s.
+* The floor (sim_surface). The wheels roll against MuJoCo's rolling friction
+  and a contact of time constant sim_contact_tc, and the bumpers slide with
+  sim_bumper_friction; 'carpet' and 'table' are fitted to each. On carpet the
+  robot, its wheels held by the gearbox, can stay put leaning 3-5 deg, and a
+  60 ms kick at 0.8 lifts it 6-9 deg off a bumper where on the table it goes
+  over to the other one.
+* Sides. The phone's _l wheel is the robot's right one, given that forward is
+  negative wheel speed: speed_l > speed_r is a right turn, as the gyro shows
+  (robot.py yaw_sign). Up to 2026-10-23 this model had them the other way.
 * Timing: one tick between an observation and the action it prompts taking
   effect (the pipelined protocol), and the phone's sensor noise, as in
   robot_sim.py. The physics steps at ~2 ms, a whole number per tick.
@@ -50,6 +64,22 @@ import numpy as np
 
 from embodied.envs import robot as robot_env
 from embodied.envs import robot_sim
+
+# What the phone does to an output before the base gets it (main.py).
+DEAD_ZONE = 0.097
+MIN_DRIVE = 0.13
+CURRENT_GAP = 1.0
+WHEEL_SPEED_MAX = 5700.0
+# Joint names in the phone's order: its _l wheel is the robot's right.
+PHONE_WHEELS = ('right', 'left')
+
+# Fitted per floor (sysid_fit.py); any of them can be set as an env key.
+SURFACES = {
+    'carpet': dict(rolling=0.0023, contact_tc=0.0175, bumper_friction=0.51,
+                   drag=0.0),
+    'table': dict(rolling=8.2e-5, contact_tc=0.0188, bumper_friction=0.29,
+                  drag=0.0),
+}
 
 WHEEL_R = 0.045       # m
 HALF_TRACK = 0.05933  # m, axle centre to wheel centre
@@ -80,7 +110,8 @@ MESHES = {
 
 
 def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
-              armature=5e-4, friction=1.0, visual=None, meshdir=None):
+              armature=5e-4, friction=1.0, rolling=0.0, contact_tc=0.02,
+              bumper_friction=0.5, fixed=False, visual=None, meshdir=None):
   """MJCF of the robot. bumper_back > 0 and bumper_front > 0 are the pitch
   magnitudes (rad, from geometric upright) at which the body rests on the rear
   and front bumper. `visual` (an RGB phone colour) adds what a video needs --
@@ -88,7 +119,9 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
   `meshdir` draws the robot with the rlSim2Real meshes (MESHES), hiding the
   physics shapes; without it a box stands in for the phone. None of this
   touches the physics: every visual geom is massless and collides with
-  nothing."""
+  nothing. `rolling` is the wheels' rolling friction (m) and `contact_tc` the
+  time constant of their contact with the floor (s); `fixed` holds the body
+  in the air, wheels free, as on the stand the motors were measured on."""
   zb, zf = _bumper_z(BACK_ARM, bumper_back), _bumper_z(FRONT_ARM, bumper_front)
   meshes = visual is not None and meshdir is not None
   show = lambda rgba: 'rgba="0 0 0 0"' if meshes else f'rgba="{rgba}"'
@@ -146,7 +179,8 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
         <joint name="{name}" type="hinge" axis="1 0 0" armature="{armature}"
                damping="1e-5" frictionloss="0.001"/>
         <geom type="cylinder" size="{WHEEL_R} 0.0084" euler="0 90 0"
-              friction="{friction} 0.005 0.0001" {show('.15 .15 .15 1')}/>
+              condim="6" friction="{friction} 0.005 {rolling}"
+              solref="{contact_tc} 1" {show('.15 .15 .15 1')}/>
         {mesh('spr_wheel_' + name, '.15 .15 .15 1')}
         <inertial pos="0 0 0" mass="0.035" diaginertia="3.54e-05 1.85e-05 1.85e-05"/>
       </body>"""
@@ -154,39 +188,124 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
 <mujoco model="spr">
   <option timestep="{timestep}" integrator="implicitfast"/>{head}
   <worldbody>
-    <geom name="floor" type="plane" size="50 50 0.1" rgba=".8 .8 .8 1" {floor}/>
-    <body name="robot" pos="0 0 {WHEEL_R}">
-      <freejoint name="robot"/>
+    <!-- MuJoCo takes the larger of two geoms' frictions: the floor's is low
+         so that the wheels' and bumpers' own are the ones that apply. -->
+    <geom name="floor" type="plane" size="50 50 0.1" rgba=".8 .8 .8 1"
+          friction="0.01 0 0" {floor}/>
+    <body name="robot" pos="0 0 {0.3 if fixed else WHEEL_R}">
+      {'' if fixed else '<freejoint name="robot"/>'}
       <inertial pos="0 0 {com_z}" mass="0.514"
                 diaginertia="0.000648 0.000759 0.00037"/>
       <geom name="chassis" type="box" size="0.042 0.075 0.006" pos="0 0 -0.025"
             {show('.85 .85 .85 1')} {ghost}/>
       <geom name="bumper_back" type="capsule" size="{CAPSULE_R}"
             fromto="-0.03 {-BACK_ARM} {zb} 0.03 {-BACK_ARM} {zb}"
-            density="0" friction="0.5 0.005 0.0001" {show('.9 .3 .2 1')}/>
+            density="0" friction="{bumper_friction} 0.005 0.0001" {show('.9 .3 .2 1')}/>
       <geom name="bumper_front" type="capsule" size="{CAPSULE_R}"
             fromto="-0.03 {FRONT_ARM} {zf} 0.03 {FRONT_ARM} {zf}"
-            density="0" friction="0.5 0.005 0.0001" {show('.9 .3 .2 1')}/>{body_extra}
+            density="0" friction="{bumper_friction} 0.005 0.0001" {show('.9 .3 .2 1')}/>{body_extra}
       {wheel('left', -HALF_TRACK)}
       {wheel('right', HALF_TRACK)}
     </body>
   </worldbody>
+  <!-- Torque gain * ctrl + bias * wheel speed: Physics sets the gain to the
+       stall torque and the bias to its back-EMF, -stall / omega_max, which
+       the implicitfast integrator then treats implicitly. -->
   <actuator>
-    <motor name="left" joint="left"/>
-    <motor name="right" joint="right"/>
+    <general name="left" joint="left" gainprm="1" biastype="affine"
+             biasprm="0 0 0"/>
+    <general name="right" joint="right" gainprm="1" biastype="affine"
+             biasprm="0 0 0"/>
   </actuator>
 </mujoco>"""
+
+
+def phone_output(u, speed, previous):
+  """What the base gets for output `u` (dreamerBridge main.py drive):
+  limit_current against the wheel's phone speed, then zero_fix against the
+  previous requested output. Returns (sent, requested)."""
+  held = -float(speed) / WHEEL_SPEED_MAX
+  u = max(held - CURRENT_GAP, min(held + CURRENT_GAP, float(u)))
+  if abs(u) >= DEAD_ZONE:
+    return u, u
+  return (MIN_DRIVE if previous >= 0 else -MIN_DRIVE), u
+
+
+class Physics:
+  """The body, its two gear motors and the floor, stepped at the output the
+  base was sent. Wheel quantities are in the phone's order (_l first)."""
+
+  STILL = 0.05  # rad/s: a wheel slower than this takes the sticking friction
+
+  def __init__(self, bumper_back, bumper_front, timestep, wheel_omega=11.4,
+               stall=0.06, stick=0.27, slide=0.09, armature=5e-4,
+               unit=548.0, friction=1.0, rolling=0.0, contact_tc=0.02,
+               bumper_friction=0.5, drag=0.0, fixed=False):
+    self.omega_max = float(wheel_omega)
+    self.stall = float(stall)
+    self.stick = float(stick) * self.stall   # N m
+    self.slide = float(slide) * self.stall
+    self.unit = float(unit)
+    self.drag = 0.0 if fixed else float(drag)   # N per m/s, both wheels
+    self.model = mujoco.MjModel.from_xml_string(model_xml(
+        bumper_back, bumper_front, timestep=timestep, armature=armature,
+        friction=friction, rolling=rolling, contact_tc=contact_tc,
+        bumper_friction=bumper_friction, fixed=fixed))
+    self.data = mujoco.MjData(self.model)
+    joints = [self.model.joint(n).id for n in PHONE_WHEELS]
+    self.dofs = [int(self.model.jnt_dofadr[j]) for j in joints]
+    self.acts = [self.model.actuator(n).id for n in PHONE_WHEELS]
+    for act in self.acts:
+      self.model.actuator_gainprm[act, 0] = self.stall
+      self.model.actuator_biasprm[act, 2] = -self.stall / self.omega_max
+    self.bodies = [self.model.body(n).id for n in PHONE_WHEELS]
+    self._vel = np.zeros(6)
+
+  @property
+  def speed(self):
+    """Wheel speeds in the phone's mm/s and sign (forward is negative)."""
+    return np.array([self.data.qvel[i] for i in self.dofs]) * self.unit
+
+  def step(self, sent, n):
+    """`n` physics steps with outputs `sent` (phone order) at the motors."""
+    m, d = self.model, self.data
+    for _ in range(n):
+      for u, dof, act in zip(sent, self.dofs, self.acts):
+        w = float(d.qvel[dof])
+        d.ctrl[act] = -u
+        m.dof_frictionloss[dof] = (
+            self.stick if abs(w) < self.STILL else self.slide)
+      if self.drag:
+        self._floor_drag()
+      mujoco.mj_step(m, d)
+
+  def _floor_drag(self):
+    """A floor that drags on a rolling wheel in proportion to its speed, at
+    the point where it touches: carpet. Applied there, it pitches the body
+    the way a wheel stopping on the floor does."""
+    m, d = self.model, self.data
+    d.qfrc_applied[:] = 0.0
+    for body in self.bodies:
+      mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_BODY, body,
+                               self._vel, 0)
+      force = -0.5 * self.drag * np.array([self._vel[3], self._vel[4], 0.0])
+      point = d.xpos[body] - np.array([0.0, 0.0, WHEEL_R])
+      mujoco.mj_applyFT(m, d, force, np.zeros(3), point, body,
+                        d.qfrc_applied)
 
 
 class RobotMujoco(robot_sim.RobotSim):
 
   def __init__(
-      self, task, sim_hz=None, sim_wheel_omega=6.3, sim_stall_torque=0.06,
-      sim_armature=5e-4, sim_air_speed=5700.0, sim_noise=1.0,
+      self, task, sim_hz=None, sim_wheel_omega=11.4, sim_stall_torque=0.06,
+      sim_stick=0.27, sim_slide=0.09, sim_armature=5e-4,
+      sim_speed_unit=548.0, sim_surface='carpet', sim_rolling=None,
+      sim_contact_tc=None, sim_bumper_friction=None, sim_drag=None,
+      sim_noise=1.0,
       sim_eq_range=0.0175, sim_substep=0.002, sim_friction=1.0, seed=0,
       **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
-                'pace', 'config', 'policy_dir'):
+                'pace', 'config', 'policy_dir', 'sim_air_speed'):
       kwargs.pop(key, None)
     # Keys of the planar model; not used here.
     for key in ('sim_w0', 'sim_length', 'sim_damping', 'sim_motor_tau',
@@ -196,22 +315,24 @@ class RobotMujoco(robot_sim.RobotSim):
       kwargs['hz'] = sim_hz
     robot_env.SmartphoneRobot.__init__(
         self, task, seed=seed, onboard=False, reconnect=False, **kwargs)
-    self.omega_max = float(sim_wheel_omega)
-    self.stall = float(sim_stall_torque)
-    self.unit = float(sim_air_speed) / self.omega_max  # phone mm/s per rad/s
+    floor = dict(SURFACES[sim_surface])
+    for key, value in (('rolling', sim_rolling), ('contact_tc', sim_contact_tc),
+                       ('bumper_friction', sim_bumper_friction),
+                       ('drag', sim_drag)):
+      if value is not None:
+        floor[key] = float(value)
     self.track = 2 * HALF_TRACK
     self.noise = float(sim_noise)
     self.substeps = max(1, int(round(1.0 / self.hz / float(sim_substep))))
     self.sim_rng = np.random.RandomState(seed + 7919)
-    self.model = mujoco.MjModel.from_xml_string(model_xml(
-        bumper_back=-self.bumper_lo, bumper_front=self.bumper_hi,
-        timestep=1.0 / self.hz / self.substeps, armature=float(sim_armature),
-        friction=float(sim_friction)))
-    self.data = mujoco.MjData(self.model)
+    self.physics = Physics(
+        -self.bumper_lo, self.bumper_hi, 1.0 / self.hz / self.substeps,
+        wheel_omega=sim_wheel_omega, stall=sim_stall_torque, stick=sim_stick,
+        slide=sim_slide, armature=float(sim_armature), unit=sim_speed_unit,
+        friction=float(sim_friction), **floor)
+    self.model, self.data = self.physics.model, self.physics.data
     self._body = self.model.body('robot').id
     self._com = self.model.body_ipos[self._body].copy()
-    self._wheels = [self.model.jnt_dofadr[self.model.joint(n).id]
-                    for n in ('left', 'right')]
     # Upright in MuJoCo is theta_zero here: the phone reads tilt from its own
     # mount, and theta_zero is where that reading was set to zero by eye.
     self.theta_eq = self.theta_zero + self.sim_rng.uniform(
@@ -221,6 +342,8 @@ class RobotMujoco(robot_sim.RobotSim):
         self.bumper_hi if self.sim_rng.rand() < 0.5 else self.bumper_lo)
     self.distance = np.zeros(2)    # phone mm
     self.applied = np.zeros(2)
+    self.requested = np.zeros(2)   # the phone's last_command
+    self.kicked = [False, False]
     self.previous = np.zeros(2)
     self.pending = np.zeros(2)
     self.cmd_target = (0.0, 0.0)
@@ -273,7 +396,19 @@ class RobotMujoco(robot_sim.RobotSim):
   @property
   def speed(self):
     """Wheel speeds in the phone's mm/s and sign (forward is negative)."""
-    return np.array([self.data.qvel[i] for i in self._wheels]) * self.unit
+    return self.physics.speed
+
+  def _compensate(self, a, speed, wheel):
+    """The phone's friction_comp (main.py compensate), when the run asks."""
+    if abs(a) < 0.02:
+      self.kicked[wheel] = False
+      return 0.0
+    out = math.copysign(0.12 + 0.88 * abs(a), a)
+    if abs(speed) < 100.0 and not self.kicked[wheel] and abs(out) < 0.32:
+      self.kicked[wheel] = True
+      return math.copysign(0.32, a)
+    self.kicked[wheel] = False
+    return out
 
   def _yaw(self):
     w, x, y, z = self.data.qpos[3:7]
@@ -282,12 +417,14 @@ class RobotMujoco(robot_sim.RobotSim):
   def _recv(self):
     dt = 1.0 / self.hz
     self.applied, self.previous = self.previous, self.pending
-    for _ in range(self.substeps):
-      for i, (u, dof) in enumerate(zip(self.applied, self._wheels)):
-        w = float(self.data.qvel[dof])
-        target = -self._motor(u, w * self.unit) * self.omega_max
-        self.data.ctrl[i] = self.stall * (target - w) / self.omega_max
-      mujoco.mj_step(self.model, self.data)
+    speed = self.speed
+    sent = []
+    for i, u in enumerate(np.clip(self.applied, -1.0, 1.0)):
+      if self.friction_comp:
+        u = self._compensate(u, speed[i], i)
+      out, self.requested[i] = phone_output(u, speed[i], self.requested[i])
+      sent.append(out)
+    self.physics.step(sent, self.substeps)
     self._sample_command(dt)
     speed = self.speed
     self.distance += speed * dt

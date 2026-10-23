@@ -303,6 +303,13 @@ Copies are kept in `~/logdir/robot_policies/`.
   replay); until 2026-10-23 both sims had that coupling backwards, which
   mirrors the task but does not make it harder, so results within the sim
   stand. `embodied/tests/test_robot_sim.py` checks signs and bumper stops.
+  The motors and the floor are fitted to recordings of the robot:
+  `tools/robot/dev/sysid_probe.py` drives it through scripted wheel tests
+  (on a stand, then per floor) and `tools/robot/dev/sysid_fit.py` fits the
+  model to them. `--env.robot.sim_surface carpet` (default) or `table` picks
+  the floor; on carpet the robot learns to balance faster, and the fit shows
+  why: carpet damps the body's motion where the table lets small pushes
+  carry it over to the other bumper.
 
 ## Flash a base
 
@@ -351,7 +358,7 @@ git clone -b telemetry-cache https://github.com/Alex-Vasilache/smartphone-robot-
 | `tools/robot/trainer_job.sh` | the learner itself (Slurm job or local process) |
 | `tools/robot/demo_supervisor.py` | runs the learner as restartable sessions (`demo.sh`) |
 | `tools/robot/common.sh`, `robot.env.example` | shared settings |
-| `tools/robot/dev/` | development: fake phones, policy export and its numerical test, protocol test, latency probes, learner benchmark, sweep plots, and `check_app_copies.sh` (the app carries copies of three `dreamerv3/deploy/` modules; run it after changing them) |
+| `tools/robot/dev/` | development: fake phones, policy export and its numerical test, protocol test, latency probes, the sim's system identification (`sysid_probe.py`, `sysid_fit.py`), learner benchmark, sweep plots, and `check_app_copies.sh` (the app carries copies of three `dreamerv3/deploy/` modules; run it after changing them) |
 
 Code: `embodied/envs/robot.py` (env, reward, link to the phone),
 `dreamerv3/deploy/` (on-phone policy in numpy, export, link protocol), robot

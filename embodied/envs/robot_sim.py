@@ -57,8 +57,9 @@ class RobotSim(robot_env.SmartphoneRobot):
       kwargs.pop(key, None)
     # Keys of the MuJoCo model (robot_mujoco.py); not used here.
     for key in ('sim_wheel_omega', 'sim_stall_torque', 'sim_armature',
-                'sim_air_speed',
-                'sim_friction'):
+                'sim_air_speed', 'sim_friction', 'sim_stick', 'sim_slide',
+                'sim_speed_unit', 'sim_surface', 'sim_rolling',
+                'sim_contact_tc', 'sim_bumper_friction', 'sim_drag'):
       kwargs.pop(key, None)
     if sim_hz:  # config.yaml of a run from before env.robot.hz
       kwargs['hz'] = sim_hz
