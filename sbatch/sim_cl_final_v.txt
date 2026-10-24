@@ -1,0 +1,2 @@
+e2411 flat balance 65 v100 --env.robot.sim_schedule carpet:15,table:30,carpet --replay.size 1e5 --online_actor_replay_size 100000 --seed 72
+e2412 flat balance 65 v100 --env.robot.sim_schedule carpet:15,table:30,carpet --replay.size 1e5 --online_actor_replay_size 100000 --seed 73

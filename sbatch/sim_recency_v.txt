@@ -1,0 +1,4 @@
+e2421 flat balance 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 64
+e2422 flat balance 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 65
+e2423 flat balance 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 66
+e2424 flat balance 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 67

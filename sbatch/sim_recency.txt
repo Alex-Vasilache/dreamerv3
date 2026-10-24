@@ -1,0 +1,9 @@
+# Replay 1e6 + recency 0.5 (2026-10-24): command speed on carpet and late collapse, n=4 each
+e2417 flat command 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 50
+e2418 flat command 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 51
+e2419 flat command 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 52
+e2420 flat command 65 v100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 53
+e2421 flat balance 65 p100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 64
+e2422 flat balance 65 p100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 65
+e2423 flat balance 65 p100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 66
+e2424 flat balance 65 p100 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 67

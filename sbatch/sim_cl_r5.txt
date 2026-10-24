@@ -1,0 +1,10 @@
+# Floor switch, round 5 (fit2 sim, 2026-10-23): decay toward init (L2-init) vs toward zero
+e2225 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 0
+e2226 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 1
+e2227 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 1e-1 --agent.ac_opt.wd 1e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 2
+e2228 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 0
+e2229 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 1
+e2230 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --agent.opt.wdinit True --agent.ac_opt.wdinit True --seed 2
+e2231 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --seed 0
+e2232 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --seed 1
+e2233 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:25,carpet --agent.opt.wd 3e-1 --agent.ac_opt.wd 3e-1 --seed 2

@@ -1,0 +1,8 @@
+e2417	4771142	e2417_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 50
+e2418	4771143	e2418_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 51
+e2419	4771144	e2419_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 52
+e2420	4771145	e2420_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 53
+e2421	4771146	e2421_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 64
+e2422	4771147	e2422_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 65
+e2423	4771148	e2423_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 66
+e2424	4771149	e2424_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 67

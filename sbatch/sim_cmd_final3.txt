@@ -1,0 +1,5 @@
+# Final recipe (f3c96d2, replay 1e6 default) command following on the table, n=4
+e2413 flat command 65 v100 --env.robot.sim_surface table --seed 50
+e2414 flat command 65 v100 --env.robot.sim_surface table --seed 51
+e2415 flat command 65 v100 --env.robot.sim_surface table --seed 52
+e2416 flat command 65 v100 --env.robot.sim_surface table --seed 53

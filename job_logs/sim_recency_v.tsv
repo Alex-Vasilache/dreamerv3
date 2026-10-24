@@ -1,0 +1,4 @@
+e2421	4771159	e2421_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 64
+e2422	4771160	e2422_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 65
+e2423	4771161	e2423_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 66
+e2424	4771162	e2424_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.fracs.uniform 0.5 --replay.fracs.recency 0.5 --seed 67

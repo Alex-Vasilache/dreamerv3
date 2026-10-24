@@ -1,0 +1,2 @@
+e2411	4771157	e2411_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:30,carpet --replay.size 1e5 --online_actor_replay_size 100000 --seed 72
+e2412	4771158	e2412_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:30,carpet --replay.size 1e5 --online_actor_replay_size 100000 --seed 73
