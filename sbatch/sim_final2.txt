@@ -1,0 +1,20 @@
+# Final validation 2 (5ddd.., 2026-10-24): refitted floors (carpet fit6 with stiction, table fit5), final blocks
+e2362 flat command 65 v100 --env.robot.sim_surface carpet --seed 50
+e2363 flat command 65 v100 --env.robot.sim_surface carpet --seed 51
+e2364 flat command 65 v100 --env.robot.sim_surface carpet --seed 52
+e2365 flat command 65 v100 --env.robot.sim_surface carpet --seed 53
+e2366 flat command 65 v100 --env.robot.sim_surface table --seed 50
+e2367 flat command 65 v100 --env.robot.sim_surface table --seed 51
+e2368 flat command 65 v100 --env.robot.sim_surface table --seed 52
+e2369 flat command 65 v100 --env.robot.sim_surface table --seed 53
+e2370 flat balance 65 p100 --env.robot.sim_surface carpet --seed 50
+e2371 flat balance 65 p100 --env.robot.sim_surface carpet --seed 51
+e2372 flat balance 65 p100 --env.robot.sim_surface carpet --seed 52
+e2373 flat balance 65 p100 --env.robot.sim_surface table --seed 50
+e2374 flat balance 65 p100 --env.robot.sim_surface table --seed 51
+e2375 flat balance 65 p100 --env.robot.sim_surface table --seed 52
+e2376 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 50
+e2377 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 51
+e2378 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 52
+e2379 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 53
+e2380 flat balance 65 p100 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 54

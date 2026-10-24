@@ -1,0 +1,19 @@
+e2362	4771023	e2362_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 50
+e2363	4771024	e2363_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 51
+e2364	4771025	e2364_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 52
+e2365	4771026	e2365_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 53
+e2366	4771027	e2366_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 50
+e2367	4771028	e2367_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 51
+e2368	4771029	e2368_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 52
+e2369	4771030	e2369_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 53
+e2370	4771031	e2370_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 50
+e2371	4771032	e2371_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 51
+e2372	4771033	e2372_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 52
+e2373	4771034	e2373_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 50
+e2374	4771035	e2374_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 51
+e2375	4771036	e2375_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 52
+e2376	4771037	e2376_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 50
+e2377	4771038	e2377_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 51
+e2378	4771039	e2378_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 52
+e2379	4771040	e2379_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 53
+e2380	4771041	e2380_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_schedule carpet:15,table:20,carpet --seed 54
