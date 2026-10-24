@@ -19,10 +19,15 @@ repo `EXPERIMENTS.md`), launchers `sbatch/sim_*.txt`, figures in
    run), not by the reward.
 2. **Balance still on the table:** the `robot` block's `wheel_penalty` is now
    1.5 (was 0.3; e2078 used 0.6). No other change needed (see 3).
+   The `robot` block also keeps all experience now (`replay.size` 1e6, was
+   1e5): with the old 26-min buffer a policy that had stood still for half
+   an hour forgot how to get off a bumper (see 5).
 3. **Carpet → table:** the sim does not reproduce "never re-learns" with the
    floors as fitted; with a carpet that holds the wheels (as the real one
    does) it re-learns ~1.5x slower than a fresh run, and none of weight
-   decay, L2-init or a bigger replay fixes that (see 4). What would tell us
+   decay, L2-init or a bigger replay fixes that (see 4). The forgetting
+   half (back on carpet it is worse) matches replay eviction, now fixed
+   (see 5). What would tell us
    most is one real run with the floor written down: carpet ~10 min, table
    ~20 min, carpet ~10 min, `wheel_penalty` 1.5.
 
@@ -149,9 +154,51 @@ run (For Monday, 3).
 
 ![floor switch](figs/weekend/floor_switch_r6.png)
 
-## 5. Final validation (refitted floors, final blocks)
+## 5. Late collapse, and keeping all experience
 
-(Filled in when e2362–e2380 finish.)
+On the refitted carpet (with stiction) the balance policy ends up standing
+perfectly still -- wheels at the sensor-noise floor, outputs inside the
+stiction band -- and then, 25–55 min in, creeps over and falls onto the front
+bumper, where it stays for minutes (e2370–e2372: 3/3 seeds). By then the
+26-minute FIFO replay (1e5 steps) holds no example of getting off a bumper.
+Keeping all experience (`replay.size 1e6`, `online_actor_replay_size 1e6`)
+removes it:
+
+| replay | n | seeds that fell after min 10 | bumper-minutes after min 10 |
+|---|---|---|---|
+| 1e5 FIFO (old) | 8 | 8 | 3.1 ± 2.8 |
+| 1e6 (new default) | 8 | 1 (0.3 min) | 0.04 ± 0.1 |
+| 1e5 with wheel_penalty 0.3 | 2 | 2 | 4.1 ± 0.5 |
+
+80–100 min runs, e2381–e2398. This is the forgetting half of "back on
+carpet it does not balance as before": any session longer than ~26 min on
+one floor evicts the other floor's experience with the old buffer. 1e6
+steps is 4.3 h at 65 Hz, ~3.8 GB of RAM per hour of experience. The cost:
+command following on carpet may learn turns more slowly with all experience
+kept (17.6 ± 3.2 vs 8.5 ± 5.3 min, n=4); forward and the table are within
+noise (table below). Replay 1e6 with half of each batch from recent
+experience (`replay.fracs`) is being checked (e2417–e2424).
+
+![late collapse](figs/weekend/late_collapse.png)
+
+## 6. Final validation (refitted floors, final blocks)
+
+`robot robot_command robot_sim` and `robot robot_sim` as committed, floor
+and seed only. Minutes to correlation 0.7 between command and measured
+speed, and the last ~2 min:
+
+| floor | replay | n | forward (min) | turn (min) | forward gain (late) |
+|---|---|---|---|---|---|
+| table (fit5) | 1e5 | 4 | 10.4 ± 2.2 | 8.9 ± 1.4 | 0.94 ± 0.03 |
+| table (fit5) | 1e6 | 4 | 11.6 ± 2.3 | 8.6 ± 4.0 | 0.98 ± 0.04 |
+| carpet (fit6, stiction) | 1e5 | 4 | 29.4 ± 11.3 | 8.5 ± 5.3 | 0.71 ± 0.17 |
+| carpet (fit6, stiction) | 1e6 | 4 | 36.4 ± 15.1 | 17.6 ± 3.2 | 0.66 ± 0.07 |
+
+Balance (`robot`, wheel_penalty 1.5): carpet 2.3 ± 0.2 min, table
+5.5 ± 0.2 min to hold 0.6 (n=3). Carpet → table → carpet on the refitted
+floors: 6.6 ± 1.2 min on the table (n=5), back on carpet 1.2 min.
+
+![command final](figs/weekend/sim_cmd_final3.png)
 
 ## Bugs found on the way
 
