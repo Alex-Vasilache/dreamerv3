@@ -1726,8 +1726,13 @@ robot:
     report_every: 300
     save_every: 300
     log_video: False
-  replay: {size: 1e5}
-  online_actor_replay_size: 100000
+  # Keep all experience (1e6 steps = 4.3 h at 65 Hz; ~3.8 GB RAM per hour).
+  # With 1e5 (26 min) FIFO, a policy that stood still for half an hour on a
+  # carpet that holds the wheels had evicted every example of getting off a
+  # bumper: 7 of 8 sim seeds then fell onto one after 25-55 min and stayed
+  # there for minutes; with 1e6, 0 of 6 (e2381-e2398).
+  replay: {size: 1e6}
+  online_actor_replay_size: 1000000
   online_sync_every: 30
   # The phone runs the policy and gets each publish pushed to it in the
   # background (embodied/envs/robot.py:_push_loop), so publish often. The actor

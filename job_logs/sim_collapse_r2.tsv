@@ -1,0 +1,10 @@
+e2391	4771083	e2391_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 64
+e2392	4771084	e2392_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 65
+e2393	4771085	e2393_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 66
+e2394	4771086	e2394_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 67
+e2395	4771087	e2395_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 64
+e2396	4771088	e2396_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 65
+e2397	4771089	e2397_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 66
+e2398	4771090	e2398_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 67
+e2399	4771091	e2399_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --replay.size 1e6 --online_actor_replay_size 1000000 --seed 64
+e2400	4771092	e2400_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --replay.size 1e6 --online_actor_replay_size 1000000 --seed 65

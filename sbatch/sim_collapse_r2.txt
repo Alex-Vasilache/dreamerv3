@@ -1,0 +1,11 @@
+# Late collapse, round 2 (2026-10-24): confirm replay 1e6 on the stiction carpet over 90 min, n=4 more each; table check
+e2391 flat balance 65 p100 --env.robot.sim_surface carpet  --seed 64
+e2392 flat balance 65 p100 --env.robot.sim_surface carpet  --seed 65
+e2393 flat balance 65 p100 --env.robot.sim_surface carpet  --seed 66
+e2394 flat balance 65 p100 --env.robot.sim_surface carpet  --seed 67
+e2395 flat balance 65 p100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 64
+e2396 flat balance 65 p100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 65
+e2397 flat balance 65 p100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 66
+e2398 flat balance 65 p100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 67
+e2399 flat balance 65 p100 --env.robot.sim_surface table --replay.size 1e6 --online_actor_replay_size 1000000 --seed 64
+e2400 flat balance 65 p100 --env.robot.sim_surface table --replay.size 1e6 --online_actor_replay_size 1000000 --seed 65

@@ -1,0 +1,11 @@
+# Late collapse on the stiction carpet (2026-10-24): balanced still for ~40 min, then stuck on a bumper; is it replay eviction (FIFO 1e5 = 26 min)?
+e2381 flat balance 65 v100 --env.robot.sim_surface carpet  --seed 60
+e2382 flat balance 65 v100 --env.robot.sim_surface carpet  --seed 61
+e2383 flat balance 65 v100 --env.robot.sim_surface carpet  --seed 62
+e2384 flat balance 65 v100 --env.robot.sim_surface carpet  --seed 63
+e2385 flat balance 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 60
+e2386 flat balance 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 61
+e2387 flat balance 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 62
+e2388 flat balance 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 63
+e2389 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.wheel_penalty 0.3 --seed 60
+e2390 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.wheel_penalty 0.3 --seed 61

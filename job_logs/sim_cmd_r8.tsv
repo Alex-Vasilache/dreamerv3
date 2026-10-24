@@ -1,0 +1,4 @@
+e2401	4771093	e2401_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 50
+e2402	4771094	e2402_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 51
+e2403	4771095	e2403_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 52
+e2404	4771096	e2404_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 53

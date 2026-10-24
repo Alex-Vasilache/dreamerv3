@@ -1,0 +1,5 @@
+# Command following with replay 1e6 on the stiction carpet (2026-10-24), vs e2362-e2365
+e2401 flat command 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 50
+e2402 flat command 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 51
+e2403 flat command 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 52
+e2404 flat command 65 v100 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 53

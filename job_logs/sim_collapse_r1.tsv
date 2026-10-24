@@ -1,0 +1,10 @@
+e2381	4771052	e2381_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 60
+e2382	4771053	e2382_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 61
+e2383	4771054	e2383_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 62
+e2384	4771055	e2384_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 63
+e2385	4771056	e2385_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 60
+e2386	4771057	e2386_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 61
+e2387	4771058	e2387_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 62
+e2388	4771059	e2388_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --replay.size 1e6 --online_actor_replay_size 1000000 --seed 63
+e2389	4771060	e2389_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.wheel_penalty 0.3 --seed 60
+e2390	4771061	e2390_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.wheel_penalty 0.3 --seed 61
