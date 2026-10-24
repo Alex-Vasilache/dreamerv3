@@ -644,7 +644,7 @@ worker goal reward; returns >= V+SOM. Checks every 4h: at 0.5M even loss on and
 falling, geometry from the 0.5M checkpoint, rec / goal reward vs V+SOM (cancel
 and rerun if broken); 1M/2M/3M matched scores, pin pad and DMC subsets.
 
-### e2070–e2124+: phone robot in the MuJoCo sim — command following, still balance, floor switches (2026-10-23, robot branch)
+### e2070–e2424: phone robot in the MuJoCo sim — command following, still balance, floor switches (2026-10-23, robot branch)
 
 Flat DreamerV3, `robot [robot_command] robot_sim`, 65 Hz, paced to real time,
 `sbatch/submit_sim_robot.sh` with `sbatch/sim_{cmd,still,cl}_r*.txt` (robot
@@ -668,6 +668,21 @@ wd 1e-2/1e-1, train_ratio 128, beta2 0.99; e2125–e2127 invalid: the Recency
 selector crashed the learner, fixed in 5eeb3b1, rerun as e2188–e2190), floor
 r3b e2188–e2194, cmd r5 e2195–e2206 (combos), floor r4 e2207–e2224 (alternating
 floors, 30-min carpet; wd, replay 1e6), floor r5 e2225–e2233 (L2-init).
+
+**Final (2026-10-24, robot `docs/robot/SIM_COMMAND.md`).** Later rounds:
+cmd r6 e2234–e2263, floor r6 e2264–e2287, floors refitted with rolling
+stiction (carpet fit6, table fit5), cmd final e2362–e2369/e2401–e2404/e2413–e2416,
+late collapse e2370–e2398, floor final e2405–e2412, recency e2417–e2424.
+Adopted: `robot_command` horizon 2 s, friction_comp off, full stick 2500;
+`robot` wheel_penalty 1.5, replay 1e6 (all experience). Command following
+(min to forward corr 0.7, n=4): table 10.4 ± 2.2, stiction carpet
+29.4 ± 11.3 (1e5) / 36.4 ± 15.1 (1e6); turns ~9–18. Late collapse on the
+stiction carpet (bumper-min after min 10, n=8): 1e5 3.1 ± 2.8 (8/8 fell),
+1e6 0.04 ± 0.1. Carpet→table→carpet (n=4): table re-learn 6.6 ± 0.7 (1e5) /
+5.7 ± 1.5 (1e6); 2nd carpet visit falls 0.89 ± 0.94 bumper-min with 1e5, 0
+with 1e6. Floor switch: wd, L2-init, replay 1e6 do not speed re-learning
+(n=6); the real "never re-learns" is not reproduced. Recency 0.5 on top of
+1e6: no gain (carpet fwd 32.2 ± 9.5), not adopted.
 
 Interim (21:40): table stillness — wheel_penalty 1.5 cuts the median wheel speed
 2662 → 59 mm/s (n=5) for 6.3 vs 5.2 min to balance; carpet unaffected (2.4 min).
