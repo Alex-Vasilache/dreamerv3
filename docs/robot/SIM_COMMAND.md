@@ -2,7 +2,7 @@
 
 Weekend of 2026-10-24/25. Everything here is the MuJoCo sim
 (`embodied/envs/robot_mujoco.py`, `--configs robot [robot_command] robot_sim`),
-65 Hz, paced to real time, flat DreamerV3. Experiments e2070–e2380 (main
+65 Hz, paced to real time, flat DreamerV3. Experiments e2070–e2424 (main
 repo `EXPERIMENTS.md`), launchers `sbatch/sim_*.txt`, figures in
 `figs/weekend/`, videos in `/work/DoyaU/vasilache/work/realcmd/videos/`
 (bucket copy after archiving). Tables are mean ± std over seeds; n in each row.
@@ -26,10 +26,16 @@ repo `EXPERIMENTS.md`), launchers `sbatch/sim_*.txt`, figures in
    floors as fitted; with a carpet that holds the wheels (as the real one
    does) it re-learns ~1.5x slower than a fresh run, and none of weight
    decay, L2-init or a bigger replay fixes that (see 4). The forgetting
-   half (back on carpet it is worse) matches replay eviction, now fixed
-   (see 5). What would tell us
+   half (back on carpet it is worse) matches replay eviction: with the old
+   buffer the sim falls again during a second carpet visit, with 1e6 not
+   (see 5, 6). What would tell us
    most is one real run with the floor written down: carpet ~10 min, table
    ~20 min, carpet ~10 min, `wheel_penalty` 1.5.
+4. **Videos** (sim, 32 s each, side by side): `final_cmd_carpet_10_vs_75min`,
+   `final_cmd_table_10_vs_75min` (final recipe, refitted floors),
+   `final_switch_carpet_to_table`, `still_table_wp03_vs_wp15`; older fit2-floor
+   ones: `cmd_carpet_10_vs_60min`, `cmd_table_10_vs_60min`,
+   `cmd_carpet_vs_table_60min`, `switch_carpet_policy_on_table`.
 
 ## 1. The sim against the robot
 
@@ -169,15 +175,19 @@ removes it:
 | 1e5 FIFO (old) | 8 | 8 | 3.1 ± 2.8 |
 | 1e6 (new default) | 8 | 1 (0.3 min) | 0.04 ± 0.1 |
 | 1e5 with wheel_penalty 0.3 | 2 | 2 | 4.1 ± 0.5 |
+| 1e6 + recency 0.5 | 4 | 1 (0.1 min) | 0.03 ± 0.04 |
 
-80–100 min runs, e2381–e2398. This is the forgetting half of "back on
+80–100 min runs, e2381–e2398, e2421–e2424. This is the forgetting half of "back on
 carpet it does not balance as before": any session longer than ~26 min on
 one floor evicts the other floor's experience with the old buffer. 1e6
 steps is 4.3 h at 65 Hz, ~3.8 GB of RAM per hour of experience. The cost:
 command following on carpet may learn turns more slowly with all experience
 kept (17.6 ± 3.2 vs 8.5 ± 5.3 min, n=4); forward and the table are within
-noise (table below). Replay 1e6 with half of each batch from recent
-experience (`replay.fracs`) is being checked (e2417–e2424).
+noise (table below). Drawing half of each batch from recent experience
+(`replay.fracs` uniform 0.5, recency 0.5) on top of 1e6 does not bring the
+speed back: forward corr 0.7 at 32.2 ± 9.5 min, turn 15.1 ± 2.9 (n=4,
+e2417–e2420; `figs/weekend/sim_cmd_recency.png`), so the block keeps uniform
+sampling.
 
 ![late collapse](figs/weekend/late_collapse.png)
 
@@ -195,8 +205,23 @@ speed, and the last ~2 min:
 | carpet (fit6, stiction) | 1e6 | 4 | 36.4 ± 15.1 | 17.6 ± 3.2 | 0.66 ± 0.07 |
 
 Balance (`robot`, wheel_penalty 1.5): carpet 2.3 ± 0.2 min, table
-5.5 ± 0.2 min to hold 0.6 (n=3). Carpet → table → carpet on the refitted
-floors: 6.6 ± 1.2 min on the table (n=5), back on carpet 1.2 min.
+5.5 ± 0.2 min to hold 0.6 (n=3).
+
+Carpet 15 min → table 30 min → carpet 55 min on the refitted floors
+(e2405–e2412, n=4 each), old and new replay:
+
+| replay | table after carpet (min) | back on carpet (min) | bumper-minutes on the 2nd carpet visit |
+|---|---|---|---|
+| 1e5 FIFO (old) | 6.6 ± 0.7 | 1.2 | 0.89 ± 0.94 |
+| 1e6 (new) | 5.7 ± 1.5 | 1.2 | 0.00 ± 0.00 |
+
+Both hold the carpet again within ~1 min of the move back. With the old
+buffer, though, the robot falls again 15–50 min into the second carpet
+visit; with 1e6 it does not (`figs/weekend/floor_switch_final.png`). That
+is the closest the sim gets to "back on carpet it no longer balances as
+before".
+
+![floor switch final](figs/weekend/floor_switch_final.png)
 
 ![command final](figs/weekend/sim_cmd_final3.png)
 
