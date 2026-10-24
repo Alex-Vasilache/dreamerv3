@@ -5,7 +5,8 @@ Weekend of 2026-10-24/25. Everything here is the MuJoCo sim
 65 Hz, paced to real time, flat DreamerV3. Experiments e2070–e2424 (main
 repo `EXPERIMENTS.md`), launchers `sbatch/sim_*.txt`, figures in
 `figs/weekend/`, videos in `/work/DoyaU/vasilache/work/realcmd/videos/`
-(bucket copy after archiving). Tables are mean ± std over seeds; n in each row.
+(copy in the bucket, `results/robot_weekend_20261024/`; runs archived to
+`results/dreamerv3/`, with their experience). Tables are mean ± std over seeds; n in each row.
 
 ## For Monday
 
