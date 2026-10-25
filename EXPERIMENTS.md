@@ -643,6 +643,16 @@ Hypothesis: evener geometry online (step CV ~0.3) at equal reconstruction and
 worker goal reward; returns >= V+SOM. Checks every 4h: at 0.5M even loss on and
 falling, geometry from the 0.5M checkpoint, rec / goal reward vs V+SOM (cancel
 and rerun if broken); 1M/2M/3M matched scores, pin pad and DMC subsets.
+**Interim 2026-10-26, 4 seeds (late 3-4M; V / V+SOM / V+SOM+even):** pin pad 4
+312/305/320 · 5 278/276/270 · 6 40/50/0 · cartpole 747/782/720 · cheetah
+529/607/600 · hopper 284/282/146 (n=3). Online geometry with the loss: step CV
+0.22-0.5 (offline baseline ~0.9), end steps 0.66-0.89 of mean, block ratio
+1.4-2.8; rec and codebook use equal to V+SOM. Even vs SOM: all -5.9 pts (p=0.065),
+DMC -6.9 (p=0.073, cartpole lower in 3/4 seeds, hopper 146 vs 282), pin pads -5.0
+(p=0.68, pin pad six: SOM 1 solve of 4, even 0). SOM vs V: +2.0 (p=0.55; cheetah
+607 vs 529). Even geometry does not help returns so far and likely costs a little
+on DMC. Slurm controller down from ~Oct 25 midday; 13 runs (e2047, e2048-e2059)
+still queued, the 8 finished at 4M copied to the bucket but not yet deleted.
 
 ### e2070–e2424: phone robot in the MuJoCo sim — command following, still balance, floor switches (2026-10-23, robot branch)
 
