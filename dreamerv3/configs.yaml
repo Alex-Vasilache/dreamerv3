@@ -524,6 +524,20 @@ defaults:
       state_bins: 0       # >0 adds the start state's code as context
       h: 1.0              # smear width in CLASS units (meaningful on a SOM line)
       half_life: 5.0e5    # env steps; counts decay because the codebook drifts
+      # impl kde = ImagKDE: full class resolution on every axis, counts from a
+      # ring buffer of sampled picks (no grid, no bins). goal_bins/state_bins/h
+      # are then unused; widths are h_goal / h_state in class units.
+      impl: table         # table | kde
+      h_goal: 1.0
+      h_state: 1.0
+      kde_state: True     # include the start state's code (arm B)
+      kde_size: 131072    # buffer rows
+      kde_insert: 0       # picks inserted per update; 0 = size / (2 half-lives)
+      kde_chunk: 4096
+      count_unit: 1.0     # n is divided by this before 1/sqrt(n+1)
+      # >0: class distance along a block = measured decoded distance (EMA of
+      # goal_ae.class_positions each train step at this rate); 0 = class index.
+      kde_pos_rate: 0.0
     # Probability that a manager decision in the ENVIRONMENT rollout is
     # replaced by a deliberate large index jump from its mode (hrl/explore.py).
     # 0 disables. Only meaningful on an ordered codebook (SOM on a line).
@@ -1577,6 +1591,15 @@ wkr_v3:
 goal_even:
   agent:
     goal_vq: {even_within: 1.0, even_across: 1.0}
+
+# UCB in imagination, arm B at FULL resolution (ImagKDE): start state x goal,
+# 8 classes per block on all 16 axes, 32 candidates. Widths and c from the
+# offline fit (tools/collapse_study/ucb_kde_fit.py).
+ucb_imag_kde:
+  agent:
+    mgr_ucb_c: 0.0
+    mgr_ucb_imag_c: 3.0
+    mgr_ucb_imag: {impl: kde, candidates: 32, kde_state: True, h_goal: 1.0, h_state: 1.0}
 
 ucb_imag_a:
   agent:

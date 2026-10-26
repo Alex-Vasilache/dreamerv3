@@ -376,11 +376,25 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
                           / float(config.train_ratio))
         # Half-life in ENV steps -> per-update decay (one update() per train step).
         _decay = 0.5 ** (_env_per_train / max(float(_icfg.half_life), 1.0))
-        self.imag_counts = explore_mod.ImagCounts(
-            decay=_decay, goal_bins=int(_icfg.goal_bins),
-            state_bins=int(_icfg.state_bins), h=float(_icfg.h),
-            classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
-            name='imag_counts')
+        if str(getattr(_icfg, 'impl', 'table')) == 'kde':
+          # Full resolution (hrl/explore.py:ImagKDE). The ring buffer should
+          # span ~2 half-lives: insert = size / (2 * half-life in train steps).
+          _hl_train = float(_icfg.half_life) / _env_per_train
+          _size = int(_icfg.kde_size)
+          _insert = int(_icfg.kde_insert) or max(1, int(round(_size / (2.0 * _hl_train))))
+          self.imag_counts = explore_mod.ImagKDE(
+              decay=_decay, size=_size, insert=_insert,
+              h_goal=float(_icfg.h_goal), h_state=float(_icfg.h_state),
+              use_state=bool(_icfg.kde_state), count_unit=float(_icfg.count_unit),
+              chunk=int(_icfg.kde_chunk), classes=int(skill_shape_t[-1]),
+              blocks=int(skill_shape_t[0]),
+              pos_rate=float(getattr(_icfg, 'kde_pos_rate', 0.0)), name='imag_counts')
+        else:
+          self.imag_counts = explore_mod.ImagCounts(
+              decay=_decay, goal_bins=int(_icfg.goal_bins),
+              state_bins=int(_icfg.state_bins), h=float(_icfg.h),
+              classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
+              name='imag_counts')
         self.mgr_ucb_imag_candidates = int(_icfg.candidates)
       # Reward channel and its critic: only for the reward-shaped arm. The UCB
       # arm shares the table above but must NOT create these -- an unused critic

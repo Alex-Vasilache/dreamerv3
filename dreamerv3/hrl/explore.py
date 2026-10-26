@@ -479,3 +479,160 @@ class ImagCounts(nj.Module):
     t = self.tab.read()
     pr = jnp.square(t.sum()) / jnp.maximum(jnp.square(t).sum(), 1e-8)
     return {'mass': t.sum(), 'eff_cells': pr, 'max_count': t.max()}
+
+
+class ImagKDE(nj.Module):
+  """Full-resolution decaying counts of imagined picks, as a kernel density.
+
+  ``ImagCounts`` smears counts over a DENSE grid, which caps it near 2^24 cells:
+  the (start code, goal code) pair at 8 classes per block would need 8^16 =
+  2.8e14. Here the same separable Gaussian smearing is evaluated against a
+  sample of recent picks instead. A product of per-axis Gaussians over the class
+  indices is one Gaussian of the squared index distance, so the smeared count
+  of a candidate is
+
+      n(x) = (mass / sum_i w_i) * sum_i w_i exp(-d2(x, y_i) / 2),
+      d2   = |dx_state|^2 / h_state^2 + |dx_goal|^2 / h_goal^2,
+
+  where ``y_i`` are buffered picks (16 class indices with ``use_state``, else 8)
+  with decaying weights ``w_i`` and ``mass`` is the decayed number of ALL picks
+  (not only the buffered sample), so ``n`` is in pick units like ``ImagCounts``.
+  Unlike ``ImagCounts`` a pick counts 1 at its own cell (kernel not normalized):
+  a normalized kernel over 16 axes would put ~2.5^-16 of a pick on its own cell.
+  ``count_unit`` divides ``n`` before the bonus ``1/sqrt(n+1)``.
+
+  Each update decays all weights, then writes ``insert`` picks (sampled among
+  the update's decision steps) into a ring buffer of ``size`` rows. The squared
+  distances come from matrix products at HIGHEST precision.
+  """
+
+  def __init__(self, decay, size=131072, insert=2, h_goal=1.0, h_state=1.0,
+               use_state=True, count_unit=1.0, chunk=4096, classes=8, blocks=8,
+               pos_rate=0.0):
+    self.decay = float(decay)
+    self.size = int(size)
+    self.insert = int(insert)
+    self.h_goal = float(h_goal)
+    self.h_state = float(h_state)
+    self.use_state = bool(use_state)
+    self.count_unit = float(count_unit)
+    self.chunk = int(min(chunk, size))
+    assert self.size % self.chunk == 0, (self.size, self.chunk)
+    self.classes = int(classes)
+    self.blocks = int(blocks)
+    # ``state_bins`` is what the manager checks to decide whether to compute
+    # start-state ids; keep the ImagCounts attribute.
+    self.state_bins = self.classes if self.use_state else 0
+    dim = 2 * self.blocks if self.use_state else self.blocks
+    self.buf = nj.Variable(jnp.zeros, (self.size, dim), f32, name='buf')
+    self.wts = nj.Variable(jnp.zeros, (self.size,), f32, name='wts')
+    self.mass = nj.Variable(jnp.zeros, (), f32, name='mass')
+    self.ptr = nj.Variable(jnp.zeros, (), i32, name='ptr')
+    # Position of each class along its block, (L, C). Starts at the class index
+    # (plain index distance). With ``pos_rate > 0`` the agent feeds measured
+    # positions (``goal_ae.class_positions``: cumulative decoded one-step
+    # distances, mean step 1) through ``update_positions``, an EMA, so distance
+    # in the kernel is how far the decoded goal moves, not how many classes.
+    self.pos_rate = float(pos_rate)
+    self.pos = nj.Variable(
+        lambda: jnp.broadcast_to(jnp.arange(self.classes, dtype=f32),
+                                 (self.blocks, self.classes)), name='pos')
+
+  def _rows(self, goal_ids, state_ids=None):
+    """Class ids as stored in the buffer, ``(..., L)`` or ``(..., 2L)``."""
+    g = goal_ids.astype(f32)
+    if not self.use_state:
+      return g
+    assert state_ids is not None, 'use_state needs start-state ids'
+    return jnp.concatenate([state_ids.astype(f32), g], -1)
+
+  def _coords(self, rows, pos):
+    """Class ids -> positions along each block (state and goal share them)."""
+    ids = rows.astype(i32)
+    reps = ids.shape[-1] // self.blocks
+    table = jnp.tile(pos, (reps, 1))                                 # (D, C)
+    return jnp.take_along_axis(
+        jnp.broadcast_to(table, ids.shape[:-1] + table.shape), ids[..., None], -1)[..., 0]
+
+  def update_positions(self, pos):
+    """EMA toward newly measured class positions ``(L, C)``."""
+    if self.pos_rate > 0:
+      self.pos.write((1 - self.pos_rate) * self.pos.read() + self.pos_rate * f32(pos))
+
+  def _kernel_sum(self, x, buf, wts):
+    """``x (N, D)`` -> ``sum_i w_i exp(-d2(x, y_i)/2)`` over the buffer, (N,)."""
+    L = self.blocks
+    hi = jax.lax.Precision.HIGHEST
+    parts = ([(slice(0, L), self.h_state), (slice(L, 2 * L), self.h_goal)]
+             if self.use_state else [(slice(0, L), self.h_goal)])
+    xs = [(x[:, s], 1.0 / (2.0 * h * h)) for s, h in parts]
+    xn = [jnp.square(a).sum(-1) for a, _ in xs]
+    nchunk = self.size // self.chunk
+
+    def step(acc, i):
+      yb = jax.lax.dynamic_slice_in_dim(buf, i * self.chunk, self.chunk, 0)
+      wb = jax.lax.dynamic_slice_in_dim(wts, i * self.chunk, self.chunk, 0)
+      e = 0.0
+      for (a, scale), an, (s, _) in zip(xs, xn, parts):
+        y = yb[:, s]
+        d2 = an[:, None] + jnp.square(y).sum(-1)[None] - 2.0 * jnp.matmul(
+            a, y.T, precision=hi)
+        e = e + scale * jnp.maximum(d2, 0.0)
+      return acc + (jnp.exp(-e) * wb[None]).sum(-1), None
+
+    acc, _ = jax.lax.scan(step, jnp.zeros((x.shape[0],), f32), jnp.arange(nchunk))
+    return acc
+
+  def count(self, goal_ids, state_ids=None, active=None):
+    """Smeared pick count, ``(..., L)`` ids -> ``(...)``. ``active=False``
+    (a traced scalar) skips the kernel sum and returns zeros: the manager is
+    emitted on every imagination step but only decides on a few of them."""
+    shape = goal_ids.shape[:-1]
+    rows = self._rows(goal_ids, state_ids)
+    x = rows.reshape((-1, rows.shape[-1]))
+    buf, wts, mass = self.buf.read(), self.wts.read(), self.mass.read()
+    pos = self.pos.read()
+    total = wts.sum()
+
+    def compute(ops):
+      x, buf, wts = ops
+      return self._kernel_sum(self._coords(x, pos), self._coords(buf, pos), wts) * (
+          mass / jnp.maximum(total, 1e-8))
+
+    if active is None:
+      n = compute((x, buf, wts))
+    else:
+      n = jax.lax.cond(jnp.asarray(active).astype(bool).reshape(()), compute,
+                       lambda ops: jnp.zeros((ops[0].shape[0],), f32),
+                       (x, buf, wts))
+    return (n / self.count_unit).reshape(shape)
+
+  def bonus(self, goal_ids, state_ids=None, active=None):
+    return 1.0 / jnp.sqrt(self.count(goal_ids, state_ids, active) + 1.0)
+
+  def update(self, goal_ids, state_ids=None, weights=None):
+    """Decay everything once, then insert ``insert`` of this update's picks."""
+    rows = self._rows(goal_ids, state_ids)
+    rows = rows.reshape((-1, rows.shape[-1]))
+    w = (jnp.ones((rows.shape[0],), f32) if weights is None
+         else f32(weights).reshape(-1))
+    idx = jax.random.choice(nj.seed(), rows.shape[0], (self.insert,),
+                            p=w / jnp.maximum(w.sum(), 1e-8))
+    pos = (self.ptr.read() + jnp.arange(self.insert)) % self.size
+    any_pick = (w.sum() > 0).astype(f32)
+    self.buf.write(self.buf.read().at[pos].set(
+        jnp.where(any_pick > 0, rows[idx], self.buf.read()[pos])))
+    wts = self.wts.read() * self.decay
+    self.wts.write(wts.at[pos].set(jnp.where(any_pick > 0, 1.0, wts[pos])))
+    self.ptr.write((self.ptr.read() + self.insert * i32(any_pick)) % self.size)
+    self.mass.write(self.mass.read() * self.decay + w.sum())
+
+  def metrics(self):
+    wts = self.wts.read()
+    pos = self.pos.read()
+    step = jnp.diff(pos, axis=-1)
+    length = step.sum(-1)
+    return {'mass': self.mass.read(), 'buffer_weight': wts.sum(),
+            'buffer_fill': (wts > 0).astype(f32).mean(),
+            'pos_end_step': step[:, jnp.array([0, -1])].mean() / jnp.maximum(step.mean(), 1e-8),
+            'pos_block_ratio': length.max() / jnp.maximum(length.min(), 1e-8)}

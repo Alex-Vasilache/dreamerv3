@@ -16,6 +16,7 @@ import embodied.jax.nets as nn
 import embodied.jax.outs as outs
 
 from . import explore as mgr_explore
+from . import goal_ae as goal_ae_mod
 from . import goal_mask
 from .tensors import (
     aggregate_mgr_cont,
@@ -126,7 +127,7 @@ class ManagerMixin:
 
   def _emit_manager(
       self, tensor, bdims, deterministic=False, prev_mgr_skill=None,
-      explore=False, imag_state_ids=None, imag_tilt=False):
+      explore=False, imag_state_ids=None, imag_tilt=False, imag_active=None):
     """Sample a manager command from the policy head.
 
     Under ``goal_soft_reuse_adapt`` the result also carries ``skill_probs`` --
@@ -172,7 +173,13 @@ class ManagerMixin:
       ids = jnp.argmax(cands, -1)                                # (n, B, L)
       sids = (None if imag_state_ids is None else
               jnp.broadcast_to(imag_state_ids, ids.shape))
-      bonus = f32(self.imag_counts.bonus(ids, sids))             # (n, B)
+      # ``imag_active``: whether any rollout decides on this step. The full-
+      # resolution counts are too costly to evaluate on the steps that keep
+      # their goal; the table ignores it (a lookup is free).
+      if isinstance(self.imag_counts, mgr_explore.ImagKDE):
+        bonus = f32(self.imag_counts.bonus(ids, sids, active=imag_active))
+      else:
+        bonus = f32(self.imag_counts.bonus(ids, sids))           # (n, B)
       picked, idx = mgr_explore.ucb_pick(
           nj.seed(), cands, bonus, float(self.mgr_ucb_imag_c))
       logps = f32(jnp.stack([dist.logp(c) for c in cands], 0))
@@ -414,7 +421,8 @@ class ManagerMixin:
       self._imag_ucb_step_diag = jnp.zeros((B, 3), f32)
       emit = self._emit_manager(
           self._mgr_input(feat, mgr_skill), 1, prev_mgr_skill=mgr_skill,
-          imag_state_ids=state_ids, imag_tilt=imag_ucb)
+          imag_state_ids=state_ids, imag_tilt=imag_ucb,
+          imag_active=jnp.any(update))
       ucb_diag = self._imag_ucb_step_diag
       if state_ids is None:
         state_ids = jnp.zeros((B, skill_shape[0]), i32)
@@ -463,6 +471,8 @@ class ManagerMixin:
       if training:
         self.imag_counts.update(sg(picks), sg(sids) if sids is not None
                                 else None, weights=dec)
+        if getattr(self.imag_counts, 'pos_rate', 0.0) > 0:
+          self.imag_counts.update_positions(goal_ae_mod.class_positions(self.goal_dec))
       w = dec / jnp.maximum(dec.sum(), 1.0)
       pick_b, cand_b, shift = [(ucb_diag[..., i] * w).sum() for i in range(3)]
       self._imag_ucb_metrics = {

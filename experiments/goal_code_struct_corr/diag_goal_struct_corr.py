@@ -33,6 +33,7 @@ for the full production invocation across all three baselines):
       --n_batches 10 --out results/e124_hopper.npz
 """
 import argparse
+import os
 import pathlib
 import sys
 
@@ -83,7 +84,8 @@ def load_config(run_dir):
       'agent.policy_struct_diag': True,
       'agent.policy_goal_image': False,
       'agent.report_mask_viz': False,
-      'jax.platform': 'cuda',
+      # DIAG_PLATFORM=cpu runs the same analysis on a CPU node (e.g. intel).
+      'jax.platform': os.environ.get('DIAG_PLATFORM', 'cuda'),
       'jax.prealloc': False,
       # We only ever call agent.policy() (small batch); skip precompiling the
       # full train-batch/report graphs, which OOM a single V100 for nothing.

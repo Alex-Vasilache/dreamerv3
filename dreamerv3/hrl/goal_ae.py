@@ -267,6 +267,35 @@ def _cosmax_dist(x, y, tiny=1e-6):
   return 1.0 - (x * y).sum(-1) / (m * m)
 
 
+def _class_steps(dec, base):
+  """``base (n, L, D)`` embeddings -> ``(L, C-1)`` mean decoded one-class steps."""
+  table = dec.codebook.table().astype(f32)                         # (L, C, D)
+  L = table.shape[0]
+  eye = jnp.eye(L, dtype=f32)[:, None, :, None]                    # (L, 1, L, 1)
+  swept = eye * table[:, :, None, :]                               # (L, C, L, D)
+  z = base[:, None, None] * (1.0 - eye)[None] + swept[None]        # (n, L, C, L, D)
+  goal = dec.from_latent(z, 3).pred().astype(f32)                  # (n, L, C, G)
+  return _cosmax_dist(goal[:, :, :-1], goal[:, :, 1:]).mean(0)
+
+
+def class_positions(dec, n=16):
+  """Where each class sits along its block, measured on decoded goals, (L, C).
+
+  Position of class c = sum of the decoded one-class steps (1 - cosine_max)
+  from class 0, scaled so the average step over all blocks is 1: bunched end
+  classes sit close, a weak block is short, and a distance of 1 means an
+  average one-class change of the goal. Base codes are uniform random (the
+  same convention as the geometry tools). Stop-gradient.
+  """
+  table = sg(dec.codebook.table().astype(f32))
+  L, C, _ = table.shape
+  ids = jax.random.randint(nj.seed(), (n, L), 0, C)
+  base = table[jnp.arange(L)[None], ids]                           # (n, L, D)
+  steps = sg(_class_steps(dec, base))
+  steps = steps / jnp.maximum(steps.mean(), 1e-8)
+  return jnp.concatenate([jnp.zeros((L, 1), f32), jnp.cumsum(steps, -1)], -1)
+
+
 def evenness_loss(dec, z_q, n=16):
   """How unevenly one class step in a block moves the decoded goal.
 
@@ -291,15 +320,11 @@ def evenness_loss(dec, z_q, n=16):
   whole codebook, plus stop-gradiented diagnostics. Gradient reaches the swept
   codebook entries and the decoder; the base codes are held fixed.
   """
-  table = dec.codebook.table().astype(f32)                         # (L, C, D)
+  table = dec.codebook.table()
   L, C, D = table.shape
   flat = sg(z_q.astype(f32)).reshape((-1, L, D))
   base = flat[::max(1, flat.shape[0] // n)][:n]                     # (n, L, D)
-  eye = jnp.eye(L, dtype=f32)[:, None, :, None]                    # (L, 1, L, 1)
-  swept = eye * table[:, :, None, :]                               # (L, C, L, D)
-  z = base[:, None, None] * (1.0 - eye)[None] + swept[None]        # (n, L, C, L, D)
-  goal = dec.from_latent(z, 3).pred().astype(f32)                  # (n, L, C, G)
-  steps = _cosmax_dist(goal[:, :, :-1], goal[:, :, 1:]).mean(0)    # (L, C - 1)
+  steps = _class_steps(dec, base)                                  # (L, C - 1)
   tiny = 1e-8
   block = steps.mean(1)
   within = (steps.var(1) / (jnp.square(block) + tiny)).mean()
