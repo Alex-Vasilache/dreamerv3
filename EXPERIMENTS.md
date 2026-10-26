@@ -653,6 +653,9 @@ DMC -6.9 (p=0.073, cartpole lower in 3/4 seeds, hopper 146 vs 282), pin pads -5.
 607 vs 529). Even geometry does not help returns so far and likely costs a little
 on DMC. Slurm controller down from ~Oct 25 midday; 13 runs (e2047, e2048-e2059)
 still queued, the 8 finished at 4M copied to the bucket but not yet deleted.
+Controller back 2026-10-26 10:12; e2047-e2052 failed at start on saion-gpu25 ("No
+visible GPU devices", node still releasing GPUs of outage-stuck jobs), empty dirs
+removed and restarted as array 4771522 (same e-numbers, literal restart).
 
 ### e2070–e2424: phone robot in the MuJoCo sim — command following, still balance, floor switches (2026-10-23, robot branch)
 
