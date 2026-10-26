@@ -560,25 +560,28 @@ class ImagKDE(nj.Module):
       self.pos.write((1 - self.pos_rate) * self.pos.read() + self.pos_rate * f32(pos))
 
   def _kernel_sum(self, x, buf, wts):
-    """``x (N, D)`` -> ``sum_i w_i exp(-d2(x, y_i)/2)`` over the buffer, (N,)."""
+    """``x (N, D)`` -> ``sum_i w_i exp(-d2(x, y_i)/2)`` over the buffer, (N,).
+
+    The weighted squared distance is ONE matrix product of augmented rows,
+    e = [q_x, 1, -2 a*x] . [1, q_y, y] with a = 1/(2h^2) per axis and
+    q = sum a*x^2, so each buffer chunk materializes a single (N, chunk) matrix
+    before the fused exp-and-sum (the per-part version wrote several).
+    """
     L = self.blocks
-    hi = jax.lax.Precision.HIGHEST
-    parts = ([(slice(0, L), self.h_state), (slice(L, 2 * L), self.h_goal)]
-             if self.use_state else [(slice(0, L), self.h_goal)])
-    xs = [(x[:, s], 1.0 / (2.0 * h * h)) for s, h in parts]
-    xn = [jnp.square(a).sum(-1) for a, _ in xs]
+    a = jnp.concatenate(
+        ([jnp.full((L,), 1.0 / (2 * self.h_state ** 2), f32)] if self.use_state else [])
+        + [jnp.full((L,), 1.0 / (2 * self.h_goal ** 2), f32)])
+    ones = jnp.ones((x.shape[0], 1), f32)
+    xa = jnp.concatenate([(a * x * x).sum(-1, keepdims=True), ones, -2.0 * a * x], -1)
     nchunk = self.size // self.chunk
 
     def step(acc, i):
       yb = jax.lax.dynamic_slice_in_dim(buf, i * self.chunk, self.chunk, 0)
       wb = jax.lax.dynamic_slice_in_dim(wts, i * self.chunk, self.chunk, 0)
-      e = 0.0
-      for (a, scale), an, (s, _) in zip(xs, xn, parts):
-        y = yb[:, s]
-        d2 = an[:, None] + jnp.square(y).sum(-1)[None] - 2.0 * jnp.matmul(
-            a, y.T, precision=hi)
-        e = e + scale * jnp.maximum(d2, 0.0)
-      return acc + (jnp.exp(-e) * wb[None]).sum(-1), None
+      ya = jnp.concatenate([jnp.ones((self.chunk, 1), f32),
+                            (a * yb * yb).sum(-1, keepdims=True), yb], -1)
+      e = jnp.matmul(xa, ya.T, precision=jax.lax.Precision.HIGHEST)
+      return acc + (jnp.exp(-jnp.maximum(e, 0.0)) * wb[None]).sum(-1), None
 
     acc, _ = jax.lax.scan(step, jnp.zeros((x.shape[0],), f32), jnp.arange(nchunk))
     return acc

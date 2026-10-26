@@ -1605,7 +1605,7 @@ ucb_imag_kde:
   agent:
     mgr_ucb_c: 0.0
     mgr_ucb_imag_c: 1.5
-    mgr_ucb_imag: {impl: kde, candidates: 32, kde_state: True, h_goal: 0.75, h_state: 0.5, kde_pos_rate: 0.01}
+    mgr_ucb_imag: {impl: kde, candidates: 32, kde_state: True, h_goal: 0.75, h_state: 0.5, kde_pos_rate: 0.01, kde_size: 65536}
 
 ucb_imag_a:
   agent:

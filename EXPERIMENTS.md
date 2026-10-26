@@ -621,7 +621,15 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e2600–e2629: full-resolution UCB in imagination (arm B) on V+SOM (2026-10-26, array 4772486)
+### e2630–e2659: full-resolution UCB in imagination (arm B) on V+SOM (2026-10-26, array 4772645)
+
+Relaunch of e2600-e2629 (array 4772486, cancelled after 2h: 270k env steps/h vs
+~650k for V+SOM, 2.4x slower; e2600-e2602 archived at ~0.58M, tilt already as
+fitted: logp shift -0.20, gain 1.06-1.11). Fixes: the kernel's weighted squared
+distance is now ONE augmented matrix product per buffer chunk (was several
+materialized matrices), and kde_size 131072 -> 65536. Everything else identical.
+
+#### (original entry) e2600–e2629
 
 `director director_og wkr_ent_fixed wkr_v3 goal_som_line ucb_imag_kde pubmatch`,
 6 tasks x 5 seeds, seed-major (`sbatch/pubucbkde_params.txt`), A100, %8. Reference:
