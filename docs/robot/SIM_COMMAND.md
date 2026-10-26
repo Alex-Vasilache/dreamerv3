@@ -226,6 +226,36 @@ before".
 
 ![command final](figs/weekend/sim_cmd_final3.png)
 
+## 7. Faster command learning: relabelling and mirroring (Monday)
+
+`--cmd_relabel F` gives a fraction F of each training batch a fresh command
+with its tracking reward recomputed (hindsight relabelling, possible because
+the command is exogenous and the reward is a known function of it);
+`--cmd_mirror F` swaps left and right in a fraction F (wheels, actions,
+turn sign). Both run on the learner (`embodied/envs/robot_relabel.py`).
+Minutes to correlation 0.7, final blocks, e2425–e2450/e2463–e2464, 68 min
+each; the gain column is the forward gain over the last ~2 min.
+
+| floor, arm | forward | turn | final forward gain |
+|---|---|---|---|
+| carpet, base | 27.8 ± 5.1 | 9.6 ± 2.8 | 0.52 ± 0.12 |
+| carpet, relabel 0.5 | 31.0 ± 7.9 | 11.1 ± 1.7 | 0.68 ± 0.12 |
+| carpet, relabel 0.9 | 36.8 ± 3.9 | 7.8 ± 2.0 | 0.72 ± 0.08 |
+| carpet, mirror 0.5 | 24.5 ± 7.0 | 11.4 ± 6.9 | 0.51 ± 0.09 |
+| carpet, relabel 0.5 + mirror 0.5 | 22.2 ± 4.7 | 12.9 ± 5.7 | 0.72 ± 0.07 |
+| table, base | 17.4 ± 3.0 | 10.5 ± 2.9 | 0.96 ± 0.04 |
+| table, relabel 0.5 + mirror 0.5 | 12.1 ± 2.5 | 10.1 ± 3.4 | 1.03 ± 0.03 |
+
+n=4 per arm. Relabelling makes the final forward tracking more accurate but
+delays it on carpet; mirroring gives the earlier start; together they are
+~1.25x (carpet) to ~1.4x (table) faster -- worth using on the robot
+(`--cmd_relabel 0.5 --cmd_mirror 0.5`), not the order-of-magnitude gain
+asked for. Turning is learnt in ~10 min regardless; forward on carpet is the
+bottleneck. P100 seeds (2/3 of the V100's updates) learnt as fast as V100
+ones, so more learner compute is not the lever.
+
+![relabel and mirror](figs/weekend/sim_fast_r1.png)
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined

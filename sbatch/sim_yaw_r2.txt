@@ -1,0 +1,13 @@
+# yaw_penalty confirmation (2026-10-26): table 0 vs 0.1 (3 more seeds each), carpet 0 vs 0.1 (n=3), 40 min
+e2465 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.0 --seed 83
+e2466 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.0 --seed 84
+e2467 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.0 --seed 85
+e2468 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --seed 83
+e2469 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --seed 84
+e2470 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --seed 85
+e2471 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.0 --seed 83
+e2472 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.0 --seed 84
+e2473 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.0 --seed 85
+e2474 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --seed 83
+e2475 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --seed 84
+e2476 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --seed 85

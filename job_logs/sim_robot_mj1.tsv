@@ -1,0 +1,6 @@
+e1972	4769145	e1972_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --seed 0
+e1973	4769146	e1973_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --seed 1
+e1974	4769147	e1974_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.friction_comp True --seed 0
+e1975	4769148	e1975_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.friction_comp True --seed 1
+e1976	4769149	e1976_simrobot_still65_flat	robot robot_still robot_sim	--env.robot.hz 65 --seed 0
+e1977	4769150	e1977_simrobot_still65_flat	robot robot_still robot_sim	--env.robot.hz 65 --seed 1

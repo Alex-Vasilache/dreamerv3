@@ -1,0 +1,7 @@
+# MuJoCo robot sim, round 1 (2026-10-22): default balance vs friction_comp vs robot_still, 65 Hz
+e1972 flat balance 65 p100 --seed 0
+e1973 flat balance 65 p100 --seed 1
+e1974 flat balance 65 p100 --env.robot.friction_comp True --seed 0
+e1975 flat balance 65 p100 --env.robot.friction_comp True --seed 1
+e1976 flat still 65 p100 --seed 0
+e1977 flat still 65 p100 --seed 1
