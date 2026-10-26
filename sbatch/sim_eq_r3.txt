@@ -1,0 +1,7 @@
+# Round 3 (2026-10-26 night): policies from the matched sim (robot_sim now stick 0.2, balance point redrawn every 3 min), for the robot: command table/carpet, carpet balance
+e2603 flat command 65 p100 --env.robot.sim_surface table --seed 83
+e2604 flat command 65 p100 --env.robot.sim_surface table --seed 84
+e2605 flat command 65 p100 --env.robot.sim_surface carpet --seed 83
+e2606 flat command 65 p100 --env.robot.sim_surface carpet --seed 84
+e2607 flat balance 65 p100 --env.robot.sim_surface carpet --seed 83
+e2608 flat balance 65 p100 --env.robot.sim_surface carpet --seed 84

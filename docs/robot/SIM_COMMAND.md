@@ -256,6 +256,64 @@ ones, so more learner compute is not the lever.
 
 ![relabel and mirror](figs/weekend/sim_fast_r1.png)
 
+## 8. Sim policies on the robot, and what the sim got wrong (Monday night)
+
+Alex ran two sim balance policies on the robot with training paused:
+e2468 (table, final recipe) as e2478 and e2471 (carpet) as e2479 (1.5 and
+2.2 min off the bumpers, paused stretches dropped). Both balanced, but far
+more restlessly than in the sim (`figs/s2r/closedloop.png`): on the table
+the robot drove (median |forward| 387 vs 20 mm/s) and spun one way (mean
+turn -246 mm/s); on carpet wheels 52 vs 14 mm/s, tilt rate 4x.
+
+What is **not** wrong: fed the outputs the robot was sent, restarted every
+0.3 s from its state, the fitted sim predicts these recordings as well as the
+robot-trained runs it was validated on (window error 2.97 table, 1.54 carpet,
+against 3.70 / 2.01; `figs/s2r/openloop.png`). Sensor lag (tilt vs tilt rate),
+action-to-wheel delay (~19 ms both) and sensor noise also match; the sim's
+noise is if anything higher.
+
+What is wrong, found by running the same policy closed loop in the sim with
+one thing changed (`tools/robot/dev/sim_closed_loop.py`, `figs/s2r/sweep1.png`):
+
+* **The balance point.** Drawn once per run (+-1 deg), it is learnt by
+  heart. Moved 0.25 deg forward, the e2468 policy drives and spins like the
+  real table run (|fwd| 390, turn -296 mm/s, tilt -0.95 deg, 4% on a bumper;
+  real 387, -246, -0.88, 7.5%); all three seeds go the same way. One wheel
+  0.85x, +-0.03 output bias, 2x sensor noise: no effect; +2 ticks delay: small.
+* **Gearbox stiction.** Fitted on the stand (wheels in the air) at 0.385 of
+  stall. On the floor, under the policy, still wheels break away much more
+  often at small outputs:
+
+  | output | 0.15-0.2 | 0.25-0.3 | 0.35-0.4 | 0.4-0.5 |
+  |---|---|---|---|---|
+  | carpet, robot | 0.09 | 0.14 | 0.38 | 0.47 |
+  | carpet, sim | 0.00 | 0.00 | 0.01 | 0.02 |
+  | table, robot | 0.37 | 0.49 | 0.58 | 0.58 |
+  | table, sim | 0.11 | 0.15 | 0.30 | 0.56 |
+
+  (fraction of still wheels moving within 3 ticks). With 0.385 the sim
+  carpet robot stands dead still at any balance point; at 0.2-0.25 it moves
+  like the real one. A joint refit including the balancing data gives 0.227.
+
+Fix, now in `robot_sim`: `sim_stick 0.2` and `sim_eq_every 180` (a new balance
+point, +-1 deg, every 3 min). In the stick-0.2 sim, with the balance point
+moved -1..+1 deg (`figs/s2r/robust_r2.png`, mean over balance points, n=3):
+
+| training | drift (mm/s) | median turn (mm/s) | on a bumper | min to balance (table) |
+|---|---|---|---|---|
+| stick 0.385, fixed point (old) | 519 ± 48 | 229 ± 16 | 0.10 ± 0.03 | 4.1 ± 0.4 |
+| stick 0.2, fixed point | 477 ± 24 | 49 ± 10 | 0.04 ± 0.00 | 4.8 ± 0.6 |
+| stick 0.2, redrawn every 60 s | 272 ± 37 | 48 ± 11 | 0.02 ± 0.00 | 9.2 ± 1.5 |
+| stick 0.2, redrawn every 180 s | 227 ± 57 | 45 ± 10 | 0.02 ± 0.00 | 6.6 ± 0.8 |
+
+On carpet the redraw costs nothing (2.6 ± 0.1 vs 2.3 ± 0.5 min). None of
+the policies is fully still across balance points: the policy has to find
+the robot's balance point, and on the table that means some driving.
+
+![closed loop](figs/s2r/closedloop.png)
+![sweep](figs/s2r/sweep1.png)
+![robustness](figs/s2r/robust_r2.png)
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined
