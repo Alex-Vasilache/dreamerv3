@@ -274,6 +274,19 @@ tools/robot/save_policy.sh balance_table <run dir>  # a given run
 
 Copies are kept in `~/logdir/robot_policies/`.
 
+**From the sim.** An agent trained in the MuJoCo sim (`--configs robot
+[robot_command] robot_sim`, docs/robot/SIM_COMMAND.md) can go on the phone the
+same way, or seed a real training run with its weights:
+
+```bash
+tools/robot/from_sim.sh try cmd_sim <sim run dir> [step]       # to the policy list
+CONFIGS="robot robot_command" tools/robot/from_sim.sh train <sim run dir> [step] [name]
+```
+
+`step` picks a 5-minute snapshot (`logdir/ckpt_milestones/`, env steps,
+19500 per 5 min); the default is the run's final checkpoint. `train` takes
+the world model, actor, critic and optimizer state; replay starts empty.
+
 ## Without hardware
 
 - **No base:** `NO_BASE=1 HZ=100 STEPS=30000 tools/robot/train.sh linktest`
@@ -351,6 +364,7 @@ git clone -b telemetry-cache https://github.com/Alex-Vasilache/smartphone-robot-
 | `tools/robot/stop.sh` | stop the learner and the app |
 | `tools/robot/tensorboard.sh` | live TensorBoard for local or cluster runs |
 | `tools/robot/save_policy.sh` | name and keep a run's current weights on the phone |
+| `tools/robot/from_sim.sh` | a sim-trained agent on the phone, or as the start of a real run |
 | `tools/robot/phone_connect.sh` | adb over WiFi, finding the port |
 | `tools/robot/phone_allow_usb.sh` | tap OK on the USB permission dialog |
 | `tools/robot/flash_base.sh` | build and flash base firmware |

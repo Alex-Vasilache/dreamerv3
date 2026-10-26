@@ -1,0 +1,54 @@
+e2425	4771701	e2425_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 80
+e2426	4771702	e2426_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 81
+e2427	4771703	e2427_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 82
+e2428	4771704	e2428_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 83
+e2429	4771705	e2429_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 80
+e2430	4771706	e2430_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 81
+e2431	4771707	e2431_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 82
+e2432	4771708	e2432_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 83
+e2433	4771709	e2433_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 80
+e2434	4771710	e2434_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 81
+e2435	4771711	e2435_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 82
+e2436	4771712	e2436_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 83
+e2437	4771713	e2437_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 80
+e2438	4771714	e2438_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 81
+e2439	4771715	e2439_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 82
+e2440	4771716	e2440_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 83
+e2441	4771717	e2441_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 80
+e2442	4771718	e2442_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 81
+e2443	4771719	e2443_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 82
+e2444	4771720	e2444_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 83
+e2445	4771721	e2445_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table  --seed 80
+e2446	4771722	e2446_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table  --seed 81
+e2447	4771723	e2447_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table  --seed 82
+e2448	4771724	e2448_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 80
+e2449	4771725	e2449_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 81
+e2450	4771726	e2450_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 82
+e2425	4771739	e2425_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 80
+e2426	4771740	e2426_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 81
+e2427	4771741	e2427_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 82
+e2428	4771742	e2428_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet  --seed 83
+e2429	4771743	e2429_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 80
+e2430	4771744	e2430_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 81
+e2431	4771745	e2431_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 82
+e2432	4771746	e2432_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --seed 83
+e2441	4771747	e2441_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 80
+e2442	4771748	e2442_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 81
+e2443	4771749	e2443_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 82
+e2444	4771750	e2444_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 83
+e2445	4771751	e2445_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table  --seed 80
+e2446	4771752	e2446_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table  --seed 81
+e2447	4771753	e2447_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table  --seed 82
+e2448	4771754	e2448_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 80
+e2449	4771755	e2449_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 81
+e2450	4771756	e2450_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 82
+e2463	4771757	e2463_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 83
+e2464	4771758	e2464_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --cmd_relabel 0.5 --cmd_mirror 0.5 --seed 83
+e2437	4771759	e2437_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 80
+e2438	4771760	e2438_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 81
+e2439	4771761	e2439_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 82
+e2440	4771762	e2440_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_mirror 0.5 --seed 83
+e2433	4771763	e2433_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 80
+e2434	4771764	e2434_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 81
+e2435	4771765	e2435_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 82
+e2436	4771766	e2436_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --cmd_relabel 0.9 --seed 83
