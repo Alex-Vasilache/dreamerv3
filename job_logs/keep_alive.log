@@ -108,3 +108,116 @@ slurm_load_jobs error: Unable to contact slurm controller (connect failure)
 2026-10-05 16:38:34 squeue failed, skipping cycle
 2026-10-05 20:49:33 resubmit e1099 at step 3988496 -> 4744307 on gpu-v100
 2026-10-06 11:02:09 all at target
+2026-10-07 16:50:49 released 14-59 (tasks 2-5 running)
+2026-10-07 16:55:17 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 16:57:17 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 16:59:18 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:01:18 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:03:19 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:05:19 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:07:20 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:09:20 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:11:20 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:13:21 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:15:21 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:17:22 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:19:22 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:21:23 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:23:23 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:25:23 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:27:24 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:29:24 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:31:25 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:33:25 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:35:25 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:37:26 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:39:26 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:41:27 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:43:27 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:45:28 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:47:28 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:49:28 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:51:29 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:53:29 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:55:30 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:57:30 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 17:59:31 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 18:01:31 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 18:03:32 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 18:05:32 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 18:07:32 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 18:09:33 requeue_first: 2 requeued waiting (4745769_11 4745769_10), fresh tasks held
+2026-10-07 18:11:33 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:13:34 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:15:34 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:17:35 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:19:35 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:21:35 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:23:36 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:25:36 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:27:37 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:29:37 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:31:38 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:33:38 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:35:38 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:37:39 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:39:39 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:41:40 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:43:40 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:45:41 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:47:41 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:49:41 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:51:42 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:53:42 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:55:43 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:57:43 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 18:59:44 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 19:01:44 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-07 19:03:44 requeue_first: 1 requeued waiting (4745769_11), fresh tasks held
+2026-10-09 19:17:32 requeue_first: array done
+grep: /work/DoyaU/vasilache/work/e1340_dmc_cheetah_run_director-director_og-goal_lipvq_prod-lip_relu-goal_vq_f32-pubmatch_s0_j4751562_10/job.env: No such file or directory
+grep: /work/DoyaU/vasilache/work/e1340_dmc_cheetah_run_director-director_og-goal_lipvq_prod-lip_relu-goal_vq_f32-pubmatch_s0_j4751562_10/job.env: No such file or directory
+2026-10-11 09:06:16 resubmit e1340 at step 0 -> 4755581 on gpu-a100
+2026-10-11 09:07:14 requeue_first: array done
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write errorsleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device
+sleep: write error: No space left on device

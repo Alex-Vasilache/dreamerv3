@@ -758,7 +758,7 @@ between (e2477–e2481 demos, e2494–e2495, e2511–e2602) are not these.
 | yaw r1/r2 | e2451–e2462, e2465–e2476 | gyro yaw-rate penalty for a still table robot | 0.1: still from ~10 min, balance 4.1 ± 0.4 vs 4.5 ± 0.4 min; no effect on carpet; adopted in `robot` |
 | eq r1 | e2482–e2493 | balance point redrawn during training (sim policy e2468 drove and spun on the real table, e2478) | robust to a moved balance point (bumper 2% vs 10%), table 2x slower to balance |
 | eq r2 | e2496–e2510 | + gearbox stiction 0.2 (closed-loop break-away, refit 0.227 vs stand 0.385) | stick 0.2 + redraw every 180 s: drift 227 ± 57 vs 519 ± 48 mm/s, turn 45 vs 229, table 6.6 ± 0.8 min; now `robot_sim` |
-| eq r3 | e2603–e2608 | command table/carpet and carpet balance in the matched sim, for the robot | running |
+| eq r3 | e2603–e2608 | command table/carpet and carpet balance in the matched sim, for the robot | carpet balance 2.7–3.3 min and still at eq −1…+1° (all but e2505, late collapse); command fwd corr 0.7: table 19.5 ± 9.5 vs 11.6 ± 2.5, carpet 16.0 ± 2.0 vs 25.5 ± 4.3 min (n=2 vs 4); try e2503, e2608, e2604, e2605 |
 
 ### e1910–e1969: worker on DreamerV3 settings, on OG + fixed worker entropy (2026-10-22, array 4768718)
 
