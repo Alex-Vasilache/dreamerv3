@@ -738,6 +738,20 @@ carpet one stands nearly still. still_speed 1000 stops the pivot (both wheels
 the failure: re-learning after the move takes 2.6 ± 1.1 min (fresh table 3.8),
 back on carpet 1.2 min.
 
+### e2425–e2608: phone robot sim — faster command learning, still table, sim vs robot (2026-10-26, robot branch)
+
+Same setup as e2070–e2424 (robot checkout `sbatch/sim_*.txt`, report
+`docs/robot/SIM_COMMAND.md` sections 7–8). Numbers taken by other sessions in
+between (e2477–e2481 demos, e2494–e2495, e2511–e2602) are not these.
+
+| batch | runs | question | result |
+|---|---|---|---|
+| fast r1 | e2425–e2450, e2463–e2464 | hindsight command relabelling / left-right mirroring of training batches | relabel 0.5 + mirror 0.5: forward corr 0.7 carpet 22.2 ± 4.7 vs 27.8 ± 5.1 min, table 12.1 ± 2.5 vs 17.4 ± 3.0 (n=4); adopted in `robot_command` |
+| yaw r1/r2 | e2451–e2462, e2465–e2476 | gyro yaw-rate penalty for a still table robot | 0.1: still from ~10 min, balance 4.1 ± 0.4 vs 4.5 ± 0.4 min; no effect on carpet; adopted in `robot` |
+| eq r1 | e2482–e2493 | balance point redrawn during training (sim policy e2468 drove and spun on the real table, e2478) | robust to a moved balance point (bumper 2% vs 10%), table 2x slower to balance |
+| eq r2 | e2496–e2510 | + gearbox stiction 0.2 (closed-loop break-away, refit 0.227 vs stand 0.385) | stick 0.2 + redraw every 180 s: drift 227 ± 57 vs 519 ± 48 mm/s, turn 45 vs 229, table 6.6 ± 0.8 min; now `robot_sim` |
+| eq r3 | e2603–e2608 | command table/carpet and carpet balance in the matched sim, for the robot | running |
+
 ### e1910–e1969: worker on DreamerV3 settings, on OG + fixed worker entropy (2026-10-22, array 4768718)
 
 Base `director director_og wkr_ent_fixed`, plus one of two arms, 6 tasks x 5
