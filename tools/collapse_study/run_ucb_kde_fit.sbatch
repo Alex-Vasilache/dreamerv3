@@ -23,6 +23,16 @@ cd $REPO
 if [ "${MODE:?}" = fit ]; then
   python -u tools/collapse_study/ucb_kde_fit.py fit $OUT; exit $?
 fi
+if [ "$MODE" = metric ]; then
+  fail=0
+  for f in $OUT/*_${TASK:?}_*_deter.npy; do
+    b=$(basename $f _deter.npy); m=$OUT/${b}_metric.npz
+    [ -f $m ] && continue
+    ck=${b##*_}; run=$(ls -d $B/${b%%_*}_*); [ "$ck" = final ] || true
+    python -u tools/collapse_study/ucb_kde_fit.py metric $run $ck $m || fail=1
+  done
+  exit $fail
+fi
 fail=0
 for run in $(ls -d $B/e20[0-5]?_${TASK:?}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s[01]_*); do
   for ck in 000000500000 000002000000 final; do

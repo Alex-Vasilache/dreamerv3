@@ -16,6 +16,7 @@ Gumbel tilt's expected log-prob shift and novelty gain, computed exactly from
 the softmax over each state's candidates.
 
   collect: python tools/collapse_study/ucb_kde_fit.py collect <run_dir> <ckpt|final> <out.npz>
+  metric:  python tools/collapse_study/ucb_kde_fit.py metric <run_dir> <ckpt|final> <..._metric.npz>
   fit:     python tools/collapse_study/ucb_kde_fit.py fit <out_dir>
 """
 import glob
@@ -83,6 +84,79 @@ def collect(run_dir, ckpt, out):
   print('wrote', out, bufrows.shape, pg.shape)
 
 
+def metric(run_dir, ckpt, out, n_start=32, n_base=8, steps=8):
+  """Which class distance tracks where the worker actually goes?
+
+  Per block l and class pair (c, c'): base codes (uniform random) with block l
+  set to c or c', decoded to goals; from real start states (cached deter of
+  ``collect``) the worker is imagined ``steps`` steps toward each goal. Stores
+    M[l, c, c']  decoded-goal distance (1 - cosine_max), mean over bases;
+    O[l, c, c']  outcome distance: 1 - cosine_max between the deter the
+                 worker reaches, mean over bases x starts.
+  Class-index distance is |c - c'|; measured positions are cumulative M steps.
+  """
+  sys.path.insert(0, os.path.join(REPO, 'experiments', 'goal_geometry'))
+  from diag_goal_geometry import build
+  import jax
+  import jax.numpy as jnp
+  import ninjax as nj
+  import embodied.jax.nets as nets
+  sys.path.insert(0, os.path.join(REPO, 'dreamerv3'))
+  ck = None if ckpt == 'final' else os.path.join(run_dir, 'logdir', 'ckpt_milestones', ckpt)
+  config, agent = build(run_dir, ck)
+  model = agent.model
+  cdt = nets.COMPUTE_DTYPE
+  deter = np.load(out.replace('_metric.npz', '_deter.npy'))
+  rng = np.random.default_rng(0)
+  starts = deter[rng.choice(len(deter), n_start, replace=False)]
+  L, C = [int(x) for x in config.agent.skill_shape]
+
+  def cosd(a, b):
+    a, b = a.astype(jnp.float32), b.astype(jnp.float32)
+    na, nb = jnp.linalg.norm(a, axis=-1), jnp.linalg.norm(b, axis=-1)
+    m = jnp.maximum(na, nb) + 1e-8
+    return 1 - (a * b).sum(-1) / (m * m)
+
+  def fn(d0, base_ids, l):
+    # Goals: (n_base, C) codes, block l swept.
+    ids = jnp.repeat(base_ids[:, None], C, 1).at[:, :, l].set(jnp.arange(C)[None])
+    code = jax.nn.one_hot(ids, C, dtype=jnp.float32).reshape(-1, L, C)
+    goal = model.goal_dec(code, 1).pred()                       # (n_base*C, G)
+    G = goal.reshape(n_base, C, -1)
+    Md = cosd(G[:, :, None], G[:, None]).mean(0)                # (C, C)
+    # Rollouts: every (start, goal) pair.
+    d = jnp.repeat(d0.astype(cdt), n_base * C, 0)                # (S*nb*C, D)
+    g = jnp.tile(goal, (d0.shape[0], 1))
+    logit = model.dyn._prior(d)
+    stoch = jax.nn.one_hot(jnp.argmax(logit, -1), logit.shape[-1], dtype=cdt)
+    pol = model._worker_policy_fixed_goal(g)
+    carry, _, _ = model.dyn.imagine(dict(deter=d, stoch=stoch), pol, steps, False)
+    end = carry['deter'].reshape(d0.shape[0], n_base, C, -1)
+    Od = cosd(end[:, :, :, None], end[:, :, None]).mean((0, 1))  # (C, C)
+    return Md, Od
+
+  M = np.zeros((L, C, C)); O = np.zeros((L, C, C))
+  base = jnp.asarray(rng.integers(0, C, (n_base, L)))
+  for l in range(L):
+    Md, Od = nj.pure(lambda d: fn(d, base, l))(agent.params, jnp.asarray(starts),
+                                               seed=jax.random.PRNGKey(l))[1]
+    M[l], O[l] = np.asarray(Md), np.asarray(Od)
+  np.savez_compressed(out, M=M, O=O, task=str(config.task), run=os.path.basename(run_dir), ckpt=ckpt)
+  gap = np.abs(np.arange(C)[:, None] - np.arange(C)[None])
+  iu = np.triu_indices(C, 1)
+  def rho(a, b):
+    ra = np.argsort(np.argsort(a)); rb = np.argsort(np.argsort(b))
+    return np.corrcoef(ra, rb)[0, 1]
+  steps_ = np.array([[M[l, c, c + 1] for c in range(C - 1)] for l in range(L)])
+  pos = np.concatenate([np.zeros((L, 1)), np.cumsum(steps_ / steps_.mean(), 1)], 1)
+  ri = np.mean([rho(gap[iu], O[l][iu]) for l in range(L)])
+  rp = np.mean([rho(np.abs(pos[l][:, None] - pos[l][None])[iu], O[l][iu]) for l in range(L)])
+  # Across blocks: does a block's decoded strength predict its outcome strength?
+  rb = rho(M.mean((1, 2)), O.mean((1, 2)))
+  print(f'{os.path.basename(out)}: within-block rank corr with outcome: index {ri:.3f} '
+        f'measured {rp:.3f}; across blocks (strength) {rb:.3f}', flush=True)
+
+
 def fit(out_dir):
   import jax
   import jax.numpy as jnp
@@ -140,5 +214,7 @@ def fit(out_dir):
 if __name__ == '__main__':
   if sys.argv[1] == 'collect':
     collect(*sys.argv[2:5])
+  elif sys.argv[1] == 'metric':
+    metric(*sys.argv[2:5])
   else:
     fit(sys.argv[2])
