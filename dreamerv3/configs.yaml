@@ -1691,6 +1691,12 @@ robot:
   # too; 1.5 keeps the median wheel speed at ~60 mm/s, for ~1 min longer to
   # balance (sim e2102-e2148, 6.3 vs 5.2 min; carpet 2.4 vs 1.8).
   env.robot.wheel_penalty: 1.5
+  # Turning in place costs no more wheel effort than driving straight, and
+  # real e2079 (1.5, 11 min) still turned at a median ~250 mm/s. A gyro
+  # yaw-rate cost of 0.1 per rad/s made the sim table robot still (median
+  # wheel <25 mm/s) from ~10 min instead of ~25, balancing as fast (5.9 vs
+  # 5.7 min, n=3, e2451-e2456); 0.3 and 1.0 slowed balancing to 10-12 min.
+  env.robot.yaw_penalty: 0.1
   # And pay for chatter: minus this times the mean |change of action| per
   # step (robot.py:_advance). e1982 (2026-10-22, real robot, 0.2 on this
   # block) balanced well; the default before it was 0.
