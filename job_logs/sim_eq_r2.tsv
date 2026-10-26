@@ -1,0 +1,15 @@
+e2496	4772359	e2496_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 83
+e2497	4772360	e2497_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 84
+e2498	4772361	e2498_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 85
+e2499	4772362	e2499_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 83
+e2500	4772363	e2500_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 84
+e2501	4772364	e2501_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 85
+e2502	4772365	e2502_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 180 --seed 83
+e2503	4772366	e2503_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 180 --seed 84
+e2504	4772367	e2504_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 180 --seed 85
+e2505	4772368	e2505_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 83
+e2506	4772369	e2506_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 84
+e2507	4772370	e2507_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 85
+e2508	4772371	e2508_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 83
+e2509	4772372	e2509_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 84
+e2510	4772373	e2510_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 85

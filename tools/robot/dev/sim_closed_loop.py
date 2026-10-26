@@ -15,6 +15,10 @@ otherwise have:
   delay=N         N extra ticks between an action and the motor
   noise=X         sim_noise (sensor noise scale; 1 is the default)
   surface=NAME    floor
+  stick=X, slide=X  the gearbox's dry friction, as fractions of stall torque
+                  (fitted 0.385 / 0.098)
+  rstatic=X       rolling stiction, as a multiple of the floor's rolling
+                  resistance (1: none; fitted carpet 4.5, table 6)
 
   python tools/robot/dev/sim_closed_loop.py RUN_DIR OUT.json [--ckpt STEP] \
       [--minutes 5] --variant base: --variant back:eq=-0.9 \
@@ -104,6 +108,8 @@ def main():
       'False', '--env.robot.length', '0', '--seed', str(args.seed)]
   if 'sim_schedule' in r:
     base += ['--env.robot.sim_schedule', '']
+  if r.get('sim_eq_every'):
+    base += ['--env.robot.sim_eq_every', '0']   # each variant holds its own
   config = elements.Flags(elements.Config(raw)).parse(base)
   agent = dmain.make_agent(config)
   cp = elements.Checkpoint()
@@ -130,6 +136,13 @@ def main():
     if 'eq' in opts:
       sim.theta_eq = sim.theta_zero + math.radians(opts['eq'])
     sim.sim_rng = np.random.RandomState(1000 + vi + args.seed)
+    ph = sim.physics
+    if 'stick' in opts:
+      ph.stick = opts['stick'] * ph.stall
+    if 'slide' in opts:
+      ph.slide = opts['slide'] * ph.stall
+    if 'rstatic' in opts:
+      ph.rolling_static = opts['rstatic'] * ph.rolling
     gain = np.array([opts.get('gain_l', 1.0), opts.get('gain_r', 1.0)])
     bias = np.array([opts.get('bias_l', 0.0), opts.get('bias_r', 0.0)])
     queue = collections.deque([np.zeros(2)] * int(opts.get('delay', 0)))

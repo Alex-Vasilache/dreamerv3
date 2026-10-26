@@ -9,7 +9,7 @@ e2485 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty
 e2486 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 85
 e2487 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 20 --env.robot.sim_eq_range 0.035 --seed 83
 e2488 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 20 --env.robot.sim_eq_range 0.035 --seed 84
-e2489 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 20 --env.robot.sim_eq_range 0.035 --seed 85
-e2490 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 83
-e2491 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 84
-e2492 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 85
+e2489 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 20 --env.robot.sim_eq_range 0.035 --seed 85
+e2490 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 83
+e2491 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 84
+e2492 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 85

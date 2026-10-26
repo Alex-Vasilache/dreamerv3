@@ -1,0 +1,16 @@
+# Round 2 (2026-10-26 night): gearbox stiction 0.2 (stand-fitted 0.385; closed loop on the robot the wheels break away far more often at small outputs, s2r/breakaway.py), with and without the balance point redrawn (+-1 deg)
+e2496 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 83
+e2497 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 84
+e2498 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 85
+e2499 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 83
+e2500 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 84
+e2501 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 85
+e2502 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 180 --seed 83
+e2503 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 180 --seed 84
+e2504 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 180 --seed 85
+e2505 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 83
+e2506 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 84
+e2507 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --seed 85
+e2508 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 83
+e2509 flat balance 65 p100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 84
+e2510 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_stick 0.2 --env.robot.sim_eq_every 60 --seed 85
