@@ -230,3 +230,24 @@ def test_the_dashboard_has_the_buttons_and_the_shifted_axis():
   for needle in ('id="pause-robot"', 'id="pause-train"', "t: 'pause'",
                  'shiftMin()', 'TRAINING STARTS'):
     assert needle in page, needle
+
+
+def test_the_learner_and_the_actor_can_start_together(tmp_path):
+  # Both processes build the env, and so write the starting state, at once.
+  import threading
+  errors = []
+
+  def start():
+    try:
+      for _ in range(50):
+        online.write_pause(pause_file(tmp_path), dict(robot=True, training=True))
+    except Exception as e:  # noqa: BLE001
+      errors.append(e)
+
+  threads = [threading.Thread(target=start) for _ in range(4)]
+  for t in threads:
+    t.start()
+  for t in threads:
+    t.join()
+  assert not errors, errors
+  assert online.read_pause(pause_file(tmp_path))['training']

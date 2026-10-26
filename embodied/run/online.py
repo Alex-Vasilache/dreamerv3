@@ -58,9 +58,14 @@ class TrainingPause:
 
 
 def write_pause(path, state):
+  # A temporary file of its own per writer: the learner and the actor each
+  # build the env, and so write the starting state, at the same moment, and
+  # with a shared name one's rename took the other's file away (e2481 s02).
   path = elements.Path(path)
   path.parent.mkdir(parents=True, exist_ok=True)
-  _atomic_write(path, json.dumps(state).encode('utf-8'))
+  tmp = path.parent / f'.{path.name}.{os.getpid()}.{threading.get_ident()}.tmp'
+  tmp.write(json.dumps(state).encode('utf-8'), mode='wb')
+  os.replace(tmp, path)
 
 
 class _NumpyCompatUnpickler(pickle.Unpickler):
