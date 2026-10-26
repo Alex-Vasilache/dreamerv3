@@ -162,6 +162,15 @@ wheels from the press until the new session's first weights arrive. Allow
 restart is that fast. Sessions are `<run dir>/s01`, `s02`, ... and
 `<run dir>/sessions.tsv` lists them. Stop with `tools/robot/stop.sh`.
 
+**Pause** the robot (wheels held) or the training (learner idle) with the
+dashboard's **PAUSE ROBOT** / **PAUSE TRAINING** buttons; each press toggles.
+`PAUSED=1 tools/robot/train.sh` (or `demo.sh`) connects everything but
+starts with both paused: start the robot to show the untrained behaviour,
+then start training. Minute 0 of the dashboard's charts is then when training
+started, and what came before reads as -1m, -2m. The state is kept in
+`<logdir>/online_shared/pause.json`. Robot steps count toward `STEPS` while
+training is paused.
+
 **Settings** (environment variables): `HZ` (65; the phone's rate, passed
 to the learner as `--env.robot.hz`), `CONFIGS` (default `robot`),
 `STEPS` (100000: ~26 min at 65 Hz, ~67 at 25), `GPU` (Slurm:

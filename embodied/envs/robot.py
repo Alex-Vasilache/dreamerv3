@@ -57,11 +57,13 @@ class _Link:
   a push never holds the env thread or a reset behind it.
   """
 
-  def __init__(self, sock, timeout, on_restart=None):
+  def __init__(self, sock, timeout, on_restart=None, on_pause=None):
     self.sock = sock
-    # Called on the reader thread when the phone asks for a fresh run; such a
+    # Called on the reader thread when the phone asks for a fresh run, or to
+    # pause or resume the robot or the training (with the frame); such a
     # frame is not queued, so the env thread only ever sees observations.
     self._on_restart = on_restart
+    self._on_pause = on_pause
     self.sock.settimeout(timeout)
     self.frames = queue.Queue()
     self.error = None
@@ -157,6 +159,9 @@ class _Link:
             break
           if frame[0].get('type') == 'restart' and self._on_restart:
             self._on_restart()
+            continue
+          if frame[0].get('type') == 'pause' and self._on_pause:
+            self._on_pause(frame[0])
             continue
           self.frames.put(frame)
     except BaseException as e:  # noqa: BLE001 -- handed to the env thread
@@ -318,7 +323,7 @@ class SmartphoneRobot(embodied.Env):
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
-      pace=None):
+      pace=None, pause_file=None, start_paused=False):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -336,6 +341,15 @@ class SmartphoneRobot(embodied.Env):
     # Set by tools/robot/demo_supervisor.py: where to ask it for a fresh run
     # when the phone's dashboard says so. Unset, the phone is not offered it.
     self._restart_file = os.environ.get('ROBOT_RESTART_FILE') or None
+    # The robot and the training can each be paused from the dashboard: the
+    # phone holds its wheels, the learner stops updating. Kept in pause_file
+    # (online.PAUSE_FILE), which the learner reads and which outlives a
+    # reconnect or a resumed run. start_paused: a new run starts with both
+    # paused, so an audience can see the untrained robot first; the first
+    # time training is then unpaused is minute 0 on the dashboard.
+    self._pause_file = pause_file and str(pause_file)
+    self._pause_lock = threading.Lock()
+    self._pause = self._load_pause(bool(start_paused))
     # Pushes run on a thread of their own (`_push_loop`), so they can go as
     # often as the learner publishes: `weights_every` is only a floor on the
     # time between two push starts, 0 meaning back to back, and the learner's
@@ -700,6 +714,10 @@ class SmartphoneRobot(embodied.Env):
       self._ref = self.theta_zero + self._rng.uniform(
           -self.ref_range, self.ref_range)
     left, right = self._decode(action)
+    if self._pause['robot']:
+      # The phone holds the wheels only for a policy it runs itself; here the
+      # held wheels are this action, and recorded as what they did.
+      left, right = 0.0, 0.0
     self._sent_act = (left, right)
     self._send(left, right, reset=False)
     sensors, latency = self._recv()
@@ -1032,7 +1050,8 @@ class SmartphoneRobot(embodied.Env):
     sock, address = self._listener.accept()
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     link = _Link(sock, self.timeout, on_restart=(
-        self._request_restart if self._restart_file else None))
+        self._request_restart if self._restart_file else None),
+        on_pause=self._request_pause)
     try:
       hello, _ = link.get(self.timeout)
       if hello.get('type') != 'hello' or hello.get('protocol') != PROTOCOL:
@@ -1066,6 +1085,7 @@ class SmartphoneRobot(embodied.Env):
         # settings beside them, so it can replay the policy later on its own.
         run=self._run_name(), settings=self._settings(),
         restart=bool(self._restart_file), hold=hold,
+        pause=self._pause_message(),
         **({'pace': self.pace} if self.pace else {})))
     self._link = link
     # Note `self.onboard`, not `self._onboard`: a phone that came up without
@@ -1090,6 +1110,60 @@ class SmartphoneRobot(embodied.Env):
     with open(path + '.tmp', 'w') as f:
       f.write(f'{time.time():.3f}\n')
     os.replace(path + '.tmp', path)
+
+  def _load_pause(self, start_paused):
+    from embodied.run import online
+    if self._pause_file and os.path.exists(self._pause_file):
+      return online.read_pause(self._pause_file)   # a resumed run keeps its own
+    state = dict(robot=False, training=False, train_started=None,
+                 from_start=False)
+    if start_paused:
+      state.update(robot=True, training=True, from_start=True)
+      self._save_pause(state)
+      print('[robot] starting with the robot and the training paused; '
+            'start them from the dashboard', flush=True)
+    return state
+
+  def _save_pause(self, state):
+    if self._pause_file:
+      from embodied.run import online
+      online.write_pause(self._pause_file, state)
+
+  def _pause_message(self):
+    """What the phone is told: the state, and how long ago training started
+    (an age, so the two clocks need not agree)."""
+    state = self._pause
+    started = state['train_started']
+    return dict(robot=state['robot'], training=state['training'],
+                train_started_ago=(None if started is None
+                                   else max(0.0, time.time() - started)),
+                # Started paused and not yet trained: no minute 0 yet.
+                waiting=state['from_start'] and started is None)
+
+  def _request_pause(self, request):
+    """The phone's dashboard paused or resumed the robot and/or the
+    training. Called on the link's reader thread; answers with the new state."""
+    with self._pause_lock:
+      state = dict(self._pause)
+      for key in ('robot', 'training'):
+        if request.get(key) is not None:
+          state[key] = bool(request[key])
+      # Minute 0 of a run that started paused: the first time it trains.
+      if (state['from_start'] and state['train_started'] is None
+          and not state['training']):
+        state['train_started'] = time.time()
+      if state != self._pause:
+        self._pause = state
+        self._save_pause(state)
+        print('[robot] dashboard: robot %s, training %s' % (
+            'paused' if state['robot'] else 'running',
+            'paused' if state['training'] else 'running'), flush=True)
+    link = self._link
+    if link is not None:
+      try:
+        link.send(dict(type='pause', **self._pause_message()))
+      except LINKLOST:
+        pass   # the next hello carries it
 
   def _run_name(self):
     """ROBOT_RUN_NAME, else the Slurm job name (e1293_robot_25hz), else the

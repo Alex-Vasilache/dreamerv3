@@ -7,6 +7,8 @@
 #   RUN_DIR=<previous run dir> tools/robot/train.sh resume   # continue a run
 #   NO_BASE=1 HZ=100 tools/robot/train.sh linktest           # phone alone, no wheels
 #   DEMO=1 tools/robot/train.sh demo   # restartable from the dashboard (demo.sh)
+#   PAUSED=1 tools/robot/train.sh      # robot and training paused until started
+#                                       # from the dashboard (/dash)
 #   GPU=p100 tools/robot/train.sh                 # Slurm: use ROBOT_SLURM_FLAGS_p100
 #
 # Where the learner runs (this computer or a Slurm cluster) and where runs are
@@ -33,6 +35,9 @@ HZ=${HZ:-${FLAG_HZ:-65}}
 HZ=${HZ%.*}
 [[ $HZ =~ ^[0-9]+$ ]] || robot_die "HZ must be a whole number of Hz, not '$HZ'"
 [ -n "${FLAG_HZ:-}" ] || set -- "$@" --env.robot.hz "$HZ"
+# Connected and ready, but the wheels held and the learner idle until the
+# dashboard starts each; minute 0 of its plots is when training starts.
+[ -z "${PAUSED:-}" ] || set -- "$@" --env.robot.start_paused True
 CONFIGS=${CONFIGS:-robot}
 STEPS=${STEPS:-100000}
 NO_BASE=${NO_BASE:-}

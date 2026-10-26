@@ -467,6 +467,11 @@ def make_env(config, index, **overrides):
     # source of truth in dreamerv3/deploy/export.py.
     kwargs['config'] = config
     kwargs['policy_dir'] = elements.Path(config.logdir) / 'online_shared'
+  if suite == 'robot':
+    # Pausing the robot or the training from the phone's dashboard; the
+    # online learner reads the same file (embodied/run/online.py).
+    kwargs['pause_file'] = (
+        elements.Path(config.logdir) / 'online_shared' / 'pause.json')
   # Other suites apply action repeat inside their own constructor; the robot
   # cannot, because the phone owns the control clock and must keep sensing at
   # full rate while the agent decides less often.

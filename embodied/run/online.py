@@ -1,6 +1,7 @@
 import collections
 import concurrent.futures
 import io
+import json
 import multiprocessing as mp
 import os
 import pickle
@@ -14,6 +15,52 @@ import embodied
 import numpy as np
 import portal
 
+
+# Written by the robot env when the phone's dashboard pauses the robot or the
+# training (embodied/envs/robot.py): {"robot": bool, "training": bool,
+# "train_started": unix time of the first unpause, or null}. No file: nothing
+# is paused.
+PAUSE_FILE = 'pause.json'
+PAUSE_POLL = 0.5   # seconds between the learner's looks at it
+
+
+def read_pause(path):
+  """The pause state at `path`; a missing or half-written file is none."""
+  try:
+    with open(str(path), 'rb') as f:
+      state = json.loads(f.read())
+  except (OSError, ValueError):
+    state = {}
+  return dict(
+      robot=bool(state.get('robot', False)),
+      training=bool(state.get('training', False)),
+      train_started=state.get('train_started'),
+      from_start=bool(state.get('from_start', False)))
+
+
+class TrainingPause:
+  """The learner's view of the pause file: looked at every PAUSE_POLL s, not
+  on every pass of its loop, which on a cluster file system would cost."""
+
+  def __init__(self, path, poll=PAUSE_POLL):
+    self.path = path
+    self.poll = poll
+    self.paused = False
+    self._checked = -float('inf')
+
+  def __call__(self):
+    """Whether training is paused; (paused, changed since the last call)."""
+    if time.time() - self._checked < self.poll:
+      return self.paused, False
+    self._checked = time.time()
+    was, self.paused = self.paused, read_pause(self.path)['training']
+    return self.paused, self.paused != was
+
+
+def write_pause(path, state):
+  path = elements.Path(path)
+  path.parent.mkdir(parents=True, exist_ok=True)
+  _atomic_write(path, json.dumps(state).encode('utf-8'))
 
 
 class _NumpyCompatUnpickler(pickle.Unpickler):
@@ -68,6 +115,10 @@ class OnlineSharedPaths:
   @property
   def actor_step(self):
     return elements.Path(self.root) / 'actor_step'
+
+  @property
+  def pause(self):
+    return elements.Path(self.root) / PAUSE_FILE
 
 
 class MpCoordination:
@@ -626,6 +677,7 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   stream_report = iter(agent.stream(make_stream(replay, 'report')))
   carry_report = agent.init_report(args.batch_size)
   trained = False
+  training_pause = TrainingPause(paths.pause)
   while not _actor_finished(paths, args, coordination):
     actor_step = _read_actor_step(paths.actor_step)
     if actor_step > last_actor_step:
@@ -636,7 +688,17 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
     if not shared_buffer.ready(args.batch_size, args.batch_length):
       time.sleep(0.01)
       continue
+    paused, changed = training_pause()
+    if changed:
+      _log_learner(logdir, f'training {"paused" if paused else "resumed"} '
+                   f'step={int(step)} actor_step={actor_step}')
     repeats = should_train(actor_step)
+    if paused:
+      # The ratio's debt is dropped, not saved up: the steps the robot takes
+      # meanwhile are in replay, but the learner resumes at train_ratio from
+      # the moment it is unpaused rather than catching up on them.
+      time.sleep(0.05)
+      continue
     if repeats <= 0:
       time.sleep(0.001)
       continue
