@@ -46,6 +46,7 @@ sys.path.insert(0, str(pathlib.Path.cwd()))
 sys.path.insert(0, str(pathlib.Path.cwd() / 'tools' / 'robot' / 'dev'))
 from dreamerv3.deploy import export
 from export_policy import load_params, flatten, _is_flat
+from embodied.envs import robot
 
 tmp, out, name, run, step = sys.argv[1:]
 tmp, out = pathlib.Path(tmp), pathlib.Path(out)
@@ -55,14 +56,17 @@ params = dict(raw) if _is_flat(raw) else flatten(raw)
 blob, meta = export.pack(config, params)
 (out / f'{name}.npz').write_bytes(blob)
 r = config.env.robot
-keys = ('theta_zero', 'theta_lo', 'theta_hi', 'theta_sigma', 'speed_scale',
-        'drift_penalty', 'drift_clip', 'wheel_penalty', 'rate_penalty',
-        'action_rate_penalty', 'command_scale', 'length')
+# As a training run's own sidecar (robot.py _settings). `length` must be the
+# episode in steps: the Player starts the policy's memory afresh every
+# `length` steps, and the config's 0 ("from episode_s") reset it every step.
+hz = float(r.hz)
 side = dict(
     name=name, run=run, job=pathlib.Path(run).name, stamp=step,
-    published=time.strftime('%Y-%m-%d %H:%M'), task=config.task,
-    hz=float(r.hz), sim=True, sim_surface=str(r.sim_surface),
-    **{k: r[k] for k in keys})
+    published=time.strftime('%Y-%m-%d %H:%M'),
+    task=config.task.removeprefix('robot_'), hz=hz,
+    length=int(r.length) or int(round(hz * float(r.episode_s))),
+    sim=True, sim_surface=str(r.sim_surface),
+    **{k: r[k] for k in robot.PLAYER_SETTINGS if k in r})
 (out / f'{name}.json').write_text(json.dumps(side, indent=1))
 print(f'{name}: {len(blob) / 1e6:.1f} MB, {config.task} policy from the sim '
       f'({r.sim_surface}, {step}) of {run}')

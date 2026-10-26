@@ -32,6 +32,19 @@ STATS = (
 )
 STATS_EVERY = 3.0
 
+# The env settings a saved policy carries in its <name>.json for the phone's
+# Dreamer Player, beside task, hz and length (`_settings`); each is both an
+# attribute here and an env.robot config key, so tools/robot/from_sim.sh
+# writes the same file from a sim run's config.
+PLAYER_SETTINGS = (
+    'theta_zero', 'theta_lo', 'theta_hi', 'theta_sigma', 'speed_scale',
+    'drift_penalty', 'drift_clip', 'wheel_penalty', 'yaw_penalty',
+    'still_speed', 'rate_penalty', 'action_rate_penalty', 'command_scale',
+    'command_bias', 'friction_comp', 'bumper_lo', 'bumper_hi',
+    'bumper_margin', 'bumper_penalty', 'command_speed', 'command_turn',
+    'command_sigma', 'command_reward', 'command_track_weight',
+    'command_balance_weight', 'forward_sign', 'turn_source', 'yaw_rate_max')
+
 # Anything that means the link went away rather than that the code is
 # wrong: socket errors and timeouts (both OSError), plus a truncated or
 # garbled frame from a half-closed connection.
@@ -1179,25 +1192,8 @@ class SmartphoneRobot(embodied.Env):
 
   def _settings(self):
     """What a player needs to pace and score steps the way training did."""
-    return dict(
-        task=self.task, hz=self.hz, length=self.length, theta_zero=self.theta_zero,
-        theta_lo=self.theta_lo, theta_hi=self.theta_hi,
-        theta_sigma=self.theta_sigma, speed_scale=self.speed_scale,
-        drift_penalty=self.drift_penalty, drift_clip=self.drift_clip,
-        wheel_penalty=self.wheel_penalty, yaw_penalty=self.yaw_penalty,
-        still_speed=self.still_speed,
-        rate_penalty=self.rate_penalty,
-        action_rate_penalty=self.action_rate_penalty,
-        command_scale=self.command_scale, command_bias=self.command_bias,
-        friction_comp=self.friction_comp, bumper_lo=self.bumper_lo,
-        bumper_hi=self.bumper_hi, bumper_margin=self.bumper_margin,
-        bumper_penalty=self.bumper_penalty,
-        command_speed=self.command_speed, command_turn=self.command_turn,
-        command_sigma=self.command_sigma, command_reward=self.command_reward,
-        command_track_weight=self.command_track_weight,
-        command_balance_weight=self.command_balance_weight,
-        forward_sign=self.forward_sign,
-        turn_source=self.turn_source, yaw_rate_max=self.yaw_rate_max)
+    return dict(task=self.task, hz=self.hz, length=self.length,
+                **{k: getattr(self, k) for k in PLAYER_SETTINGS})
 
   def _push_loop(self):
     """Send the phone each new policy as soon as the learner publishes it.
