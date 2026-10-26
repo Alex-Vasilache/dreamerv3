@@ -684,6 +684,16 @@ DMC -6.9 (p=0.073, cartpole lower in 3/4 seeds, hopper 146 vs 282), pin pads -5.
 607 vs 529). Even geometry does not help returns so far and likely costs a little
 on DMC. Slurm controller down from ~Oct 25 midday; 13 runs (e2047, e2048-e2059)
 still queued, the 8 finished at 4M copied to the bucket but not yet deleted.
+**FINAL 2026-10-27, 5 seeds (late 3-4M; V / V+SOM / V+SOM+even):** pin pad 4
+312/311/317 · 5 278/221/272 (V+SOM seed 4 never solved five: 0) · 6 40/40/0 ·
+cartpole 747/770/744 · cheetah 529/593/603 · hopper 284/295/178. Even vs SOM: all
+-1.8 pts (p=0.63), DMC -4.4 (p=0.16, hopper), pin pads +0.8 (p=0.78). SOM vs V: all
+-1.2 (p=0.85; DMC +3.2 p=0.20, pin pads -5.6 from the one failed seed). Verdict:
+the evenness loss evens the geometry (step CV 0.85 -> 0.37, block ratio ~4 -> 1.7,
+order and bin purity unchanged) but does not improve returns; not adopted. The
+geometry is handled in the UCB counts instead (measured positions, e2630-e2659).
+Figures: collapse_figs/someven_matched.png, ucb_kernel_geometry_someven.png,
+even_train.png, ogv_matched.png.
 Controller back 2026-10-26 10:12; e2047-e2052 failed at start on saion-gpu25 ("No
 visible GPU devices", node still releasing GPUs of outage-stuck jobs), empty dirs
 removed and restarted as array 4771522 (same e-numbers, literal restart).
