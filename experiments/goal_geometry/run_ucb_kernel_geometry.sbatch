@@ -22,9 +22,15 @@ B=/bucket/DoyaU/vasilache/bucket/results/dreamerv3
 cd "$REPO/experiments/goal_geometry"
 fail=0
 for t in ${TASKS:-pinpad_four pinpad_five pinpad_six dmc_cartpole_swingup dmc_cheetah_run dmc_hopper_hop}; do
-  for spec in "og:e12[3-8]?_${t}_director-director_og-pubmatch_s*" \
-              "som:e1[34]??_${t}_director-director_og-goal_som_line-pubmatch_s*" \
-              "somlip:e1[34]??_${t}_director-director_og-goal_som_lipvq_line_prod-lip_relu-goal_vq_f32-pubmatch_s*"; do
+  if [ "${ARMSET:-}" = someven ]; then
+    specs=("vsom:e20[0-5]?_${t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s*"
+           "veven:e20[0-5]?_${t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*")
+  else
+    specs=("og:e12[3-8]?_${t}_director-director_og-pubmatch_s*"
+           "som:e1[34]??_${t}_director-director_og-goal_som_line-pubmatch_s*"
+           "somlip:e1[34]??_${t}_director-director_og-goal_som_lipvq_line_prod-lip_relu-goal_vq_f32-pubmatch_s*")
+  fi
+  for spec in "${specs[@]}"; do
     arm=${spec%%:*}
     for run in $B/${spec#*:}; do
       f=$OUT/$arm/$(basename "$run")

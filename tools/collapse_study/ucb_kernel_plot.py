@@ -19,6 +19,7 @@ other blocks held at random values. Per run:
 """
 import glob
 import os
+import sys
 
 import numpy as np
 import matplotlib
@@ -28,6 +29,10 @@ import matplotlib.pyplot as plt
 R = '/work/DoyaU/vasilache/work/paper_geom/ucb_kernel'
 OUT = '/work/DoyaU/vasilache/work/collapse_figs/ucb_kernel_geometry'
 ARMS = [('og', 'OG', '#E69F00'), ('som', 'OG + SOM', '#CC79A7'), ('somlip', 'OG + SOM + LiP', '#0072B2')]
+# `ucb_kernel_plot.py someven`: V + SOM against V + SOM + evenness loss (e2000-e2059).
+if len(sys.argv) > 1 and sys.argv[1] == 'someven':
+  ARMS = [('vsom', 'V + SOM', '#CC79A7'), ('veven', 'V + SOM + evenness', '#0072B2')]
+  OUT += '_someven'
 TASKS = [('pinpad_four', 'Pin Pad 4'), ('pinpad_five', 'Pin Pad 5'), ('pinpad_six', 'Pin Pad 6'),
          ('dmc_cartpole_swingup', 'Cartpole'), ('dmc_cheetah_run', 'Cheetah'), ('dmc_hopper_hop', 'Hopper')]
 INK, MUTED = '#1c1e22', '#5d636e'
@@ -110,8 +115,8 @@ def main():
         if (arm, t) not in res:
           continue
         v = [get(r) for r in res[arm, t]]
-        xs.append(j + (i - 1) * 0.22); ys.append(np.mean(v))
-        ax.scatter(np.full(len(v), j + (i - 1) * 0.22), v, s=12, color=color, alpha=0.35, lw=0)
+        xs.append(j + (i - (len(ARMS) - 1) / 2) * 0.22); ys.append(np.mean(v))
+        ax.scatter(np.full(len(v), j + (i - (len(ARMS) - 1) / 2) * 0.22), v, s=12, color=color, alpha=0.35, lw=0)
       ax.scatter(xs, ys, s=70, color=color, edgecolor='white', lw=1.2, zorder=3, label=label)
       table.setdefault(title.split(')')[0] + ')', {})[arm] = np.mean(ys) if ys else np.nan
     if ideal is not None:

@@ -51,6 +51,23 @@ SETS = {
         ('V', '+ worker v3, all (V)', '#009E73',
          'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
     ],
+    'ogv': [
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('dv3', 'DreamerV3 (flat)', '#000000', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
+        ('ent', 'OG + fixed worker entropy', '#999999',
+         'e1[89][089]?_{t}_director-director_og-wkr_ent_fixed-pubmatch_s*'),
+        ('V', 'V = OG + fixed ent. + worker v3', '#009E73',
+         'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
+    ],
+    'someven': [
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('V', 'V (OG + fixed ent. + worker v3)', '#999999',
+         'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
+        ('som', 'V + SOM', '#CC79A7',
+         'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s*'),
+        ('even', 'V + SOM + evenness', '#0072B2',
+         'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*'),
+    ],
 }
 
 
@@ -59,7 +76,7 @@ def window_mean(a, lo, hi):
   return a[m, 1].mean() if m.sum() > 3 else np.nan
 
 
-LATE = {'base3': 1e6}   # window length for sets whose runs are all finished
+LATE = {'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
 def main(which):
