@@ -61,9 +61,9 @@ SETS = {
     ],
     'someven': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
-        ('V', 'V (OG + fixed ent. + worker v3)', '#999999',
+        ('V', 'V (OG + fixed ent. + worker v3)', '#000000',
          'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
-        ('som', 'V + SOM', '#CC79A7',
+        ('som', 'V + SOM', '#D55E00',
          'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s*'),
         ('even', 'V + SOM + evenness', '#0072B2',
          'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*'),
@@ -76,6 +76,8 @@ def window_mean(a, lo, hi):
   return a[m, 1].mean() if m.sum() > 3 else np.nan
 
 
+# Line style as a second cue besides colour (reference arms).
+STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':'}
 LATE = {'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
@@ -104,7 +106,8 @@ def main(which):
           m = np.where(n_ok >= 1, np.nanmean(st, 0), np.nan)
           sd = np.where(n_ok >= 2, np.nanstd(st, 0, ddof=1), np.nan)
         ax.fill_between(x, m - sd, m + sd, color=color, lw=0, alpha=0.13)
-        ax.plot(x, m, color=color, lw=2.4, ls='-' if len(seeds) >= 2 else '--', label=label)
+        ls = STYLE.get((which, key), '--' if len(seeds) < 2 else '-')
+        ax.plot(x, m, color=color, lw=2.4, ls=ls, label=label)
       w = [window_mean(a, lo, hi) for a in seeds] if key in counted else []
       w = [v for v in w if not np.isnan(v)]
       if w:
