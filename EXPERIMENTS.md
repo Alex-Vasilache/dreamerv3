@@ -621,6 +621,29 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e2600–e2629: full-resolution UCB in imagination (arm B) on V+SOM (2026-10-26, array 4772486)
+
+`director director_og wkr_ent_fixed wkr_v3 goal_som_line ucb_imag_kde pubmatch`,
+6 tasks x 5 seeds, seed-major (`sbatch/pubucbkde_params.txt`), A100, %8. Reference:
+V+SOM from e2000-e2059 (no rerun). New `ImagKDE` (hrl/explore.py): the arm-B cell
+(start code x goal code) at the full 8 classes on all 16 axes, no bins. Counts are a
+Gaussian kernel density over a 131k-row ring buffer of sampled imagined picks
+(decaying, half-life 0.5M env steps, scaled to the true pick mass); 32 policy
+candidates per decision, Gumbel tilt exp(c*bonus). Class distance along a block =
+measured decoded distance (`goal_ae.class_positions`, EMA 0.01 per train step),
+because on 36 V+SOM checkpoints it tracks where the worker actually ends up after
+8 imagined steps better than class index on 35/35 (rank corr 0.88 vs 0.81).
+Widths h_goal 0.75 / h_state 0.5 and c 1.5 from the offline fit
+(`tools/collapse_study/ucb_kde_fit.py`): bonus spread among one state's candidates
+0.10-0.20 on every task and stage; novelty gain of the pick ~1.3 (table arms at
+c=3: 1.04-1.11); log-prob shift ~-0.3 to -0.45 nats (table c=10 at -0.5 to -1.2
+hurt DMC).
+Hypothesis: the tilt now actually changes which goals are tried; >= V+SOM on pin
+pads (faster / more pin pad six solves) without the DMC loss of c=10. Checks:
+train speed vs V+SOM in the first hour (cancel and shrink the buffer if >40%
+slower), imag_ucb/* (pick_bonus, novelty_gain ~1.2-1.4, logp_shift), returns at
+matched steps.
+
 ### e2000–e2059: SOM class-step evenness loss on the V base (2026-10-23, array 4769800)
 
 Base V = `director director_og wkr_ent_fixed wkr_v3`, two arms, 6 tasks x 5 seeds,
