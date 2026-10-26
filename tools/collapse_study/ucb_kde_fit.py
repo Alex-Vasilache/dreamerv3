@@ -158,57 +158,78 @@ def metric(run_dir, ckpt, out, n_start=32, n_base=8, steps=8):
 
 
 def fit(out_dir):
+  """Grid over (metric, h_goal, h_state) on every collected checkpoint.
+
+  metric 'index' places classes at 0..7; 'measured' at the cumulative decoded
+  steps from that checkpoint's ``_metric.npz`` (mean step 1), as
+  ``goal_ae.class_positions`` does online."""
+  import json
   import jax
   import jax.numpy as jnp
-  files = sorted(glob.glob(os.path.join(out_dir, '*.npz')))
+  files = sorted(f for f in glob.glob(os.path.join(out_dir, '*.npz'))
+                 if not f.endswith('_metric.npz'))
   rows = []
+
+  @jax.jit
+  def counts(x, buf, hs, hg):
+    L = x.shape[1] // 2
+    def chunk(acc, yb):
+      def part(a, b, h):
+        d2 = (jnp.square(a).sum(-1)[:, None] + jnp.square(b).sum(-1)[None]
+              - 2 * jnp.matmul(a, b.T, precision=jax.lax.Precision.HIGHEST))
+        return jnp.maximum(d2, 0) / (2 * h * h)
+      e = part(x[:, :L], yb[:, :L], hs) + part(x[:, L:], yb[:, L:], hg)
+      return acc + jnp.exp(-e).sum(-1), None
+    acc, _ = jax.lax.scan(chunk, jnp.zeros(x.shape[0]), buf.reshape(-1, 4096, 2 * L))
+    return acc * (MASS / buf.shape[0])
+
   for f in files:
     z = np.load(f)
-    buf = jnp.asarray(z['buf'], jnp.float32)
-    L = buf.shape[1] // 2
-    pg = jnp.asarray(z['probe_goal'], jnp.float32)                      # (P, K, L)
-    ps = jnp.asarray(z['probe_start'], jnp.float32)[:, None].repeat(K, 1)
+    bufi = z['buf'].astype(np.int64)
+    L = bufi.shape[1] // 2
+    C = 8
+    pg = z['probe_goal'].astype(np.int64)
+    ps = np.repeat(z['probe_start'].astype(np.int64)[:, None], K, 1)
+    xi = np.concatenate([ps, pg], -1).reshape(-1, 2 * L)
     logp = np.asarray(z['probe_logp'])
-    x = jnp.concatenate([ps, pg], -1).reshape(-1, 2 * L)
-
-    @jax.jit
-    def counts(x, hs, hg):
-      def chunk(acc, yb):
-        def part(a, b, h):
-          d2 = (jnp.square(a).sum(-1)[:, None] + jnp.square(b).sum(-1)[None]
-                - 2 * jnp.matmul(a, b.T, precision=jax.lax.Precision.HIGHEST))
-          return jnp.maximum(d2, 0) / (2 * h * h)
-        e = part(x[:, :L], yb[:, :L], hs) + part(x[:, L:], yb[:, L:], hg)
-        return acc + jnp.exp(-e).sum(-1), None
-      acc, _ = jax.lax.scan(chunk, jnp.zeros(x.shape[0]), buf.reshape(-1, 4096, 2 * L))
-      return acc * (MASS / buf.shape[0])
-
-    for hg in H_GOAL:
-      for hs in H_STATE:
-        n = np.asarray(counts(x, hs, hg)).reshape(-1, K)
-        b = 1 / np.sqrt(n + 1)
-        r = dict(file=os.path.basename(f), task=str(z['task']), ckpt=str(z['ckpt']),
-                 hg=hg, hs=hs, n_med=np.median(n), b_mean=b.mean(),
-                 b_spread=b.std(1).mean(), b_range=(b.max(1) - b.min(1)).mean(),
-                 frac_novel=(n < 1).mean())
-        for c in CS:
-          w = np.exp(c * (b - b.max(1, keepdims=True)))
-          w /= w.sum(1, keepdims=True)
-          r[f'shift_c{c:g}'] = ((w * logp).sum(1) - logp.mean(1)).mean()
-          r[f'gain_c{c:g}'] = ((w * b).sum(1) / b.mean(1)).mean()
-        rows.append(r)
-    print('done', os.path.basename(f), flush=True)
-  import json
+    variants = {'index': np.tile(np.arange(C, dtype=np.float32), (L, 1))}
+    mf = f.replace('.npz', '_metric.npz')
+    if os.path.exists(mf):
+      M = np.load(mf)['M']
+      st = np.array([[M[l, c, c + 1] for c in range(C - 1)] for l in range(L)])
+      variants['measured'] = np.concatenate(
+          [np.zeros((L, 1)), np.cumsum(st / st.mean(), 1)], 1).astype(np.float32)
+    for metric, pos in variants.items():
+      table = np.tile(pos, (2, 1))                                   # (2L, C)
+      coord = lambda ids: table[np.arange(2 * L)[None], ids]
+      x, buf = jnp.asarray(coord(xi)), jnp.asarray(coord(bufi))
+      for hg in H_GOAL:
+        for hs in H_STATE:
+          n = np.asarray(counts(x, buf, hs, hg)).reshape(-1, K)
+          b = 1 / np.sqrt(n + 1)
+          r = dict(file=os.path.basename(f), task=str(z['task']), ckpt=str(z['ckpt']),
+                   metric=metric, hg=hg, hs=hs, n_med=float(np.median(n)), b_mean=b.mean(),
+                   b_spread=b.std(1).mean(), b_range=(b.max(1) - b.min(1)).mean(),
+                   frac_novel=(n < 1).mean())
+          for c in CS:
+            w = np.exp(c * (b - b.max(1, keepdims=True)))
+            w /= w.sum(1, keepdims=True)
+            r[f'shift_c{c:g}'] = ((w * logp).sum(1) - logp.mean(1)).mean()
+            r[f'gain_c{c:g}'] = ((w * b).sum(1) / b.mean(1)).mean()
+          rows.append(r)
+    print('done', os.path.basename(f), list(variants), flush=True)
   json.dump(rows, open(os.path.join(out_dir, 'fit.json'), 'w'), default=float)
-  # Summary: mean over files per width pair.
   keys = ['n_med', 'b_mean', 'b_spread', 'b_range', 'frac_novel'] + \
          [f'{m}_c{c:g}' for c in CS for m in ('shift', 'gain')]
-  print('hg   hs   ' + ' '.join(f'{k:>10s}' for k in keys) + '  worst-file b_spread')
-  for hg in H_GOAL:
-    for hs in H_STATE:
-      sel = [r for r in rows if r['hg'] == hg and r['hs'] == hs]
-      print(f'{hg:<4g} {hs:<4g} ' + ' '.join(f'{np.mean([r[k] for r in sel]):10.3g}' for k in keys)
-            + f'  {min(r["b_spread"] for r in sel):.3f}')
+  for metric in ('index', 'measured'):
+    print(f'== {metric}')
+    print('hg   hs   ' + ' '.join(f'{k:>10s}' for k in keys) + '  worst b_spread')
+    for hg in H_GOAL:
+      for hs in H_STATE:
+        sel = [r for r in rows if r['hg'] == hg and r['hs'] == hs and r['metric'] == metric]
+        if sel:
+          print(f'{hg:<4g} {hs:<4g} ' + ' '.join(f'{np.mean([r[k] for r in sel]):10.3g}' for k in keys)
+                + f'  {min(r["b_spread"] for r in sel):.3f}')
 
 
 if __name__ == '__main__':
