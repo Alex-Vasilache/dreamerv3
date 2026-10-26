@@ -1,0 +1,13 @@
+# Table stillness (2026-10-26): yaw_penalty (gyro) 0 / 0.1 / 0.3 / 1.0 on top of wheel_penalty 1.5, n=3, 40 min
+e2451 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.0 --seed 80
+e2452 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.0 --seed 81
+e2453 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.0 --seed 82
+e2454 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --seed 80
+e2455 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --seed 81
+e2456 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --seed 82
+e2457 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.3 --seed 80
+e2458 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.3 --seed 81
+e2459 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.3 --seed 82
+e2460 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 1.0 --seed 80
+e2461 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 1.0 --seed 81
+e2462 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 1.0 --seed 82

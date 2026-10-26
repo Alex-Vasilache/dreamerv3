@@ -530,6 +530,12 @@ def make_stream(config, replay, mode):
   report_need = (
       config.consec_report * config.report_length + config.replay_context)
   fn = bind(replay.sample, config.batch_size, mode)
+  if mode == 'train' and (config.cmd_relabel or config.cmd_mirror):
+    from embodied.envs.robot_relabel import CommandRelabel
+    relabel = CommandRelabel(
+        config.env.robot, config.cmd_relabel, config.cmd_mirror, config.seed)
+    sample = fn
+    fn = lambda: relabel(sample())
   stream = embodied.streams.Stateless(fn)
   stream = embodied.streams.Consec(
       stream,

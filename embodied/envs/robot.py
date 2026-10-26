@@ -300,7 +300,8 @@ class SmartphoneRobot(embodied.Env):
       length=0, discrete=True, timeout=20.0, speed_scale=1e-3, fall_angle=0.0,
       spin_penalty=0.1, rate_penalty=0.05, theta_zero=0.0,
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
-      drift_clip=1.0, wheel_penalty=0.0, still_speed=0.0, still_ramp_s=0.0,
+      drift_clip=1.0, wheel_penalty=0.0, yaw_penalty=0.0, still_speed=0.0,
+      still_ramp_s=0.0,
       action_rate_penalty=0.0,
       command_scale=1.0, symmetric=True,
       obs_theta_scale=0.18, obs_rate_scale=3.0, obs_wheel_scale=3.3e-4,
@@ -384,6 +385,10 @@ class SmartphoneRobot(embodied.Env):
     # motion, so wheels turning in opposite directions, or oscillating fast
     # around zero mean, cost nothing there. Clipped like drift per wheel.
     self.wheel_penalty = float(wheel_penalty)
+    # Balance task: cost per rad/s of turning, from the gyro (clipped at
+    # 2 rad/s). The wheel cost charges a pivot no more than the same speed
+    # straight ahead, and on the table policies kept turning in place.
+    self.yaw_penalty = float(yaw_penalty)
     # still_speed > 0 (phone mm/s): the balance task's upright score is
     # multiplied by exp(-mean |wheel speed| / still_speed), per wheel, so
     # moving costs a share of the whole reward rather than a small additive
@@ -815,7 +820,8 @@ class SmartphoneRobot(embodied.Env):
           upright
           - self.rate_penalty * abs(rate)
           - self.drift_penalty * drift
-          - self.wheel_penalty * self._wheel_effort(speed_l, speed_r))
+          - self.wheel_penalty * self._wheel_effort(speed_l, speed_r)
+          - self.yaw_penalty * min(abs(self._yaw_rate), 2.0))
     elif self.task == 'command':
       reward = self._command_reward(sensors)
     else:
@@ -1104,7 +1110,8 @@ class SmartphoneRobot(embodied.Env):
         theta_lo=self.theta_lo, theta_hi=self.theta_hi,
         theta_sigma=self.theta_sigma, speed_scale=self.speed_scale,
         drift_penalty=self.drift_penalty, drift_clip=self.drift_clip,
-        wheel_penalty=self.wheel_penalty, still_speed=self.still_speed,
+        wheel_penalty=self.wheel_penalty, yaw_penalty=self.yaw_penalty,
+        still_speed=self.still_speed,
         rate_penalty=self.rate_penalty,
         action_rate_penalty=self.action_rate_penalty,
         command_scale=self.command_scale, command_bias=self.command_bias,
