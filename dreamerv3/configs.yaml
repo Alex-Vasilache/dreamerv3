@@ -2047,6 +2047,18 @@ robot_sim:
   # A snapshot of the agent every 5 min of real time at 65 Hz, for videos of
   # the policy as it learns (tools/robot/dev/sim_rollout.py --ckpt).
   run.save_every_steps: 19500
+  # Matched to sim policies run on the robot (e2478 table, e2479 carpet;
+  # docs/robot/SIM_COMMAND.md section 8). The gearbox's stiction, 0.385 of
+  # stall on the stand, is ~0.2 under the policy's closed loop (still wheels
+  # break away far more often at small outputs; refit on balancing 0.227):
+  # with 0.385 the sim carpet robot stood dead still where the real one
+  # moved. And the balance point, drawn once per run, was learnt by heart: a
+  # 0.25 deg shift made the policy drive and spin as it did on the real
+  # table. Redrawn every 3 min (+-1 deg), the policies wander ~2x less across
+  # balance points and sit on a bumper 2% of the time against 10%, at 6.6
+  # instead of 4.8 min to balance on the table (e2496-e2504, n=3).
+  env.robot.sim_stick: 0.2
+  env.robot.sim_eq_every: 180
   jax: {prealloc: False}
   logger: {outputs: [jsonl, scope]}
 
