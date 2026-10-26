@@ -60,7 +60,7 @@ class RobotSim(robot_env.SmartphoneRobot):
                 'sim_air_speed', 'sim_friction', 'sim_stick', 'sim_slide',
                 'sim_speed_unit', 'sim_surface', 'sim_rolling',
                 'sim_contact_tc', 'sim_bumper_friction', 'sim_drag',
-                'sim_schedule', 'sim_carry_s'):
+                'sim_schedule', 'sim_carry_s', 'sim_eq_every'):
       kwargs.pop(key, None)
     if sim_hz:  # config.yaml of a run from before env.robot.hz
       kwargs['hz'] = sim_hz

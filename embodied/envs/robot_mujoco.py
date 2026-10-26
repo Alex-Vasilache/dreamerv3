@@ -376,7 +376,8 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_speed_unit=548.0, sim_surface='carpet', sim_rolling=None,
       sim_contact_tc=None, sim_bumper_friction=None, sim_drag=None,
       sim_schedule='', sim_carry_s=0.0, sim_noise=1.0,
-      sim_eq_range=0.0175, sim_substep=0.002, sim_friction=1.0, seed=0,
+      sim_eq_range=0.0175, sim_eq_every=0.0, sim_substep=0.002,
+      sim_friction=1.0, seed=0,
       **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'pace', 'config', 'policy_dir', 'sim_air_speed'):
@@ -431,8 +432,16 @@ class RobotMujoco(robot_sim.RobotSim):
     self._com = self.model.body_ipos[self._body].copy()
     # Upright in MuJoCo is theta_zero here: the phone reads tilt from its own
     # mount, and theta_zero is where that reading was set to zero by eye.
+    self.eq_range = float(sim_eq_range)
     self.theta_eq = self.theta_zero + self.sim_rng.uniform(
-        -sim_eq_range, sim_eq_range)
+        -self.eq_range, self.eq_range)
+    # sim_eq_every: draw a new balance point every so many seconds. Drawn
+    # once, it is fixed for a whole training run and the policy can learn it
+    # by heart; the real one is unknown (theta_zero is set by eye) and, run
+    # to run, not the same. A policy that held the sim still drove and spun
+    # on the real table with its balance point 0.4-0.6 deg further back.
+    self.eq_every = float(sim_eq_every)
+    self._eq_next = self.eq_every
     # Start leaning on a bumper, as a robot that was just set down does.
     self.theta = self.theta_zero + (
         self.bumper_hi if self.sim_rng.rand() < 0.5 else self.bumper_lo)
@@ -553,6 +562,10 @@ class RobotMujoco(robot_sim.RobotSim):
       self._hold(dt)
     self._sample_command(dt)
     self._sim_time += dt
+    if self.eq_every and self._sim_time >= self._eq_next:
+      self._eq_next += self.eq_every
+      self.theta_eq = self.theta_zero + self.sim_rng.uniform(
+          -self.eq_range, self.eq_range)
     if self._carry:
       left, dest, phase = self._carry
       self._carry = (left - dt, dest, phase) if left > dt else None

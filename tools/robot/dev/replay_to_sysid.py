@@ -93,7 +93,13 @@ def main():
   # speed_l > speed_r is a right turn (clockwise from above, negative yaw).
   yaw = -(wheels[:, 0] - wheels[:, 1]) / 548.0 * rm.WHEEL_R / (2 * rm.HALF_TRACK)
 
-  episode = np.cumsum(d['is_first'] | stall)
+  # The dashboard's pause holds the wheels and records a zero action, often
+  # while someone holds the body: not the world the sim models. Those rows
+  # are dropped and the run cut there.
+  paused = np.all(d['drive'] == 0, 1)
+  cut = np.zeros(n, bool)
+  cut[1:] = paused[:-1] & ~paused[1:]
+  episode = np.cumsum(d['is_first'] | stall | cut)
   # A gap in time at every episode start or stall, so no window spans one.
   t = t + 1.0 * episode
   rows = pd.DataFrame(dict(
@@ -102,7 +108,7 @@ def main():
       wheel_speed_l=wheels[:, 0], wheel_speed_r=wheels[:, 1], gyro_y=yaw,
       t_obs=t, t_drive=t + args.lag, sent_l=sent[:, 0], sent_r=sent[:, 1]))
   clipped = (np.abs(d['orientation']) >= r['obs_clip'] - 1e-6).any(1)
-  rows = rows[~clipped]
+  rows = rows[~clipped & ~paused]
   os.makedirs(args.out, exist_ok=True)
   path = os.path.join(args.out, 'balance.csv')
   if os.path.exists(path):
@@ -114,7 +120,8 @@ def main():
     rows = pd.concat([before, rows])
   rows.to_csv(path, index=False)
   print(f'{name}: {n} steps at {hz:.1f} Hz, {episode[-1]} segments, '
-        f'{clipped.sum()} clipped rows dropped -> {path}')
+        f'{clipped.sum()} clipped and {paused.sum()} paused rows dropped '
+        f'-> {path}')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,15 @@
+# Balance point redrawn during training (2026-10-26): sim policies held the sim
+# still but drove/spun on the real table (e2478); in the sim a 0.25-0.5 deg shift
+# of the balance point reproduces that. Baseline: e2468-e2470 (table), e2474-e2476 (carpet).
+e2493 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --seed 83
+e2482 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --seed 84
+e2483 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --seed 85
+e2484 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 83
+e2485 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 84
+e2486 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 85
+e2487 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 20 --env.robot.sim_eq_range 0.035 --seed 83
+e2488 flat balance 65 p100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 20 --env.robot.sim_eq_range 0.035 --seed 84
+e2489 flat balance 65 v100 --env.robot.sim_surface table --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 20 --env.robot.sim_eq_range 0.035 --seed 85
+e2490 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 83
+e2491 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 84
+e2492 flat balance 65 v100 --env.robot.sim_surface carpet --env.robot.yaw_penalty 0.1 --env.robot.sim_eq_every 60 --env.robot.sim_eq_range 0.035 --seed 85
