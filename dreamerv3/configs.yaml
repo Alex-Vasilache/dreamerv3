@@ -1893,6 +1893,12 @@ robot_command:
   # Wheel observations as a fraction of the in-air top speed (1/5700),
   # negated so that, like the motor output, positive means forward.
   env.robot.obs_wheel_scale: -1.75e-4
+  # Hindsight command relabelling and left-right mirroring of half of each
+  # training batch: forward tracking at corr 0.7 on carpet in 22.2 +- 4.7 min
+  # against 27.8 +- 5.1, on the table 12.1 +- 2.5 against 17.4 +- 3.0, final
+  # carpet gain 0.72 against 0.52; turning unchanged (sim, n=4, e2425-e2464).
+  cmd_relabel: 0.5
+  cmd_mirror: 0.5
 
 # ---------------------------------------------------------------------------
 # Pinpad collapse causal study (e1031-e1042, 2026-09-30). Layer AFTER

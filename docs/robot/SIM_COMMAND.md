@@ -249,7 +249,7 @@ each; the gain column is the forward gain over the last ~2 min.
 n=4 per arm. Relabelling makes the final forward tracking more accurate but
 delays it on carpet; mirroring gives the earlier start; together they are
 ~1.25x (carpet) to ~1.4x (table) faster -- worth using on the robot
-(`--cmd_relabel 0.5 --cmd_mirror 0.5`), not the order-of-magnitude gain
+(now the `robot_command` default), not the order-of-magnitude gain
 asked for. Turning is learnt in ~10 min regardless; forward on carpet is the
 bottleneck. P100 seeds (2/3 of the V100's updates) learnt as fast as V100
 ones, so more learner compute is not the lever.
