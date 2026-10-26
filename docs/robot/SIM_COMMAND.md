@@ -314,6 +314,22 @@ the robot's balance point, and on the table that means some driving.
 ![sweep](figs/s2r/sweep1.png)
 ![robustness](figs/s2r/robust_r2.png)
 
+Round 3 (e2603–e2608) trained in the matched sim (`robot_sim` as now:
+stick 0.2, balance point redrawn every 180 s). Carpet balance is learnt as
+fast as before (e2505–e2510, e2607–e2608: 2.7–3.3 min to score 0.7) and every
+carpet policy, from round 2 or 3, stays still at balance points −1…+1° in
+the stick-0.2 sim (drift ≤ 6 mm/s, no bumper), except e2505, which collapsed
+late (last-5-min score 0.29). Command learning with relabel + mirror is not
+hurt (n=2 against n=4): forward correlation 0.7 at 19.5 ± 9.5 vs 11.6 ± 2.5
+min on the table, 16.0 ± 2.0 vs 25.5 ± 4.3 min on carpet; final forward
+correlation 0.84–0.90.
+
+![matched-sim command learning](figs/s2r/sim_cmd_matched.png)
+
+Policies to try on the robot: e2503 (table balance, drift 159 mm/s, the
+best of round 2), e2608 (carpet balance), e2604 (table command), e2605
+(carpet command).
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined
