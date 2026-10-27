@@ -621,7 +621,17 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e2700–e2729: table UCB-B in imagination on V+SOM+even (2026-10-27, array 4773719)
+### e2800–e2829: table UCB-B, c 3.0, on V+SOM+even (2026-10-27, array 4773889)
+
+Relaunch of e2700-e2729 with c 1.0 -> 3.0, everything else identical. e2700-e2707
+(array 4773719) were cancelled at ~1M and archived: the online tilt fell to a pull
+of ~-0.09 nats (gain 1.05-1.12) as the table filled with the drifting policy's
+picks, vs the fit's -0.28 / 1.41 -- the offline buffer (one checkpoint's picks) is
+again optimistic. The pull is roughly linear in c, so 3.0 targets ~-0.3. Decision
+rule overnight: if the pull at 1-2M is still < 0.15 nats, raise c again; if > 0.6
+or DMC drops below every V+SOM+even seed at matched steps, lower it.
+
+#### (original c 1.0 entry) e2700–e2729: table UCB-B in imagination on V+SOM+even (2026-10-27, array 4773719)
 
 `director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even ucb_imag_btab
 pubmatch`, 6 tasks x 5 seeds, seed-major (`sbatch/pubucbtab_params.txt`), A100, %8.
