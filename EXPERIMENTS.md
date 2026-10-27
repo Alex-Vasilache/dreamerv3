@@ -623,6 +623,22 @@ after a watchdog retry left a proprio-model checkpoint.
 
 ### e2630–e2659: full-resolution UCB in imagination (arm B) on V+SOM (2026-10-26, array 4772645)
 
+**STOPPED 2026-10-27** after seed 0 (complete) + parts of seed 1 (9 cancelled, all
+archived). Seed 0 late 3-4M: pin pad 4/5/6 285/251/0, cartpole 581, cheetah 550,
+hopper 97 -> vs V+SOM DMC -14.3 pts (p=0.02, seed 0 only), pin pads -3.8. Why it
+failed: the counts were far too sparse to mean anything. At full resolution almost
+every start code is unique (cheetah: 63k distinct starts among 65k buffered picks;
+pin pad four 24k), and h_state 0.5 only lets identical or one-step starts share
+counts, so a typical start had 3-25 buffered picks near it; most candidates read
+bonus ~1 and the tilt was mostly noise (online novelty gain 1.05-1.14 vs the fit's
+1.3). The offline fit was optimistic: buffer and probe states came from the same
+short rollouts, so probes had their own time-neighbours in the buffer. Also: one
+buffered pick stands for ~2,700 real picks (sample noise), and the KDE cost ~30%
+speed. Next: table counts (exact, every pick, ~free) on V+SOM+even, whose even
+class steps make index bins even in goal space; fast held-out offline fit
+(`tools/collapse_study/ucb_table_fit.py`). (Note: the other session's robot runs
+also use e2604-e2608.)
+
 Relaunch of e2600-e2629 (array 4772486, cancelled after 2h: 270k env steps/h vs
 ~650k for V+SOM, 2.4x slower; e2600-e2602 archived at ~0.58M, tilt already as
 fitted: logp shift -0.20, gain 1.06-1.11). Fixes: the kernel's weighted squared
