@@ -51,6 +51,7 @@ class Session:
     self.started = time.time()
     self.went = None
     self.announced = False
+    self.waiting = False   # restart asked, the next session not ready yet
     env = dict(
         os.environ,
         ONLINE_GO_FILE=str(self.go_file),
@@ -90,6 +91,10 @@ class Session:
         os.killpg(pgid, sig)
       except ProcessLookupError:
         break
+      except PermissionError:
+        # macOS: a group whose members are all zombies refuses signals.
+        if self.proc.poll() is not None:
+          break
       self.proc.poll()
       time.sleep(POLL)
       if time.time() > deadline:
@@ -145,6 +150,7 @@ def main(argv=None):
 
   live = start(go=True)
   crashes = 0
+  asked_at = None
   while True:
     time.sleep(POLL)
     # The next session compiles while this one runs, but only once this one
@@ -158,9 +164,22 @@ def main(argv=None):
     asked = live.restart_file.exists()
     if not asked and live.alive():
       continue
+    if asked and asked_at is None:
+      asked_at = time.time()
+    # A restart asked for before the next session is ready waits for it on
+    # the live one: cutting over at once left the phone with nothing to
+    # connect to for the rest of a cold start (~1.5 min on Saion; e2495 s04).
+    if (asked and live.alive() and standby is not None and standby.alive()
+        and not standby.parked):
+      if not live.waiting:
+        live.waiting = True
+        log(f'restart asked; s{live.index:02d} stays live until '
+            f's{standby.index:02d} is ready')
+      continue
     reason = 'restart from the dashboard' if asked else (
         f'exited with {live.proc.returncode}')
-    t0 = time.time()
+    t0 = asked_at or time.time()
+    asked_at = None
     if asked:
       live.stop()
     else:

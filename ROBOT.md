@@ -159,7 +159,8 @@ started and parked beside the live one (`tools/robot/demo_supervisor.py`), so
 a restart skips the minute-long start of a new learner; the robot holds its
 wheels from the press until the new session's first weights arrive. Allow
 ~1.5 min after starting the job, and after each restart, before the next
-restart is that fast. Sessions are `<run dir>/s01`, `s02`, ... and
+restart is that fast; a restart pressed sooner keeps the current session
+(wheels held) until the next one is ready, then switches. Sessions are `<run dir>/s01`, `s02`, ... and
 `<run dir>/sessions.tsv` lists them. Stop with `tools/robot/stop.sh`.
 
 **Pause** the robot (wheels held) or the training (learner idle) with the
@@ -251,7 +252,10 @@ and turning under it in each. `?theme=dark` or `?theme=light` picks the
 look; the button toggles it. The tilt is drawn 30 ms ahead of the latest
 reading, from its rate, to make up for the trip to the page; `?lead=<ms>`
 changes that. Under `tools/robot/demo.sh` it has a **RESTART TRAINING**
-button (see Train).
+button (see Train). The policy menu in its header runs any saved policy
+(the Dreamer Player's list) in place of training: the phone lets the trainer
+go, which waits for it, and choosing **TRAINING** reconnects on the training
+weights. The learner gets no new experience meanwhile, so it idles.
 
 Only a policy trained on the command task follows it:
 

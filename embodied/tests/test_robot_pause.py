@@ -206,6 +206,33 @@ def test_the_page_pauses_through_the_phone():
   assert not post(dict(robot=True))['ok']
 
 
+def test_the_page_chooses_a_policy_through_the_phone():
+  app_python()
+  import webui
+  asked = []
+  ui = webui.WebUI(None, port=free_port(), on_play=asked.append)
+  assert ui.start()
+
+  def post(body):
+    request = urllib.request.Request(
+        f'http://127.0.0.1:{ui.port}/play', data=json.dumps(body).encode(),
+        method='POST')
+    try:
+      return json.loads(urllib.request.urlopen(request, timeout=5).read())
+    except urllib.error.HTTPError as e:
+      return json.loads(e.read())
+
+  assert post(dict(name='sim_carpet_balance'))['ok']
+  assert post(dict(name=None))['ok']
+  ui.handle(dict(t='play', name=''))   # the page's TRAINING option
+  assert asked == ['sim_carpet_balance', None, None]
+  def refuse(name):
+    raise ValueError('no saved policy')
+  ui.on_play = refuse
+  answer = post(dict(name='missing'))
+  assert not answer['ok'] and 'no saved policy' in answer['error']
+
+
 def test_the_history_keeps_minute_zero_per_run():
   app_python()
   import dashboard
@@ -228,6 +255,7 @@ def test_the_dashboard_has_the_buttons_and_the_shifted_axis():
   path = app_python()
   page = (path / 'webpages' / 'dashboard.html').read_text()
   for needle in ('id="pause-robot"', 'id="pause-train"', "t: 'pause'",
+                 'id="policy"', "t: 'play'",
                  'shiftMin()', 'TRAINING STARTS'):
     assert needle in page, needle
 

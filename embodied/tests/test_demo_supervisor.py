@@ -64,3 +64,46 @@ def test_a_restart_goes_live_on_the_parked_session_and_parks_another(tmp_path):
   # Every session's processes went down with the job.
   ps = subprocess.run(['pgrep', '-f', str(fake)], capture_output=True, text=True)
   assert not ps.stdout.strip(), ps.stdout
+
+
+# As FAKE, but every session after the first stays in its cold start until
+# the test lets it park.
+SLOW = FAKE.replace(
+    "time.sleep(0.3)  # building and compiling",
+    "time.sleep(0.3)  # building and compiling\n"
+    "while not logdir.name == 'logdir' or (\n"
+    "    logdir.parent.name != 's01' and\n"
+    "    not (logdir.parent.parent / 'release').exists()):\n"
+    "  time.sleep(0.02)")
+
+
+def test_a_restart_before_the_next_session_is_ready_waits_on_the_live_one(
+    tmp_path):
+  fake = tmp_path / 'fake_main.py'
+  fake.write_text(SLOW)
+  run_dir = tmp_path / 'e2_demo'
+  proc = subprocess.Popen(
+      [sys.executable, str(SUPERVISOR), '--run_dir', str(run_dir),
+       '--name', 'e2_demo', '--', sys.executable, str(fake)],
+      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  try:
+    live = lambda s: (run_dir / s / 'logdir' / 'live').exists()
+    assert wait_for(lambda: live('s01'))
+    assert wait_for(lambda: (run_dir / 's02').exists())
+    (run_dir / 's01' / 'restart').write_text('1')
+    # s02 is still starting: s01 keeps the phone rather than handing it to
+    # a session that is not listening yet.
+    time.sleep(1.0)
+    assert proc.poll() is None
+    assert not live('s02')
+    assert subprocess.run(['pgrep', '-f', 's01/logdir'],
+                          capture_output=True).returncode == 0
+    (run_dir / 'release').write_text('1')
+    assert wait_for(lambda: live('s02'))
+    rows = (run_dir / 'sessions.tsv').read_text().splitlines()
+    assert rows[1].startswith('s01') and rows[1].endswith('restart from the dashboard')
+  finally:
+    proc.send_signal(signal.SIGTERM)
+    out = proc.communicate(timeout=20)[0].decode()
+  assert proc.returncode == 0, out
+  assert 'stays live until s02 is ready' in out, out
