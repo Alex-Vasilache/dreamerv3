@@ -1607,6 +1607,18 @@ ucb_imag_kde:
     mgr_ucb_imag_c: 1.5
     mgr_ucb_imag: {impl: kde, candidates: 32, kde_state: True, h_goal: 0.75, h_state: 0.5, kde_pos_rate: 0.01, kde_size: 65536}
 
+# UCB in imagination, arm B as a TABLE (start 2 x goal 4 bins/block), meant for
+# the evenness codebook (goal_even), where index bins are even in goal space.
+# Fast held-out offline fit on V+SOM+even e2006-e2023 at 2M
+# (tools/collapse_study/ucb_table_fit.py, 2026-10-27): smear h 0.5 keeps the
+# bonus spread among one state's 32 candidates at 0.19 (h 1.0, the old default:
+# 0.06); c 1.0 gives log-prob shift -0.28 (worst task -0.41), novelty gain 1.41.
+ucb_imag_btab:
+  agent:
+    mgr_ucb_c: 0.0
+    mgr_ucb_imag_c: 1.0
+    mgr_ucb_imag: {impl: table, candidates: 32, goal_bins: 4, state_bins: 2, h: 0.5}
+
 ucb_imag_a:
   agent:
     mgr_ucb_c: 0.0

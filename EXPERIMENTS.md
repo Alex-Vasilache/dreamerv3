@@ -621,6 +621,24 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e2700–e2729: table UCB-B in imagination on V+SOM+even (2026-10-27, array 4773719)
+
+`director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even ucb_imag_btab
+pubmatch`, 6 tasks x 5 seeds, seed-major (`sbatch/pubucbtab_params.txt`), A100, %8.
+References: V+SOM+even and V+SOM (e2000-e2059), no rerun. ImagCounts table, cell =
+start code at 2 bins/block x goal code at 4 bins/block, Gaussian smear h 0.5 across
+bins, 32 policy candidates, Gumbel tilt c 1.0. Why the evenness codebook: its class
+steps are near-even (CV 0.38 vs 0.84 on SOM, block ratio 1.7 vs 4), so index bins
+are even in goal space and the table needs no measured positions. Why a table: at
+widths matching 2x4 bins the full-resolution buffer added nothing but sample noise
+and ~30% cost (see e2630). h and c from a fast held-out offline fit
+(`tools/collapse_study/ucb_table_fit.py`, probe episodes disjoint from the buffer's):
+h 0.5 bonus spread 0.19 vs 0.06 at the old h 1.0; c 1.0 shift -0.28 (worst -0.41),
+gain 1.41.
+Hypothesis: faster discovery than V+SOM+even (pin pad five/six), no DMC loss.
+Checks: speed ~ V+SOM, imag_ucb/novelty_gain ~1.3-1.4 and logp_shift ~-0.3 online,
+matched-step returns vs V+SOM+even.
+
 ### e2630–e2659: full-resolution UCB in imagination (arm B) on V+SOM (2026-10-26, array 4772645)
 
 **STOPPED 2026-10-27** after seed 0 (complete) + parts of seed 1 (9 cancelled, all
