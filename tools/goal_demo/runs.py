@@ -19,18 +19,18 @@ BUCKET = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
 STEP = '000004000000'
 
 # Panels shown by default; the page can switch on any arm in ALL_ARMS.
-ARMS = ('v', 'vsom', 'vucb')
-ALL_ARMS = ('v', 'vsom', 'vucb', 'og', 'som', 'sommask', 'ucbA', 'ucbB')
+ARMS = ('v', 'vsom', 'veven', 'vucb')
+ALL_ARMS = ('v', 'vsom', 'veven', 'vucb', 'og', 'som', 'sommask', 'ucbA', 'ucbB')
 ARM_LABELS = {'og': 'Director (OG)', 'som': 'OG + SOM-line',
               'somlip': 'OG + SOM-line + LiP',
               'sommask': 'OG + SOM-line + mask',
               'ucbA': 'OG + SOM + UCB imag A', 'ucbB': 'OG + SOM + UCB imag B',
               'v': 'V (OG + fixed ent. + worker v3)', 'vsom': 'V + SOM',
-              'vucb': 'V + SOM + UCB-B full res.'}
+              'veven': 'V + SOM + evenness', 'vucb': 'V + SOM + UCB-B full res.'}
 # Same colours as the comparison plots (collapse_study/compare_late.py).
 ARM_COLORS = {'og': '#E69F00', 'som': '#CC79A7', 'somlip': '#0072B2',
               'sommask': '#56B4E9', 'ucbA': '#0072B2', 'ucbB': '#009E73',
-              'v': '#000000', 'vsom': '#D55E00', 'vucb': '#0072B2'}
+              'v': '#000000', 'vsom': '#D55E00', 'veven': '#009E73', 'vucb': '#0072B2'}
 PATTERNS = {
     'og': 'e12[3-8]?_{t}_director-director_og-pubmatch_s*',
     'som': 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*',
@@ -38,6 +38,7 @@ PATTERNS = {
     'sommask': 'e16[3-5]?_{t}_director-director_og-goal_som_line-goal_mask8-pubmatch_s*',
     'v': 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*',
     'vsom': 'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s*',
+    'veven': 'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*',
     'vucb': 'e26[3-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s*',
 }
 TASK_LABELS = {
@@ -113,37 +114,44 @@ for _t, _arms in UCB_RUNS.items():
   if _t in RUNS:
     RUNS[_t].update(_arms)
 
-# V-base arms (2026-10-27): V = e1910-e1969 (wkr_v3), V+SOM = e2000-e2059, V+SOM +
+# V-base arms (2026-10-27): V = e1910-e1969 (wkr_v3), V+SOM and V+SOM+evenness
+# (goal_even) = e2000-e2059, V+SOM +
 # full-resolution UCB-B (ImagKDE, measured class positions) = e2630-e2659, still
 # running on 10-27: its panel loads the most advanced run's latest milestone.
 # (name, score over the 300k steps before the checkpoint, milestone)
 V_RUNS = {
     'pinpad_four': {
+        'veven': ('e2018_pinpad_four_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s1_j4769800_18', 344.7, '000004000000'),
         'v': ('e1964_pinpad_four_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s4_j4768718_54', 334.5, '000004000000'),
         'vsom': ('e2012_pinpad_four_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s1_j4769800_12', 337.6, '000004000000'),
         'vucb': ('e2630_pinpad_four_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_0', 288.4, '000004000000'),
     },
     'pinpad_five': {
+        'veven': ('e2019_pinpad_five_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s1_j4769800_19', 281.2, '000004000000'),
         'v': ('e1941_pinpad_five_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s2_j4768718_31', 287.9, '000004000000'),
         'vsom': ('e2013_pinpad_five_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s1_j4769800_13', 289.9, '000004000000'),
         'vucb': ('e2631_pinpad_five_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_1', 248.7, '000004000000'),
     },
     'pinpad_six': {
+        'veven': ('e2044_pinpad_six_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s3_j4769800_44', 0.1, '000004000000'),
         'v': ('e1918_pinpad_six_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s0_j4768718_8', 205.1, '000004000000'),
         'vsom': ('e2014_pinpad_six_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s1_j4769800_14', 202.8, '000004000000'),
         'vucb': ('e2632_pinpad_six_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_2', 0.0, '000004000000'),
     },
     'dmc_cartpole_swingup': {
+        'veven': ('e2057_dmc_cartpole_swingup_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s4_j4769800_57', 826.2, '000004000000'),
         'v': ('e1943_dmc_cartpole_swingup_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s2_j4768718_33', 817.4, '000004000000'),
         'vsom': ('e2027_dmc_cartpole_swingup_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s2_j4769800_27', 845.6, '000004000000'),
         'vucb': ('e2633_dmc_cartpole_swingup_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_3', 575.4, '000004000000'),
     },
     'dmc_cheetah_run': {
+        'veven': ('e2046_dmc_cheetah_run_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s3_j4769800_46', 640.9, '000004000000'),
         'v': ('e1944_dmc_cheetah_run_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s2_j4768718_34', 560.4, '000004000000'),
         'vsom': ('e2028_dmc_cheetah_run_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s2_j4769800_28', 710.2, '000004000000'),
         'vucb': ('e2634_dmc_cheetah_run_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_4', 550.1, '000004000000'),
     },
     'dmc_hopper_hop': {
+        'veven': ('e2059_dmc_hopper_hop_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s4_j4769800_59', 340.3, '000004000000'),
         'v': ('e1957_dmc_hopper_hop_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s3_j4768718_47', 327.2, '000004000000'),
         'vsom': ('e2041_dmc_hopper_hop_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s3_j4769800_41', 433.6, '000004000000'),
         'vucb': ('e2635_dmc_hopper_hop_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_5', 103.9, '000004000000'),
