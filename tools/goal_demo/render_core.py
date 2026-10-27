@@ -336,14 +336,35 @@ class GoalRenderer:
     # (hrl/explore.py:ImagCounts), read straight from the checkpoint.
     self.imag = getattr(model, 'imag_counts', None) if getattr(
         model, 'mgr_ucb_imag_c', 0.0) > 0.0 else None
+    # Full-resolution arm (hrl/explore.py:ImagKDE): a buffer of sampled picks
+    # instead of a table; counts are evaluated here from the buffer.
+    self.imag_is_kde = self.imag is not None and hasattr(self.imag, 'h_goal')
+    kde_keys = tuple(f'imag_counts/{k}/value' for k in ('buf', 'wts', 'mass', 'pos'))
     if self.imag is not None:
-      extra = extra + ('imag_counts/tab/value',)
+      extra = extra + (kde_keys if self.imag_is_kde else ('imag_counts/tab/value',))
     loaded, extras = _load_params(
         runsmod.ckpt_path(task, arm, step), params, extra)
     self.codebook_table = extras.get('goal_dec/codebook/table')
     self.imag_tab = extras.get('imag_counts/tab/value')
+    self.imag_kde = ({k.split('/')[1]: np.asarray(extras[k], np.float64) for k in kde_keys}
+                     if self.imag_is_kde else None)
+    self.has_counts = self.imag_tab is not None or self.imag_kde is not None
     if self.imag_tab is not None:
       self._imag_prepare()
+    if self.imag_kde is not None:
+      self.imag_goal_bins, self.imag_state_bins = self.classes, self.classes
+      # Most frequent (decay-weighted) start code in the buffer: the page opens
+      # there, since most start codes have no recent picks nearby at all.
+      buf_starts = np.round(self.imag_kde['buf'][:, :self.blocks]).astype(np.int64)
+      uniq, inv = np.unique(buf_starts, axis=0, return_inverse=True)
+      top = np.argmax(np.bincount(inv.reshape(-1), weights=self.imag_kde['wts']))
+      self.imag_start = uniq[top].tolist()
+      # ...and the most frequent goal picked from that start.
+      sel = inv.reshape(-1) == top
+      picked = np.round(self.imag_kde['buf'][sel, self.blocks:]).astype(np.int64)
+      gu, gi = np.unique(picked, axis=0, return_inverse=True)
+      self.imag_goal = gu[np.argmax(np.bincount(
+          gi.reshape(-1), weights=self.imag_kde['wts'][sel]))].tolist()
     self.line_dirs, self.line_steps = (
         fit_lines(self.codebook_table) if self.is_vq else (None, None))
     # Keep the ~220MB of weights resident on the device: passing host arrays
@@ -408,6 +429,23 @@ class GoalRenderer:
       q = np.concatenate([self._imag_bins(start, self.imag_state_bins), q], -1)
     return (q * self._imag_strides).sum(-1)
 
+  def _kde_counts(self, goal, start):
+    """ImagKDE counts for goal codes ``(N, L)`` from one start code ``(L,)``."""
+    k, im = self.imag_kde, self.imag
+    pos, buf, w = k['pos'], k['buf'], k['wts']
+    L = self.blocks
+    ids = lambda x: np.clip(np.round(x), 0, self.classes - 1).astype(np.int64)
+    coord = lambda x: pos[np.arange(L)[None], ids(x)]
+    g = coord(np.asarray(goal, np.float64).reshape(-1, L))
+    s = coord(np.asarray(start, np.float64).reshape(1, L))[0]
+    bs, bg = coord(buf[:, :L]), coord(buf[:, L:])
+    es = ((bs - s[None]) ** 2).sum(-1) / (2 * im.h_state ** 2)            # (M,)
+    sw = w * np.exp(-es)                                                   # start-weighted
+    eg = ((g[:, None] - bg[None]) ** 2).sum(-1) / (2 * im.h_goal ** 2)     # (N, M)
+    scale = float(k['mass']) / max(float(w.sum()), 1e-12)
+    n = (np.exp(-eg) * sw[None]).sum(-1) * scale / im.count_unit
+    return n, sw
+
   def imag_view(self, code, start=None):
     """What the count table says around ``code`` (and ``start`` for arm B).
 
@@ -420,6 +458,19 @@ class GoalRenderer:
     var = np.repeat(code[None, None], self.classes, 1).repeat(self.blocks, 0)
     for b in range(self.blocks):
       var[b, :, b] = np.arange(self.classes)
+    if self.imag_kde is not None:
+      L, C = self.blocks, self.classes
+      n, sw = self._kde_counts(np.concatenate([var.reshape(-1, L), code[None]]), start)
+      goal_ids = np.clip(np.round(self.imag_kde['buf'][:, L:]), 0, C - 1).astype(np.int64)
+      tot = max(float(sw.sum()), 1e-12)
+      share = np.stack([np.bincount(goal_ids[:, b], weights=sw, minlength=C) / tot
+                        for b in range(L)])
+      return dict(bonus=(1.0 / np.sqrt(n[:-1].reshape(L, C) + 1.0)).tolist(),
+                  here=float(1.0 / np.sqrt(n[-1] + 1.0)), share=share.tolist(),
+                  start_mass=float(sw.sum() / max(self.imag_kde['wts'].sum(), 1e-12)),
+                  goal_bins=C, state_bins=C, kde=True,
+                  h_goal=self.imag.h_goal, h_state=self.imag.h_state,
+                  pos=self.imag_kde['pos'].tolist())
     st = None
     if self.imag_state_bins:
       st = np.broadcast_to(np.asarray(start, np.float64).reshape(-1), var.shape)

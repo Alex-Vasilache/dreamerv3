@@ -1,6 +1,7 @@
 """Which checkpoint each panel of the goal-code demo shows.
 
-Three arms on the matched `OG` protocol (6 tasks x 5 seeds each):
+Default panels (since 2026-10-27): V, V + SOM, V + SOM + full-resolution UCB-B
+(see V_RUNS below). Older arms on the matched `OG` protocol stay selectable:
 
   og       director director_og pubmatch                          e1230-e1289
   som      ... goal_som_line ...                                  e1330-e1419
@@ -18,20 +19,26 @@ BUCKET = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
 STEP = '000004000000'
 
 # Panels shown by default; the page can switch on any arm in ALL_ARMS.
-ARMS = ('og', 'som', 'sommask')
-ALL_ARMS = ('og', 'som', 'sommask', 'ucbA', 'ucbB')
+ARMS = ('v', 'vsom', 'vucb')
+ALL_ARMS = ('v', 'vsom', 'vucb', 'og', 'som', 'sommask', 'ucbA', 'ucbB')
 ARM_LABELS = {'og': 'Director (OG)', 'som': 'OG + SOM-line',
               'somlip': 'OG + SOM-line + LiP',
               'sommask': 'OG + SOM-line + mask',
-              'ucbA': 'OG + SOM + UCB imag A', 'ucbB': 'OG + SOM + UCB imag B'}
+              'ucbA': 'OG + SOM + UCB imag A', 'ucbB': 'OG + SOM + UCB imag B',
+              'v': 'V (OG + fixed ent. + worker v3)', 'vsom': 'V + SOM',
+              'vucb': 'V + SOM + UCB-B full res.'}
 # Same colours as the comparison plots (collapse_study/compare_late.py).
 ARM_COLORS = {'og': '#E69F00', 'som': '#CC79A7', 'somlip': '#0072B2',
-              'sommask': '#56B4E9', 'ucbA': '#0072B2', 'ucbB': '#009E73'}
+              'sommask': '#56B4E9', 'ucbA': '#0072B2', 'ucbB': '#009E73',
+              'v': '#000000', 'vsom': '#D55E00', 'vucb': '#0072B2'}
 PATTERNS = {
     'og': 'e12[3-8]?_{t}_director-director_og-pubmatch_s*',
     'som': 'e1[34]??_{t}_director-director_og-goal_som_line-pubmatch_s*',
     'somlip': 'e1[34]??_{t}_director-director_og-goal_som_lipvq_line_prod-lip_relu-goal_vq_f32-pubmatch_s*',
     'sommask': 'e16[3-5]?_{t}_director-director_og-goal_som_line-goal_mask8-pubmatch_s*',
+    'v': 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*',
+    'vsom': 'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s*',
+    'vucb': 'e26[3-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s*',
 }
 TASK_LABELS = {
     'pinpad_four': 'Pin Pad Four', 'pinpad_five': 'Pin Pad Five',
@@ -103,6 +110,46 @@ UCB_RUNS = {
         'ucbB': ('e1879_dmc_hopper_hop_director-director_og-goal_som_line-ucb_imag_b-ucb_imag_c3-pubmatch_s4_j4767281_59', None, '000002500000')},
 }
 for _t, _arms in UCB_RUNS.items():
+  if _t in RUNS:
+    RUNS[_t].update(_arms)
+
+# V-base arms (2026-10-27): V = e1910-e1969 (wkr_v3), V+SOM = e2000-e2059, V+SOM +
+# full-resolution UCB-B (ImagKDE, measured class positions) = e2630-e2659, still
+# running on 10-27: its panel loads the most advanced run's latest milestone.
+# (name, score over the 300k steps before the checkpoint, milestone)
+V_RUNS = {
+    'pinpad_four': {
+        'v': ('e1964_pinpad_four_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s4_j4768718_54', 334.5, '000004000000'),
+        'vsom': ('e2012_pinpad_four_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s1_j4769800_12', 337.6, '000004000000'),
+        'vucb': ('e2630_pinpad_four_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_0', 288.4, '000004000000'),
+    },
+    'pinpad_five': {
+        'v': ('e1941_pinpad_five_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s2_j4768718_31', 287.9, '000004000000'),
+        'vsom': ('e2013_pinpad_five_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s1_j4769800_13', 289.9, '000004000000'),
+        'vucb': ('e2631_pinpad_five_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_1', 248.7, '000004000000'),
+    },
+    'pinpad_six': {
+        'v': ('e1918_pinpad_six_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s0_j4768718_8', 205.1, '000004000000'),
+        'vsom': ('e2014_pinpad_six_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s1_j4769800_14', 202.8, '000004000000'),
+        'vucb': ('e2632_pinpad_six_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_2', 0.0, '000004000000'),
+    },
+    'dmc_cartpole_swingup': {
+        'v': ('e1943_dmc_cartpole_swingup_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s2_j4768718_33', 817.4, '000004000000'),
+        'vsom': ('e2027_dmc_cartpole_swingup_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s2_j4769800_27', 845.6, '000004000000'),
+        'vucb': ('e2633_dmc_cartpole_swingup_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_3', 575.4, '000004000000'),
+    },
+    'dmc_cheetah_run': {
+        'v': ('e1944_dmc_cheetah_run_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s2_j4768718_34', 560.4, '000004000000'),
+        'vsom': ('e2028_dmc_cheetah_run_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s2_j4769800_28', 710.2, '000004000000'),
+        'vucb': ('e2634_dmc_cheetah_run_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_4', 550.1, '000004000000'),
+    },
+    'dmc_hopper_hop': {
+        'v': ('e1957_dmc_hopper_hop_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s3_j4768718_47', 327.2, '000004000000'),
+        'vsom': ('e2041_dmc_hopper_hop_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s3_j4769800_41', 433.6, '000004000000'),
+        'vucb': ('e2635_dmc_hopper_hop_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-ucb_imag_kde-pubmatch_s0_j4772645_5', 103.9, '000004000000'),
+    },
+}
+for _t, _arms in V_RUNS.items():
   if _t in RUNS:
     RUNS[_t].update(_arms)
 

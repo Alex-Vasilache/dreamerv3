@@ -197,7 +197,7 @@ class Registry:
     """Count-table view around ``code`` (UCB-in-imagination arms only)."""
     self.last_request = time.time()
     model = self.get(task, arm)
-    if getattr(model, 'imag_tab', None) is None:
+    if not getattr(model, 'has_counts', False):
       return dict(counts=None)
     return dict(counts=model.imag_view(code, start))
 
@@ -215,8 +215,11 @@ class Registry:
                   dim=int(table.shape[-1]), **PC1_RANDOM)
     return dict(
         blocks=model.blocks, classes=model.classes, values=model.has_values,
-        counts=(None if getattr(model, 'imag_tab', None) is None else
-                dict(goal_bins=model.imag_goal_bins, state_bins=model.imag_state_bins)),
+        counts=(None if not getattr(model, 'has_counts', False) else
+                dict(goal_bins=model.imag_goal_bins, state_bins=model.imag_state_bins,
+                     kde=bool(getattr(model, 'imag_is_kde', False)),
+                     start=getattr(model, 'imag_start', None),
+                     goal=getattr(model, 'imag_goal', None))),
         mask_groups=model.mask_groups,
         codebook=line, scale=self._scales[(task, arm)],
         **runsmod.info(task, arm))

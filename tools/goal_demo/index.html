@@ -348,7 +348,9 @@ function postValues(arm, codes, goals, ref) {
 function makeArm(arm, info, model) {
   const dom = buildPanel(arm, info, model);
   const self = {
-    arm, code: new Array(state.blocks).fill(3), cache: new Map(), dom,
+    arm, code: model.counts && model.counts.goal ? model.counts.goal.slice()
+                                                 : new Array(state.blocks).fill(3),
+    cache: new Map(), dom,
     active: 0, preview: null, dragging: false, chain: Promise.resolve(),
     token: 0, timer: 0,
     values: new Map(), scale: model.scale, hasValues: model.values !== false,
@@ -357,7 +359,8 @@ function makeArm(arm, info, model) {
     vtoken: 0, vtimer: 0,
     counts: model.counts, countsView: null, ctoken: 0, ctimer: 0,
     start: model.counts && model.counts.state_bins
-        ? new Array(state.blocks).fill(2) : null,
+        ? (model.counts.start ? model.counts.start.slice()
+                              : new Array(state.blocks).fill(2)) : null,
   };
   state.arms[arm] = self;
   wireGrid(self);
@@ -379,7 +382,8 @@ function buildPanel(arm, info, model) {
           info.score === null ? `${info.step / 1e6}M ckpt` : info.score}</span></h2>
     <div class="stack">
       ${model.counts && model.counts.state_bins ? `
-      <div class="lbl">Start state<span class="r">arm B counts are per start region</span></div>
+      <div class="lbl">Start state<span class="r">${model.counts.kde
+          ? 'counts are per start code' : 'arm B counts are per start region'}</span></div>
       <div class="side">
         <div class="ticks left">${ticks}</div>
         <div class="startgrid"></div>
@@ -827,8 +831,16 @@ function paintCounts(self) {
   const n = 1 / (v.here * v.here) - 1;
   self.dom.heatnote.innerHTML = `this goal: bonus <b>${v.here.toFixed(2)}</b> ` +
       `(≈${n.toFixed(1)} recent tries${self.start ? ' from this start region' : ''})` +
-      ` · table: ${v.goal_bins} bins/block${v.state_bins ? `, start ${v.state_bins} bins` : ''}`;
-  if (self.dom.startinfo) {
+      (v.kde ? ` · full resolution (no bins), smearing width goal ${v.h_goal} / start ${v.h_state}` +
+               ` in measured class steps`
+             : ` · table: ${v.goal_bins} bins/block${v.state_bins ? `, start ${v.state_bins} bins` : ''}`);
+  if (self.dom.startinfo && v.kde) {
+    self.dom.startinfo.innerHTML = `start code <b>${self.start.join(' ')}</b><br><br>` +
+        `<b>${(100 * v.start_mass).toFixed(2)}%</b> of recent imagined tries started ` +
+        `at or near this start (weighted by start similarity)<br><br>` +
+        `Goal shading below = tries from near this start. ` +
+        `<button data-act="goalasstart">use goal as start</button>`;
+  } else if (self.dom.startinfo) {
     const half = state.classes / v.state_bins;
     const bins = self.start.map(c => c < half ? 'L' : 'H').join(' ');
     self.dom.startinfo.innerHTML = `start region <b>${bins}</b><br>` +
