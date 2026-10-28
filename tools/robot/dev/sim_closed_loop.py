@@ -19,6 +19,9 @@ otherwise have:
                   (fitted 0.385 / 0.098)
   rstatic=X       rolling stiction, as a multiple of the floor's rolling
                   resistance (1: none; fitted carpet 4.5, table 6)
+  sim_<key>=X     any env.robot.sim_* key, e.g. sim_inertia=4
+  fit=PATH        a sysid_fit.py result: its motor, body and floor (the
+                  run's surface, or surface=) as env.robot.sim_* keys
 
   python tools/robot/dev/sim_closed_loop.py RUN_DIR OUT.json [--ckpt STEP] \
       [--minutes 5] --variant base: --variant back:eq=-0.9 \
@@ -53,7 +56,7 @@ def parse_variant(spec):
   opts = {}
   for part in [p for p in rest.split(',') if p]:
     k, _, v = part.partition('=')
-    opts[k] = v if k == 'surface' else float(v)
+    opts[k] = v if k in ('surface', 'fit') else float(v)
   return name, opts
 
 
@@ -70,7 +73,14 @@ def summary(rec, r, hz, skip_s=30.0):
   fwd = 0.5 * (w[:, 0] + w[:, 1])
   turn = 0.5 * (w[:, 0] - w[:, 1])
   med = lambda x: float(np.median(np.abs(x))) if len(x) else float('nan')
+  extra = {}
+  if rec.get('cmd'):
+    c = np.array(rec['cmd'])[s:][up]
+    f, t = r['forward_sign'] * fwd[up] / r['command_speed'], turn[up] / r['command_turn']
+    extra = dict(corr_f=float(np.corrcoef(f, c[:, 0])[0, 1]),
+                 corr_t=float(np.corrcoef(t, c[:, 1])[0, 1]))
   return dict(
+      **extra,
       bumper_frac=float(bump.mean()),
       tilt_mean=float(th[up].mean()), tilt_std=float(th[up].std()),
       rate_std=float(rate[up].std()),
@@ -102,6 +112,7 @@ def main():
   logdir = pathlib.Path(args.run) / 'logdir'
   raw = yaml.YAML(typ='safe').load((logdir / 'config.yaml').read_text())
   r = raw['env']['robot']
+  r.setdefault('sim_inertia', 1.0)   # runs from before the key
   base = [
       '--env.realtime_hz', '0', '--logdir', tempfile.mkdtemp(),
       '--jax.platform', 'cuda' if args.gpu else 'cpu', '--jax.prealloc',
@@ -125,6 +136,16 @@ def main():
   results, traces = {}, {}
   for vi, (name, opts) in enumerate(variants):
     over = []
+    if 'fit' in opts:
+      fit = json.loads(pathlib.Path(opts['fit']).read_text())
+      m, fl = fit['motor'], fit['floors'][opts.get('surface', r['sim_surface'])]
+      fitted = dict(sim_wheel_omega=m['wheel_omega'], sim_stall_torque=m['stall'],
+                    sim_stick=m['stick'], sim_slide=m['slide'],
+                    sim_armature=m['armature'], sim_inertia=m.get('inertia', 1.0))
+      opts = {**fitted, **opts}
+    for k, v in opts.items():
+      if k.startswith('sim_'):
+        over += [f'--env.robot.{k}', str(v)]
     if 'surface' in opts:
       over += ['--env.robot.sim_surface', opts['surface']]
     if 'noise' in opts:
@@ -137,6 +158,10 @@ def main():
       sim.theta_eq = sim.theta_zero + math.radians(opts['eq'])
     sim.sim_rng = np.random.RandomState(1000 + vi + args.seed)
     ph = sim.physics
+    if 'fit' in opts:   # the floor: not env keys in older runs' configs
+      ph.set_floor(fl['rolling'], fl['contact_tc'], fl['bumper_friction'],
+                   fl['drag'], rolling_static=fl['rolling'] * fl.get('stiction', 1.0),
+                   noslip=20 if fl.get('stiction', 1.0) > 1.0 else 0)
     if 'stick' in opts:
       ph.stick = opts['stick'] * ph.stall
     if 'slide' in opts:
@@ -159,7 +184,7 @@ def main():
     carry = agent.init_policy(1)
     zero = {act_key: np.zeros(agent.act_space[act_key].shape, np.float32)}
     obs = env.step({**zero, 'reset': True})
-    rec = {k: [] for k in ('theta', 'rate', 'wheels', 'act', 'reward')}
+    rec = {k: [] for k in ('theta', 'rate', 'wheels', 'act', 'reward', 'cmd')}
     for _ in range(int(args.minutes * 60 * hz)):
       batch = {k: np.asarray(obs[k])[None] for k in keys}
       carry, acts, _ = agent.policy(carry, batch, mode='train')
@@ -172,6 +197,8 @@ def main():
       rec['wheels'].append(np.array(sim.speed))
       rec['act'].append(np.resize(act[act_key], 2).astype(float))
       rec['reward'].append(float(obs['reward']))
+      if 'command' in obs:
+        rec['cmd'].append(np.array(obs['command'], float))
     results[name] = dict(opts=opts, theta_eq_deg=math.degrees(
         sim.theta_eq - sim.theta_zero), **summary(rec, r, hz))
     s = results[name]
@@ -179,9 +206,11 @@ def main():
           f'tilt {s["tilt_mean"]:+.2f}±{s["tilt_std"]:.2f} rate±{s["rate_std"]:5.1f} '
           f'|fwd| {s["fwd_abs_med"]:5.0f} (mean {s["fwd_mean"]:+5.0f}) '
           f'|turn| {s["turn_abs_med"]:5.0f} (mean {s["turn_mean"]:+5.0f}) '
-          f'act lr {s["act_lr"]:+.3f} jump {s["act_jump"]:.3f}', flush=True)
+          f'act lr {s["act_lr"]:+.3f} jump {s["act_jump"]:.3f}'
+          + (f' | track fwd {s["corr_f"]:+.2f} turn {s["corr_t"]:+.2f}'
+             if 'corr_f' in s else ''), flush=True)
     if args.traces:
-      traces.update({f'{name}/{k}': np.array(v) for k, v in rec.items()})
+      traces.update({f'{name}/{k}': np.array(v) for k, v in rec.items() if v})
   pathlib.Path(args.out).write_text(json.dumps(results, indent=1))
   if args.traces:
     np.savez(str(pathlib.Path(args.out).with_suffix('.npz')), hz=hz, **traces)

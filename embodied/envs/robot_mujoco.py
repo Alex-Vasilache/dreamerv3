@@ -275,7 +275,8 @@ class Physics:
                stall=0.0884, stick=0.385, slide=0.098, armature=4.16e-4,
                unit=548.0, friction=1.0, rolling=0.0, contact_tc=0.02,
                bumper_friction=0.5, drag=0.0, rolling_static=None,
-               noslip=0, fixed=False):
+               noslip=0, fixed=False, torque_max=0.0, com_z=None,
+               inertia=1.0):
     self.omega_max = float(wheel_omega)
     self.stall = float(stall)
     self.stick = float(stick) * self.stall   # N m
@@ -293,6 +294,19 @@ class Physics:
     for act in self.acts:
       self.model.actuator_gainprm[act, 0] = self.stall
       self.model.actuator_biasprm[act, 2] = -self.stall / self.omega_max
+      # The driver's current limit (DRV8830 ILIMIT), as a fraction of stall:
+      # it caps the torque however hard the output asks. 0: none.
+      if torque_max:
+        self.model.actuator_forcelimited[act] = 1
+        self.model.actuator_forcerange[act] = (
+            -torque_max * self.stall, torque_max * self.stall)
+    # The body's CoM height above the axle (m) and a scale on its inertia:
+    # taken from the CAD model, not measured.
+    body = self.model.body('robot').id
+    if com_z is not None:
+      self.model.body_ipos[body, 2] = float(com_z)
+    self.model.body_inertia[body] *= float(inertia)
+    mujoco.mj_setConst(self.model, self.data)
     self.bodies = [self.model.body(n).id for n in PHONE_WHEELS]
     self._vel = np.zeros(6)
     # Each wheel's contact geom, in the same (phone) order as dofs.
@@ -377,7 +391,7 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_contact_tc=None, sim_bumper_friction=None, sim_drag=None,
       sim_schedule='', sim_carry_s=0.0, sim_noise=1.0,
       sim_eq_range=0.0175, sim_eq_every=0.0, sim_substep=0.002,
-      sim_friction=1.0, seed=0,
+      sim_friction=1.0, sim_inertia=1.0, seed=0,
       **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'pace', 'config', 'policy_dir', 'sim_air_speed'):
@@ -426,7 +440,7 @@ class RobotMujoco(robot_sim.RobotSim):
         -self.bumper_lo, self.bumper_hi, 1.0 / self.hz / self.substeps,
         wheel_omega=sim_wheel_omega, stall=sim_stall_torque, stick=sim_stick,
         slide=sim_slide, armature=float(sim_armature), unit=sim_speed_unit,
-        friction=float(sim_friction), **floor)
+        friction=float(sim_friction), inertia=float(sim_inertia), **floor)
     self.model, self.data = self.physics.model, self.physics.data
     self._body = self.model.body('robot').id
     self._com = self.model.body_ipos[self._body].copy()
