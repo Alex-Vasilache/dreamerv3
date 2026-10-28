@@ -621,7 +621,19 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e6100–e6129: from-to directed entropy, weight cap 10, on V+SOM+even (2026-10-28, array 4775480)
+### e6200–e6229: from-to directed entropy, lean target 1.0, on V+SOM+even (2026-10-28, array 4775662)
+
+Change vs e6100-e6129 (array 4775480, cancelled at ~1M, archived): lean target
+1.3 -> 1.0. The 1.3 target was unreachable by construction (uniform-goal novelty
+is already 0.90-0.96 and the maximum is 1.0, so lean <= ~1.05-1.1), so the
+controller drove the weight to whatever cap it had: at cap 10 lean only reached
+1.02-1.09 while returns dropped hard at ~1M (pin pad five 1/0 vs 236/211 at cap 1,
+cartpole 459 vs 737, cheetah 366 vs 518, pin pad four 235/260 vs 261/293). Target
+1.0 = the manager's goals at least as novel as random goals: pushes only where the
+policy prefers already-tried goals (pin pad four/five sat at 0.92-0.96 at cap 1),
+and the weight falls toward 0 where it is already above.
+
+#### e6100–e6129 (lean target 1.3, cap 10; cancelled)
 
 Change vs e6000-e6029 (array 4775275, cancelled at ~1M, archived): adaptive weight
 cap 1.0 -> 10 (init 1.0). With proposals counted the table works (policy novelty
