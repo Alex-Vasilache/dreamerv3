@@ -621,7 +621,14 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e2900–e2929: from-to novelty as directed manager entropy, on V+SOM+even (2026-10-28, array 4774874)
+### e2930–e2959: from-to novelty as directed manager entropy, on V+SOM+even (2026-10-28, array 4774938)
+
+Relaunch of e2900-e2929 (array 4774874, cancelled within ~30 min) with each real
+(from, to) pair counted as a full experience (`pair_weight` 1.0, was 1/8): if a
+reward were in that combination it would have shown, so one pass makes it
+explored. Otherwise identical; the original entry follows.
+
+#### e2900–e2929 (original)
 
 `director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir
 pubmatch`, 6 tasks x 5 seeds, seed-major (`sbatch/pubfromto_params.txt`), A100, %8.

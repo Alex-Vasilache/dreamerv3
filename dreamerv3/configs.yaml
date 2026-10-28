@@ -522,7 +522,7 @@ defaults:
     # n = decaying counts of REAL pairs (state code at t-k -> state code at t,
     # k in [k_min, k_max]) counted at environment interaction.
     mgr_fromto_c: 0.0
-    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000}
+    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0}
     mgr_ucb_imag_c: 0.0
     mgr_ucb_imag:
       candidates: 8
@@ -1621,7 +1621,7 @@ ucb_imag_kde:
 fromto_dir:
   agent:
     mgr_fromto_c: 4.0
-    mgr_fromto: {start_bins: 4, goal_bins: 2, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000}
+    mgr_fromto: {start_bins: 4, goal_bins: 2, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0}
 
 # UCB in imagination, arm B as a TABLE (start 2 x goal 4 bins/block), meant for
 # the evenness codebook (goal_even), where index bins are even in goal space.

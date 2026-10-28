@@ -87,10 +87,14 @@ class FromToCounter:
   """Host-side counter fed from the environment driver (see module docstring)."""
 
   def __init__(self, start_bins=2, goal_bins=4, classes=8, blocks=8,
-               k_min=1, k_max=8, half_life=5e5, h=0.5, export_every=10000):
+               k_min=1, k_max=8, half_life=5e5, h=0.5, export_every=10000,
+               pair_weight=1.0):
     self.sb, self.gb, self.C, self.L = start_bins, goal_bins, classes, blocks
     self.ks = list(range(int(k_min), int(k_max) + 1))
-    self.w = 1.0 / len(self.ks)
+    # Each experienced (from, to) pair is a full look at that combination: if a
+    # reward were there it would have shown, so every pair counts 1 (a real
+    # step then adds up to k_max - k_min + 1). ``pair_weight=0`` gives 1/n.
+    self.w = float(pair_weight) if pair_weight > 0 else 1.0 / len(self.ks)
     self.half_life = float(half_life)
     self.h = float(h)
     self.export_every = int(export_every)

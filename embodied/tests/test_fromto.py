@@ -81,7 +81,7 @@ class TestCounter:
     return srow * GB ** L + gcol
 
   def test_offsets_and_weights(self):
-    c = self.cnt(k_min=1, k_max=2, half_life=1e12)
+    c = self.cnt(k_min=1, k_max=2, half_life=1e12, pair_weight=0)   # 1/n weights
     codes = [np.full(L, v) for v in (0, 6, 4, 2)]   # distinct start/goal bins
     for i, code in enumerate(codes):
       c.add(code, i == 0, 0)

@@ -413,7 +413,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
             k_min=int(_fcfg.k_min), k_max=int(_fcfg.k_max),
             half_life=float(_fcfg.half_life), h=float(_fcfg.h),
-            export_every=int(_fcfg.export_every))
+            export_every=int(_fcfg.export_every),
+            pair_weight=float(getattr(_fcfg, 'pair_weight', 1.0)))
       # Reward channel and its critic: only for the reward-shaped arm. The UCB
       # arm shares the table above but must NOT create these -- an unused critic
       # would still be built, checkpointed and optimized.
