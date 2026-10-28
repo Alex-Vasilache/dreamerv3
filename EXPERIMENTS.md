@@ -621,7 +621,19 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e2960–e2989: from-to novelty as directed manager entropy, on V+SOM+even (2026-10-28, array 4774948)
+### e2990–e3019: from-to directed entropy with its own adaptive weight, on V+SOM+even (2026-10-28, array 4775095)
+
+e2960-e2967 (array 4774948) cancelled at ~0.5M: the directed term borrowed the
+manager entropy controller's weight, which sits at only 0.004-0.08 (the manager is
+near 50% entropy without help), so weight x c=4 was ~1/25 of the unit-scale
+advantage signal and varied 20x by task; lean (E_pi / E_uniform) stayed
+0.94-1.01, i.e. no direction. Now the term has its own AutoAdapt weight (mult,
+inverse) holding lean at 1.3, init 0.1, range 1e-3..1.0 (cap = advantage scale),
+vel 0.05. Counts/bins unchanged (start 4 x goal 2, pairs t-k->t, k 1..8, weight 1).
+Watch: fromto/weight (at the cap = bonus too flat to reach 1.3), fromto/lean,
+manager entropy ~0.5, returns vs V+SOM+even.
+
+#### e2960–e2989 (borrowed entropy weight, cancelled)
 
 Third launch. e2900-e2908 FAILED at startup (the run loop read/wrote the count
 table with implicit device transfers, rejected by jax_transfer_guard='disallow';

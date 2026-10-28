@@ -415,6 +415,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             half_life=float(_fcfg.half_life), h=float(_fcfg.h),
             export_every=int(_fcfg.export_every),
             pair_weight=float(getattr(_fcfg, 'pair_weight', 1.0)))
+        # Own adaptive weight (lean_target > 0): hold the policy's expected
+        # novelty at lean_target x a uniform policy's, like the entropy
+        # controller holds entropy. Borrowing the entropy controller's weight
+        # (lean_target 0) made the term ~0: that weight sits at 0.004-0.08
+        # because the manager is near 50% entropy without help (e2960-e2967).
+        self.fromto_lean_target = float(getattr(_fcfg, 'lean_target', 0.0))
+        if self.fromto_lean_target > 0:
+          self.fromto_adapt = embodied.jax.AutoAdapt(
+              shape=(), impl='mult', target=self.fromto_lean_target,
+              min=float(_fcfg.w_min), max=float(_fcfg.w_max), inverse=True,
+              init=float(_fcfg.w_init), vel=float(_fcfg.w_vel), name='fromto_adapt')
       # Reward channel and its critic: only for the reward-shaped arm. The UCB
       # arm shares the table above but must NOT create these -- an unused critic
       # would still be built, checkpointed and optimized.
@@ -1796,10 +1807,16 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       probs = jax.nn.softmax(logits, -1).reshape((M_ * n_,) + logits.shape[2:])
       e_pi, e_uni = self.fromto.expected_novelty(start_ids, probs)
       e_pi, e_uni = e_pi.reshape(M_, n_), e_uni.reshape(M_, n_)
-      wscale = (sg(self.mgr_actent.scale().mean()) if self.manager_actent_adapt
-                else self.config.manager_actent)
       nd = los_mgr['mgr_policy'].shape[1]
-      los_mgr['mgr_policy'] = los_mgr['mgr_policy'] - wscale * self.mgr_fromto_c * e_pi[:, :nd]
+      lean = e_pi[:, :nd] / jnp.maximum(e_uni[:, :nd], 1e-8)
+      if getattr(self, 'fromto_lean_target', 0.0) > 0:
+        self.fromto_adapt(sg(lean.mean()), update=training)
+        wscale = self.fromto_adapt.scale()
+        metrics['fromto/weight'] = wscale
+      else:
+        wscale = (sg(self.mgr_actent.scale().mean()) if self.manager_actent_adapt
+                  else self.config.manager_actent) * self.mgr_fromto_c
+      los_mgr['mgr_policy'] = los_mgr['mgr_policy'] - wscale * e_pi[:, :nd]
       metrics['fromto/novelty'] = e_pi[:, :nd].mean()
       metrics['fromto/novelty_uniform'] = e_uni[:, :nd].mean()
       metrics['fromto/lean'] = (e_pi[:, :nd] / jnp.maximum(e_uni[:, :nd], 1e-8)).mean()
