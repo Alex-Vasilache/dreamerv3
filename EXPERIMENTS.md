@@ -621,7 +621,21 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e5000–e5029: from-to directed entropy with its own adaptive weight, on V+SOM+even (2026-10-28, array 4775111)
+### e6000–e6029: from-to directed entropy, reached pairs + manager proposals, on V+SOM+even (2026-10-28, array 4775275)
+
+Change vs e5000-e5029 (array 4775111, cancelled at ~1-1.5M, archived): the counts
+now also include every real manager decision (code of the state where it decided
+-> the goal it proposed, weight 1). Diagnosis of e5000: the table had strong
+contrast where experience goes (experience-weighted row mass 270-2,250; reached
+goals bonus 0.12-0.26, all goals 0.92-0.94), but the manager mostly proposes block
+combinations real states never encode to, which are never reached, so they stayed
+maximally novel (policy novelty 0.99, lean 1.02-1.07, adaptive weight pinned at its
+cap): the term pushed toward unreachable goals. Counting proposals makes a goal
+that is proposed but not reached fade. New metric fromto/row_mass_* (evidence at
+decision states). Partial e5000 results at matched steps were level with
+V+SOM+even (1-2 seeds). Renumbered to e6000+: the robot session uses e50xx.
+
+#### e5000–e5029 (reached pairs only, own adaptive weight; cancelled)
 
 (Renumbered: the other session's robot runs took e2990-e2995 at 12:26 the same
 day; array 4775095 cancelled after ~1 min and its dirs removed. e5000+ is used to

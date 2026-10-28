@@ -124,3 +124,31 @@ def test_export_under_transfer_guard():
   with jax.transfer_guard('disallow'):
     out = c.export()
   assert float(jax.device_get(out).sum()) == pytest.approx(1.0, rel=1e-5)
+
+
+def test_uneven_bins_match_brute_force():
+  # 3 goal bins over 8 classes (3/3/2) and 3 start bins.
+  m = FromToCounts(start_bins=3, goal_bins=3, classes=C, blocks=2, name='ft3')
+  p = nj.init(lambda: m.tab.read())({}, seed=0)
+  rng = np.random.default_rng(3)
+  p['ft3/tab/value'] = jnp.asarray(rng.integers(0, 9, 9 * 9).astype(np.float32))
+  start = jnp.asarray(rng.integers(0, C, (4, 2)))
+  probs = jax.nn.softmax(jnp.asarray(rng.normal(0, 1, (4, 2, C)), jnp.float32), -1)
+  e, _ = nj.pure(lambda s, q: m.expected_novelty(s, q))(p, start, probs, seed=0)[1]
+  tab = np.asarray(p['ft3/tab/value']); b = lambda c: min(c * 3 // C, 2)
+  for n in range(4):
+    row = b(int(start[n, 0])) * 3 + b(int(start[n, 1]))
+    want = sum(float(probs[n, 0, c0] * probs[n, 1, c1]) / np.sqrt(tab[row * 9 + b(c0) * 3 + b(c1)] + 1)
+               for c0 in range(C) for c1 in range(C))
+    assert float(e[n]) == pytest.approx(want, rel=1e-5)
+
+
+def test_proposals_are_counted_at_the_decision_state():
+  c = FromToCounter(start_bins=SB, goal_bins=GB, classes=C, blocks=L, k_min=1, k_max=1,
+                    half_life=1e12, h=0.0, prop_weight=1.0)
+  start, goal = np.zeros(L, np.int64), np.full(L, 7)
+  c.add(start, True, 0, proposal=goal)       # first step: no reached pair, one proposal
+  tab = np.asarray(jax.device_get(c.export()))
+  gcol = int((bin_ids(goal, GB, C) * GB ** np.arange(L - 1, -1, -1)).sum())
+  assert tab.sum() == pytest.approx(1.0)
+  assert tab[gcol] == pytest.approx(1.0)

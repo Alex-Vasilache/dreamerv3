@@ -70,7 +70,11 @@ class FromToCounts(nj.Module):
     idx = row[:, None] * self.cols + jnp.arange(self.cols)[None]
     bonus = 1.0 / jnp.sqrt(tab[idx] + 1.0)                           # (N, cols)
     N, L, C = probs.shape
-    pb = probs.astype(f32).reshape(N, L, self.goal_bins, C // self.goal_bins).sum(-1)
+    # Class c -> bin min(c * bins // C, bins - 1), as in the counter; bins need
+    # not divide C (3 bins over 8 classes: 3 / 3 / 2).
+    assign = jax.nn.one_hot(jnp.minimum(jnp.arange(C) * self.goal_bins // C,
+                                        self.goal_bins - 1), self.goal_bins, dtype=f32)
+    pb = jnp.einsum('nlc,cb->nlb', probs.astype(f32), assign)
 
     def contract(x, p):
       # Row-major: the first remaining goal axis is block l.
@@ -79,7 +83,9 @@ class FromToCounts(nj.Module):
         x = (x * p[:, l, :, None]).sum(1)
       return x.reshape(N)
 
-    uni = jnp.full_like(pb, 1.0 / self.goal_bins)
+    # Uniform over CLASSES (an untrained policy), binned like the policy.
+    uni = jnp.broadcast_to(assign.mean(0), pb.shape)
+    self.last_row_mass = tab[idx].sum(-1)                            # evidence per state
     return contract(bonus, pb), contract(bonus, uni)
 
 
@@ -88,13 +94,17 @@ class FromToCounter:
 
   def __init__(self, start_bins=2, goal_bins=4, classes=8, blocks=8,
                k_min=1, k_max=8, half_life=5e5, h=0.5, export_every=10000,
-               pair_weight=1.0):
+               pair_weight=1.0, prop_weight=1.0):
     self.sb, self.gb, self.C, self.L = start_bins, goal_bins, classes, blocks
     self.ks = list(range(int(k_min), int(k_max) + 1))
     # Each experienced (from, to) pair is a full look at that combination: if a
     # reward were there it would have shown, so every pair counts 1 (a real
     # step then adds up to k_max - k_min + 1). ``pair_weight=0`` gives 1/n.
     self.w = float(pair_weight) if pair_weight > 0 else 1.0 / len(self.ks)
+    # Manager proposals also count (start code at a real decision -> the goal
+    # it proposed): a goal proposed but never reached gains counts each time
+    # and fades, instead of staying maximally novel forever. 0 disables.
+    self.prop_w = float(prop_weight)
     self.half_life = float(half_life)
     self.h = float(h)
     self.export_every = int(export_every)
@@ -106,14 +116,20 @@ class FromToCounter:
     self._gstr = self.gb ** np.arange(self.L - 1, -1, -1)
     self._smear = jax.jit(self._smear_fn)
 
-  def add(self, code, is_first, worker):
-    """One real step of one env: ``code`` (L,) class ids of the current state."""
+  def add(self, code, is_first, worker, proposal=None):
+    """One real step of one env: ``code`` (L,) class ids of the current state;
+    ``proposal`` (L,) the goal the manager proposed at this step, if it made a
+    decision here."""
     hist = self.hist[worker]
     if is_first:
       hist.clear()
     code = np.asarray(code, np.int64)
     g = int((bin_ids(code, self.gb, self.C) * self._gstr).sum())
     inflate = 2.0 ** (self.steps / self.half_life)
+    if proposal is not None and self.prop_w > 0:
+      s = int((bin_ids(code, self.sb, self.C) * self._sstr).sum())
+      gp = int((bin_ids(np.asarray(proposal, np.int64), self.gb, self.C) * self._gstr).sum())
+      self.tab[s * self.cols + gp] += self.prop_w * inflate
     for k in self.ks:
       if len(hist) >= k:
         s = int((bin_ids(hist[-k], self.sb, self.C) * self._sstr).sum())

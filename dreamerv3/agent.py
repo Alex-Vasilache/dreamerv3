@@ -414,7 +414,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             k_min=int(_fcfg.k_min), k_max=int(_fcfg.k_max),
             half_life=float(_fcfg.half_life), h=float(_fcfg.h),
             export_every=int(_fcfg.export_every),
-            pair_weight=float(getattr(_fcfg, 'pair_weight', 1.0)))
+            pair_weight=float(getattr(_fcfg, 'pair_weight', 1.0)),
+            prop_weight=float(getattr(_fcfg, 'prop_weight', 1.0)))
         # Own adaptive weight (lean_target > 0): hold the policy's expected
         # novelty at lean_target x a uniform policy's, like the entropy
         # controller holds entropy. Borrowing the entropy controller's weight
@@ -965,6 +966,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       ft = self.goal_enc(sg(self.feat2deter(feat)), 1)
       ft = ft['skill'] if isinstance(ft, dict) else ft
       out['log/fromto_code'] = jnp.argmax(ft.pred(), -1).astype(jnp.int32)
+      # The goal now in force and whether the manager (re)decided this step.
+      out['log/fromto_goal'] = jnp.argmax(
+          self._running_goal_code(mgr_skill), -1).astype(jnp.int32)
+      out['log/fromto_switch'] = f32(goal_refresh)
     if self.use_hrl and bool(getattr(self.config, 'policy_struct_diag', False)):
       diag_deter = self.feat2deter(feat)
       diag_code = self.goal_enc(diag_deter, bdims=1)
@@ -1821,6 +1826,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       metrics['fromto/novelty_uniform'] = e_uni[:, :nd].mean()
       metrics['fromto/lean'] = (e_pi[:, :nd] / jnp.maximum(e_uni[:, :nd], 1e-8)).mean()
       metrics['fromto/mass'] = self.fromto.tab.read().sum()
+      rm = self.fromto.last_row_mass.reshape(M_, n_)[:, :nd]
+      metrics['fromto/row_mass_median'] = jnp.median(rm)
+      metrics['fromto/row_mass_mean'] = rm.mean()
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
 
