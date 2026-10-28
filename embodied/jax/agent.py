@@ -355,6 +355,23 @@ class Agent(embodied.Agent):
     data = {'params': params, 'counters': counters}
     return data
 
+  def set_param(self, key, value):
+    """Overwrite one (non-policy) parameter in place, keeping its sharding.
+
+    Used by the run loop to push host-side state (e.g. the from-to counts of
+    hrl/fromto.py, counted at environment interaction) into the learner."""
+    assert key in self.params, (key, sorted(self.params)[:5])
+    assert key not in self.policy_keys, key
+    with self.train_lock:
+      old = self.params[key]
+      new = jax.device_put(jax.numpy.asarray(value, old.dtype).reshape(old.shape),
+                           old.sharding)
+      old.delete()
+      self.params[key] = new
+
+  def get_param(self, key):
+    return np.asarray(self.params[key])
+
   def reset_params(self, regex):
     """Re-initialise the parameters whose names match ``regex`` (fresh init)."""
     pattern = re.compile(regex)

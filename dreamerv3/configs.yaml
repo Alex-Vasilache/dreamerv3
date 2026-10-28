@@ -517,6 +517,12 @@ defaults:
     # there lately (decaying, SOM-smeared counts of imagined picks), and trains
     # on the picked goal without importance correction -- the bias is the
     # exploration. Independent of the environment-time ``mgr_ucb_c``.
+    # From-to novelty (hrl/fromto.py): directed manager entropy. 0 disables.
+    # The entropy term becomes weight * [entropy + c * E_pi[1/sqrt(n(s,z)+1)]],
+    # n = decaying counts of REAL pairs (state code at t-k -> state code at t,
+    # k in [k_min, k_max]) counted at environment interaction.
+    mgr_fromto_c: 0.0
+    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000}
     mgr_ucb_imag_c: 0.0
     mgr_ucb_imag:
       candidates: 8

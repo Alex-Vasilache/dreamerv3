@@ -42,6 +42,7 @@ from .hrl import (
     worker_split_window,
 )
 from .hrl import explore as explore_mod
+from .hrl import fromto as fromto_mod
 from .hrl import goal_ae
 from .hrl import goal_mask
 
@@ -396,6 +397,23 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
               classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
               name='imag_counts')
         self.mgr_ucb_imag_candidates = int(_icfg.candidates)
+      # From-to novelty (hrl/fromto.py): directed manager entropy toward goal
+      # regions not yet reached from the current start region. Counts come
+      # from real interaction (FromToCounter in the run loop) and are copied
+      # into ``fromto/tab``; here only the device table and the loss term.
+      self.mgr_fromto_c = float(getattr(config, 'mgr_fromto_c', 0.0))
+      if self.mgr_fromto_c > 0.0:
+        _fcfg = config.mgr_fromto
+        self.fromto = fromto_mod.FromToCounts(
+            start_bins=int(_fcfg.start_bins), goal_bins=int(_fcfg.goal_bins),
+            classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
+            name='fromto')
+        self.fromto_counter_cfg = dict(
+            start_bins=int(_fcfg.start_bins), goal_bins=int(_fcfg.goal_bins),
+            classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
+            k_min=int(_fcfg.k_min), k_max=int(_fcfg.k_max),
+            half_life=float(_fcfg.half_life), h=float(_fcfg.h),
+            export_every=int(_fcfg.export_every))
       # Reward channel and its critic: only for the reward-shaped arm. The UCB
       # arm shares the table above but must NOT create these -- an unused critic
       # would still be built, checkpointed and optimized.
@@ -754,7 +772,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # *encodes* the current state for offline diagnostics, so it needs
       # goal_enc's params included in the policy-side param group too.
       groups = ['enc', 'dyn', 'dec', 'pol', 'manager_pol', 'goal_dec']
-      if bool(getattr(self.config, 'policy_struct_diag', False)):
+      if (bool(getattr(self.config, 'policy_struct_diag', False))
+          or float(getattr(self, 'mgr_fromto_c', 0.0)) > 0.0):
+        # From-to counting also encodes the current real state in the policy.
         groups.append('goal_enc')
       if self.goal_mask_groups:
         # The actor decodes the held goal, and with masking that includes
@@ -927,6 +947,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # external driver can correlate goal-space vs. goal-code geometry over a live
     # on-policy rollout without needing archived replay. off by default; see
     # experiments/goal_code_struct_corr/diag_goal_struct_corr.py.
+    if self.use_hrl and getattr(self, 'mgr_fromto_c', 0.0) > 0.0:
+      # Current real state's goal code (encoder mode) for the run loop's
+      # FromToCounter; not stored in replay (log/ prefix).
+      ft = self.goal_enc(sg(self.feat2deter(feat)), 1)
+      ft = ft['skill'] if isinstance(ft, dict) else ft
+      out['log/fromto_code'] = jnp.argmax(ft.pred(), -1).astype(jnp.int32)
     if self.use_hrl and bool(getattr(self.config, 'policy_struct_diag', False)):
       diag_deter = self.feat2deter(feat)
       diag_code = self.goal_enc(diag_deter, bdims=1)
@@ -1757,6 +1783,26 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         mgr_smooth_topology=self._mgr_smooth_topology,
         trunc_policy=self.goal_duration_truncated_policy,
         **kwargs_mgr)
+    if getattr(self, 'mgr_fromto_c', 0.0) > 0.0 and not self.variable_goal_length:
+      # Directed entropy (hrl/fromto.py): + c * E_pi[from-to bonus], weighted
+      # by the manager entropy controller's own (stop-gradient) scale.
+      dec_deter = sg(self.feat2deter(imgfeat_eff))                    # (M, n, D)
+      M_, n_ = dec_deter.shape[:2]
+      enc = self.goal_enc(dec_deter.reshape((M_ * n_,) + dec_deter.shape[2:]), 1)
+      enc = enc['skill'] if isinstance(enc, dict) else enc
+      start_ids = jnp.argmax(sg(enc.pred()), -1)                      # (M*n, L)
+      logits = f32(_head_inner(mgr_policy['skill']).dist.logits)      # (M, n, L, C)
+      probs = jax.nn.softmax(logits, -1).reshape((M_ * n_,) + logits.shape[2:])
+      e_pi, e_uni = self.fromto.expected_novelty(start_ids, probs)
+      e_pi, e_uni = e_pi.reshape(M_, n_), e_uni.reshape(M_, n_)
+      wscale = (sg(self.mgr_actent.scale().mean()) if self.manager_actent_adapt
+                else self.config.manager_actent)
+      nd = los_mgr['mgr_policy'].shape[1]
+      los_mgr['mgr_policy'] = los_mgr['mgr_policy'] - wscale * self.mgr_fromto_c * e_pi[:, :nd]
+      metrics['fromto/novelty'] = e_pi[:, :nd].mean()
+      metrics['fromto/novelty_uniform'] = e_uni[:, :nd].mean()
+      metrics['fromto/lean'] = (e_pi[:, :nd] / jnp.maximum(e_uni[:, :nd], 1e-8)).mean()
+      metrics['fromto/mass'] = self.fromto.tab.read().sum()
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_mgr.items()})
     metrics.update(mets_mgr)
 

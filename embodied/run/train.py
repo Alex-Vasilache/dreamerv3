@@ -46,6 +46,8 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
           # Strip log/ prefix: policy extras injected as log/ to avoid replay storage.
           vis_key = key[4:] if key.startswith('log/') else key
           episode.add(f'policy_{vis_key}', value, agg='stack')
+      elif key.startswith('log/fromto_'):
+        continue   # per-step code for the FromToCounter, not a scalar to log
       elif key.startswith('log/'):
         assert value.ndim == 0, (key, value.shape, value.dtype)
         episode.add(key + '/avg', value, agg='avg')
@@ -68,6 +70,30 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
   driver.on_step(lambda tran, _: policy_fps.step())
   driver.on_step(replay.add)
   driver.on_step(logfn)
+
+  # From-to counts at environment interaction (dreamerv3/hrl/fromto.py): every
+  # real step adds (state code k steps ago -> state code now) pairs on the
+  # host; every export_every steps the decayed, smeared table is copied into
+  # the learner's ``fromto/tab``. On resume the host table is rebuilt from it.
+  fromto_cfg = getattr(getattr(agent, 'model', None), 'fromto_counter_cfg', None)
+  if fromto_cfg:
+    from dreamerv3.hrl.fromto import FromToCounter
+    fromto = FromToCounter(**fromto_cfg)
+    fromto_key = 'fromto/tab/value'
+    fromto_init = [False]
+
+    def fromtofn(tran, worker):
+      if 'log/fromto_code' not in tran:
+        return
+      if not fromto_init[0]:
+        fromto.steps = int(step)
+        fromto.tab = agent.get_param(fromto_key).astype(np.float32) * np.float32(
+            2.0 ** (fromto.steps / fromto.half_life))
+        fromto_init[0] = True
+      fromto.add(tran['log/fromto_code'], tran['is_first'], worker)
+      if fromto.due():
+        agent.set_param(fromto_key, fromto.export())
+    driver.on_step(fromtofn)
 
   stream_train = iter(agent.stream(make_stream(replay, 'train')))
   stream_report = iter(agent.stream(make_stream(replay, 'report')))
