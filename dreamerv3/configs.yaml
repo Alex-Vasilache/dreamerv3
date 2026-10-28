@@ -1613,6 +1613,16 @@ ucb_imag_kde:
     mgr_ucb_imag_c: 1.5
     mgr_ucb_imag: {impl: kde, candidates: 32, kde_state: True, h_goal: 0.75, h_state: 0.5, kde_pos_rate: 0.01, kde_size: 65536}
 
+# From-to novelty (hrl/fromto.py) as directed manager entropy, for V+SOM+even.
+# Start 4 x goal 2 bins/block: on pin pad six the start code separates
+# last-2/last-3 pad prefixes with purity 0.94/0.89 at 4 bins but only 0.55/0.44
+# at 2 bins (experiments/goal_geometry/prefix_check.py, 2026-10-28); the goal
+# side is a direction (which half of each block). Real pairs t-k -> t, k 1..8.
+fromto_dir:
+  agent:
+    mgr_fromto_c: 4.0
+    mgr_fromto: {start_bins: 4, goal_bins: 2, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000}
+
 # UCB in imagination, arm B as a TABLE (start 2 x goal 4 bins/block), meant for
 # the evenness codebook (goal_even), where index bins are even in goal space.
 # Fast held-out offline fit on V+SOM+even e2006-e2023 at 2M

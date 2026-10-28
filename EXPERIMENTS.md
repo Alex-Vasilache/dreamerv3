@@ -621,6 +621,24 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e2900–e2929: from-to novelty as directed manager entropy, on V+SOM+even (2026-10-28, array 4774874)
+
+`director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir
+pubmatch`, 6 tasks x 5 seeds, seed-major (`sbatch/pubfromto_params.txt`), A100, %8.
+Reference: V+SOM+even (e2000-e2059). New `hrl/fromto.py`: counts of REAL pairs
+(goal code of the state at t-k -> at t, k 1..8, weight 1/8, counted at environment
+interaction by `FromToCounter` in the run loop, copied into `fromto/tab` every 10k
+steps, half-life 0.5M, smear h 0.5); table start 4 x goal 2 bins/block (start 4
+bins separates pin pad six prefixes, purity 0.94/0.89 last-2/3, vs 0.55/0.44 at 2
+bins). The manager's entropy term becomes weight * [entropy + c * E_pi[1/sqrt(n+1)]]
+with the 50% entropy controller's own weight (c 4.0); E_pi computed exactly by
+contracting the start row with the per-block policy (no sampling). No imagination
+tilt, no reward shaping. Idea: keep the same randomness but aim it at goal regions
+not yet reached from the current state; the frontier (unseen transitions between
+known states) extends step by step, which is what pin pad six needs.
+Checks: fromto/lean (E_pi / E_uniform; >1 means leaning to novelty), fromto/mass,
+manager entropy still ~0.5 normalized, speed vs V+SOM+even, pin pad six solves.
+
 ### e2800–e2829: table UCB-B, c 3.0, on V+SOM+even (2026-10-27, array 4773889)
 
 Relaunch of e2700-e2729 with c 1.0 -> 3.0, everything else identical. e2700-e2707

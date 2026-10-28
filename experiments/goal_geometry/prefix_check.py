@@ -44,7 +44,7 @@ def main():
   p = argparse.ArgumentParser()
   p.add_argument('--run_dir', required=True)
   p.add_argument('--steps', type=int, default=40000)
-  p.add_argument('--k', type=int, default=2)
+  p.add_argument('--k', type=int, nargs='+', default=[2, 3])
   p.add_argument('--bins', type=int, nargs='+', default=[8, 4, 2])
   a = p.parse_args()
   import embodied
@@ -57,12 +57,12 @@ def main():
   driver = embodied.Driver([bind(m.make_env, config, i) for i in range(8)], parallel=True)
   driver.reset(agent.init_policy)
   driver.on_step(lambda tran, w: 'log/struct_diag_deter' in tran and rows.append(
-      (prefix(tran['image'], a.k), np.asarray(tran['log/struct_diag_deter']).copy())))
+      (tran['image'].copy(), np.asarray(tran['log/struct_diag_deter']).copy())))
   driver(agent.policy, steps=a.steps)
   driver.close()
   model = agent.model
   deter = np.stack([r[1] for r in rows])
-  pre = [r[0] for r in rows]
+  images = [r[0] for r in rows]
 
   def enc(d):
     out = model.goal_enc(d, 1)
@@ -71,25 +71,27 @@ def main():
   codes = np.concatenate([np.asarray(nj.pure(enc)(agent.params, jnp.asarray(deter[i:i + 4096]))[1])
                           for i in range(0, len(deter), 4096)])
   C = 8
-  print(f'{len(rows)} states, {len(set(pre))} distinct last-{a.k} prefixes')
-  for bins in a.bins:
-    key = [tuple(np.minimum(c * bins // C, bins - 1)) for c in codes]
-    by = collections.defaultdict(collections.Counter)
-    for kk, pp in zip(key, pre):
-      by[kk][pp] += 1
-    purity = sum(c.most_common(1)[0][1] for c in by.values()) / len(rows)
-    # Of state pairs with different prefixes, share with the same code.
-    pc = collections.Counter(zip(key, pre))
-    kc = collections.Counter(key)
-    same_code = sum(n * n for n in kc.values())
-    same_both = sum(n * n for n in pc.values())
-    prc = collections.Counter(pre)
-    same_pre = sum(n * n for n in prc.values())
-    tot = len(rows) ** 2
-    diff_pre = tot - same_pre
-    split = (same_code - same_both) / max(diff_pre, 1)
-    print(f'  {bins} bins/block: {len(kc)} codes used, purity {purity:.3f}, '
-          f'different-prefix pairs sharing a code {split:.4f} (random baseline {same_code / tot:.4f})')
+  for k in a.k:
+    pre = [prefix(im, k) for im in images]
+    print(f'{len(rows)} states, {len(set(pre))} distinct last-{k} prefixes')
+    for bins in a.bins:
+      key = [tuple(np.minimum(c * bins // C, bins - 1)) for c in codes]
+      by = collections.defaultdict(collections.Counter)
+      for kk, pp in zip(key, pre):
+        by[kk][pp] += 1
+      purity = sum(c.most_common(1)[0][1] for c in by.values()) / len(rows)
+      pc = collections.Counter(zip(key, pre))
+      kc = collections.Counter(key)
+      prc = collections.Counter(pre)
+      tot = len(rows) ** 2
+      same_code = sum(n * n for n in kc.values())
+      same_both = sum(n * n for n in pc.values())
+      diff_pre = tot - sum(n * n for n in prc.values())
+      split = (same_code - same_both) / max(diff_pre, 1)
+      base = max(prc.values()) / len(rows)
+      print(f'  {bins} bins/block: {len(kc)} codes used, purity {purity:.3f} '
+            f'(majority-prefix baseline {base:.3f}), different-prefix pairs sharing a code '
+            f'{split:.4f} (any pair: {same_code / tot:.4f})', flush=True)
 
 
 if __name__ == '__main__':
