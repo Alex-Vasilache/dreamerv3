@@ -389,6 +389,14 @@ Balance is learnt as fast. Command following is a little slower and ends a
 little lower (n=2 against n=1). Policies to try: e2994 (carpet balance),
 e2995 (table balance), e2992 (carpet command), e2990 (table command).
 
+**On the robot, table (recorded by the phone, no trainer, most likely
+action):** e2995 (round 4) against e2503 (round 2), 4.8 and 3.4 min:
+reward 0.83–0.92 against 0.76–0.82 per minute, median forward speed 0–44
+against 177–223 mm/s, tilt SD 0.6–1.0° against 1.1–1.3°, tilt-rate SD 11–21
+against 19–26 deg/s, on a bumper 0–1% against 2–3%. The round-4 policy stands
+almost still, better than in its own sim (0.84). Warm-started with the learner
+on (e2996), the same policy fell apart within a minute, as e2605 did in e2732.
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined
