@@ -641,6 +641,15 @@ manager entropy still ~0.5 normalized, speed vs V+SOM+even, pin pad six solves.
 
 ### e2800–e2829: table UCB-B, c 3.0, on V+SOM+even (2026-10-27, array 4773889)
 
+**CANCELLED 2026-10-28** after 16 completed (seeds 0-2, part of 2) + 8 partial runs
+(e2816-e2823, archived) to free the GPUs for the from-to arm (e2900). Late 3-4M,
+seeds 0-2 (V+SOM+even in brackets): pin pad 4 304 (319), 5 259 (273), 6 0 (0),
+cartpole 798 (740), cheetah 566 (611), hopper 299 (190). About level overall with
+V+SOM+even: pin pads slightly lower, cartpole and hopper higher, cheetah lower;
+the online pull faded from ~-0.25 to ~-0.13..-0.24 nats as the table filled. Not
+continued: imagination-time tilts do not create new real experience (user's note
+2026-10-28); exploration moved to the manager's entropy term (from-to).
+
 Relaunch of e2700-e2729 with c 1.0 -> 3.0, everything else identical. e2700-e2707
 (array 4773719) were cancelled at ~1M and archived: the online tilt fell to a pull
 of ~-0.09 nats (gain 1.05-1.12) as the table filled with the drifting policy's
