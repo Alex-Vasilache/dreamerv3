@@ -287,6 +287,20 @@ tools/robot/save_policy.sh balance_table <run dir>  # a given run
 
 Copies are kept in `~/logdir/robot_policies/`.
 
+Whenever a saved policy drives (the Dreamer Player, or the dashboard's
+policy menu), the phone records every step: sensors, the policy's action,
+the command and what the base was sent, to `recordings/` in its files. No
+trainer is needed. Fetch them, giving the floor the robot was on:
+
+```bash
+tools/robot/pull_recordings.sh table
+```
+
+They land in `~/logdir/robot_recordings/`. Each is also added under
+`sysid/<policy>_<floor>/balance.csv` for `sysid_fit.py`, and with a Slurm
+trainer copied to `$ROBOT_RUNS/sysid/recordings/`. STOP loses at most the
+last second.
+
 **From the sim.** An agent trained in the MuJoCo sim (`--configs robot
 [robot_command] robot_sim`, docs/robot/SIM_COMMAND.md) can go on the phone the
 same way, or seed a real training run with its weights:
@@ -378,6 +392,7 @@ git clone -b telemetry-cache https://github.com/Alex-Vasilache/smartphone-robot-
 | `tools/robot/tensorboard.sh` | live TensorBoard for local or cluster runs |
 | `tools/robot/save_policy.sh` | name and keep a run's current weights on the phone |
 | `tools/robot/from_sim.sh` | a sim-trained agent on the phone, or as the start of a real run |
+| `tools/robot/pull_recordings.sh` | fetch what saved policies did on the robot |
 | `tools/robot/phone_connect.sh` | adb over WiFi, finding the port |
 | `tools/robot/phone_allow_usb.sh` | tap OK on the USB permission dialog |
 | `tools/robot/flash_base.sh` | build and flash base firmware |
