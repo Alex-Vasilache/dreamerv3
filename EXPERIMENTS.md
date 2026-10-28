@@ -621,7 +621,11 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e2990–e3019: from-to directed entropy with its own adaptive weight, on V+SOM+even (2026-10-28, array 4775095)
+### e5000–e5029: from-to directed entropy with its own adaptive weight, on V+SOM+even (2026-10-28, array 4775111)
+
+(Renumbered: the other session's robot runs took e2990-e2995 at 12:26 the same
+day; array 4775095 cancelled after ~1 min and its dirs removed. e5000+ is used to
+stay clear of that session's rising numbers.)
 
 e2960-e2967 (array 4774948) cancelled at ~0.5M: the directed term borrowed the
 manager entropy controller's weight, which sits at only 0.004-0.08 (the manager is
