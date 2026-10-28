@@ -364,13 +364,16 @@ class Agent(embodied.Agent):
     assert key not in self.policy_keys, key
     with self.train_lock:
       old = self.params[key]
-      new = jax.device_put(jax.numpy.asarray(value, old.dtype).reshape(old.shape),
-                           old.sharding)
+      if not isinstance(value, jax.Array):
+        value = np.asarray(value, old.dtype)
+      new = jax.device_put(value.reshape(old.shape).astype(old.dtype), old.sharding)
       old.delete()
       self.params[key] = new
 
   def get_param(self, key):
-    return np.asarray(self.params[key])
+    # Explicit device_get: the agent runs under jax_transfer_guard='disallow',
+    # which rejects the implicit transfer np.asarray would do.
+    return np.asarray(jax.device_get(self.params[key]))
 
   def reset_params(self, regex):
     """Re-initialise the parameters whose names match ``regex`` (fresh init)."""

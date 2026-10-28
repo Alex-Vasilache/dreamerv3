@@ -621,7 +621,14 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e2930–e2959: from-to novelty as directed manager entropy, on V+SOM+even (2026-10-28, array 4774938)
+### e2960–e2989: from-to novelty as directed manager entropy, on V+SOM+even (2026-10-28, array 4774948)
+
+Third launch. e2900-e2908 FAILED at startup (the run loop read/wrote the count
+table with implicit device transfers, rejected by jax_transfer_guard='disallow';
+the CPU smoke runs without the guard). Fixed with explicit device_get/device_put
+and a guard test; e2930-e2959 (array 4774938) cancelled before running.
+
+#### e2930–e2959 (pair_weight 1 relaunch, cancelled)
 
 Relaunch of e2900-e2929 (array 4774874, cancelled within ~30 min) with each real
 (from, to) pair counted as a full experience (`pair_weight` 1.0, was 1/8): if a

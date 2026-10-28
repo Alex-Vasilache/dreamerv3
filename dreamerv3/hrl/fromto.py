@@ -135,4 +135,5 @@ class FromToCounter:
   def export(self):
     """Decayed and smeared table (device array) in true pick units."""
     deflate = 2.0 ** (-self.steps / self.half_life)
-    return self._smear(jnp.asarray(self.tab * np.float32(deflate)))
+    # Explicit device_put: implicit host->device copies are disallowed in runs.
+    return self._smear(jax.device_put(self.tab * np.float32(deflate)))

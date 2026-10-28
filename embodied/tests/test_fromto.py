@@ -114,3 +114,13 @@ class TestCounter:
     tab = np.asarray(c.export())
     assert tab.sum() == pytest.approx(1.0, rel=1e-5)
     assert (tab > 0).sum() > 1
+
+
+def test_export_under_transfer_guard():
+  # Runs use jax_transfer_guard='disallow'; export must only transfer explicitly.
+  c = FromToCounter(start_bins=SB, goal_bins=GB, classes=C, blocks=L, k_min=1, k_max=1)
+  c.add(np.zeros(L), True, 0)
+  c.add(np.full(L, 7), False, 0)
+  with jax.transfer_guard('disallow'):
+    out = c.export()
+  assert float(jax.device_get(out).sum()) == pytest.approx(1.0, rel=1e-5)
