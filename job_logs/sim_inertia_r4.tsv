@@ -1,0 +1,6 @@
+e2990	4775081	e2990_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 83
+e2991	4775082	e2991_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 84
+e2992	4775083	e2992_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 83
+e2993	4775084	e2993_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 84
+e2994	4775085	e2994_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 83
+e2995	4775086	e2995_simrobot_balance65_flat	robot robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 83

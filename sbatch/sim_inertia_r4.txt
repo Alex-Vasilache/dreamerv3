@@ -1,0 +1,7 @@
+# Round 4 (2026-10-28): robot_sim with the body's pitch inertia 4x CAD (sim_inertia 4, fitted to e2732 / e2060 / e2061 open loop), else as round 3 (e2603-e2608): command table/carpet, balance carpet/table
+e2990 flat command 65 p100 --env.robot.sim_surface table --seed 83
+e2991 flat command 65 p100 --env.robot.sim_surface table --seed 84
+e2992 flat command 65 p100 --env.robot.sim_surface carpet --seed 83
+e2993 flat command 65 p100 --env.robot.sim_surface carpet --seed 84
+e2994 flat balance 65 p100 --env.robot.sim_surface carpet --seed 83
+e2995 flat balance 65 p100 --env.robot.sim_surface table --seed 83
