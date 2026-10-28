@@ -1619,11 +1619,11 @@ ucb_imag_kde:
 # at 2 bins (experiments/goal_geometry/prefix_check.py, 2026-10-28); the goal
 # side is a direction (which half of each block). Real pairs t-k -> t, k 1..8.
 # Own adaptive weight: hold E_pi[b] at 1.3 x the uniform policy's (lean), weight
-# capped at 1.0 (advantages are unit scale). c is unused when lean_target > 0.
+# capped at 10 (cap 1.0 pinned the weight with lean < 1, e6000). c unused when lean_target > 0.
 fromto_dir:
   agent:
     mgr_fromto_c: 1.0
-    mgr_fromto: {start_bins: 4, goal_bins: 2, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, lean_target: 1.3, w_init: 0.1, w_min: 1.0e-3, w_max: 1.0, w_vel: 0.05}
+    mgr_fromto: {start_bins: 4, goal_bins: 2, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, lean_target: 1.3, w_init: 1.0, w_min: 1.0e-3, w_max: 10.0, w_vel: 0.05}
 
 # UCB in imagination, arm B as a TABLE (start 2 x goal 4 bins/block), meant for
 # the evenness codebook (goal_even), where index bins are even in goal space.

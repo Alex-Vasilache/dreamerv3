@@ -621,7 +621,18 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
-### e6000–e6029: from-to directed entropy, reached pairs + manager proposals, on V+SOM+even (2026-10-28, array 4775275)
+### e6100–e6129: from-to directed entropy, weight cap 10, on V+SOM+even (2026-10-28, array 4775480)
+
+Change vs e6000-e6029 (array 4775275, cancelled at ~1M, archived): adaptive weight
+cap 1.0 -> 10 (init 1.0). With proposals counted the table works (policy novelty
+0.83-0.96, uniform 0.90-0.96, start-row evidence at decisions median 90-1000), but
+the weight sat at the 1.0 cap throughout while lean stayed 0.92-1.05 (below 1 on
+pin pad four/five: the manager prefers already-tried goals there, which is what
+the reward favours) -- the push was too weak to steer. Returns at ~1M were normal
+(pin pad four 261/293, five 236/211, cartpole 737, cheetah 518). Watch for return
+loss on solved tasks at matched steps vs V+SOM+even.
+
+#### e6000–e6029 (cap 1.0; cancelled)
 
 Change vs e5000-e5029 (array 4775111, cancelled at ~1-1.5M, archived): the counts
 now also include every real manager decision (code of the state where it decided
