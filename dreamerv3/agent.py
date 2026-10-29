@@ -421,8 +421,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         # controller holds entropy. Borrowing the entropy controller's weight
         # (lean_target 0) made the term ~0: that weight sits at 0.004-0.08
         # because the manager is near 50% entropy without help (e2960-e2967).
+        self.fromto_w_fixed = float(getattr(_fcfg, 'w_fixed', 0.0))
         self.fromto_lean_target = float(getattr(_fcfg, 'lean_target', 0.0))
-        if self.fromto_lean_target > 0:
+        if self.fromto_lean_target > 0 and self.fromto_w_fixed <= 0:
           self.fromto_adapt = embodied.jax.AutoAdapt(
               shape=(), impl='mult', target=self.fromto_lean_target,
               min=float(_fcfg.w_min), max=float(_fcfg.w_max), inverse=True,
@@ -1814,7 +1815,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       e_pi, e_uni = e_pi.reshape(M_, n_), e_uni.reshape(M_, n_)
       nd = los_mgr['mgr_policy'].shape[1]
       lean = e_pi[:, :nd] / jnp.maximum(e_uni[:, :nd], 1e-8)
-      if getattr(self, 'fromto_lean_target', 0.0) > 0:
+      if getattr(self, 'fromto_w_fixed', 0.0) > 0:
+        # Fixed strength: with decay off the bonus differences shrink as
+        # 1/sqrt(n), so the push anneals on its own (no controller rescaling).
+        wscale = self.fromto_w_fixed
+        metrics['fromto/weight'] = jnp.asarray(wscale, f32)
+      elif getattr(self, 'fromto_lean_target', 0.0) > 0:
         self.fromto_adapt(sg(lean.mean()), update=training)
         wscale = self.fromto_adapt.scale()
         metrics['fromto/weight'] = wscale

@@ -152,3 +152,13 @@ def test_proposals_are_counted_at_the_decision_state():
   gcol = int((bin_ids(goal, GB, C) * GB ** np.arange(L - 1, -1, -1)).sum())
   assert tab.sum() == pytest.approx(1.0)
   assert tab[gcol] == pytest.approx(1.0)
+
+
+def test_no_decay_when_half_life_zero():
+  c = FromToCounter(start_bins=SB, goal_bins=GB, classes=C, blocks=L, k_min=1, k_max=1,
+                    half_life=0.0, h=0.0)
+  c.add(np.zeros(L), True, 0)
+  c.add(np.zeros(L), False, 0)
+  for _ in range(100):
+    c.add(np.zeros(L), True, 1)
+  assert float(np.asarray(jax.device_get(c.export())).sum()) == pytest.approx(1.0)

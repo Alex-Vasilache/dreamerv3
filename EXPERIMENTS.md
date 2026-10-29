@@ -621,6 +621,21 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e7000–e7029: V+US-SOM+TCE-anneal (2026-10-29, array 4777562)
+
+`director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir
+fromto_anneal pubmatch`, 6 tasks x 5 seeds (`sbatch/pubtceanneal_params.txt`),
+queued to fill A100 slots as e6200-e6229 (V+US-SOM+TCE, lean-1.0 controller)
+finishes. Two changes vs TCE: counts never decay (half_life 0) and the strength is
+a fixed w = 2 (no controller). Why: in e6200 w never annealed (median 1-4 the whole
+run, rising to 4.3 on solved pin pad five) and the 0.5M half-life kept bonuses at
+a steady state (policy novelty only 0.97 -> 0.87-0.95), so exploration pressure
+stayed on after tasks were solved -- the likely cause of the 20-35 point cost on
+pin pad four/five. Without decay counts only grow, bonuses shrink as 1/sqrt(n) and
+with a fixed w the push fades: explore early, converge late. Hypothesis: keep the
+pin pad six solves (3/4 in e6200) and recover pin pad four/five. Watch:
+fromto/novelty falling over training, lean, returns vs V+US-SOM and V+US-SOM+TCE.
+
 ### Names (2026-10-29)
 
 **US-SOM** (uniform-step SOM) = SOM-line + the class-step evenness loss

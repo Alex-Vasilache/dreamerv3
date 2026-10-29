@@ -522,7 +522,7 @@ defaults:
     # n = decaying counts of REAL pairs (state code at t-k -> state code at t,
     # k in [k_min, k_max]) counted at environment interaction.
     mgr_fromto_c: 0.0
-    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, lean_target: 0.0, w_init: 0.1, w_min: 1.0e-3, w_max: 1.0, w_vel: 0.05}
+    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, lean_target: 0.0, w_init: 0.1, w_min: 1.0e-3, w_max: 1.0, w_vel: 0.05, w_fixed: 0.0}
     mgr_ucb_imag_c: 0.0
     mgr_ucb_imag:
       candidates: 8
@@ -1625,6 +1625,15 @@ fromto_dir:
   agent:
     mgr_fromto_c: 1.0
     mgr_fromto: {start_bins: 4, goal_bins: 2, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, lean_target: 1.0, w_init: 1.0, w_min: 1.0e-3, w_max: 10.0, w_vel: 0.05}
+
+# From-to, annealing version (layer after fromto_dir): counts never decay
+# (half_life 0) and the strength is a fixed w = 2 (about the median where the
+# lean-1.0 controller settled in e6200-e6229, which never annealed: w stayed
+# 1-4 and rose on solved pin pad five). Counts only grow, so bonuses shrink as
+# 1/sqrt(n) and the push fades: explore early, converge late.
+fromto_anneal:
+  agent:
+    mgr_fromto: {half_life: 0.0, w_fixed: 2.0}
 
 # UCB in imagination, arm B as a TABLE (start 2 x goal 4 bins/block), meant for
 # the evenness codebook (goal_even), where index bins are even in goal space.
