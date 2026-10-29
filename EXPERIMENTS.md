@@ -671,6 +671,16 @@ vs 744 · cheetah 582 vs 603 · hopper 231 vs 178. Normalized: pin pads +11.1 pt
 (weight 0.1-4.6, lean ~1.0, manager entropy 0.50). Cost: pin pad four/five about
 20-35 below. First pin pad six solves on this base (V+SOM+even 0/5, UCB-B table 0/4).
 
+**FINAL 2026-10-30, 5 seeds (late 3-4M), V+US-SOM+TCE vs V+US-SOM (OG, V+SOM in brackets):**
+pin pad 4 296 vs 317 (p=0.048) [271, 311] · 5 239 vs 272 (p=0.008) [210, 221] ·
+**6 146 vs 0 (p=0.048; solved on 4 of 5 seeds: 206, 0, 195, 164, 165)** [69, 40] ·
+cartpole 767 vs 744 [692, 770] · cheetah 585 vs 603 [511, 593] · hopper 246 vs 178
+[333, 295]. Normalized: vs V+US-SOM pin pads +11.9 pts (p=0.053), DMC +2.4
+(p=0.32), **all +7.1 (CI [+2.3,+10.8], p=0.046)**; vs OG all +7.9 (p=0.027), pin
+pads +13.6 (p=0.041); vs V+SOM all +5.3 (p=0.24). Cost: pin pad four/five 20-35
+below V+US-SOM (exploration pressure never annealed: w 1-4 all run) -> TCE-anneal
+(e7000-e7029).
+
 #### e6100–e6129 (lean target 1.3, cap 10; cancelled)
 
 Change vs e6000-e6029 (array 4775275, cancelled at ~1M, archived): adaptive weight
