@@ -633,6 +633,14 @@ cartpole 459 vs 737, cheetah 366 vs 518, pin pad four 235/260 vs 261/293). Targe
 policy prefers already-tried goals (pin pad four/five sat at 0.92-0.96 at cap 1),
 and the weight falls toward 0 where it is already above.
 
+**Interim 2026-10-29, 4 seeds (3 on hopper), late 3-4M, vs V+SOM+even (5 seeds):**
+pin pad 4 295 vs 317 (p=0.07) · 5 237 vs 272 (p=0.01) · **6 141 vs 0 (p=0.05;
+solved on 3 of 4 seeds: 206, 0, 195, 164; seed 2 already at ~1.7M)** · cartpole 778
+vs 744 · cheetah 582 vs 603 · hopper 231 vs 178. Normalized: pin pads +11.1 pts
+(p=0.16), DMC +2.2 (p=0.44), all +6.6 (CI [+0.9,+11.2], p=0.10). Controller steady
+(weight 0.1-4.6, lean ~1.0, manager entropy 0.50). Cost: pin pad four/five about
+20-35 below. First pin pad six solves on this base (V+SOM+even 0/5, UCB-B table 0/4).
+
 #### e6100–e6129 (lean target 1.3, cap 10; cancelled)
 
 Change vs e6000-e6029 (array 4775275, cancelled at ~1M, archived): adaptive weight
