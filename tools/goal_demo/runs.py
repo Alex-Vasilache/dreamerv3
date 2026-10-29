@@ -26,7 +26,7 @@ ARM_LABELS = {'og': 'Director (OG)', 'som': 'OG + SOM-line',
               'sommask': 'OG + SOM-line + mask',
               'ucbA': 'OG + SOM + UCB imag A', 'ucbB': 'OG + SOM + UCB imag B',
               'v': 'V (OG + fixed ent. + worker v3)', 'vsom': 'V + SOM',
-              'veven': 'V + SOM + evenness', 'vucb': 'V + SOM + UCB-B full res.'}
+              'veven': 'V + US-SOM', 'vucb': 'V + SOM + UCB-B full res.'}
 # Same colours as the comparison plots (collapse_study/compare_late.py).
 ARM_COLORS = {'og': '#E69F00', 'som': '#CC79A7', 'somlip': '#0072B2',
               'sommask': '#56B4E9', 'ucbA': '#0072B2', 'ucbB': '#009E73',

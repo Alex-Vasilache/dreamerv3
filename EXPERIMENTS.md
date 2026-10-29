@@ -621,6 +621,16 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### Names (2026-10-29)
+
+**US-SOM** (uniform-step SOM) = SOM-line + the class-step evenness loss
+(`goal_som_line goal_even`, e2006-e2059 odd arm): every one-class step moves the
+decoded goal by about the same amount. **FDE** (frontier-directed entropy) = the
+from-to novelty term (`fromto_dir`): the manager's entropy aimed at start->goal
+transitions not yet experienced from the current state. **FDE-anneal** = FDE with
+no count decay and fixed w (`fromto_dir fromto_anneal`). So V+SOM+even = V+US-SOM,
+V+SOM+even+from-to = V+US-SOM+FDE. Config block names are unchanged.
+
 ### e6200–e6229: from-to directed entropy, lean target 1.0, on V+SOM+even (2026-10-28, array 4775662)
 
 Change vs e6100-e6129 (array 4775480, cancelled at ~1M, archived): lean target

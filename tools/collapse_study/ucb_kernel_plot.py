@@ -31,7 +31,7 @@ OUT = '/work/DoyaU/vasilache/work/collapse_figs/ucb_kernel_geometry'
 ARMS = [('og', 'OG', '#E69F00'), ('som', 'OG + SOM', '#CC79A7'), ('somlip', 'OG + SOM + LiP', '#0072B2')]
 # `ucb_kernel_plot.py someven`: V + SOM against V + SOM + evenness loss (e2000-e2059).
 if len(sys.argv) > 1 and sys.argv[1] == 'someven':
-  ARMS = [('vsom', 'V + SOM', '#CC79A7'), ('veven', 'V + SOM + evenness', '#0072B2')]
+  ARMS = [('vsom', 'V + SOM', '#CC79A7'), ('veven', 'V + US-SOM', '#0072B2')]
   OUT += '_someven'
 TASKS = [('pinpad_four', 'Pin Pad 4'), ('pinpad_five', 'Pin Pad 5'), ('pinpad_six', 'Pin Pad 6'),
          ('dmc_cartpole_swingup', 'Cartpole'), ('dmc_cheetah_run', 'Cheetah'), ('dmc_hopper_hop', 'Hopper')]
