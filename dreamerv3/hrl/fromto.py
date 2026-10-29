@@ -1,4 +1,4 @@
-"""Frontier-directed exploration (FDE): push the manager toward untried goal regions.
+"""Transition-count exploration (TCE): push the manager toward rarely made start->goal transitions.
 
 Counts (``FromToCounter``, host side, at environment interaction): every real
 step t adds the pairs (code of the state at t-k -> code of the state at t) for

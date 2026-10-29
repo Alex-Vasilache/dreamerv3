@@ -625,15 +625,16 @@ after a watchdog retry left a proprio-model checkpoint.
 
 **US-SOM** (uniform-step SOM) = SOM-line + the class-step evenness loss
 (`goal_som_line goal_even`, e2006-e2059 odd arm): every one-class step moves the
-decoded goal by about the same amount. **FDE** (frontier-directed exploration) = the
+decoded goal by about the same amount. **TCE** (transition-count exploration; earlier called FDE) = the
 from-to novelty term (`fromto_dir`): a per-state, critic-free push of the manager's
 goal distribution toward start->goal transitions not yet experienced from the
 current state, w * E_pi[1/sqrt(n+1)]. Not an entropy term: linear in pi, its
 optimum alone is deterministic; with the 50% entropy controller it decides where
 the manager's randomness goes (alpha*H + w*E_pi[b] = -alpha*KL(pi||q), q ∝
-exp((w/alpha) b), but w/alpha is ~50-500 here, so q is very peaked). **FDE-anneal** = FDE with
+exp((w/alpha) b), but w/alpha is ~50-500 here, so q is very peaked). **TCE-anneal** = TCE with
 no count decay and fixed w (`fromto_dir fromto_anneal`). So V+SOM+even = V+US-SOM,
-V+SOM+even+from-to = V+US-SOM+FDE. Config block names are unchanged.
+V+SOM+even+from-to = V+US-SOM+TCE. The same scheme applies to state->action
+transitions (worker or flat agent). Config block names are unchanged.
 
 ### e6200–e6229: from-to directed entropy, lean target 1.0, on V+SOM+even (2026-10-28, array 4775662)
 

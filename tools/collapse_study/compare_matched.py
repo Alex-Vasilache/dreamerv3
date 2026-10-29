@@ -83,7 +83,7 @@ SETS = {
          'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-pubmatch_s*'),
         ('even', 'V + US-SOM', '#009E73',
          'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*'),
-        ('ft', 'V + US-SOM + FDE', '#0072B2',
+        ('ft', 'V + US-SOM + TCE', '#0072B2',
          'e62[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-pubmatch_s*'),
     ],
     'someven': [
