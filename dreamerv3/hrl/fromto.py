@@ -1,4 +1,4 @@
-"""From-to novelty for the manager: directed entropy toward untried goal regions.
+"""Frontier-directed exploration (FDE): push the manager toward untried goal regions.
 
 Counts (``FromToCounter``, host side, at environment interaction): every real
 step t adds the pairs (code of the state at t-k -> code of the state at t) for
@@ -125,7 +125,7 @@ class FromToCounter:
       hist.clear()
     code = np.asarray(code, np.int64)
     g = int((bin_ids(code, self.gb, self.C) * self._gstr).sum())
-    inflate = 2.0 ** (self.steps / self.half_life)
+    inflate = self._inflate()
     if proposal is not None and self.prop_w > 0:
       s = int((bin_ids(code, self.sb, self.C) * self._sstr).sum())
       gp = int((bin_ids(np.asarray(proposal, np.int64), self.gb, self.C) * self._gstr).sum())
@@ -136,6 +136,11 @@ class FromToCounter:
         self.tab[s * self.cols + g] += self.w * inflate
     hist.append(code)
     self.steps += 1
+
+  def _inflate(self):
+    """2^(t/half_life); half_life <= 0 turns decay off (counts only grow, so
+    bonuses shrink as 1/sqrt(n) and the push anneals by itself)."""
+    return 1.0 if self.half_life <= 0 else 2.0 ** (self.steps / self.half_life)
 
   def due(self):
     return self.steps > 0 and self.steps % self.export_every == 0
@@ -150,6 +155,6 @@ class FromToCounter:
 
   def export(self):
     """Decayed and smeared table (device array) in true pick units."""
-    deflate = 2.0 ** (-self.steps / self.half_life)
+    deflate = 1.0 / self._inflate()
     # Explicit device_put: implicit host->device copies are disallowed in runs.
     return self._smear(jax.device_put(self.tab * np.float32(deflate)))
