@@ -1023,6 +1023,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
     imgact = concat([imgprevact, lastact], 1)
     inp = self.feat2tensor(imgfeat)
+    imag_kw = dict(self.config.imag_loss)
+    spatial_sigma = imag_kw.pop('spatial_sigma', 0.1)
+    if imag_kw.get('spatial'):
+      # CAPS spatial term: the policy on the deterministic state plus noise
+      # scaled to each unit's batch std (stoch is one-hot, left alone).
+      d = imgfeat['deter'].shape[-1]
+      deter = inp[..., :d]
+      noise = jax.random.normal(nj.seed(), deter.shape, jnp.float32)
+      noise = (noise * spatial_sigma * sg(deter.astype(jnp.float32).std((0, 1)))).astype(deter.dtype)
+      imag_kw['policy_noisy'] = self.pol(
+          jnp.concatenate([deter + noise, inp[..., d:]], -1), 2)
     los_flat, imgloss_out, mets = imag_loss(
         imgact,
         self.rew(inp, 2).pred(),
@@ -1034,7 +1045,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         update=training,
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
-        **self.config.imag_loss)
+        **imag_kw)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_flat.items()})
     metrics.update(mets)
     if self.config.repval_loss:
@@ -1661,7 +1672,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       metrics.update({f'goal/soft_reuse_{k}': vv for k, vv in soft_mets.items()})
 
     kwargs_mgr = {**self.config.imag_loss}
-    kwargs_mgr.pop('smooth', None)   # flat actor only
+    for k in ('smooth', 'spatial', 'spatial_sigma'):
+      kwargs_mgr.pop(k, None)   # flat actor only
     kwargs_mgr.update(
         update=training,
         contdisc=self.config.contdisc,
@@ -1717,7 +1729,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     K = self.manager_sample_freq
     M = B * K_imag
     kwargs_wkr = {**self.config.imag_loss}
-    kwargs_wkr.pop('smooth', None)   # flat actor only
+    for k in ('smooth', 'spatial', 'spatial_sigma'):
+      kwargs_wkr.pop(k, None)   # flat actor only
     kwargs_wkr.update(
         update=training,
         contdisc=self.config.contdisc,

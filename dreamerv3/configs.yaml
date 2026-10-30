@@ -682,6 +682,10 @@ defaults:
       actent: 3e-4
       slowreg: 1.0
       smooth: 0.0
+      # CAPS spatial term: spatial * |mean(z) - mean(z~)|^2, z~ = z with Gaussian
+      # noise of spatial_sigma x its batch std on the deterministic state.
+      spatial: 0.0
+      spatial_sigma: 0.1
     repl_loss: {slowtar: False, lam: 0.95, slowreg: 1.0}
     slowvalue: {rate: 0.02, every: 1}
     # Manager and worker actor-critics both use these DreamerV3 defaults: the
