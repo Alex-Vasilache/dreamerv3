@@ -522,7 +522,7 @@ defaults:
     # n = decaying counts of REAL pairs (state code at t-k -> state code at t,
     # k in [k_min, k_max]) counted at environment interaction.
     mgr_fromto_c: 0.0
-    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, lean_target: 0.0, w_init: 0.1, w_min: 1.0e-3, w_max: 1.0, w_vel: 0.05, w_fixed: 0.0}
+    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, half_life_frac: 0.0, half_life_min: 2.5e4, lean_target: 0.0, w_init: 0.1, w_min: 1.0e-3, w_max: 1.0, w_vel: 0.05, w_fixed: 0.0}
     mgr_ucb_imag_c: 0.0
     mgr_ucb_imag:
       candidates: 8
@@ -1634,6 +1634,20 @@ fromto_dir:
 fromto_anneal:
   agent:
     mgr_fromto: {half_life: 0.0, w_fixed: 2.0}
+
+# Simplified TCE (2026-10-30), layered on fromto_dir: fixed w = 2 (no lean
+# controller) and a growing half-life h(t) = max(t/2, 25k): counts forget the
+# same fraction of the past at any point in training, so total mass grows ~t
+# and the push fades by itself (a count from step s weighs (s/t)^1.39 at t).
+tce_grow:
+  agent:
+    mgr_fromto: {half_life_frac: 0.5, w_fixed: 2.0}
+
+# Director's reconstruction-error exploration reward off (manager advantage =
+# extrinsic only), to test whether TCE makes it redundant.
+no_gae_expl:
+  agent:
+    mgr_expl_weight: 0.0
 
 # UCB in imagination, arm B as a TABLE (start 2 x goal 4 bins/block), meant for
 # the evenness codebook (goal_even), where index bins are even in goal space.

@@ -94,7 +94,7 @@ class FromToCounter:
 
   def __init__(self, start_bins=2, goal_bins=4, classes=8, blocks=8,
                k_min=1, k_max=8, half_life=5e5, h=0.5, export_every=10000,
-               pair_weight=1.0, prop_weight=1.0):
+               pair_weight=1.0, prop_weight=1.0, half_life_frac=0.0, half_life_min=2.5e4):
     self.sb, self.gb, self.C, self.L = start_bins, goal_bins, classes, blocks
     self.ks = list(range(int(k_min), int(k_max) + 1))
     # Each experienced (from, to) pair is a full look at that combination: if a
@@ -106,6 +106,12 @@ class FromToCounter:
     # and fades, instead of staying maximally novel forever. 0 disables.
     self.prop_w = float(prop_weight)
     self.half_life = float(half_life)
+    # Growing half-life (half_life_frac > 0): h(t) = max(frac * t, half_life_min)
+    # replaces the fixed one. Memory then scales with training time: a count
+    # made at step s weighs (s/t)^(ln2/frac) at step t, total mass grows ~t and
+    # the bonus differences fade by themselves.
+    self.hl_frac = float(half_life_frac)
+    self.hl_min = float(half_life_min)
     self.h = float(h)
     self.export_every = int(export_every)
     self.cols = self.gb ** self.L
@@ -138,8 +144,16 @@ class FromToCounter:
     self.steps += 1
 
   def _inflate(self):
-    """2^(t/half_life); half_life <= 0 turns decay off (counts only grow, so
-    bonuses shrink as 1/sqrt(n) and the push anneals by itself)."""
+    """exp(integral of ln2 / h(u) du) up to now: 2^(t/half_life) for a fixed
+    half-life; half_life <= 0 turns decay off (counts only grow, so bonuses
+    shrink as 1/sqrt(n) and the push anneals by itself). With a growing
+    half-life h(t) = max(frac * t, h_min), constant h_min until t0 = h_min / frac,
+    then log2 = (1 + ln(t / t0)) / frac."""
+    if self.hl_frac > 0:
+      t0 = self.hl_min / self.hl_frac
+      if self.steps <= t0:
+        return 2.0 ** (self.steps / self.hl_min)
+      return 2.0 ** ((1.0 + np.log(self.steps / t0)) / self.hl_frac)
     return 1.0 if self.half_life <= 0 else 2.0 ** (self.steps / self.half_life)
 
   def due(self):

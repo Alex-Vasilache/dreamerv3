@@ -621,7 +621,31 @@ e1612/e1614 had 19–80 min of stray P100 training from the benchmark
 watchdog (fixed via `bench_droplist.txt`); e1622 was restarted from scratch
 after a watchdog retry left a proprio-model checkpoint.
 
+### e8000–e8029: V+US-SOM+TCE-grow, simplified TCE (2026-10-30, array 4778353)
+
+`director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir
+tce_grow pubmatch`, 6 tasks x 5 seeds (`sbatch/pubtcegrow_params.txt`). Two changes
+vs TCE (e6200): fixed w = 2 (no lean controller; its weight sat at 1-4 anyway and
+would cancel any fading) and a growing half-life h(t) = max(t/2, 25k)
+(`half_life_frac 0.5`): a count from step s weighs (s/t)^1.39 at step t, mass
+grows ~t, so bonus differences fade by themselves without a time constant.
+Why: TCE-anneal (no decay) lost pin pad six (0/3, novelty never fell there, lean
+rose 1.01 -> 1.14 chasing never-tried cells) while recovering pin pad five; the
+fixed 0.5M half-life never fades (costs pin pad four/five 20-35). Hypothesis:
+pin pad six solves like TCE, pin pad four/five closer to V+US-SOM.
+Weekend plan (autonomy until Mon 11-02): then best TCE on plain SOM (no
+evenness), then start side counted from hashed world-model states instead of
+codebook bins, then the Director reconstruction-error exploration reward off
+(`no_gae_expl`, mgr_expl_weight 0) on the best combination.
+
 ### e7000–e7029: V+US-SOM+TCE-anneal (2026-10-29, array 4777562)
+
+**Stopped 2026-10-30 11:00** after 14 complete: pending seeds 3-4 and the
+just-started e7017-e7019 cancelled; e7011/e7014-e7016/e7020 left to finish.
+Matched 3.5-4M (n=1-3): pin pad 4 295, 5 256, **6 0 (0/3; TCE 4/5)**, cartpole
+707, cheetah 576, hopper 194; overall 49% vs TCE 58%, V+US-SOM 52%, OG 50%.
+Weight is not the cause (TCE's adaptive w was 1.3-3.3 on pin pad six); without
+decay novelty stays 0.95 on pin pad six and lean rises to 1.14 (TCE ~1.04).
 
 `director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir
 fromto_anneal pubmatch`, 6 tasks x 5 seeds (`sbatch/pubtceanneal_params.txt`),

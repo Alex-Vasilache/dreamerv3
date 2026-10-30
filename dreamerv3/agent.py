@@ -415,7 +415,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             half_life=float(_fcfg.half_life), h=float(_fcfg.h),
             export_every=int(_fcfg.export_every),
             pair_weight=float(getattr(_fcfg, 'pair_weight', 1.0)),
-            prop_weight=float(getattr(_fcfg, 'prop_weight', 1.0)))
+            prop_weight=float(getattr(_fcfg, 'prop_weight', 1.0)),
+            half_life_frac=float(getattr(_fcfg, 'half_life_frac', 0.0)),
+            half_life_min=float(getattr(_fcfg, 'half_life_min', 2.5e4)))
         # Own adaptive weight (lean_target > 0): hold the policy's expected
         # novelty at lean_target x a uniform policy's, like the entropy
         # controller holds entropy. Borrowing the entropy controller's weight

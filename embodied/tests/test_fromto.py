@@ -162,3 +162,17 @@ def test_no_decay_when_half_life_zero():
   for _ in range(100):
     c.add(np.zeros(L), True, 1)
   assert float(np.asarray(jax.device_get(c.export())).sum()) == pytest.approx(1.0)
+
+
+def test_growing_half_life_power_law():
+  # h(t) = max(t/2, 1): a count added at s=10 weighs (10/40)^(2 ln 2) at t=40.
+  c = FromToCounter(start_bins=SB, goal_bins=GB, classes=C, blocks=L, k_min=1, k_max=1,
+                    h=0.0, half_life_frac=0.5, half_life_min=1.0)
+  for _ in range(9):
+    c.add(np.zeros(L), True, 1)
+  c.add(np.zeros(L), True, 0)
+  c.add(np.zeros(L), False, 0)        # one pair, added at steps=10
+  while c.steps < 40:
+    c.add(np.zeros(L), True, 1)
+  tot = float(np.asarray(jax.device_get(c.export())).sum())
+  assert tot == pytest.approx((10 / 40) ** (2 * np.log(2)), rel=1e-4)
