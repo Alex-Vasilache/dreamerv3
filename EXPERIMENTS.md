@@ -639,6 +639,17 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+### Decision 2026-10-31 01:00: stage 2 uses the original TCE (0.5M half-life, adaptive w)
+
+TCE-grow (e8000) at n=2-3 per task, matched 3.5-4.0M: pin pad 4 307, 5 254, **6 0
+(0/2 finished + seed 2 at 0 at 2M)**, cartpole 704, cheetah 561, hopper 290;
+normalised: pin pads 75/72/0% vs TCE 72/67/50%. Pin pad six sustained-50
+crossing: TCE 4/5 (0.2, 2.3, 2.6, 2.9M), TCE-anneal 2/4 (3.2, 3.6M, both late),
+TCE-grow 0/3. Lean climbs to 1.06-1.09 on pin pad six/cartpole as in TCE-anneal
+(TCE ~1.04): slower forgetting -> later or no pin pad six discovery. Cancelled
+TCE-grow seeds 3-4 except pin pad six (tasks 20, 26 kept to firm up the 0/n).
+Released e8600-e8629 (array 4778377) = V + SOM (no evenness) + TCE (`fromto_dir`).
+
 ### World-model start-cell hash study (2026-10-30, offline, V100 jobs 4778374-6)
 
 `experiments/goal_geometry/wm_hash_study.py` + `wm_hash_analyze.py`, figure

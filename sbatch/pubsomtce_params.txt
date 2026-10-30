@@ -1,30 +1,30 @@
-director pinpad_four 0 e8600 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_five 0 e8601 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_six 0 e8602 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cartpole_swingup 0 e8603 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cheetah_run 0 e8604 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_hopper_hop 0 e8605 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_four 1 e8606 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_five 1 e8607 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_six 1 e8608 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cartpole_swingup 1 e8609 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cheetah_run 1 e8610 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_hopper_hop 1 e8611 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_four 2 e8612 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_five 2 e8613 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_six 2 e8614 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cartpole_swingup 2 e8615 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cheetah_run 2 e8616 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_hopper_hop 2 e8617 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_four 3 e8618 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_five 3 e8619 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_six 3 e8620 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cartpole_swingup 3 e8621 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cheetah_run 3 e8622 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_hopper_hop 3 e8623 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_four 4 e8624 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_five 4 e8625 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director pinpad_six 4 e8626 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cartpole_swingup 4 e8627 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_cheetah_run 4 e8628 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
-director dmc_hopper_hop 4 e8629 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_grow pubmatch
+director pinpad_four 0 e8600 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_five 0 e8601 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_six 0 e8602 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cartpole_swingup 0 e8603 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cheetah_run 0 e8604 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_hopper_hop 0 e8605 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_four 1 e8606 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_five 1 e8607 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_six 1 e8608 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cartpole_swingup 1 e8609 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cheetah_run 1 e8610 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_hopper_hop 1 e8611 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_four 2 e8612 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_five 2 e8613 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_six 2 e8614 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cartpole_swingup 2 e8615 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cheetah_run 2 e8616 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_hopper_hop 2 e8617 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_four 3 e8618 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_five 3 e8619 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_six 3 e8620 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cartpole_swingup 3 e8621 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cheetah_run 3 e8622 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_hopper_hop 3 e8623 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_four 4 e8624 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_five 4 e8625 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director pinpad_six 4 e8626 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cartpole_swingup 4 e8627 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_cheetah_run 4 e8628 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
+director dmc_hopper_hop 4 e8629 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir pubmatch
