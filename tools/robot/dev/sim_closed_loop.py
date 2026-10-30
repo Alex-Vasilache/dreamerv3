@@ -56,7 +56,7 @@ def parse_variant(spec):
   opts = {}
   for part in [p for p in rest.split(',') if p]:
     k, _, v = part.partition('=')
-    opts[k] = v if k in ('surface', 'fit') else float(v)
+    opts[k] = v if k in ('surface', 'fit', 'sim_rand') else float(v)
   return name, opts
 
 
@@ -102,6 +102,9 @@ def main():
   ap.add_argument('--gpu', action='store_true')
   ap.add_argument('--variant', action='append', default=None)
   ap.add_argument('--traces', action='store_true')
+  ap.add_argument('--mode', default='train',
+                  help="'eval' plays the most likely action, as the phone's "
+                       'recorder does for saved policies')
   args = ap.parse_args()
   variants = [parse_variant(v) for v in (args.variant or ['base:'])]
 
@@ -113,6 +116,9 @@ def main():
   raw = yaml.YAML(typ='safe').load((logdir / 'config.yaml').read_text())
   r = raw['env']['robot']
   r.setdefault('sim_inertia', 1.0)   # runs from before the key
+  for k, v in dict(sim_backlash=0.0, sim_gear_k=2.0, sim_friction=1.0, sim_rand='',
+                   sim_rand_every=0.0, sim_tilt_lag=0.0).items():
+    r.setdefault(k, v)
   base = [
       '--env.realtime_hz', '0', '--logdir', tempfile.mkdtemp(),
       '--jax.platform', 'cuda' if args.gpu else 'cpu', '--jax.prealloc',
@@ -141,7 +147,9 @@ def main():
       m, fl = fit['motor'], fit['floors'][opts.get('surface', r['sim_surface'])]
       fitted = dict(sim_wheel_omega=m['wheel_omega'], sim_stall_torque=m['stall'],
                     sim_stick=m['stick'], sim_slide=m['slide'],
-                    sim_armature=m['armature'], sim_inertia=m.get('inertia', 1.0))
+                    sim_armature=m['armature'], sim_inertia=m.get('inertia', 1.0),
+                    sim_backlash=m.get('backlash', 0.0), sim_gear_k=m.get('gear_k', 2.0),
+                    sim_tilt_lag=m.get('tilt_lag', 0.0))
       opts = {**fitted, **opts}
     for k, v in opts.items():
       if k.startswith('sim_'):
@@ -187,7 +195,7 @@ def main():
     rec = {k: [] for k in ('theta', 'rate', 'wheels', 'act', 'reward', 'cmd')}
     for _ in range(int(args.minutes * 60 * hz)):
       batch = {k: np.asarray(obs[k])[None] for k in keys}
-      carry, acts, _ = agent.policy(carry, batch, mode='train')
+      carry, acts, _ = agent.policy(carry, batch, mode=args.mode)
       act = {act_key: np.asarray(acts[act_key][0])}
       obs = env.step({**act, 'reset': False})
       if obs['is_last']:

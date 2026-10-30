@@ -397,6 +397,51 @@ against 19–26 deg/s, on a bumper 0–1% against 2–3%. The round-4 policy sta
 almost still, better than in its own sim (0.84). Warm-started with the learner
 on (e2996), the same policy fell apart within a minute, as e2605 did in e2732.
 
+## 10. Gearbox backlash, and round 5 (Wednesday night)
+
+On carpet, e2992 tracked steady forward commands but on back (and often
+forward) commands it fell into a bang-bang limit cycle: output flipping
+between -1 and +1, body swinging -6..+8 deg, rate SD 58.7 deg/s, forward
+tracking 0.16. Its own sim (inertia 4) gave rate SD 12 and tracking 0.69.
+
+ARX regressions on the command recording: the encoders answer an output
+change after one tick at every amplitude, as in the sim, but the body's tilt
+answers one tick later, barely at all to small chatter and 2-3x harder to big
+reversals. That is play in the gearbox: the rotor crosses the gap freely, then
+engages with a kick. Inertia 4 was mostly standing in for the delay.
+
+The model (`robot_mujoco.py`, `sim_backlash`, `sim_gear_k`) now has a rotor
+joint per wheel carrying the armature and driven by the actuator, coupled to
+the wheel through a dead-zone spring (gap +-backlash, stiffness gear_k,
+near-critical damping); the encoders read the rotor. Also new: `sim_tilt_lag`
+and `sim_rand` (e.g. `inertia:1:4,backlash:0:0.05`, redrawn every
+`sim_rand_every` s). `sysid_fit.py` fits backlash, gear_k, tilt_lag and floor
+friction.
+
+Single changes that did not explain the command data: inertia 1/2, delay, CoM
+height, stall/armature x2, wheel top speed, floor slip, tilt lag. The 0.3 s
+open-loop fit still prefers inertia 4 without backlash (total 2.17 vs 2.41,
+mostly on balancing data; in-air 0.85 vs 1.33), but closed loop decides it:
+with backlash 0.03 rad and the CAD inertia, the sim reproduces e2992's
+failure (rate SD 58.5, tracking 0.29) and e2605's calm on the robot (24 /
+0.69 vs 18 / 0.71). The inertia-4 sim calls both calm.
+
+![closed loop, e2992 and e2605](figs/closedloop_backlash.png)
+
+Round 5 (2 h each, p100) trains through both models: e6030/e6031 carpet with
+inertia 1-4 and backlash 0-0.05 redrawn every 60 s, e6032 carpet with fixed
+backlash 0.03 and inertia 1, e6033 table randomized like e6030. Final
+checkpoints (eval mode, 4 min per variant): all four keep tracking in the
+backlash sims where e2992 collapses. e6031 is the best carpet policy (rate SD
+21-23, forward tracking 0.71-0.72 in all three sims). e6032 led at 1 h
+(SD 19, tracking 0.71) but its final checkpoint dropped to 0.36-0.55, so
+single 4-min evals are noisy. e6033 (table) tracks 0.63-0.67 with SD about 40.
+Runs archived to the bucket.
+
+![round 5](figs/r5_policies.png)
+
+All of this is on the robot branch (merged from `sim-backlash-r5`).
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined

@@ -144,7 +144,8 @@ MESHES = {
 
 def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
               armature=5e-4, friction=1.0, rolling=0.0, contact_tc=0.02,
-              bumper_friction=0.5, fixed=False, visual=None, meshdir=None):
+              bumper_friction=0.5, fixed=False, visual=None, meshdir=None,
+              backlash=0.0):
   """MJCF of the robot. bumper_back > 0 and bumper_front > 0 are the pitch
   magnitudes (rad, from geometric upright) at which the body rests on the rear
   and front bumper. `visual` (an RGB phone colour) adds what a video needs --
@@ -154,7 +155,10 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
   touches the physics: every visual geom is massless and collides with
   nothing. `rolling` is the wheels' rolling friction (m) and `contact_tc` the
   time constant of their contact with the floor (s); `fixed` holds the body
-  in the air, wheels free, as on the stand the motors were measured on."""
+  in the air, wheels free, as on the stand the motors were measured on.
+  `backlash` > 0 puts each motor on a joint of its own (rotor_<side>, with
+  the armature), which Physics couples to its wheel through the gearbox's
+  play; 0 drives the wheel joints directly."""
   zb, zf = _bumper_z(BACK_ARM, bumper_back), _bumper_z(FRONT_ARM, bumper_front)
   meshes = visual is not None and meshdir is not None
   show = lambda rgba: 'rgba="0 0 0 0"' if meshes else f'rgba="{rgba}"'
@@ -207,9 +211,15 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
       {arrow('push_back', 0.20, 0.04)}
       {arrow('push_fwd', -0.20, -0.04)}"""
 
+  rotor = lambda name, x: f"""
+      <body name="rotor_{name}" pos="{x} 0 0">
+        <joint name="rotor_{name}" type="hinge" axis="1 0 0" armature="{armature}"
+               damping="1e-5" frictionloss="0.001"/>
+        <inertial pos="0 0 0" mass="0.001" diaginertia="1e-9 1e-9 1e-9"/>
+      </body>""" if backlash else ''
   wheel = lambda name, x: f"""
       <body name="{name}" pos="{x} 0 0">
-        <joint name="{name}" type="hinge" axis="1 0 0" armature="{armature}"
+        <joint name="{name}" type="hinge" axis="1 0 0" armature="{1e-6 if backlash else armature}"
                damping="1e-5" frictionloss="0.001"/>
         <geom type="cylinder" size="{WHEEL_R} 0.0084" euler="0 90 0"
               condim="6" friction="{friction} 0.005 {rolling}"
@@ -238,17 +248,17 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
             fromto="-0.03 {FRONT_ARM} {zf} 0.03 {FRONT_ARM} {zf}"
             density="0" friction="{bumper_friction} 0.005 0.0001" {show('.9 .3 .2 1')}/>{body_extra}
       {wheel('left', -HALF_TRACK)}
-      {wheel('right', HALF_TRACK)}
+      {wheel('right', HALF_TRACK)}{rotor('left', -HALF_TRACK)}{rotor('right', HALF_TRACK)}
     </body>
   </worldbody>
   <!-- Torque gain * ctrl + bias * wheel speed: Physics sets the gain to the
        stall torque and the bias to its back-EMF, -stall / omega_max, which
        the implicitfast integrator then treats implicitly. -->
   <actuator>
-    <general name="left" joint="left" gainprm="1" biastype="affine"
-             biasprm="0 0 0"/>
-    <general name="right" joint="right" gainprm="1" biastype="affine"
-             biasprm="0 0 0"/>
+    <general name="left" joint="{'rotor_' if backlash else ''}left" gainprm="1"
+             biastype="affine" biasprm="0 0 0"/>
+    <general name="right" joint="{'rotor_' if backlash else ''}right" gainprm="1"
+             biastype="affine" biasprm="0 0 0"/>
   </actuator>
 </mujoco>"""
 
@@ -276,7 +286,7 @@ class Physics:
                unit=548.0, friction=1.0, rolling=0.0, contact_tc=0.02,
                bumper_friction=0.5, drag=0.0, rolling_static=None,
                noslip=0, fixed=False, torque_max=0.0, com_z=None,
-               inertia=1.0):
+               inertia=1.0, backlash=0.0, gear_k=2.0):
     self.omega_max = float(wheel_omega)
     self.stall = float(stall)
     self.stick = float(stick) * self.stall   # N m
@@ -286,10 +296,24 @@ class Physics:
     self.model = mujoco.MjModel.from_xml_string(model_xml(
         bumper_back, bumper_front, timestep=timestep, armature=armature,
         friction=friction, rolling=rolling, contact_tc=contact_tc,
-        bumper_friction=bumper_friction, fixed=fixed))
+        bumper_friction=bumper_friction, fixed=fixed, backlash=backlash))
     self.data = mujoco.MjData(self.model)
     joints = [self.model.joint(n).id for n in PHONE_WHEELS]
     self.dofs = [int(self.model.jnt_dofadr[j]) for j in joints]
+    # Gearbox play (rad at the wheel, half the total): the motor -- whose
+    # side the encoders count -- turns through it freely, and the wheel and
+    # the body feel its torque only once the teeth meet, through a gear
+    # spring gear_k (N m/rad), damped near critically against the wheel.
+    self.backlash = float(backlash)
+    self.gear_k = float(gear_k)
+    self.gear_c = 1.4 * math.sqrt(self.gear_k * 3.5e-5)
+    self.motor_dofs = self.dofs
+    if self.backlash:
+      self.motor_dofs = [int(self.model.jnt_dofadr[self.model.joint(
+          'rotor_' + n).id]) for n in PHONE_WHEELS]
+      self._qpos = [(int(self.model.jnt_qposadr[self.model.joint(
+          'rotor_' + n).id]), int(self.model.jnt_qposadr[self.model.joint(
+              n).id])) for n in PHONE_WHEELS]
     self.acts = [self.model.actuator(n).id for n in PHONE_WHEELS]
     for act in self.acts:
       self.model.actuator_gainprm[act, 0] = self.stall
@@ -330,7 +354,18 @@ class Physics:
   @property
   def speed(self):
     """Wheel speeds in the phone's mm/s and sign (forward is negative)."""
-    return np.array([self.data.qvel[i] for i in self.dofs]) * self.unit
+    return np.array([self.data.qvel[i] for i in self.motor_dofs]) * self.unit
+
+  def set_speed(self, wheels):
+    """Wheel joint speeds (rad/s, phone order), motors alike, the gears
+    meshed on the side `wheels` turns them."""
+    for dof, w in zip(self.dofs, wheels):
+      self.data.qvel[dof] = w
+    if self.backlash:
+      for dof, (qr, qw), w in zip(self.motor_dofs, self._qpos, wheels):
+        self.data.qvel[dof] = w
+        self.data.qpos[qr] = self.data.qpos[qw] + math.copysign(
+            self.backlash, w)
 
   def set_floor(self, rolling, contact_tc, bumper_friction, drag,
                 rolling_static=None, noslip=0):
@@ -351,13 +386,17 @@ class Physics:
     """`n` physics steps with outputs `sent` (phone order) at the motors."""
     m, d = self.model, self.data
     for _ in range(n):
-      for u, dof, act in zip(sent, self.dofs, self.acts):
+      for u, dof, act in zip(sent, self.motor_dofs, self.acts):
         w = float(d.qvel[dof])
         d.ctrl[act] = -u
         m.dof_frictionloss[dof] = (
             self.stick if abs(w) < self.STILL else self.slide)
       if self.drag:
         self._floor_drag()
+      elif self.backlash:
+        d.qfrc_applied[:] = 0.0
+      if self.backlash:
+        self._gears()
       if self.rolling_static != self.rolling:
         for dof, geom in zip(self.dofs, self.wheel_geoms):
           # The wheel's spin relative to the floor: its joint's plus the
@@ -366,6 +405,20 @@ class Physics:
           m.geom_friction[geom, 2] = (
               self.rolling_static if spin < self.ROLL_STILL else self.rolling)
       mujoco.mj_step(m, d)
+
+  def _gears(self):
+    """Each motor drives its wheel through the gearbox's play."""
+    d = self.data
+    for (qr, qw), dr, dw in zip(self._qpos, self.motor_dofs, self.dofs):
+      gap = float(d.qpos[qr] - d.qpos[qw])
+      over = gap - math.copysign(min(abs(gap), self.backlash), gap)
+      if not over:
+        continue
+      torque = self.gear_k * over + self.gear_c * float(d.qvel[dr] - d.qvel[dw])
+      # Teeth push, never pull.
+      torque = max(torque, 0.0) if over > 0 else min(torque, 0.0)
+      d.qfrc_applied[dr] -= torque
+      d.qfrc_applied[dw] += torque
 
   def _floor_drag(self):
     """A floor that drags on a rolling wheel in proportion to its speed, at
@@ -391,7 +444,8 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_contact_tc=None, sim_bumper_friction=None, sim_drag=None,
       sim_schedule='', sim_carry_s=0.0, sim_noise=1.0,
       sim_eq_range=0.0175, sim_eq_every=0.0, sim_substep=0.002,
-      sim_friction=1.0, sim_inertia=1.0, seed=0,
+      sim_friction=1.0, sim_inertia=1.0, sim_backlash=0.0, sim_gear_k=2.0,
+      sim_rand='', sim_rand_every=0.0, sim_tilt_lag=0.0, seed=0,
       **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'pace', 'config', 'policy_dir', 'sim_air_speed'):
@@ -440,7 +494,26 @@ class RobotMujoco(robot_sim.RobotSim):
         -self.bumper_lo, self.bumper_hi, 1.0 / self.hz / self.substeps,
         wheel_omega=sim_wheel_omega, stall=sim_stall_torque, stick=sim_stick,
         slide=sim_slide, armature=float(sim_armature), unit=sim_speed_unit,
-        friction=float(sim_friction), inertia=float(sim_inertia), **floor)
+        friction=float(sim_friction), inertia=float(sim_inertia),
+        backlash=float(sim_backlash), gear_k=float(sim_gear_k), **floor)
+    # sim_rand: draw body and gearbox parameters from ranges, anew every
+    # sim_rand_every seconds of sim time (0: once per run), so a policy does
+    # not learn one guess at them by heart: 'inertia:1:4,backlash:0:0.06'.
+    self._rand = {}
+    for part in [p for p in str(sim_rand).split(',') if p.strip()]:
+      key, lo, hi = part.strip().split(':')
+      assert key in ('inertia', 'backlash', 'tilt_lag'), key
+      self._rand[key] = (float(lo), float(hi))
+    assert 'backlash' not in self._rand or float(sim_backlash) > 0, (
+        'sim_rand backlash needs sim_backlash > 0 for the motor joints')
+    body = self.physics.model.body('robot').id
+    self._inertia0 = self.physics.model.body_inertia[body] / float(sim_inertia)
+    self.rand_every = float(sim_rand_every)
+    # sim_tilt_lag: the phone's tilt and tilt rate lag its wheel speeds by
+    # this much (s), read from the body's recent history (sysid_fit.py).
+    self.tilt_lag = float(sim_tilt_lag)
+    self._tilt_hist = []
+    self._rand_next = self.rand_every
     self.model, self.data = self.physics.model, self.physics.data
     self._body = self.model.body('robot').id
     self._com = self.model.body_ipos[self._body].copy()
@@ -459,6 +532,7 @@ class RobotMujoco(robot_sim.RobotSim):
     # Start leaning on a bumper, as a robot that was just set down does.
     self.theta = self.theta_zero + (
         self.bumper_hi if self.sim_rng.rand() < 0.5 else self.bumper_lo)
+    self._draw_rand()
     self.distance = np.zeros(2)    # phone mm
     self.applied = np.zeros(2)
     self.requested = np.zeros(2)   # the phone's last_command
@@ -468,6 +542,19 @@ class RobotMujoco(robot_sim.RobotSim):
     self.cmd_target = (0.0, 0.0)
     self.cmd_now = np.zeros(2)
     self.cmd_left = 0.0
+
+  def _draw_rand(self):
+    if not self._rand:
+      return
+    draw = {k: self.sim_rng.uniform(lo, hi) for k, (lo, hi) in self._rand.items()}
+    if 'inertia' in draw:
+      self.model.body_inertia[self._body] = self._inertia0 * draw['inertia']
+      mujoco.mj_setConst(self.model, self.data)
+    if 'backlash' in draw:
+      self.physics.backlash = draw['backlash']
+    if 'tilt_lag' in draw:
+      self.tilt_lag = draw['tilt_lag']
+    self.rand_now = draw
 
   # Body state in the robot env's terms, readable and settable like the
   # planar model's attributes (tools/robot/dev/sim_rollout.py does both).
@@ -571,11 +658,31 @@ class RobotMujoco(robot_sim.RobotSim):
       sent.append(out)
     if self._carry:
       self._hold(dt)
-    self.physics.step(sent, self.substeps)
+    if self.tilt_lag or 'tilt_lag' in self._rand:
+      sub = dt / self.substeps
+      for _ in range(self.substeps):
+        self.physics.step(sent, 1)
+        self._tilt_hist.append((self.theta, self.omega))
+      keep = int(0.1 / sub) + 2
+      del self._tilt_hist[:-keep]
+      back = self.tilt_lag / sub
+      i = len(self._tilt_hist) - 1 - back
+      lo = max(0, int(math.floor(i)))
+      hi = min(lo + 1, len(self._tilt_hist) - 1)
+      f = min(max(i - lo, 0.0), 1.0)
+      tilt = [(1 - f) * a + f * b for a, b in zip(
+          self._tilt_hist[lo], self._tilt_hist[hi])]
+    else:
+      self.physics.step(sent, self.substeps)
+      tilt = (self.theta, self.omega)
     if self._carry:
       self._hold(dt)
+      tilt = (self.theta, self.omega)
     self._sample_command(dt)
     self._sim_time += dt
+    if self.rand_every and self._sim_time >= self._rand_next:
+      self._rand_next += self.rand_every
+      self._draw_rand()
     if self.eq_every and self._sim_time >= self._eq_next:
       self._eq_next += self.eq_every
       self.theta_eq = self.theta_zero + self.sim_rng.uniform(
@@ -610,8 +717,8 @@ class RobotMujoco(robot_sim.RobotSim):
         wheel_speed_l=float(noisy[0]), wheel_speed_r=float(noisy[1]),
         wheel_distance_l=float(self.distance[0]),
         wheel_distance_r=float(self.distance[1]),
-        theta=float(self.theta + 0.003 * n * rng.randn()),
-        angular_velocity=float(self.omega + 0.05 * n * rng.randn()),
+        theta=float(tilt[0] + 0.003 * n * rng.randn()),
+        angular_velocity=float(tilt[1] + 0.05 * n * rng.randn()),
         battery_voltage=3.6)
     self._timing = (0.0, 0.0, 0.0, 0.0)
     self._backlog = 0

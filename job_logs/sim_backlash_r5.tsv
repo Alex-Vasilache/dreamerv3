@@ -1,0 +1,4 @@
+e6030	4775403	e6030_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 83 --env.robot.sim_backlash 0.03 --env.robot.sim_rand inertia:1:4,backlash:0.0:0.05 --env.robot.sim_rand_every 60
+e6031	4775404	e6031_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 84 --env.robot.sim_backlash 0.03 --env.robot.sim_rand inertia:1:4,backlash:0.0:0.05 --env.robot.sim_rand_every 60
+e6032	4775405	e6032_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface carpet --seed 83 --env.robot.sim_backlash 0.03 --env.robot.sim_inertia 1
+e6033	4775406	e6033_simrobot_command65_flat	robot robot_command robot_sim	--env.robot.hz 65 --env.robot.sim_surface table --seed 83 --env.robot.sim_backlash 0.03 --env.robot.sim_rand inertia:1:4,backlash:0.0:0.05 --env.robot.sim_rand_every 60

@@ -40,18 +40,19 @@ SCALE = dict(theta=math.radians(2.0), rate=math.radians(30.0), wheel=300.0)
 
 MOTOR = dict(wheel_omega=11.4, stall=0.06, stick=0.27, slide=0.09,
              armature=5e-4, delay=0.01, torque_max=0.0, com_z=0.028,
-             inertia=1.0)
+             inertia=1.0, backlash=0.0, gear_k=2.0, tilt_lag=0.0)
 FLOOR = dict(rolling=0.002, contact_tc=0.02, bumper_friction=0.5, drag=0.0, stiction=1.0,
-             lean=0.0)
+             lean=0.0, friction=1.0)
 # Fitted in log space, so each stays positive.
 LOG = {'wheel_omega', 'stall', 'stick', 'slide', 'armature', 'rolling',
-       'contact_tc', 'bumper_friction', 'inertia'}
+       'contact_tc', 'bumper_friction', 'inertia', 'friction', 'gear_k'}
 LIMITS = dict(stiction=(1.0, 10.0), delay=(0.0, 0.1), lean=(-0.05, 0.05), slide=(1e-3, 0.6),
               stick=(1e-3, 0.9), rolling=(1e-6, 0.03),
               # Up to 0.03 s: softer lets the body sink, and it rests short of the
               # measured bumper tilts (fit5's table, 0.197 s: 7.7 deg, not 9.2).
               contact_tc=(0.002, 0.03),
-              bumper_friction=(0.05, 3.0), drag=(0.0, 30.0),
+              bumper_friction=(0.05, 3.0), drag=(0.0, 30.0), friction=(0.05, 3.0),
+              backlash=(0.0, 0.15), gear_k=(0.2, 6.0), tilt_lag=(0.0, 0.06),
               wheel_omega=(5.0, 25.0), stall=(0.01, 0.5),
               armature=(1e-5, 5e-3), inertia=(0.5, 10.0),
               torque_max=(0.1, 1.0), com_z=(0.01, 0.06))
@@ -99,16 +100,16 @@ def simulate(params, floor, rows, fixed):
       stall=p['stall'], stick=p['stick'], slide=p['slide'],
       armature=p['armature'], rolling=f['rolling'],
       contact_tc=f['contact_tc'], bumper_friction=f['bumper_friction'],
-      drag=f['drag'],
+      drag=f['drag'], friction=f['friction'],
       # Rolling stiction: a still wheel takes `stiction` x rolling to start.
       rolling_static=f['rolling'] * f.get('stiction', 1.0),
       noslip=20 if f.get('stiction', 1.0) > 1.0 else 0, fixed=fixed,
-      torque_max=p['torque_max'], com_z=p['com_z'], inertia=p['inertia'])
+      torque_max=p['torque_max'], com_z=p['com_z'], inertia=p['inertia'],
+      backlash=p['backlash'], gear_k=p['gear_k'])
   m, d = phys.model, phys.data
   r0 = {c: v[0] for c, v in rows.items()}
   wheels = np.array([r0['wheel_speed_l'], r0['wheel_speed_r']]) / phys.unit
-  for dof, w in zip(phys.dofs, wheels):
-    d.qvel[dof] = w
+  phys.set_speed(wheels)
   if not fixed:
     body = m.body('robot').id
     com = m.body_ipos[body].copy()
@@ -122,27 +123,32 @@ def simulate(params, floor, rows, fixed):
     d.qvel[5] = float(r0['gyro_y'])
     d.qvel[1] = -rm.WHEEL_R * (wx + wheels.mean())
     mujoco.mj_forward(m, d)
+  # The phone's tilt and tilt rate lag its wheel speeds by tilt_lag: the
+  # window's first tilt is the body's at t0 - lag, which is where the model
+  # starts, so the drive and the wheel readings come `lag` later in its time.
+  lag = 0.0 if fixed else p['tilt_lag']
   t0 = float(r0['t_obs'])
-  drive = rows['t_drive'] - t0 + p['delay']
+  drive = rows['t_drive'] - t0 + p['delay'] + lag
   sent = np.stack([rows['sent_l'], rows['sent_r']], 1)
   obs_t = rows['t_obs'][1:] - t0
+  events = sorted([(t, i, 0) for i, t in enumerate(obs_t)] +
+                  [(t + lag, i, 1) for i, t in enumerate(obs_t)])
   out = np.zeros((len(obs_t), 4))
   now, k, current = 0.0, 0, sent[0]
   # Before the first drive of the window, the previous row's output applies.
-  for i, target in enumerate(obs_t):
+  for target, i, kind in events:
     while now < target - 1e-9:
       while k < len(drive) and drive[k] <= now:
         current = sent[k]
         k += 1
       phys.step(current, 1)
       now += DT
-    if fixed:
-      theta = rate = 0.0
-    else:
+    if kind:
+      out[i, 2:] = phys.speed
+    elif not fixed:
       w, x, y, z = d.qpos[3:7]
-      theta = -math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
-      rate = -float(d.qvel[3])
-    out[i] = (theta, rate, *phys.speed)
+      out[i, 0] = -math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+      out[i, 1] = -float(d.qvel[3])
   return out
 
 
