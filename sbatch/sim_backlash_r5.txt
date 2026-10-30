@@ -1,0 +1,7 @@
+# Round 5 (2026-10-28): gearbox backlash in the sim (sim_backlash, motor joint coupled to the wheel through the play).
+# Closed loop, backlash 0.03 rad + inertia 1 reproduces e2992's real limit cycle (rate SD 58.5 vs 58.7 deg/s) and e2605's calm transfer;
+# open loop prefers inertia 4 without play, so most arms randomise over both (redrawn every 60 s of sim time).
+e6030 flat command 65 p100 --env.robot.sim_surface carpet --seed 83 --env.robot.sim_backlash 0.03 --env.robot.sim_rand inertia:1:4,backlash:0.0:0.05 --env.robot.sim_rand_every 60
+e6031 flat command 65 p100 --env.robot.sim_surface carpet --seed 84 --env.robot.sim_backlash 0.03 --env.robot.sim_rand inertia:1:4,backlash:0.0:0.05 --env.robot.sim_rand_every 60
+e6032 flat command 65 p100 --env.robot.sim_surface carpet --seed 83 --env.robot.sim_backlash 0.03 --env.robot.sim_inertia 1
+e6033 flat command 65 p100 --env.robot.sim_surface table --seed 83 --env.robot.sim_backlash 0.03 --env.robot.sim_rand inertia:1:4,backlash:0.0:0.05 --env.robot.sim_rand_every 60
