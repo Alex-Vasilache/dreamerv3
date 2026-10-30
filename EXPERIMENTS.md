@@ -639,6 +639,12 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+**TCE-grow FINAL 2026-10-31 09:00** (e8000-e8029, seeds 0-2 all tasks + pin pad six
+seeds 3-4; hopper n=2), late 3.5-4.0M, `collapse_figs/tcegrow_matched.png`: pin pad 4
+303, 5 260, **6 36 (1/5: seed 3 solved 189)**, cartpole 723, cheetah 566, hopper 243.
+Normalised 52% vs TCE 58%, V+US-SOM 52%, OG 50%. Recovers pin pad four/five
+(+7/+24 vs TCE) but loses the pin pad six discovery that made TCE worth having.
+
 ### Decision 2026-10-31 01:00: stage 2 uses the original TCE (0.5M half-life, adaptive w)
 
 TCE-grow (e8000) at n=2-3 per task, matched 3.5-4.0M: pin pad 4 307, 5 254, **6 0
