@@ -52,17 +52,20 @@ keys = ('theta_zero', 'theta_lo', 'theta_hi', 'theta_sigma', 'speed_scale',
 side = dict(
     name=name, run=run, job=job, stamp=stamp,
     published=time.strftime('%Y-%m-%d %H:%M', time.localtime(int(stamp) / 1e9)),
-    task=config.task, hz=None, **{k: r[k] for k in keys})
+    task=config.task, hz=float(r['hz']) if 'hz' in r else None,
+    **{k: r[k] for k in keys})
 (out / f'{name}.json').write_text(json.dumps(side, indent=1))
 print(f'{name}: {len(blob) / 1e6:.1f} MB, weights of {side["published"]} from {run}')
 PY
 
-# The rate the run trained at: the job name carries it (..._25hz).
+# The rate the run trained at: the job name's tag (..._25hz) if it has one,
+# else the config's env.robot.hz (sim jobs are named e.g. ..._command65),
+# else 25 for runs from before the key.
 HZ=$(echo "$JOB" | grep -oE '[0-9]+hz' | grep -oE '[0-9]+' || true)
-python3 - "$OUT/$NAME.json" "${HZ:-25}" <<'PY'
+python3 - "$OUT/$NAME.json" "$HZ" <<'PY'
 import json, sys
-p, hz = sys.argv[1], float(sys.argv[2])
-d = json.load(open(p)); d['hz'] = hz
+p, hz = sys.argv[1], sys.argv[2]
+d = json.load(open(p)); d['hz'] = float(hz or d['hz'] or 25)
 json.dump(d, open(p, 'w'), indent=1)
 PY
 
