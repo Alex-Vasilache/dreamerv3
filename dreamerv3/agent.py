@@ -1661,6 +1661,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       metrics.update({f'goal/soft_reuse_{k}': vv for k, vv in soft_mets.items()})
 
     kwargs_mgr = {**self.config.imag_loss}
+    kwargs_mgr.pop('smooth', None)   # flat actor only
     kwargs_mgr.update(
         update=training,
         contdisc=self.config.contdisc,
@@ -1716,6 +1717,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     K = self.manager_sample_freq
     M = B * K_imag
     kwargs_wkr = {**self.config.imag_loss}
+    kwargs_wkr.pop('smooth', None)   # flat actor only
     kwargs_wkr.update(
         update=training,
         contdisc=self.config.contdisc,

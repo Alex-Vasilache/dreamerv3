@@ -286,8 +286,17 @@ class Physics:
                unit=548.0, friction=1.0, rolling=0.0, contact_tc=0.02,
                bumper_friction=0.5, drag=0.0, rolling_static=None,
                noslip=0, fixed=False, torque_max=0.0, com_z=None,
-               inertia=1.0, backlash=0.0, gear_k=2.0):
+               inertia=1.0, backlash=0.0, gear_k=2.0, scrape=0.0,
+               scrape_from=0.07):
     self.omega_max = float(wheel_omega)
+    # Carpet pile brushing the front bumper (round 6, 2026-10-30: driving
+    # forward on carpet the real robot went 537 mm/s at +4.6 deg where the
+    # sim went 1000-1500, and Alex saw it scrape): a horizontal drag at the
+    # front bumper against its velocity, scrape N per m/s at full contact,
+    # rising linearly from tilt scrape_from (rad) to the bumper's angle.
+    self.scrape = float(scrape)
+    self.scrape_from = float(scrape_from)
+    self.bumper_front = float(bumper_front)
     self.stall = float(stall)
     self.stick = float(stick) * self.stall   # N m
     self.slide = float(slide) * self.stall
@@ -332,6 +341,8 @@ class Physics:
     self.model.body_inertia[body] *= float(inertia)
     mujoco.mj_setConst(self.model, self.data)
     self.bodies = [self.model.body(n).id for n in PHONE_WHEELS]
+    self._robot_body = body
+    self._front_geom = self.model.geom('bumper_front').id
     self._vel = np.zeros(6)
     # Each wheel's contact geom, in the same (phone) order as dofs.
     self.wheel_geoms = [
@@ -393,10 +404,12 @@ class Physics:
             self.stick if abs(w) < self.STILL else self.slide)
       if self.drag:
         self._floor_drag()
-      elif self.backlash:
+      elif self.backlash or self.scrape:
         d.qfrc_applied[:] = 0.0
       if self.backlash:
         self._gears()
+      if self.scrape:
+        self._scrape()
       if self.rolling_static != self.rolling:
         for dof, geom in zip(self.dofs, self.wheel_geoms):
           # The wheel's spin relative to the floor: its joint's plus the
@@ -419,6 +432,20 @@ class Physics:
       torque = max(torque, 0.0) if over > 0 else min(torque, 0.0)
       d.qfrc_applied[dr] -= torque
       d.qfrc_applied[dw] += torque
+
+  def _scrape(self):
+    m, d = self.model, self.data
+    w, x, y, z = d.qpos[3:7]
+    lean = -math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+    frac = (lean - self.scrape_from) / max(self.bumper_front - self.scrape_from, 1e-3)
+    if frac <= 0:
+      return
+    frac = min(frac, 1.0)
+    geom = self._front_geom
+    mujoco.mj_objectVelocity(m, d, mujoco.mjtObj.mjOBJ_GEOM, geom, self._vel, 0)
+    force = -self.scrape * frac * np.array([self._vel[3], self._vel[4], 0.0])
+    mujoco.mj_applyFT(m, d, force, np.zeros(3), d.geom_xpos[geom].copy(),
+                      self._robot_body, d.qfrc_applied)
 
   def _floor_drag(self):
     """A floor that drags on a rolling wheel in proportion to its speed, at
@@ -445,8 +472,8 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_schedule='', sim_carry_s=0.0, sim_noise=1.0,
       sim_eq_range=0.0175, sim_eq_every=0.0, sim_substep=0.002,
       sim_friction=1.0, sim_inertia=1.0, sim_backlash=0.0, sim_gear_k=2.0,
-      sim_rand='', sim_rand_every=0.0, sim_tilt_lag=0.0, seed=0,
-      **kwargs):
+      sim_rand='', sim_rand_every=0.0, sim_tilt_lag=0.0, sim_scrape=0.0,
+      sim_scrape_from=0.07, sim_enc_q=0.0, seed=0, **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'pace', 'config', 'policy_dir', 'sim_air_speed'):
       kwargs.pop(key, None)
@@ -495,19 +522,32 @@ class RobotMujoco(robot_sim.RobotSim):
         wheel_omega=sim_wheel_omega, stall=sim_stall_torque, stick=sim_stick,
         slide=sim_slide, armature=float(sim_armature), unit=sim_speed_unit,
         friction=float(sim_friction), inertia=float(sim_inertia),
-        backlash=float(sim_backlash), gear_k=float(sim_gear_k), **floor)
+        backlash=float(sim_backlash), gear_k=float(sim_gear_k),
+        scrape=float(sim_scrape), scrape_from=float(sim_scrape_from), **floor)
     # sim_rand: draw body and gearbox parameters from ranges, anew every
     # sim_rand_every seconds of sim time (0: once per run), so a policy does
     # not learn one guess at them by heart: 'inertia:1:4,backlash:0:0.06'.
     self._rand = {}
     for part in [p for p in str(sim_rand).split(',') if p.strip()]:
       key, lo, hi = part.strip().split(':')
-      assert key in ('inertia', 'backlash', 'tilt_lag'), key
+      assert key in ('inertia', 'backlash', 'tilt_lag', 'scrape', 'stick',
+                     'rstatic', 'stall', 'gear_k'), key
       self._rand[key] = (float(lo), float(hi))
     assert 'backlash' not in self._rand or float(sim_backlash) > 0, (
         'sim_rand backlash needs sim_backlash > 0 for the motor joints')
     body = self.physics.model.body('robot').id
     self._inertia0 = self.physics.model.body_inertia[body] / float(sim_inertia)
+    self._stall0 = self.physics.stall
+    # sim_enc_q: the phone's wheel speeds are encoder ticks per control
+    # step, sim_enc_q phone mm each (2026-10-30 recordings: readings cluster
+    # at ~90, 180, 270 mm/s at 65 Hz, i.e. 1.385 mm, and anything slower reads
+    # exactly 0 -- 87% of a balance run). 0: a continuous reading with noise.
+    self.enc_q = float(sim_enc_q)
+    self._enc_pos = np.zeros(2)
+    self._enc_prev = np.zeros(2)
+    self._scrape = float(sim_scrape)   # carpet only: see _floor_scrape
+    self._floor_scrape()
+    self._stick0, self._slide0 = self.physics.stick, self.physics.slide
     self.rand_every = float(sim_rand_every)
     # sim_tilt_lag: the phone's tilt and tilt rate lag its wheel speeds by
     # this much (s), read from the body's recent history (sysid_fit.py).
@@ -554,6 +594,26 @@ class RobotMujoco(robot_sim.RobotSim):
       self.physics.backlash = draw['backlash']
     if 'tilt_lag' in draw:
       self.tilt_lag = draw['tilt_lag']
+    if 'scrape' in draw:
+      self._scrape = draw['scrape']
+    self._floor_scrape()
+    ph = self.physics
+    if 'stall' in draw:   # motor strength, a multiple of sim_stall_torque
+      ph.stall = self._stall0 * draw['stall']
+      for act in ph.acts:
+        ph.model.actuator_gainprm[act, 0] = ph.stall
+        ph.model.actuator_biasprm[act, 2] = -ph.stall / ph.omega_max
+      ph.slide = self._slide0 * draw['stall']
+      ph.stick = self._stick0 * draw['stall']
+    if 'stick' in draw:   # gearbox stiction, a fraction of stall as sim_stick
+      ph.stick = draw['stick'] * ph.stall
+    if 'gear_k' in draw:   # gear mesh stiffness, damped as in Physics
+      ph.gear_k = draw['gear_k']
+      ph.gear_c = 1.4 * math.sqrt(ph.gear_k * 3.5e-5)
+    if 'rstatic' in draw:   # rolling stiction, a multiple of the floor's rolling
+      ph.rolling_static = draw['rstatic'] * ph.rolling
+      if not ph.model.opt.noslip_iterations:
+        ph.model.opt.noslip_iterations = 20
     self.rand_now = draw
 
   # Body state in the robot env's terms, readable and settable like the
@@ -618,6 +678,10 @@ class RobotMujoco(robot_sim.RobotSim):
     self.data.qvel[4:6] = 0.0
     mujoco.mj_forward(self.model, self.data)
 
+  def _floor_scrape(self):
+    # Only carpet pile scrapes (a table run, or a schedule's table, has none).
+    self.physics.scrape = self._scrape if 'carpet' in self.surface else 0.0
+
   def move_to(self, surface):
     """Pick the robot up and set it down on another floor, on a bumper."""
     if hasattr(self, '_drag_saved'):
@@ -626,6 +690,7 @@ class RobotMujoco(robot_sim.RobotSim):
     print(f'[robot sim] {self._sim_time / 60:.1f} min: moved from '
           f'{self.surface} to {surface}', flush=True)
     self.surface = surface
+    self._floor_scrape()
     self.data.qvel[:] = 0.0
     self.theta = self.theta_zero + (
         self.bumper_hi if self.sim_rng.rand() < 0.5 else self.bumper_lo)
@@ -708,7 +773,15 @@ class RobotMujoco(robot_sim.RobotSim):
     self.distance += speed * dt
     n = self.noise
     rng = self.sim_rng
-    noisy = speed * (1 + 0.02 * n * rng.randn(2)) + 30 * n * rng.randn(2)
+    if self.enc_q:
+      self._enc_pos += speed * dt
+      ticks = np.floor(self._enc_pos / self.enc_q)
+      # The phone divides by its own clock, which jitters by ~+-8%.
+      noisy = (ticks - self._enc_prev) * self.enc_q / dt * (
+          1 + 0.08 * n * rng.uniform(-1, 1, 2))
+      self._enc_prev = ticks
+    else:
+      noisy = speed * (1 + 0.02 * n * rng.randn(2)) + 30 * n * rng.randn(2)
     # Yaw rate about the vertical, counter-clockwise positive, signed as the
     # phone's gyro is after yaw_sign.
     self._yaw_rate = self.yaw_sign * (

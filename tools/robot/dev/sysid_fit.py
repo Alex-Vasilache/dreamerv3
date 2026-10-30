@@ -42,7 +42,7 @@ MOTOR = dict(wheel_omega=11.4, stall=0.06, stick=0.27, slide=0.09,
              armature=5e-4, delay=0.01, torque_max=0.0, com_z=0.028,
              inertia=1.0, backlash=0.0, gear_k=2.0, tilt_lag=0.0)
 FLOOR = dict(rolling=0.002, contact_tc=0.02, bumper_friction=0.5, drag=0.0, stiction=1.0,
-             lean=0.0, friction=1.0)
+             lean=0.0, friction=1.0, bumper_lo=BUMPER_LO, bumper_hi=BUMPER_HI)
 # Fitted in log space, so each stays positive.
 LOG = {'wheel_omega', 'stall', 'stick', 'slide', 'armature', 'rolling',
        'contact_tc', 'bumper_friction', 'inertia', 'friction', 'gear_k'}
@@ -96,7 +96,7 @@ def simulate(params, floor, rows, fixed):
   p = dict(MOTOR, **params)
   f = dict(FLOOR, **(floor or {}))
   phys = rm.Physics(
-      -BUMPER_LO, BUMPER_HI, DT, wheel_omega=p['wheel_omega'],
+      -f['bumper_lo'], f['bumper_hi'], DT, wheel_omega=p['wheel_omega'],
       stall=p['stall'], stick=p['stick'], slide=p['slide'],
       armature=p['armature'], rolling=f['rolling'],
       contact_tc=f['contact_tc'], bumper_friction=f['bumper_friction'],

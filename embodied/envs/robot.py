@@ -320,7 +320,7 @@ class SmartphoneRobot(embodied.Env):
       theta_lo=-0.122, theta_hi=0.182, theta_sigma=0.05, drift_penalty=0.1,
       drift_clip=1.0, wheel_penalty=0.0, yaw_penalty=0.0, still_speed=0.0,
       still_ramp_s=0.0,
-      action_rate_penalty=0.0,
+      action_rate_penalty=0.0, action_rate_quad=0.0,
       command_scale=1.0, symmetric=True,
       obs_theta_scale=0.18, obs_rate_scale=3.0, obs_wheel_scale=3.3e-4,
       obs_clip=3.0,
@@ -331,7 +331,9 @@ class SmartphoneRobot(embodied.Env):
       command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
       command_zeta_steps=40000, command_bias=0.0, command_ramp=0.0,
       friction_comp=False, bumper_lo=-0.120, bumper_hi=0.161,
-      bumper_margin=0.0175, bumper_penalty=1.0, turn_source='wheels', yaw_rate_max=1.5,
+      bumper_margin=0.0175, bumper_penalty=1.0, tilt_penalty=0.0,
+      track_progress=0.0,
+      turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
@@ -435,6 +437,12 @@ class SmartphoneRobot(embodied.Env):
     # chatters the wheels every 20 ms and nothing else in the reward minds.
     # A penalty, not a low-pass filter, so no delay is added to the loop.
     self.action_rate_penalty = float(action_rate_penalty)
+    # Squared too (round 6): the actions trained on are sampled (policy
+    # minstd 0.1), so |change| is ~0.11 from the noise alone and the L1 term
+    # hardly tells small wobble from none; squared, the noise costs ~0.02
+    # and a full reversal 4.
+    self.action_rate_quad = float(action_rate_quad)
+    self._chatter2 = 0.0
     self._prev_act = np.zeros(2, np.float32)
     self._chatter = 0.0
     self._sent_act = (0.0, 0.0)
@@ -528,6 +536,14 @@ class SmartphoneRobot(embodied.Env):
     self.bumper_hi = float(bumper_hi)
     self.bumper_margin = float(bumper_margin)
     self.bumper_penalty = float(bumper_penalty)  # 'bumper_track' pays minus this
+    # 'bumper_track' also pays minus tilt_penalty * (tilt / that side's
+    # bumper)^2 off the bumpers, so leaning to the edge of the margin costs
+    # something (e6031 drove the real carpet at +4.6 deg, p95 7.5).
+    self.tilt_penalty = float(tilt_penalty)
+    # ... plus track_progress * |c| * clip(forward / c, 0, 1) for a forward
+    # command c: the Gaussian pays ~0 until the speed is close (carpet at
+    # 600 of 2500 mm/s earns 0.03), so partial progress gets a linear slope.
+    self.track_progress = float(track_progress)
     self._total_steps = 0
     # Turn rate from the wheels (half the speed difference / command_turn) or
     # from the phone's raw gyroscope: the body's true yaw rate, which wheel
@@ -764,9 +780,11 @@ class SmartphoneRobot(embodied.Env):
            if self._onboard and self._onboard_act is not None
            else np.array([left, right], np.float32))
     self._chatter = float(np.mean(np.abs(act - self._prev_act)))
+    self._chatter2 = float(np.mean((act - self._prev_act) ** 2))
     self._prev_act = act
     reward, terminal = self._evaluate(sensors)
     reward -= self.action_rate_penalty * self._chatter
+    reward -= self.action_rate_quad * self._chatter2
     self._reward = reward
     self._done = terminal or self._step >= self.length
     return self._obs(
@@ -954,7 +972,11 @@ class SmartphoneRobot(embodied.Env):
       # around its true balance point, not theta_zero, which was set by eye.
       near = (offset >= self.bumper_hi - self.bumper_margin
               or offset <= self.bumper_lo + self.bumper_margin)
-      score = -self.bumper_penalty if near else track
+      lean = offset / (self.bumper_hi if offset > 0 else -self.bumper_lo)
+      c = cmd_f / k
+      progress = abs(c) * min(1.0, max(0.0, forward / c)) if abs(c) > 0.05 else 0.0
+      score = -self.bumper_penalty if near else (
+          track + self.track_progress * progress - self.tilt_penalty * lean ** 2)
     elif self.command_reward == 'bumper':
       # Touching (or nearly touching) a bumper is -1 whatever else happens.
       # Otherwise, at a zero command half upright and half tracking (which

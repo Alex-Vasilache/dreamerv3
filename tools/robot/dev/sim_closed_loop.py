@@ -20,8 +20,14 @@ otherwise have:
   rstatic=X       rolling stiction, as a multiple of the floor's rolling
                   resistance (1: none; fitted carpet 4.5, table 6)
   sim_<key>=X     any env.robot.sim_* key, e.g. sim_inertia=4
+  bumper_lo/hi=X  the bumper angles (rad from theta_zero): the sim's geometry
+                  and the reward's
   fit=PATH        a sysid_fit.py result: its motor, body and floor (the
                   run's surface, or surface=) as env.robot.sim_* keys
+
+With --commands REC.csv (a phone recording) the sim plays that recording's
+stick (cmd_f, cmd_t by time, looped) instead of its random commands, and the
+summary adds tilt and forward speed per stick direction, as on the robot.
 
   python tools/robot/dev/sim_closed_loop.py RUN_DIR OUT.json [--ckpt STEP] \
       [--minutes 5] --variant base: --variant back:eq=-0.9 \
@@ -79,6 +85,21 @@ def summary(rec, r, hz, skip_s=30.0):
     f, t = r['forward_sign'] * fwd[up] / r['command_speed'], turn[up] / r['command_turn']
     extra = dict(corr_f=float(np.corrcoef(f, c[:, 0])[0, 1]),
                  corr_t=float(np.corrcoef(t, c[:, 1])[0, 1]))
+  # Per stick direction over all steps (bumper too), as robot recordings are
+  # read (balance runs: all 'zero').
+  cf = np.array(rec['cmd'])[s:, 0] if rec.get('cmd') else np.zeros(len(th))
+  sf = r['forward_sign'] * fwd
+  for key, m in (('back', cf < -0.05), ('zero', np.abs(cf) <= 0.05), ('fwd', cf > 0.05)):
+    if m.sum() > 20:
+      extra[f'{key}_tilt_med'] = float(np.median(th[m]))
+      extra[f'{key}_tilt_p5'] = float(np.percentile(th[m], 5))
+      extra[f'{key}_tilt_p95'] = float(np.percentile(th[m], 95))
+      extra[f'{key}_fwd_med'] = float(np.median(sf[m]))
+      extra[f'{key}_rate_std'] = float(rate[m].std())
+  # Falls back: entries below -6 deg (the robot's back bumper zone), per minute.
+  below = th < -6.0
+  extra['dips_per_min'] = float((below[1:] & ~below[:-1]).sum() / (len(th) / hz / 60))
+  extra['sat_frac'] = float((np.abs(a) > 0.95).mean())
   return dict(
       **extra,
       bumper_frac=float(bump.mean()),
@@ -102,6 +123,7 @@ def main():
   ap.add_argument('--gpu', action='store_true')
   ap.add_argument('--variant', action='append', default=None)
   ap.add_argument('--traces', action='store_true')
+  ap.add_argument('--commands', default=None)
   ap.add_argument('--mode', default='train',
                   help="'eval' plays the most likely action, as the phone's "
                        'recorder does for saved policies')
@@ -115,10 +137,12 @@ def main():
   logdir = pathlib.Path(args.run) / 'logdir'
   raw = yaml.YAML(typ='safe').load((logdir / 'config.yaml').read_text())
   r = raw['env']['robot']
-  r.setdefault('sim_inertia', 1.0)   # runs from before the key
-  for k, v in dict(sim_backlash=0.0, sim_gear_k=2.0, sim_friction=1.0, sim_rand='',
-                   sim_rand_every=0.0, sim_tilt_lag=0.0).items():
+  # Runs from before a key: the current defaults.
+  defaults = yaml.YAML(typ='safe').load(
+      (ROOT / 'dreamerv3' / 'configs.yaml').read_text())['defaults']['env']['robot']
+  for k, v in defaults.items():
     r.setdefault(k, v)
+  r.setdefault('sim_inertia', 1.0)
   base = [
       '--env.realtime_hz', '0', '--logdir', tempfile.mkdtemp(),
       '--jax.platform', 'cuda' if args.gpu else 'cpu', '--jax.prealloc',
@@ -152,7 +176,7 @@ def main():
                     sim_tilt_lag=m.get('tilt_lag', 0.0))
       opts = {**fitted, **opts}
     for k, v in opts.items():
-      if k.startswith('sim_'):
+      if k.startswith('sim_') or k.startswith('bumper_'):
         over += [f'--env.robot.{k}', str(v)]
     if 'surface' in opts:
       over += ['--env.robot.sim_surface', opts['surface']]
@@ -189,6 +213,18 @@ def main():
       return step(sent, n)
 
     sim.physics.step = patched
+    if args.commands:
+      import pandas as pd
+      rc = pd.read_csv(args.commands)
+      ct, cmds = rc.t_obs.values - rc.t_obs.values[0], rc[['cmd_f', 'cmd_t']].values
+
+      def replay(dt, sim=sim, clock=[0.0]):
+        clock[0] += dt
+        i = min(np.searchsorted(ct, clock[0] % ct[-1]), len(ct) - 1)
+        sim._cmd = (float(cmds[i, 0]), float(cmds[i, 1]))
+        sim._cmd_src = 1.0
+
+      sim._sample_command = replay
     carry = agent.init_policy(1)
     zero = {act_key: np.zeros(agent.act_space[act_key].shape, np.float32)}
     obs = env.step({**zero, 'reset': True})

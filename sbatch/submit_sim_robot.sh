@@ -42,8 +42,9 @@ while read -r exp arm task hz gpu extra; do
     a100s) gflags="-p short-a100 --gres=gpu:a100:1" ;;
   esac
   name="${exp}_simrobot_${task}${hz}_${arm}"
+  # SBATCH_EXTRA, e.g. "-c 4 --mem=24G": a run uses ~1.5 cores (sstat, 2026-10-30).
   id=$(CONFIGS="$configs" sbatch --parsable -J "$name" -t "0-0:${MINUTES}:00" \
-       $gflags sbatch/run_sim_phone.sbatch $flags $extra)
+       $gflags ${SBATCH_EXTRA:-} sbatch/run_sim_phone.sbatch $flags $extra)
   printf '%s\t%s\t%s\t%s\t%s\n' "$exp" "$id" "$name" "$configs" "$flags $extra" \
     | tee -a "$LOG"
 done < "$PARAMS"

@@ -715,8 +715,13 @@ def imag_loss(
     lam=0.95,
     actent=3e-4,
     slowreg=1.0,
+    smooth=0.0,
 ):
-  """Flat DreamerV3 actor-critic loss, used when ``use_hrl=False``."""
+  """Flat DreamerV3 actor-critic loss, used when ``use_hrl=False``.
+
+  ``smooth`` > 0 adds CAPS's temporal term (Mysore et al. 2021) on the
+  imagined rollouts: smooth * |mean_{t+1} - mean_t|^2 on each continuous
+  action's mean, the action the robot plays in eval mode."""
   losses = {}
   metrics = {}
 
@@ -739,6 +744,13 @@ def imag_loss(
   w = sg(weight[:, :-1])
   policy_loss = w * -(
       logpi * sg(adv_normed) + actent * sum(ents.values()))
+  if smooth:
+    jumps = [((v.pred()[:, 1:] - v.pred()[:, :-1]) ** 2).reshape(
+        (*w.shape, -1)).sum(-1) for k, v in policy.items()
+        if jnp.issubdtype(act[k].dtype, jnp.floating)]
+    if jumps:
+      policy_loss = policy_loss + w * smooth * sum(jumps)
+      metrics['smooth_jump'] = sum(jumps).mean()
   losses['policy'] = policy_loss
 
   voffset, vscale = valnorm(ret, update)
