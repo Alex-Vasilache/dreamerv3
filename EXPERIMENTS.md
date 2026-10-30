@@ -634,7 +634,8 @@ rose 1.01 -> 1.14 chasing never-tried cells) while recovering pin pad five; the
 fixed 0.5M half-life never fades (costs pin pad four/five 20-35). Hypothesis:
 pin pad six solves like TCE, pin pad four/five closer to V+US-SOM.
 Weekend plan (autonomy until Mon 11-02): then best TCE on plain SOM (no
-evenness), then start side counted from hashed world-model states instead of
+evenness; e8600-e8629, array 4778377 held -- renumbered from e8100 because the
+robot session took e8120+), then start side counted from hashed world-model states instead of
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
@@ -665,7 +666,8 @@ bits (stateless, the simplest WM key; data-centred would need a running mean).
 just-started e7017-e7019 cancelled; e7011/e7014-e7016/e7020 left to finish.
 Matched 3.5-4M (n=1-3): pin pad 4 295, 5 256, **6 0 (0/3; TCE 4/5)**, cartpole
 707, cheetah 576, hopper 194; overall 49% vs TCE 58%, V+US-SOM 52%, OG 50%.
-Weight is not the cause (TCE's adaptive w was 1.3-3.3 on pin pad six); without
+Late finishers: e7020 (pin pad six, seed 3) **solved, 200** -> pin pad six 1/4; e7015
+cartpole 738, e7016 cheetah 507. Weight is not the cause (TCE's adaptive w was 1.3-3.3 on pin pad six); without
 decay novelty stays 0.95 on pin pad six and lean rises to 1.14 (TCE ~1.04).
 
 `director director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir

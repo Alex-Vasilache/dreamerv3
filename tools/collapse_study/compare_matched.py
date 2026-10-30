@@ -95,6 +95,15 @@ SETS = {
         ('fta', 'V + US-SOM + TCE-anneal', '#CC79A7',
          'e70[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-fromto_anneal-pubmatch_s*'),
     ],
+    'tcegrow': [
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('even', 'V + US-SOM', '#009E73',
+         'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*'),
+        ('ft', 'V + US-SOM + TCE', '#0072B2',
+         'e62[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-pubmatch_s*'),
+        ('ftg', 'V + US-SOM + TCE-grow', '#CC79A7',
+         'e80[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_grow-pubmatch_s*'),
+    ],
     'someven': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('V', 'V (OG + fixed ent. + worker v3)', '#000000',
@@ -113,7 +122,7 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.'}
+STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.'}
 LATE = {'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
