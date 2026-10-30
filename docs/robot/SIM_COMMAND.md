@@ -8,7 +8,24 @@ repo `EXPERIMENTS.md`), launchers `sbatch/sim_*.txt`, figures in
 (copy in the bucket, `results/robot_weekend_20261024/`; runs archived to
 `results/dreamerv3/`, with their experience). Tables are mean ± std over seeds; n in each row.
 
-## For Monday
+## For Monday 11-02 (round 6, §11)
+
+Sim policies to try (`tools/robot/from_sim.sh try <name> <run dir> <step>`,
+run dirs under `/work/DoyaU/vasilache/work/`):
+
+| name | run dir | step | for |
+|---|---|---|---|
+| r6_carpet | e8167_simrobot_command65_flat_20261030_233514_eiGqqg | 916500 | carpet only |
+| r6_mixed | e8164_simrobot_command65_flat_20261030_233513_WNSm4b | 877500 | carpet and table |
+| r6_mixed_b | e8136_simrobot_command65_flat_20261030_170717_sjT872 | 643500 | carpet and table (backup) |
+| r6_carpet_b | e8132_simrobot_command65_flat_20261030_170714_wSS4ze | 643500 | carpet only (backup) |
+
+Do not put a carpet-only policy on the table: in sim it runs away there.
+Round 6i-6k (lower learning rates, sensor-lag randomisation, 6-h runs of the
+best recipes) finish Saturday morning; this table is updated if they beat
+these picks.
+
+## For Monday 10-26 (weekend)
 
 1. **Command following, from scratch on the robot:**
    `CONFIGS="robot robot_command" tools/robot/train.sh cmd`. The block now
@@ -685,6 +702,27 @@ carpet tracking from one checkpoint to the next while staying steady on the
 table. The swings do not follow which floor the run was on when the
 checkpoint was saved (carpet-phase vs table-phase checkpoints: e8163 0.84 vs
 0.75, e8164 0.72 vs 0.75, e8136 and e8137 equal).
+
+### 11.4 Picks for the robot
+
+Ten-minute evaluations (fit sim plus the nine variants, Alex's 10-30 stick,
+single checkpoints chosen by the sweeps):
+
+| policy | floor | fit corr | rate SD | falls/min | worst-variant corr | fwd / back speed (mm/s) |
+|---|---|---|---|---|---|---|
+| e6031 (round 5) | carpet | 0.66 | 31 | 12.7 | 0.17 | 568 / -1105 |
+| **e8167 @916500** (carpet-only) | carpet | 0.93 | 9.2 | 0.0 | 0.83 | 648 / -673 |
+| e8132 @643500 (carpet-only) | carpet | 0.90 | 9.8 | 0.1 | 0.74 | 706 / -624 |
+| **e8164 @877500** (mixed) | carpet | 0.86 | 9.2 | 0.1 | 0.61 | 648 / -912 |
+| e8136 @643500 (mixed) | carpet | 0.83 | 12.9 | 0.1 | 0.66 | 710 / -888 |
+| e6033 (round 5) | table | 0.88 | 32.7 | 35.9 | 0.65 | 1668 / -858 |
+| **e8164 @877500** (mixed) | table | 0.82 | 14.9 | 0.5 | 0.74 | 1650 / -1194 |
+| e8136 @643500 (mixed) | table | 0.86 | 15.9 | 0.4 | 0.76 | 1626 / -1491 |
+
+In the sim, against round 5: tracking on carpet up from 0.66 to 0.93, wobble
+down from 31 to 9 deg/s, falls from 13 to 0 per minute; on the table the
+same tracking with half the wobble and almost no falls. The mixed policies
+drive both floors; a carpet-only policy runs away on the table.
 
 ## Bugs found on the way
 
