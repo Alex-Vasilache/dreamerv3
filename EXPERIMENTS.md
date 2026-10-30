@@ -638,6 +638,27 @@ evenness), then start side counted from hashed world-model states instead of
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+### World-model start-cell hash study (2026-10-30, offline, V100 jobs 4778374-6)
+
+`experiments/goal_geometry/wm_hash_study.py` + `wm_hash_analyze.py`, figure
+`collapse_figs/wm_hash_study.png`. The same real episodes (final policy of TCE
+e6202 pin pad six, e6203 cartpole, e6204 cheetah) replayed through every 0.5M
+milestone, so each start-cell candidate is computed for the SAME states under
+each world model; 16 bits = 65,536 rows like today's start side.
+Results: (1) every world-model key drifts: only 10-65% of states keep their cell
+over 0.5M, the goal code (today) included (0.1-0.65, rising late). (2) The deter
+SimHash is noisier than the codebook: the same checkpoint replayed again keeps
+only 58-72% (data-centred) / 61-91% (per-state norm) of cells vs 82-91% for the
+goal code, because the sampled posterior flips bits near the hyperplanes. (3)
+Resolution: data-centred deter ~ goal code; per-state norm is 4-6x coarser on
+DMC. (4) Posterior one-hot stoch hashes are pure noise (kept 0.00; the policy's
+stoch is a sample). (5) A 16x16 image SimHash has no drift but is coarser on pin
+pad (purity 0.81 vs 0.97). So the codebook already acts as the more stable,
+noise-robust hash; a WM-hash arm is expected to be no better. Also explains part
+of TCE-anneal's failure: with no decay most old counts sit in cells that no
+longer mean the same state. Stage-3 arm (planned): `start_hash deter_norm`, 16
+bits (stateless, the simplest WM key; data-centred would need a running mean).
+
 ### e7000–e7029: V+US-SOM+TCE-anneal (2026-10-29, array 4777562)
 
 **Stopped 2026-10-30 11:00** after 14 complete: pending seeds 3-4 and the
