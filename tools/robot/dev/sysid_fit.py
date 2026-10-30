@@ -39,12 +39,13 @@ BUMPER_LO, BUMPER_HI = -0.120, 0.161   # env.robot defaults, from theta_zero 0
 SCALE = dict(theta=math.radians(2.0), rate=math.radians(30.0), wheel=300.0)
 
 MOTOR = dict(wheel_omega=11.4, stall=0.06, stick=0.27, slide=0.09,
-             armature=5e-4, delay=0.01)
+             armature=5e-4, delay=0.01, torque_max=0.0, com_z=0.028,
+             inertia=1.0)
 FLOOR = dict(rolling=0.002, contact_tc=0.02, bumper_friction=0.5, drag=0.0, stiction=1.0,
              lean=0.0)
 # Fitted in log space, so each stays positive.
 LOG = {'wheel_omega', 'stall', 'stick', 'slide', 'armature', 'rolling',
-       'contact_tc', 'bumper_friction'}
+       'contact_tc', 'bumper_friction', 'inertia'}
 LIMITS = dict(stiction=(1.0, 10.0), delay=(0.0, 0.1), lean=(-0.05, 0.05), slide=(1e-3, 0.6),
               stick=(1e-3, 0.9), rolling=(1e-6, 0.03),
               # Up to 0.03 s: softer lets the body sink, and it rests short of the
@@ -52,7 +53,8 @@ LIMITS = dict(stiction=(1.0, 10.0), delay=(0.0, 0.1), lean=(-0.05, 0.05), slide=
               contact_tc=(0.002, 0.03),
               bumper_friction=(0.05, 3.0), drag=(0.0, 30.0),
               wheel_omega=(5.0, 25.0), stall=(0.01, 0.5),
-              armature=(1e-5, 5e-3))
+              armature=(1e-5, 5e-3), inertia=(0.5, 10.0),
+              torque_max=(0.1, 1.0), com_z=(0.01, 0.06))
 
 
 def load(path, phase, skip=()):
@@ -100,7 +102,8 @@ def simulate(params, floor, rows, fixed):
       drag=f['drag'],
       # Rolling stiction: a still wheel takes `stiction` x rolling to start.
       rolling_static=f['rolling'] * f.get('stiction', 1.0),
-      noslip=20 if f.get('stiction', 1.0) > 1.0 else 0, fixed=fixed)
+      noslip=20 if f.get('stiction', 1.0) > 1.0 else 0, fixed=fixed,
+      torque_max=p['torque_max'], com_z=p['com_z'], inertia=p['inertia'])
   m, d = phys.model, phys.data
   r0 = {c: v[0] for c, v in rows.items()}
   wheels = np.array([r0['wheel_speed_l'], r0['wheel_speed_r']]) / phys.unit
@@ -290,6 +293,8 @@ def main():
                   help='surface:test to leave out, e.g. table:prbs0_0.6')
   ap.add_argument('--start', default=None, help='JSON of a previous result')
   ap.add_argument('--out', default=None, help='write the result as JSON')
+  ap.add_argument('--motor_keys', default='wheel_omega,stall,stick,slide,armature,delay',
+                  help='motor (and body) parameters --joint fits')
   ap.add_argument('--workers', type=int, default=os.cpu_count())
   args = ap.parse_args()
   WINDOW = args.window
@@ -330,7 +335,7 @@ def main():
       print('== motor and floors together: ' + ', '.join(surfaces))
       motor, floors = fit(
           Problem(air + ground, pool), motor, floors,
-          ['wheel_omega', 'stall', 'stick', 'slide', 'armature', 'delay'],
+          args.motor_keys.split(','),
           ['rolling', 'contact_tc', 'bumper_friction', 'drag', 'lean'],
           surfaces, args.iters, args.method)
     if args.stage in ('motor', 'all') and air and not args.joint:

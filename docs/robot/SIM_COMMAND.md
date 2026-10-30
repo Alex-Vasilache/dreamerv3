@@ -330,6 +330,73 @@ Policies to try on the robot: e2503 (table balance, drift 159 mm/s, the
 best of round 2), e2608 (carpet balance), e2604 (table command), e2605
 (carpet command).
 
+## 9. Round 3 on the robot: warm-start collapse, and the body's inertia (Wednesday)
+
+The only real recording of a round-3 policy is e2732: e2605 (carpet command)
+warm-started on the carpet with the learner on (`from_sim.sh train`), 11 min.
+Saved policies played from the Dreamer Player or the dashboard menu are not
+recorded anywhere: to measure a sim policy, use `from_sim.sh train` and keep
+training paused on the dashboard, as for e2478/e2479.
+
+**The policy transferred; the fine-tuning broke it.** The first episode (20 s,
+before any update) is the sim policy alone: forward tracking correlation 0.71
+(sim 0.84 at balance points −1…+1°), turn 0.68 (sim 0.99), tilt rate SD 18
+deg/s (sim 14–16). After the first update it sat on a bumper half of the next
+episode (forward 0.18) and took ~5 min to track again. The sim world model fit
+the real data as well as the sim's at first (dyn loss 1.54 against 1.56,
+reward 0.59 against 0.56). But the learner then trained 178k samples on the
+first 536 real steps (prefill is one batch, `online.py:660`, at train_ratio
+8192), and dyn loss rose to 2.5. A warm start needs a longer prefill or a
+lower train ratio at first.
+
+**What the sim got wrong: the body tips too easily under drive.** Open loop
+(0.3 s windows, the fitted sim fed the outputs the robot was sent), the sim
+is right at small outputs but its body tips back 2.5–3° where the real one
+tips ≤0.5° once the output is above ~0.35 (`realcmd/s2r/r3_openloop.py`). Its
+wheels run ahead too. The same holds for e2479 and for e2060, which was
+trained on the robot, so it is the model, not this policy. It is not output
+chatter, the bumpers, the delay, carpet drag, a motor current limit or the
+CoM height (scanned). The body's pitch inertia is (CAD 0.648 g m², never
+fitted: the stand fixes only the motor's torque-to-armature ratio):
+
+| sim | held-out carpet | held-out table | train carpet | train table | stand |
+|---|---|---|---|---|---|
+| robot_sim (round 3) | 2.12 | 3.76 | 2.25 | 3.10 | 0.72 |
+| inertia 3x | 1.76 | 3.41 | 1.99 | 2.73 | 0.72 |
+| **inertia 4x** | **1.71** | **3.35** | 2.03 | 2.72 | 0.72 |
+| inertia 4x, sliding friction 2x | 1.80 | 3.63 | 2.08 | 2.78 | 2.46 |
+
+(held out: e2060, e2061 and the second half of e2732; train: the probe's
+bumper tests, e2478/e2479 and the first half of e2732.) A global refit
+(DE) with inertia free did not move from fit7 in 2000 evaluations, nor did
+adding e2732 to fit7's data (held-out 2.153 / 3.872 either way).
+Turning matches open loop (turn speed after 0.3 s within ~5–10%).
+
+`robot_sim` now sets `env.robot.sim_inertia: 4`. Closed loop, e2605 in the 4x
+sim tracks forward at 0.57–0.64 (0.77–0.84 in its own sim; robot 0.71 over one
+episode). Round 4 (e2990–e2995) trained in it, against round 3 where its runs
+are still on /work (minutes of sim time to a 5-episode mean of 0.7/step; mean
+over the last 10 min):
+
+| task | round 3 (inertia 1) | round 4 (inertia 4) |
+|---|---|---|
+| carpet balance | e2608: 2.7 min, 0.96 | e2994: 3.3 min, 0.95 |
+| table balance | e2503 (round 2): 9.0 min, 0.84 | e2995: 8.3 min, 0.84 |
+| carpet command | e2605: 9.3 min, 0.83 | e2992: 24.4, 0.78; e2993: 9.7, 0.74 |
+| table command | e2604: 15.7 min, 0.82 | e2990: 26.7, 0.80; e2991: 16.0, 0.77 |
+
+Balance is learnt as fast. Command following is a little slower and ends a
+little lower (n=2 against n=1). Policies to try: e2994 (carpet balance),
+e2995 (table balance), e2992 (carpet command), e2990 (table command).
+
+**On the robot, table (recorded by the phone, no trainer, most likely
+action):** e2995 (round 4) against e2503 (round 2), 4.8 and 3.4 min:
+reward 0.83–0.92 against 0.76–0.82 per minute, median forward speed 0–44
+against 177–223 mm/s, tilt SD 0.6–1.0° against 1.1–1.3°, tilt-rate SD 11–21
+against 19–26 deg/s, on a bumper 0–1% against 2–3%. The round-4 policy stands
+almost still, better than in its own sim (0.84). Warm-started with the learner
+on (e2996), the same policy fell apart within a minute, as e2605 did in e2732.
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined
