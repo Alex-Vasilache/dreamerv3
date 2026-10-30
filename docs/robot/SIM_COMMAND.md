@@ -442,6 +442,250 @@ Runs archived to the bucket.
 
 All of this is on the robot branch (merged from `sim-backlash-r5`).
 
+## 11. Round 5 on the robot, closed-loop sysid, and round 6 (Friday-Monday)
+
+### 11.1 Round 5 on the robot (Friday 2026-10-30, Alex)
+
+Played from the phone in eval mode, no trainer: e6031 on carpet with long
+hard forward/back stick, e6033 on the table (recordings in
+`sysid/recordings/r5_robot_20261030/`). Verified against the CSVs
+(`r6/realstats.py`; `r6/` here is `tools/robot/dev/r6/`):
+
+| | e6031 carpet | e6033 table |
+|---|---|---|
+| forward tracking (corr) | 0.55 (e2992: 0.06) | 0.84 |
+| tilt-rate SD (deg/s) | 41.5 (e2992: 58.8) | 37.8 |
+| falls below -6 deg / min | 18.8 | 39.0 |
+| tilt, stick forward: median / p95 | +4.6 / +7.5 | -1.0 / +2.1 |
+| speed, stick forward / back (mm/s) | 537 / -992 | 1532 / -665 |
+
+The balance policies of 10-28 were calm on the same floors (rate SD 6.7-24,
+balance point +0.2 deg). Alex measured the real bumper contact angles:
+carpet +7.8 / -6.2 deg, table about +9 / -7. The sim used +9.2 / -6.9 on
+both, so on carpet the policy could lean to 7.7 deg free of penalty, which is
+where the real robot touches. Driving forward on carpet, the front scrapes.
+
+### 11.2 Closed-loop system identification
+
+Instead of the 0.3 s open-loop windows, the sim is now judged by what the
+seven policies that have been recorded on the robot do in it
+(`r6/sweep.py`, `r6/loss.py`; `tools/robot/dev/sim_closed_loop.py
+--commands REC.csv` replays a recording's stick). Each policy runs 3.5 min
+in eval mode at the robot's balance point (+0.2 deg), with the measured
+bumper angles, and is scored against its recording on tilt-rate SD, forward
+tracking, saturation, falls and the tilt and speed quantiles per stick
+direction (forward / zero / back). Policies: balance e2994, e2608 (carpet),
+e2995, e2503 (table); command e2992, e6031 (carpet), e6033 (table).
+
+![closed-loop sysid](figs/sysid_closedloop.png)
+
+- The production sim (inertia 4, no backlash) fits worst (mismatch 18): the
+  balance policies stand dead still in it (rate SD 0.3-7) where on the robot
+  they wobble at 7-24 deg/s, and the command policies are 2-4x calmer than on
+  the robot.
+- Gearbox play is what makes them wobble: inertia 2 with backlash 0.015 rad
+  fits all seven (1.11). It is not round 5's 0.03 at inertia 1: that made
+  the table balance policy e2995 oscillate at 89 deg/s (robot 15.6).
+- Sweeps A-E (about 50 variants; noise between repeats ~0.1 on the mean):
+  gearbox stiction 0.3 of stall (was 0.2) and a softer mesh (gear_k 1, was 2)
+  bring it to 0.72 ("v6"); carpet rolling stiction 7x rolling (was 4.5) to
+  0.66. v6 reproduces e2992's carpet failure (rate SD 59 vs 58.8, tracking
+  0.18 vs 0.06) and e6033's falls (38 vs 39 / min).
+- Wrong directions: an extra tick of delay (e2995 loss 11), weaker motors
+  (calmer, not wilder), tilt lag, sensor noise x2 (neutral).
+- Still off: e6031 is calmer and tracks better in v6 (36 / 0.67) than on the
+  robot (41.5 / 0.55), and the robot leans +2.8 deg at zero stick on carpet
+  where the sim leans -2.
+- Carpet scrape (`sim_scrape`, a drag at the front bumper rising from 4 deg
+  to the bumper) brings the forward speed at the same lean toward the
+  robot's (e6031 at +4.6 deg: robot 537, sim 865 -> 610 with 20 N s/m) but
+  did not lower the overall mismatch; it is kept in the training randomisation.
+- The wheel speeds the phone reports are encoder ticks per step (~90 mm/s
+  each; 87% of a balance run reads exactly 0). `sim_enc_q 1.385` models it;
+  the recorded policies are indifferent to it (0.72 -> 0.72).
+
+New sim keys: `sim_scrape`, `sim_scrape_from`, `sim_enc_q`; `sim_rand` also
+takes `stick`, `gear_k`, `stall`, `rstatic`, `scrape`.
+
+- Sweep E (around v6): gearbox stick 0.4 fits the balance policies better
+  (loss 0.48 vs 0.66) but e6031 worse; gear_k 0.7 and tilt lag 8 ms worse;
+  inertia 2.5, backlash 0.02, noise 0.5 within noise. Training randomises
+  stick 0.2-0.45, inertia 1.5-2.5, backlash 0.01-0.02, gear_k 0.8-2,
+  carpet rolling stiction 5-9x, scrape 0-40, motor strength 0.85-1.1x.
+
+### 11.3 Training round 6
+
+Every policy is scored the same way (`r6/evalpol.py`, `r6/evsum.py`): 3.5 min
+in v6 replaying Alex's 10-30 stick for that floor ("fit"), and in nine
+harder variants (no/more scrape, stiction 10x, inertia 3 with backlash 0.025,
+balance point +-1 deg, gear_k 3, noise x2, one tick more delay, and carpet
+for table policies), reporting the mean and the worst ("min") tracking
+correlation. Reference: e6031 on carpet scores fit corr 0.66, rate SD 31,
+14 falls/min; e6033 on the table 0.89 / 32 / 34.
+
+New training keys: `env.robot.tilt_penalty` (bumper_track pays minus
+w * (tilt / that side's bumper)^2), `env.robot.action_rate_quad` (squared
+action change), `agent.imag_loss.smooth` (CAPS-style temporal smoothness
+on the actor's mean action in imagination, flat agent only).
+
+Round 6a (carpet, e8100-e8107, 2 h, one seed per arm), fit corr / rate SD / falls per min:
+
+| arm | corr | rate SD | falls |
+|---|---|---|---|
+| base (old rand, carpet bumpers) | 0.59 | 33 | 3.0 |
+| tilt 0.5 | 0.54 | 42 | 7.7 |
+| tilt 0.5 + quad 0.5 | 0.38 | 47 | 14 |
+| tilt 0.5 + smooth 0.3 | 0.30 | 20 | 5.0 |
+| tilt 0.5 + smooth 1.0 | 0.24 | 17 | 1.7 |
+| tilt 0.5 + quad 0.5 + smooth 0.3 | 0.59 | 18 | 2.3 |
+| tilt 0.5 + minstd 0.05 | 0.38 | 31 | 0.3 |
+| tilt 1 + quad 1 + smooth 0.3 | 0.52 | 14 | 0.3 |
+
+The smoothness arms are calm but the strongest ones no longer drive forward
+or back at all (their correlation comes from turning). None tracks better
+than e6031.
+
+Round 6b (randomised around v6, tilt 0.5; "SM" = quad 0.5 + smooth 0.3, n=2):
+
+| floor, arm | eval floor | corr | rate SD | falls |
+|---|---|---|---|---|
+| table, plain (n=1) | table | 0.84 | 42 | 22 |
+| table, SM | table | 0.84 ± 0.00 | 17 ± 1 | 3.3 ± 2.8 |
+| mixed, SM | table | 0.76 ± 0.05 | 16 ± 0 | 0.3 ± 0.0 |
+| carpet, plain (n=1) | carpet | 0.28 | 27 | 1.3 |
+| carpet, SM | carpet | 0.20 ± 0.27 | 12 ± 4 | 0.2 ± 0.2 |
+| mixed, SM | carpet | 0.47 ± 0.08 | 17 ± 1 | 0.4 ± 0.5 |
+
+On the table, SM keeps e6033's tracking with half the wobble and a tenth of
+the falls. On carpet no new policy drives forward (forward tilt p95 below
+4 deg, speed ~0) while e6031 in the same sim does (589 mm/s, robot 537), so
+the cause is the reward, not the physics: at full stick 2500 mm/s a carpet
+speed of 600 earns exp(-(0.76/0.4)^2) = 0.03, less than the tilt penalty
+for leaning. Round 6c lowers full stick to 1500 mm/s; round 6d adds
+`env.robot.track_progress` (w * |c| * clip(v / c, 0, 1): linear pay for
+moving toward the commanded forward speed).
+
+Round 6c (carpet, full stick 1500 mm/s, sweep-E randomisation, tilt 0.5 unless noted; 3 h; n=2 unless noted):
+
+| arm | fit corr | rate SD | falls/min | worst-variant corr |
+|---|---|---|---|---|
+| e6031 (reference) | 0.66 | 31 | 14 | 0.22 |
+| base | 0.78 ± 0.02 | 22 ± 3 | 0.2 ± 0.2 | 0.56 ± 0.03 |
+| quad 0.5 | 0.79 ± 0.01 | 22 ± 1 | 0.0 ± 0.0 | 0.55 ± 0.03 |
+| sigma 0.6, tilt 0.25 | 0.83 ± 0.08 | 14 ± 1 | 0.0 ± 0.0 | 0.65 ± 0.25 |
+| minstd 0.05 (n=1) | 0.82 | 16 | 0.0 | 0.64 |
+| tilt 0 (n=1) | 0.65 | 28 | 0.3 | 0.46 |
+
+Lowering full stick to 1500 mm/s is what made carpet forward work: every
+run drives forward at 450-630 mm/s (the robot's e6031: 537), and every arm
+beats e6031 on tracking, wobble and falls. A wider kernel with a smaller
+tilt penalty is calmest; dropping the tilt penalty makes it wobblier.
+Carpet policies do not transfer to the table: on its low friction they run
+away (several m/s, 35-490 falls per minute), so a carpet policy is for
+carpet only.
+
+Round 6d adds the progress term (`track_progress` 0.5) to SM (quad 0.5 +
+smooth 0.3) with tilt 0.5 and the sweep-E randomisation (3 h):
+
+| floor, arm | eval floor | fit corr | rate SD | falls/min | worst-variant corr |
+|---|---|---|---|---|---|
+| carpet, full stick 1500 (n=2) | carpet | 0.89 ± 0.05 | 10 ± 1 | 0.0 ± 0.0 | 0.73 ± 0.10 |
+| carpet, progress 1.0 (n=1) | carpet | 0.90 | 11 | 0.3 | 0.71 |
+| carpet, no SM (n=1) | carpet | 0.80 | 22 | 0.7 | 0.58 |
+| mixed, full stick 1500 (n=2) | carpet | 0.72 ± 0.10 | 18 ± 4 | 0.5 ± 0.3 | 0.60 ± 0.14 |
+| mixed, full stick 1500 (n=2) | table | 0.73 ± 0.04 | 19 ± 2 | 0.7 ± 0.9 | 0.64 ± 0.09 |
+| mixed, full stick 2500 (n=2) | carpet | 0.79 ± 0.01 | 16 ± 3 | 0.2 ± 0.2 | 0.62 ± 0.05 |
+| mixed, full stick 2500 (n=2) | table | 0.86 ± 0.01 | 16 ± 0 | 0.0 ± 0.0 | 0.74 ± 0.01 |
+
+With the progress term, smoothing no longer stops the robot from driving:
+the carpet SM runs are the best carpet policies so far (wobble a third of
+e6031's, no falls). The mixed-floor policies at full stick 2500 track
+on both floors (table as well as e6033, with half its wobble and no
+falls; carpet better than e6031); at 1500 they drive the table too slowly.
+
+Round 6e (full stick 1500, sigma 0.6, tilt 0.25, quad 0.5, no CAPS, no progress; 4 h)
+and 6f (mixed only, same reward, floors switching every 2 min instead of 10; 3 h):
+
+| arm | eval floor | fit corr | rate SD | falls/min | worst-variant corr |
+|---|---|---|---|---|---|
+| 6e carpet (n=3) | carpet | 0.73 ± 0.20 | 21 ± 8 | 0.4 ± 0.6 | 0.47 ± 0.41 |
+| 6e table (n=2) | table | 0.74 ± 0.01 | 26 ± 2 | 3.7 ± 0.6 | 0.32 ± 0.01 |
+| 6e mixed (n=3) | carpet | 0.83 ± 0.02 | 18 ± 1 | 0.0 ± 0.0 | 0.70 ± 0.07 |
+| 6e mixed (n=3) | table | 0.76 ± 0.01 | 26 ± 1 | 2.0 ± 0.9 | 0.68 ± 0.01 |
+| 6f 2-min, quad (n=2) | carpet | 0.67 ± 0.01 | 23 ± 2 | 0.5 ± 0.2 | 0.52 ± 0.01 |
+| 6f 2-min, quad (n=2) | table | 0.64 ± 0.03 | 31 ± 2 | 2.0 ± 1.3 | 0.51 ± 0.08 |
+| 6f 2-min, no quad (n=2) | carpet | 0.65 ± 0.01 | 28 ± 0 | 0.2 ± 0.2 | 0.46 ± 0.02 |
+| 6f 2-min, no quad (n=2) | table | 0.65 ± 0.00 | 37 ± 2 | 2.7 ± 1.0 | 0.52 ± 0.01 |
+| 6f 2-min, quad + progress (n=2) | carpet | 0.84 ± 0.06 | 18 ± 4 | 1.0 ± 0.7 | 0.56 ± 0.25 |
+| 6f 2-min, quad + progress (n=2) | table | 0.73 ± 0.02 | 28 ± 2 | 0.7 ± 0.0 | 0.56 ± 0.11 |
+
+One 6e carpet seed (e8141) collapsed in its last 1.5 h (fit corr 0.89 at
+2.4 h, 0.45 at 4 h), so final policies are picked by evaluating several of
+the last saved checkpoints (`ckpt_milestones`, every 19.5k steps), not just
+the last. Without CAPS the table policies wobble about 26 deg/s against 16
+for the 6d mixed recipe, and switching floors every 2 min instead of 10 does
+not help.
+
+Checkpoint choice. Neighbouring checkpoints of one run (39k steps apart)
+can differ a lot (e8136 on carpet: 0.50 and 0.49 fit corr with 12 and 41
+falls/min at 527k and 566k steps, 0.85 at 644k), and repeat evaluations of
+the same checkpoint differ by about 0.05 corr. Averaging the weights of the
+last 3-5 checkpoints (SWA) made every policy much worse (e8136: 82 falls/min
+on carpet), so policies are chosen as single checkpoints from a sweep over
+the last five (`r6/ckptsweep.sh`).
+
+Round 6h (mixed, 6d recipe with one change each; p100, 3 h, n=2):
+
+| arm, eval floor | fit corr | rate SD | falls/min | worst-variant corr |
+|---|---|---|---|---|
+| 6d recipe, carpet | 0.79 ± 0.01 | 16 ± 2 | 0.2 ± 0.2 | 0.61 ± 0.04 |
+| balance point ±2 deg, carpet | 0.64 ± 0.17 | 15 ± 1 | 0.2 ± 0.2 | 0.40 ± 0.20 |
+| dynamics redrawn every 20 s, carpet (n=1) | 0.70 | 15 | 0.7 | 0.50 |
+| CAPS 0.6, carpet | 0.60 ± 0.02 | 16 ± 2 | 0.3 ± 0.3 | 0.34 ± 0.04 |
+| progress 1.0, carpet | 0.76 ± 0.03 | 19 ± 0 | 0.2 ± 0.2 | 0.63 ± 0.03 |
+| 6d recipe, table | 0.86 ± 0.00 | 16 ± 0 | 0.0 ± 0.0 | 0.74 ± 0.01 |
+| balance point ±2 deg, table | 0.76 ± 0.05 | 17 ± 1 | 0.0 ± 0.0 | 0.57 ± 0.10 |
+| dynamics redrawn every 20 s, table (n=1) | 0.83 | 17 | 0.7 | 0.60 |
+| CAPS 0.6, table | 0.81 ± 0.02 | 15 ± 0 | 0.3 ± 0.3 | 0.56 ± 0.01 |
+| progress 1.0, table | 0.66 ± 0.08 | 16 ± 2 | 3.7 ± 3.7 | 0.52 ± 0.19 |
+
+None of the four changes beats the 6d recipe. The second 20-s seed (e8173)
+collapsed into running away on both floors (22 and 830 falls/min), so it is
+left out of those rows. CAPS 0.6 again suppresses reversing (back speed
+100-250 mm/s against ~700). A wider balance-point range (the robot leaned
++2.8 deg at zero stick on carpet) does not help in sim; the robustness set
+already tests ±1 deg.
+
+Round 6g (6d reward = SM + progress 0.5; v100, 4 h ≈ 0.92M steps):
+
+| arm, eval floor | fit corr | rate SD | falls/min | worst-variant corr |
+|---|---|---|---|---|
+| mixed, full stick 2500, tilt 0.5 (6d recipe), carpet (n=3) | 0.66 ± 0.05 | 18 ± 2 | 0.0 ± 0.0 | 0.51 ± 0.02 |
+| mixed, 2500, sigma 0.6, tilt 0.25, carpet | 0.86 ± 0.01 | 12 ± 1 | 0.0 ± 0.0 | 0.68 ± 0.04 |
+| carpet, full stick 1500 (n=1) | 0.92 | 10 | 0.0 | 0.80 |
+| mixed, 6d recipe, table (n=3) | 0.87 ± 0.02 | 15 ± 0 | 1.8 ± 1.9 | 0.65 ± 0.03 |
+| mixed, 2500, sigma 0.6, tilt 0.25, table | 0.83 ± 0.01 | 15 ± 1 | 0.5 ± 0.5 | 0.79 ± 0.00 |
+| table, full stick 2500 | 0.86 ± 0.01 | 18 ± 0 | 1.5 ± 1.2 | 0.14 ± 0.00 |
+
+The carpet recipe replicates (e8167 matches e8132). Three more seeds of the 6d
+mixed recipe are weaker on carpet than e8136/7 were (0.66 against 0.79), so
+that recipe is seed-sensitive on carpet. The wider kernel with half the tilt
+penalty is the most even mixed-floor recipe: 0.83-0.86 on both floors, no
+falls on carpet, and the best worst-variant scores (0.68 carpet, 0.79 table).
+Table-only policies have a worst variant of 0.14: that variant is carpet,
+which they cannot drive on.
+
+![round 6 arms](figs/train_r6.png)
+
+![checkpoint sweeps](figs/ckpt_sweep.png)
+
+Carpet-only runs are steady across their last checkpoints (e8167: 0.92-0.94
+at all five, at most 0.3 falls/min); mixed-floor runs swing by up to 0.3 in
+carpet tracking from one checkpoint to the next while staying steady on the
+table. The swings do not follow which floor the run was on when the
+checkpoint was saved (carpet-phase vs table-phase checkpoints: e8163 0.84 vs
+0.75, e8164 0.72 vs 0.75, e8136 and e8137 equal).
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined
