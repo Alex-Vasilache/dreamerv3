@@ -92,7 +92,8 @@ def train(make_agent, make_replay, make_env, make_stream, make_logger, args):
         fromto_init[0] = True
       prop = (tran['log/fromto_goal'] if 'log/fromto_goal' in tran
               and float(tran.get('log/fromto_switch', 0.0)) > 0.5 else None)
-      fromto.add(tran['log/fromto_code'], tran['is_first'], worker, proposal=prop)
+      fromto.add(tran['log/fromto_code'], tran['is_first'], worker, proposal=prop,
+                 start=tran.get('log/fromto_start'))
       if fromto.due():
         agent.set_param(fromto_key, fromto.export())
     driver.on_step(fromtofn)

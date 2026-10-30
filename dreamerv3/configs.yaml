@@ -522,7 +522,7 @@ defaults:
     # n = decaying counts of REAL pairs (state code at t-k -> state code at t,
     # k in [k_min, k_max]) counted at environment interaction.
     mgr_fromto_c: 0.0
-    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, half_life_frac: 0.0, half_life_min: 2.5e4, lean_target: 0.0, w_init: 0.1, w_min: 1.0e-3, w_max: 1.0, w_vel: 0.05, w_fixed: 0.0}
+    mgr_fromto: {start_bins: 2, goal_bins: 4, k_min: 1, k_max: 8, half_life: 5.0e5, h: 0.5, export_every: 10000, pair_weight: 1.0, prop_weight: 1.0, half_life_frac: 0.0, half_life_min: 2.5e4, start_hash: '', hash_bits: 16, hash_seed: 0, lean_target: 0.0, w_init: 0.1, w_min: 1.0e-3, w_max: 1.0, w_vel: 0.05, w_fixed: 0.0}
     mgr_ucb_imag_c: 0.0
     mgr_ucb_imag:
       candidates: 8

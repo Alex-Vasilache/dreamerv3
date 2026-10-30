@@ -49,21 +49,26 @@ def smear_kernel(bins, classes, h):
 class FromToCounts(nj.Module):
   """Device copy of the from-to table and the exact expected novelty."""
 
-  def __init__(self, start_bins=2, goal_bins=4, classes=8, blocks=8):
+  def __init__(self, start_bins=2, goal_bins=4, classes=8, blocks=8, start_rows=0):
     self.start_bins, self.goal_bins = int(start_bins), int(goal_bins)
     self.classes, self.blocks = int(classes), int(blocks)
-    self.rows = self.start_bins ** self.blocks
+    # start_rows > 0: the start side is a hashed world-model state, passed in
+    # as a row id directly (see Agent._start_hash), not a goal code to bin.
+    self.hashed = int(start_rows) > 0
+    self.rows = int(start_rows) if self.hashed else self.start_bins ** self.blocks
     self.cols = self.goal_bins ** self.blocks
     self.tab = nj.Variable(jnp.zeros, (self.rows * self.cols,), f32, name='tab')
 
   def start_row(self, start_ids):
+    if self.hashed:
+      return start_ids.astype(i32).reshape(-1)
     q = jnp.minimum(start_ids.astype(i32) * self.start_bins // self.classes,
                     self.start_bins - 1)
     strides = self.start_bins ** jnp.arange(self.blocks - 1, -1, -1)
     return (q * strides).sum(-1)
 
   def expected_novelty(self, start_ids, probs):
-    """``start_ids (N, L)`` ints, ``probs (N, L, C)`` -> E_pi[b] (N,) and the
+    """``start_ids (N, L)`` ints (or ``(N,)`` row ids when hashed), ``probs (N, L, C)`` -> E_pi[b] (N,) and the
     uniform-policy E[b] (N,) for reference."""
     tab = jax.lax.stop_gradient(self.tab.read())
     row = self.start_row(start_ids)                                  # (N,)
@@ -94,8 +99,11 @@ class FromToCounter:
 
   def __init__(self, start_bins=2, goal_bins=4, classes=8, blocks=8,
                k_min=1, k_max=8, half_life=5e5, h=0.5, export_every=10000,
-               pair_weight=1.0, prop_weight=1.0, half_life_frac=0.0, half_life_min=2.5e4):
+               pair_weight=1.0, prop_weight=1.0, half_life_frac=0.0, half_life_min=2.5e4,
+               start_rows=0):
     self.sb, self.gb, self.C, self.L = start_bins, goal_bins, classes, blocks
+    # start_rows > 0: ``add`` gets the start cell as a hashed row id.
+    self.start_rows = int(start_rows)
     self.ks = list(range(int(k_min), int(k_max) + 1))
     # Each experienced (from, to) pair is a full look at that combination: if a
     # reward were there it would have shown, so every pair counts 1 (a real
@@ -115,32 +123,33 @@ class FromToCounter:
     self.h = float(h)
     self.export_every = int(export_every)
     self.cols = self.gb ** self.L
-    self.tab = np.zeros((self.sb ** self.L) * self.cols, np.float32)
+    rows = self.start_rows if self.start_rows > 0 else self.sb ** self.L
+    self.tab = np.zeros(rows * self.cols, np.float32)
     self.hist = collections.defaultdict(lambda: collections.deque(maxlen=max(self.ks)))
     self.steps = 0
     self._sstr = self.sb ** np.arange(self.L - 1, -1, -1)
     self._gstr = self.gb ** np.arange(self.L - 1, -1, -1)
     self._smear = jax.jit(self._smear_fn)
 
-  def add(self, code, is_first, worker, proposal=None):
+  def add(self, code, is_first, worker, proposal=None, start=None):
     """One real step of one env: ``code`` (L,) class ids of the current state;
     ``proposal`` (L,) the goal the manager proposed at this step, if it made a
-    decision here."""
+    decision here; ``start`` the current state's hashed row (hashed mode)."""
     hist = self.hist[worker]
     if is_first:
       hist.clear()
     code = np.asarray(code, np.int64)
     g = int((bin_ids(code, self.gb, self.C) * self._gstr).sum())
+    s_now = (int(start) if self.start_rows > 0 else
+             int((bin_ids(code, self.sb, self.C) * self._sstr).sum()))
     inflate = self._inflate()
     if proposal is not None and self.prop_w > 0:
-      s = int((bin_ids(code, self.sb, self.C) * self._sstr).sum())
       gp = int((bin_ids(np.asarray(proposal, np.int64), self.gb, self.C) * self._gstr).sum())
-      self.tab[s * self.cols + gp] += self.prop_w * inflate
+      self.tab[s_now * self.cols + gp] += self.prop_w * inflate
     for k in self.ks:
       if len(hist) >= k:
-        s = int((bin_ids(hist[-k], self.sb, self.C) * self._sstr).sum())
-        self.tab[s * self.cols + g] += self.w * inflate
-    hist.append(code)
+        self.tab[hist[-k] * self.cols + g] += self.w * inflate
+    hist.append(s_now)
     self.steps += 1
 
   def _inflate(self):
@@ -160,9 +169,14 @@ class FromToCounter:
     return self.steps > 0 and self.steps % self.export_every == 0
 
   def _smear_fn(self, tab):
-    shape = (self.sb,) * self.L + (self.gb,) * self.L
+    if self.start_rows > 0:   # hashed starts have no neighbours: goal axes only
+      shape = (self.start_rows,) + (self.gb,) * self.L
+      axes = list(enumerate(shape))[1:]
+    else:
+      shape = (self.sb,) * self.L + (self.gb,) * self.L
+      axes = list(enumerate(shape))
     x = tab.reshape(shape)
-    for axis, bins in enumerate(shape):
+    for axis, bins in axes:
       k = jnp.asarray(smear_kernel(bins, self.C, self.h))
       x = jnp.moveaxis(jnp.tensordot(k, x, axes=([1], [axis])), 0, axis)
     return x.reshape(-1)

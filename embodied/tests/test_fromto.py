@@ -176,3 +176,31 @@ def test_growing_half_life_power_law():
     c.add(np.zeros(L), True, 1)
   tot = float(np.asarray(jax.device_get(c.export())).sum())
   assert tot == pytest.approx((10 / 40) ** (2 * np.log(2)), rel=1e-4)
+
+
+def test_hashed_start_rows_count_and_novelty():
+  # Start side given as hashed row ids: pairs land on (row k steps ago -> goal now).
+  R = 16
+  c = FromToCounter(start_bins=SB, goal_bins=GB, classes=C, blocks=L, k_min=1, k_max=2,
+                    half_life=0.0, h=0.0, start_rows=R)
+  c.add(np.zeros(L), True, 0, start=3)
+  c.add(np.full(L, 7), False, 0, start=5)
+  c.add(np.full(L, 7), False, 0, start=9, proposal=np.zeros(L))
+  tab = np.asarray(jax.device_get(c.export())).reshape(R, GB ** L)
+  g7 = int((bin_ids(np.full(L, 7), GB, C) * GB ** np.arange(L - 1, -1, -1)).sum())
+  assert tab[3, g7] == pytest.approx(2.0)    # from step 0 to steps 1 and 2
+  assert tab[5, g7] == pytest.approx(1.0)
+  assert tab[9, 0] == pytest.approx(1.0)     # proposal at the decision state's row
+  assert tab.sum() == pytest.approx(4.0)
+  m = FromToCounts(start_bins=SB, goal_bins=GB, classes=C, blocks=L, start_rows=R, name='fth')
+  params = nj.init(lambda: m.tab.read())({}, seed=0)
+  params['fth/tab/value'] = jnp.asarray(tab.reshape(-1))
+  probs = jax.nn.softmax(jnp.asarray(np.random.default_rng(0).normal(0, 1, (2, L, C)), jnp.float32), -1)
+  e, _ = nj.pure(lambda r, q: m.expected_novelty(r, q))(params, jnp.asarray([3, 4]), probs, seed=0)[1]
+  pb = np.asarray(probs).reshape(2, L, GB, C // GB).sum(-1)
+  for n, row in enumerate([3, 4]):
+    want = 0.0
+    for cell in itertools.product(range(GB), repeat=L):
+      g = int((np.array(cell) * GB ** np.arange(L - 1, -1, -1)).sum())
+      want += np.prod([pb[n, l, cell[l]] for l in range(L)]) / np.sqrt(tab[row, g] + 1)
+    assert float(e[n]) == pytest.approx(want, rel=1e-5)

@@ -404,10 +404,22 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.mgr_fromto_c = float(getattr(config, 'mgr_fromto_c', 0.0))
       if self.mgr_fromto_c > 0.0:
         _fcfg = config.mgr_fromto
+        # Start side from a hashed world-model state (start_hash != ''):
+        # sign of a fixed random projection, hash_bits bits -> 2^bits rows.
+        self.fromto_hash = str(getattr(_fcfg, 'start_hash', '') or '')
+        hash_rows = 0
+        if self.fromto_hash:
+          bits = int(getattr(_fcfg, 'hash_bits', 16))
+          rc = config.dyn.rssm
+          dim = (int(rc.deter) if self.fromto_hash.startswith('deter')
+                 else int(rc.stoch) * int(rc.classes))
+          self._hash_proj = np.random.default_rng(int(getattr(_fcfg, 'hash_seed', 0))).normal(
+              size=(dim, bits)).astype(np.float32)
+          hash_rows = 2 ** bits
         self.fromto = fromto_mod.FromToCounts(
             start_bins=int(_fcfg.start_bins), goal_bins=int(_fcfg.goal_bins),
             classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
-            name='fromto')
+            start_rows=hash_rows, name='fromto')
         self.fromto_counter_cfg = dict(
             start_bins=int(_fcfg.start_bins), goal_bins=int(_fcfg.goal_bins),
             classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
@@ -417,7 +429,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             pair_weight=float(getattr(_fcfg, 'pair_weight', 1.0)),
             prop_weight=float(getattr(_fcfg, 'prop_weight', 1.0)),
             half_life_frac=float(getattr(_fcfg, 'half_life_frac', 0.0)),
-            half_life_min=float(getattr(_fcfg, 'half_life_min', 2.5e4)))
+            half_life_min=float(getattr(_fcfg, 'half_life_min', 2.5e4)),
+            start_rows=hash_rows)
         # Own adaptive weight (lean_target > 0): hold the policy's expected
         # novelty at lean_target x a uniform policy's, like the entropy
         # controller holds entropy. Borrowing the entropy controller's weight
@@ -897,6 +910,21 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     return (enc, dyn, dec, prevact, mgr_skill, mgr_step)
 
 
+  def _start_hash(self, feat):
+    """TCE start row from the world-model state: sign bits of a fixed random
+    projection. 'deter' raw deter; 'deter_norm' deter standardised per state;
+    'stoch' the posterior/prior one-hot stoch."""
+    kind = self.fromto_hash
+    if kind.startswith('deter'):
+      x = sg(f32(feat['deter']))
+      if kind == 'deter_norm':
+        x = (x - x.mean(-1, keepdims=True)) / (x.std(-1, keepdims=True) + 1e-6)
+    else:
+      st = sg(f32(feat['stoch']))
+      x = st.reshape(st.shape[:-2] + (-1,))
+    bits = (x @ jnp.asarray(self._hash_proj)) > 0
+    return (bits.astype(jnp.int32) * (2 ** jnp.arange(bits.shape[-1], dtype=jnp.int32))).sum(-1)
+
   def policy(self, carry, obs, mode='train'):
     """One env step: encode obs, RSSM observe, sample policy action, update carry."""
     if self.use_hrl:
@@ -973,12 +1001,16 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       out['log/fromto_goal'] = jnp.argmax(
           self._running_goal_code(mgr_skill), -1).astype(jnp.int32)
       out['log/fromto_switch'] = f32(goal_refresh)
+      if getattr(self, 'fromto_hash', ''):
+        out['log/fromto_start'] = self._start_hash(feat)
     if self.use_hrl and bool(getattr(self.config, 'policy_struct_diag', False)):
       diag_deter = self.feat2deter(feat)
       diag_code = self.goal_enc(diag_deter, bdims=1)
       diag_dist = diag_code['skill'] if isinstance(diag_code, dict) else diag_code
       diag_probs = jax.nn.softmax(_head_inner(diag_dist).dist.logits, -1)  # (B, L, C)
       out['log/struct_diag_deter'] = diag_deter
+      # Posterior stochastic state (mode per group), for hashing studies.
+      out['log/struct_diag_stoch'] = jnp.argmax(feat['stoch'], -1).astype(jnp.int32)
       out['log/struct_diag_probs'] = diag_probs.reshape(diag_probs.shape[:-2] + (-1,))
     if self.use_hrl and mgr_diag_probs is not None:
       # (B, L*C) manager distribution, plus the switch flag so the driver can
@@ -1811,6 +1843,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       enc = self.goal_enc(dec_deter.reshape((M_ * n_,) + dec_deter.shape[2:]), 1)
       enc = enc['skill'] if isinstance(enc, dict) else enc
       start_ids = jnp.argmax(sg(enc.pred()), -1)                      # (M*n, L)
+      if getattr(self, 'fromto_hash', ''):
+        start_ids = self._start_hash(imgfeat_eff).reshape(-1)          # (M*n,) rows
       logits = f32(_head_inner(mgr_policy['skill']).dist.logits)      # (M, n, L, C)
       probs = jax.nn.softmax(logits, -1).reshape((M_ * n_,) + logits.shape[2:])
       e_pi, e_uni = self.fromto.expected_novelty(start_ids, probs)
