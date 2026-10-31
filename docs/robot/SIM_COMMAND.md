@@ -835,11 +835,37 @@ worst variant 0.82) and 0.86 on the table (0.1 falls, worst variant 0.84),
 slightly ahead of e8247 on the table, and becomes the mixed pick with e8247
 as its second seed.
 
-![rounds 6l-6q](figs/r6_arms.png)
+![rounds 6l-6r](figs/r6_arms.png)
 
-Figure: rounds 6l-6q, mixed-floor arms. Tracking (fit corr) averaged over
+Figure: rounds 6l-6r, mixed-floor arms. Tracking (fit corr) averaged over
 the last five checkpoints, its SD across them, and falls per minute; bars
-are mean ± std over seeds (n=2-6). 
+are mean ± std over seeds (n=2-10).
+
+Round 6r (p100, 4 h): four more seeds of the recipe (now n=10 with 6o and
+6q), spatial weight 0.6 (n=2), and the carpet-only lag recipe with the
+spatial term at noise 0.5 (n=2).
+
+| arm | n | carpet corr | swing | falls/min | table corr | swing | falls/min |
+|---|---|---|---|---|---|---|---|
+| lag + spatial 0.3, noise 0.5 | 10 | 0.82 ± 0.06 | 0.06 | 0.2 | 0.83 ± 0.02 | 0.02 | 0.8 |
+| lag + spatial 0.6, noise 0.5 | 2 | 0.76 ± 0.03 | 0.06 | 0.3 | 0.84 ± 0.01 | 0.02 | 0.5 |
+| carpet only + lag + spatial 0.3, noise 0.5 | 2 | 0.90 ± 0.02 | 0.02 | 0.3 | | | |
+
+With ten seeds the recipe's carpet mean drops to 0.82: about one seed in
+four lands at 0.69-0.80. So between the arms that use the lag randomisation
+or the spatial term, differences in tracking level are within the spread
+between seeds. What holds across all of them is the drop in falls and in
+checkpoint swing against the control (4.5 to 0.1-0.3 falls/min on carpet).
+The picks therefore come from selection: sweep five checkpoints of each run,
+then confirm the best few in ten-minute evaluations. e8261 @838500 stays the
+pick: in sim it tracks 0.82-0.93 on every robustness variant on both floors
+(worst: carpet stiction 10). A weight of 0.6 does not help. On carpet only,
+the spatial term at noise 0.5 costs a little tracking (0.90 against 0.93
+without it).
+
+The sim results are now close to saturated: the best mixed policy is within
+0.01 of the carpet-only one on carpet and has no weak robustness variant.
+The open question is the robot, which only Monday's test can answer. 
 
 Round 6p (p100, 4 h): the weakest variant of every mixed pick is carpet
 stiction 10 (`rs10`, outside the training range 5-9), so the carpet
