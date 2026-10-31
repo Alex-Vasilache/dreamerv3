@@ -639,6 +639,11 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+**Decision 2026-11-01 01:00: keep US-SOM.** V+SOM+TCE (e8600, n=3-4, late 3.5-4.0M):
+pin pad 4 297, 5 239, **6 46 (1/4 solved)**, cartpole 712, cheetah 562, hopper 206;
+normalised ~51% vs V+US-SOM+TCE 58% (pin pads level on four/five; the gap is pin pad
+six and DMC). Released e9500 (tce_hash) and e9600 (no_gae_expl) unchanged, on US-SOM.
+
 **Queued HELD 2026-10-31 13:00:** e9500-e9529 (array 4781346, `tce_hash`: TCE with the
 start side from a 16-bit SimHash of the per-state standardised deter) and e9600-e9629
 (array 4781347, `no_gae_expl`: TCE with Director's reconstruction-error exploration
