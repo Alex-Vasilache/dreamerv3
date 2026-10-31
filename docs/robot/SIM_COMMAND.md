@@ -15,7 +15,8 @@ run dirs under `/work/DoyaU/vasilache/work/`):
 
 | name | run dir | step | for |
 |---|---|---|---|
-| r6_mixed | e8247_simrobot_command65_flat_20261031_153535_gXy2vI | 838500 | carpet and table: try this first |
+| r6_mixed | e8261_simrobot_command65_flat_20261031_202926_wDnlSv | 838500 | carpet and table: try this first |
+| r6_mixed_2 | e8247_simrobot_command65_flat_20261031_153535_gXy2vI | 838500 | carpet and table, same recipe, second seed |
 | r6_carpet | e8167_simrobot_command65_flat_20261030_233514_eiGqqg | 916500 | carpet only |
 | r6_carpet_lag | e8226_simrobot_command65_flat_20261031_100006_wV1Q3O | 916500 | carpet only, trained with sensor-lag randomisation |
 | r6_mixed_sp | e8217_simrobot_command65_flat_20261031_071633_sNSoGP | 799500 | carpet and table, spatial smoothing without lag randomisation |
@@ -24,11 +25,11 @@ run dirs under `/work/DoyaU/vasilache/work/`):
 
 Do not put a carpet-only policy on the table: in sim it runs away there.
 The mixed pick combines sensor-lag randomisation (0-15 ms) with CAPS spatial
-smoothing (0.3, noise 0.5); in sim it tracks 0.91 on carpet against 0.86 for
+smoothing (0.3, noise 0.5); in sim it tracks 0.92 on carpet against 0.86 for
 the Friday-night pick, with less wobble, no falls, and little change between
 checkpoints (§11.3, §11.4). The others let you tell the two changes apart on
-the robot. Rounds 6p/6q finish Saturday night; this table is updated if they
-win.
+the robot. The recipe replicates over six seeds (§11.3); round 6r (more seeds,
+Sunday) only changes this table if it clearly wins.
 
 ## For Monday 10-26 (weekend)
 
@@ -816,8 +817,29 @@ with little swing and almost no falls, the best mixed result of round 6. In
 ten-minute evaluations e8247 @838500 tracks 0.91 on carpet (wobble 9.3 deg/s,
 no falls, worst variant 0.81) and 0.83 on the table (13.2 deg/s, 0.1 falls,
 worst variant 0.80); it replaces e8217 as the mixed pick.
-Round 6q (running, ends ~00:40): four more seeds of this recipe, spatial noise
-1.0, and noise 0.5 without the lag. 
+Round 6q (v100, 4 h): four more seeds of this recipe, spatial noise 1.0
+(n=2), and noise 0.5 without the lag (n=2). The recipe row pools 6o and 6q
+(n=6).
+
+| arm | carpet corr | swing | falls/min | table corr | swing | falls/min |
+|---|---|---|---|---|---|---|
+| lag + spatial 0.3, noise 0.5 | 0.84 ± 0.05 | 0.06 | 0.1 | 0.84 ± 0.01 | 0.02 | 1.0 |
+| lag + spatial 0.3, noise 1.0 | 0.80 ± 0.05 | 0.08 | 2.2 | 0.82 ± 0.01 | 0.04 | 2.8 |
+| spatial 0.3, noise 0.5, no lag | 0.82 ± 0.01 | 0.04 | 0.1 | 0.83 ± 0.00 | 0.03 | 0.7 |
+
+The recipe replicates: five of six seeds track 0.85-0.88 on carpet (one
+0.73), all six 0.83-0.87 on the table. Noise 1.0 is worse and falls more;
+without the lag it is a little lower on carpet. In ten-minute evaluations
+e8261 @838500 (a new seed of the recipe) tracks 0.92 on carpet (no falls,
+worst variant 0.82) and 0.86 on the table (0.1 falls, worst variant 0.84),
+slightly ahead of e8247 on the table, and becomes the mixed pick with e8247
+as its second seed.
+
+![rounds 6l-6q](figs/r6_arms.png)
+
+Figure: rounds 6l-6q, mixed-floor arms. Tracking (fit corr) averaged over
+the last five checkpoints, its SD across them, and falls per minute; bars
+are mean ± std over seeds (n=2-6). 
 
 Round 6p (p100, 4 h): the weakest variant of every mixed pick is carpet
 stiction 10 (`rs10`, outside the training range 5-9), so the carpet
@@ -847,14 +869,16 @@ single checkpoints chosen by the sweeps):
 | **e8167 @916500** (carpet-only) | carpet | 0.93 | 9.2 | 0.0 | 0.83 | 648 / -673 |
 | e8132 @643500 (carpet-only) | carpet | 0.90 | 9.8 | 0.1 | 0.74 | 706 / -624 |
 | e8226 @916500 (carpet-only, lag) | carpet | 0.94 | 9.5 | 0.0 | 0.81 | 676 / -746 |
-| **e8247 @838500** (mixed, lag + spatial) | carpet | 0.91 | 9.3 | 0.0 | 0.81 | 876 / -955 |
+| **e8261 @838500** (mixed, lag + spatial) | carpet | 0.92 | 10.4 | 0.0 | 0.82 | 968 / -1023 |
+| e8247 @838500 (mixed, lag + spatial) | carpet | 0.91 | 9.3 | 0.0 | 0.81 | 876 / -955 |
 | e8217 @799500 (mixed, spatial) | carpet | 0.85 | 11.9 | 0.1 | 0.70 | 803 / -834 |
 | e8214 @799500 (mixed, spatial) | carpet | 0.87 | 11.6 | 0.2 | 0.77 | 974 / -780 |
 | e8164 @877500 (mixed) | carpet | 0.86 | 9.2 | 0.1 | 0.61 | 648 / -912 |
 | e8222 @838500 (mixed, lag) | carpet | 0.88 | 10.6 | 0.1 | 0.79 | 784 / -875 |
 | e8136 @643500 (mixed) | carpet | 0.83 | 12.9 | 0.1 | 0.66 | 710 / -888 |
 | e6033 (round 5) | table | 0.88 | 32.7 | 35.9 | 0.65 | 1668 / -858 |
-| **e8247 @838500** (mixed, lag + spatial) | table | 0.83 | 13.2 | 0.1 | 0.80 | 1373 / -1172 |
+| **e8261 @838500** (mixed, lag + spatial) | table | 0.86 | 15.0 | 0.1 | 0.84 | 1839 / -1256 |
+| e8247 @838500 (mixed, lag + spatial) | table | 0.83 | 13.2 | 0.1 | 0.80 | 1373 / -1172 |
 | e8217 @799500 (mixed, spatial) | table | 0.85 | 16.1 | 0.0 | 0.77 | 1623 / -1222 |
 | e8214 @799500 (mixed, spatial) | table | 0.82 | 15.3 | 0.9 | 0.79 | 1482 / -1072 |
 | e8164 @877500 (mixed) | table | 0.82 | 14.9 | 0.5 | 0.74 | 1650 / -1194 |
