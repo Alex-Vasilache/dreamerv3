@@ -1643,6 +1643,12 @@ tce_grow:
   agent:
     mgr_fromto: {half_life_frac: 0.5, w_fixed: 2.0}
 
+# TCE start side from the world model (2026-10-30 hash study): sign bits of a
+# fixed random projection of the per-state standardised deter, 16 bits.
+tce_hash:
+  agent:
+    mgr_fromto: {start_hash: deter_norm, hash_bits: 16}
+
 # Director's reconstruction-error exploration reward off (manager advantage =
 # extrinsic only), to test whether TCE makes it redundant.
 no_gae_expl:

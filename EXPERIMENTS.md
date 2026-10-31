@@ -639,6 +639,12 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+**Queued HELD 2026-10-31 13:00:** e9500-e9529 (array 4781346, `tce_hash`: TCE with the
+start side from a 16-bit SimHash of the per-state standardised deter) and e9600-e9629
+(array 4781347, `no_gae_expl`: TCE with Director's reconstruction-error exploration
+reward off). Codebook (US-SOM vs SOM) set from e8600 before release; both run in
+parallel rather than stage 4 waiting on stage 3.
+
 **TCE-grow FINAL 2026-10-31 09:00** (e8000-e8029, seeds 0-2 all tasks + pin pad six
 seeds 3-4; hopper n=2), late 3.5-4.0M, `collapse_figs/tcegrow_matched.png`: pin pad 4
 303, 5 260, **6 36 (1/5: seed 3 solved 189)**, cartpole 723, cheetah 566, hopper 243.
