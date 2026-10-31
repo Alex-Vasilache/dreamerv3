@@ -817,8 +817,24 @@ ten-minute evaluations e8247 @838500 tracks 0.91 on carpet (wobble 9.3 deg/s,
 no falls, worst variant 0.81) and 0.83 on the table (13.2 deg/s, 0.1 falls,
 worst variant 0.80); it replaces e8217 as the mixed pick.
 Round 6q (running, ends ~00:40): four more seeds of this recipe, spatial noise
-1.0, and noise 0.5 without the lag. Round 6p (rstatic randomised 5-12)
-is being evaluated.
+1.0, and noise 0.5 without the lag. 
+
+Round 6p (p100, 4 h): the weakest variant of every mixed pick is carpet
+stiction 10 (`rs10`, outside the training range 5-9), so the carpet
+stiction range was widened to 5-12, on the 6l recipe (n=3), the 6m lag
+recipe (n=3) and the carpet-only lag recipe (n=2).
+
+| arm (rstatic 5-12) | carpet corr | swing | table corr | swing | rs10 corr |
+|---|---|---|---|---|---|
+| spatial 0.3, noise 0.3 | 0.62 ± 0.09 | 0.15 | 0.84 ± 0.00 | 0.01 | 0.43 ± 0.02 |
+| lag | 0.62 ± 0.11 | 0.15 | 0.81 ± 0.01 | 0.03 | 0.43 ± 0.10 |
+| carpet only + lag | 0.79 ± 0.04 | 0.09 | | | 0.49 ± 0.27 |
+
+A wider stiction range hurts everywhere on carpet, including the stiff-carpet
+variant it was meant to fix (rs10 0.43 against 0.72 for the same recipes with
+5-9 in 6m), and the carpet-only policy drops from 0.93 to 0.79. Stiction
+above about 9 seems to make carpet too hard to learn on in the time
+available, so the range stays 5-9.
 
 ### 11.4 Picks for the robot
 
