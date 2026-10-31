@@ -17,6 +17,7 @@ run dirs under `/work/DoyaU/vasilache/work/`):
 |---|---|---|---|
 | r6_mixed | e8261_simrobot_command65_flat_20261031_202926_wDnlSv | 838500 | carpet and table: try this first |
 | r6_mixed_2 | e8247_simrobot_command65_flat_20261031_153535_gXy2vI | 838500 | carpet and table, same recipe, second seed |
+| r6_mixed_ar | e8283_simrobot_command65_flat_20261101_015916_J5azWy | 916500 | carpet and table, recipe with half the action-rate penalty, steadiest run |
 | r6_carpet | e8167_simrobot_command65_flat_20261030_233514_eiGqqg | 916500 | carpet only |
 | r6_carpet_lag | e8226_simrobot_command65_flat_20261031_100006_wV1Q3O | 916500 | carpet only, trained with sensor-lag randomisation |
 | r6_mixed_sp | e8217_simrobot_command65_flat_20261031_071633_sNSoGP | 799500 | carpet and table, spatial smoothing without lag randomisation |
@@ -28,8 +29,9 @@ The mixed pick combines sensor-lag randomisation (0-15 ms) with CAPS spatial
 smoothing (0.3, noise 0.5); in sim it tracks 0.92 on carpet against 0.86 for
 the Friday-night pick, with less wobble, no falls, and little change between
 checkpoints (§11.3, §11.4). The others let you tell the two changes apart on
-the robot. The recipe replicates over six seeds (§11.3); round 6r (more seeds,
-Sunday) only changes this table if it clearly wins.
+the robot. Over ten seeds the recipe's
+level varies between seeds, so the picks are the best checkpoints of the best
+seeds; rounds 6r and 6s (Sunday) added `r6_mixed_ar` and found nothing better.
 
 ## For Monday 10-26 (weekend)
 
@@ -835,9 +837,9 @@ worst variant 0.82) and 0.86 on the table (0.1 falls, worst variant 0.84),
 slightly ahead of e8247 on the table, and becomes the mixed pick with e8247
 as its second seed.
 
-![rounds 6l-6r](figs/r6_arms.png)
+![rounds 6l-6s](figs/r6_arms.png)
 
-Figure: rounds 6l-6r, mixed-floor arms. Tracking (fit corr) averaged over
+Figure: rounds 6l-6s, mixed-floor arms. Tracking (fit corr) averaged over
 the last five checkpoints, its SD across them, and falls per minute; bars
 are mean ± std over seeds (n=2-10).
 
@@ -865,7 +867,30 @@ without it).
 
 The sim results are now close to saturated: the best mixed policy is within
 0.01 of the carpet-only one on carpet and has no weak robustness variant.
-The open question is the robot, which only Monday's test can answer. 
+The open question is the robot, which only Monday's test can answer.
+
+Round 6s (v100, 4 h): three changes to the recipe aimed at its remaining
+weakness, about one fall per minute on the table: tilt penalty 0.25 to 0.4
+(n=3), reward-side action-rate penalty 0.5 to 0.25 (n=3; the spatial term
+might make it redundant), and temporal CAPS smoothing 0.3 to 0.15 (n=2).
+
+| arm | n | carpet corr | swing | falls/min | table corr | swing | falls/min |
+|---|---|---|---|---|---|---|---|
+| recipe (6r) | 10 | 0.82 ± 0.06 | 0.06 | 0.2 | 0.83 ± 0.02 | 0.02 | 0.8 |
+| tilt penalty 0.4 | 3 | 0.79 ± 0.04 | 0.07 | 1.2 | 0.84 ± 0.02 | 0.03 | 3.3 |
+| action rate 0.25 | 3 | 0.82 ± 0.05 | 0.03 | 1.1 | 0.84 ± 0.02 | 0.02 | 1.0 |
+| temporal smooth 0.15 | 2 | 0.74 ± 0.02 | 0.11 | 0.1 | 0.80 ± 0.05 | 0.06 | 6.5 |
+
+None of the arms beats the recipe. A stronger tilt penalty and weaker
+temporal smoothing both raise table falls (one smooth-0.15 checkpoint falls
+60 times a minute on the table). Halving the action-rate penalty leaves the
+level unchanged, but one of its seeds, e8283, is the steadiest run of
+round 6: at every swept checkpoint it tracks 0.82-0.91 on carpet and 0.83-0.87
+on the table with at most 0.3 falls/min. In ten-minute evaluations e8283
+@916500 matches the pick (carpet 0.90, table 0.84, no falls, worst variant
+0.83 / 0.80), so it is added to the table above as `r6_mixed_ar`, a third
+seed from a slightly different recipe. 6s was the last training round.
+ 
 
 Round 6p (p100, 4 h): the weakest variant of every mixed pick is carpet
 stiction 10 (`rs10`, outside the training range 5-9), so the carpet
@@ -897,6 +922,7 @@ single checkpoints chosen by the sweeps):
 | e8226 @916500 (carpet-only, lag) | carpet | 0.94 | 9.5 | 0.0 | 0.81 | 676 / -746 |
 | **e8261 @838500** (mixed, lag + spatial) | carpet | 0.92 | 10.4 | 0.0 | 0.82 | 968 / -1023 |
 | e8247 @838500 (mixed, lag + spatial) | carpet | 0.91 | 9.3 | 0.0 | 0.81 | 876 / -955 |
+| e8283 @916500 (mixed, lag + spatial, action rate 0.25) | carpet | 0.90 | 9.7 | 0.0 | 0.83 | 822 / -829 |
 | e8217 @799500 (mixed, spatial) | carpet | 0.85 | 11.9 | 0.1 | 0.70 | 803 / -834 |
 | e8214 @799500 (mixed, spatial) | carpet | 0.87 | 11.6 | 0.2 | 0.77 | 974 / -780 |
 | e8164 @877500 (mixed) | carpet | 0.86 | 9.2 | 0.1 | 0.61 | 648 / -912 |
@@ -905,6 +931,7 @@ single checkpoints chosen by the sweeps):
 | e6033 (round 5) | table | 0.88 | 32.7 | 35.9 | 0.65 | 1668 / -858 |
 | **e8261 @838500** (mixed, lag + spatial) | table | 0.86 | 15.0 | 0.1 | 0.84 | 1839 / -1256 |
 | e8247 @838500 (mixed, lag + spatial) | table | 0.83 | 13.2 | 0.1 | 0.80 | 1373 / -1172 |
+| e8283 @916500 (mixed, lag + spatial, action rate 0.25) | table | 0.84 | 15.2 | 0.0 | 0.80 | 1576 / -1452 |
 | e8217 @799500 (mixed, spatial) | table | 0.85 | 16.1 | 0.0 | 0.77 | 1623 / -1222 |
 | e8214 @799500 (mixed, spatial) | table | 0.82 | 15.3 | 0.9 | 0.79 | 1482 / -1072 |
 | e8164 @877500 (mixed) | table | 0.82 | 14.9 | 0.5 | 0.74 | 1650 / -1194 |
