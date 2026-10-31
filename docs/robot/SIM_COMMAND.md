@@ -786,8 +786,22 @@ policies (carpet 0.88, table 0.88, worst variant 0.79/0.80) but falls 3.9
 times a minute on the table against 0 for e8217; it is listed as an
 alternative. The carpet-only lag run e8226 @916500 equals e8167 (0.94, no
 falls, worst variant 0.81).
-Round 6n (running, ends ~16:20): the same three arms with the spatial term
-(0.3, noise 0.3).
+Round 6n (p100, 4 h): the 6m arms with the spatial term (0.3, noise 0.3)
+added. Mixed n=4, mixed with actor lr 1e-4 n=2, carpet-only n=2.
+
+| arm | carpet corr | swing | falls/min | table corr | swing | falls/min |
+|---|---|---|---|---|---|---|
+| mixed + lag + spatial | 0.76 ± 0.03 | 0.07 | 0.2 | 0.82 ± 0.00 | 0.02 | 0.2 |
+| mixed + lag + spatial, actor lr 1e-4 | 0.74 ± 0.04 | 0.08 | 0.8 | 0.82 ± 0.01 | 0.03 | 2.0 |
+| carpet only + lag + spatial | 0.88 ± 0.02 | 0.03 | 0.0 | | | |
+
+The two do not add up. With both, falls stay as low as with the spatial term
+alone, but tracking falls back to the 6l level or below (0.76 against 0.79
+and 0.80 on carpet), and on the carpet-only recipe the spatial term costs
+tracking (0.88 against 0.93 without it). No 6n run beats the picks.
+Round 6o (running, ends ~20:00): three more seeds of the e8217 recipe (spatial
+alone), lag plus spatial with a wider lag range (0-30 ms), and with spatial
+noise 0.5.
 
 ### 11.4 Picks for the robot
 
