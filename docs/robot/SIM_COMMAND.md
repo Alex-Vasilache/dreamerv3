@@ -15,21 +15,20 @@ run dirs under `/work/DoyaU/vasilache/work/`):
 
 | name | run dir | step | for |
 |---|---|---|---|
+| r6_mixed | e8247_simrobot_command65_flat_20261031_153535_gXy2vI | 838500 | carpet and table: try this first |
 | r6_carpet | e8167_simrobot_command65_flat_20261030_233514_eiGqqg | 916500 | carpet only |
-| r6_mixed | e8217_simrobot_command65_flat_20261031_071633_sNSoGP | 799500 | carpet and table |
-| r6_mixed_s | e8214_simrobot_command65_flat_20261031_071633_FbmAx5 | 799500 | carpet and table (second spatial run) |
-| r6_mixed_fri | e8164_simrobot_command65_flat_20261030_233513_WNSm4b | 877500 | carpet and table (Friday-night pick, no spatial term) |
-| r6_mixed_b | e8136_simrobot_command65_flat_20261030_170717_sjT872 | 643500 | carpet and table (backup) |
-| r6_carpet_b | e8132_simrobot_command65_flat_20261030_170714_wSS4ze | 643500 | carpet only (backup) |
-| r6_mixed_lag | e8222_simrobot_command65_flat_20261031_093937_6hk65v | 838500 | carpet and table (trained with sensor-lag randomisation; tracks best, falls more on the table) |
-| r6_carpet_lag | e8226_simrobot_command65_flat_20261031_100006_wV1Q3O | 916500 | carpet only (trained with sensor-lag randomisation) |
+| r6_carpet_lag | e8226_simrobot_command65_flat_20261031_100006_wV1Q3O | 916500 | carpet only, trained with sensor-lag randomisation |
+| r6_mixed_sp | e8217_simrobot_command65_flat_20261031_071633_sNSoGP | 799500 | carpet and table, spatial smoothing without lag randomisation |
+| r6_mixed_lag | e8222_simrobot_command65_flat_20261031_093937_6hk65v | 838500 | carpet and table, lag randomisation without spatial smoothing (falls more on the table) |
+| r6_mixed_fri | e8164_simrobot_command65_flat_20261030_233513_WNSm4b | 877500 | carpet and table, Friday-night pick (neither) |
 
 Do not put a carpet-only policy on the table: in sim it runs away there.
-Rounds 6i-6k (lower learning rates, sensor-lag randomisation, 6-h runs) did
-not beat these picks (§11.3). Round 6l (CAPS spatial smoothing) gave the new
-mixed pick: same tracking as e8164, fewer falls, steadier across checkpoints
-(§11.3, §11.4). Rounds 6m/6n (lag randomisation, with and without the
-spatial term) finish Saturday afternoon; this table is updated if they win.
+The mixed pick combines sensor-lag randomisation (0-15 ms) with CAPS spatial
+smoothing (0.3, noise 0.5); in sim it tracks 0.91 on carpet against 0.86 for
+the Friday-night pick, with less wobble, no falls, and little change between
+checkpoints (§11.3, §11.4). The others let you tell the two changes apart on
+the robot. Rounds 6p/6q finish Saturday night; this table is updated if they
+win.
 
 ## For Monday 10-26 (weekend)
 
@@ -799,9 +798,27 @@ The two do not add up. With both, falls stay as low as with the spatial term
 alone, but tracking falls back to the 6l level or below (0.76 against 0.79
 and 0.80 on carpet), and on the carpet-only recipe the spatial term costs
 tracking (0.88 against 0.93 without it). No 6n run beats the picks.
-Round 6o (running, ends ~20:00): three more seeds of the e8217 recipe (spatial
-alone), lag plus spatial with a wider lag range (0-30 ms), and with spatial
-noise 0.5.
+Round 6o (v100, 4 h): three more seeds of the e8217 recipe (spatial alone),
+lag plus spatial with a wider lag range (0-30 ms, n=3), and lag plus spatial
+with spatial noise 0.5 (n=2).
+
+| arm | carpet corr | swing | falls/min | table corr | swing | falls/min |
+|---|---|---|---|---|---|---|
+| spatial 0.3, noise 0.3 (6l recipe, new seeds) | 0.77 ± 0.06 | 0.13 | 1.0 | 0.79 ± 0.08 | 0.11 | 2.2 |
+| lag 0-30 ms + spatial 0.3, noise 0.3 | 0.80 ± 0.01 | 0.04 | 0.2 | 0.84 ± 0.02 | 0.01 | 0.9 |
+| lag 0-15 ms + spatial 0.3, noise 0.5 | 0.85 ± 0.00 | 0.06 | 0.1 | 0.84 ± 0.00 | 0.02 | 0.6 |
+
+The 6l recipe does not replicate as steady: one new seed (e8241) drops to
+0.31 on carpet and 0.11 on the table at one checkpoint, so e8217 was a good
+seed rather than a reliable recipe. With the lag randomisation and a larger
+spatial noise (0.5) both seeds track 0.85 on carpet and 0.84 on the table
+with little swing and almost no falls, the best mixed result of round 6. In
+ten-minute evaluations e8247 @838500 tracks 0.91 on carpet (wobble 9.3 deg/s,
+no falls, worst variant 0.81) and 0.83 on the table (13.2 deg/s, 0.1 falls,
+worst variant 0.80); it replaces e8217 as the mixed pick.
+Round 6q (running, ends ~00:40): four more seeds of this recipe, spatial noise
+1.0, and noise 0.5 without the lag. Round 6p (rstatic randomised 5-12)
+is being evaluated.
 
 ### 11.4 Picks for the robot
 
@@ -814,13 +831,15 @@ single checkpoints chosen by the sweeps):
 | **e8167 @916500** (carpet-only) | carpet | 0.93 | 9.2 | 0.0 | 0.83 | 648 / -673 |
 | e8132 @643500 (carpet-only) | carpet | 0.90 | 9.8 | 0.1 | 0.74 | 706 / -624 |
 | e8226 @916500 (carpet-only, lag) | carpet | 0.94 | 9.5 | 0.0 | 0.81 | 676 / -746 |
-| **e8217 @799500** (mixed, spatial) | carpet | 0.85 | 11.9 | 0.1 | 0.70 | 803 / -834 |
+| **e8247 @838500** (mixed, lag + spatial) | carpet | 0.91 | 9.3 | 0.0 | 0.81 | 876 / -955 |
+| e8217 @799500 (mixed, spatial) | carpet | 0.85 | 11.9 | 0.1 | 0.70 | 803 / -834 |
 | e8214 @799500 (mixed, spatial) | carpet | 0.87 | 11.6 | 0.2 | 0.77 | 974 / -780 |
 | e8164 @877500 (mixed) | carpet | 0.86 | 9.2 | 0.1 | 0.61 | 648 / -912 |
 | e8222 @838500 (mixed, lag) | carpet | 0.88 | 10.6 | 0.1 | 0.79 | 784 / -875 |
 | e8136 @643500 (mixed) | carpet | 0.83 | 12.9 | 0.1 | 0.66 | 710 / -888 |
 | e6033 (round 5) | table | 0.88 | 32.7 | 35.9 | 0.65 | 1668 / -858 |
-| **e8217 @799500** (mixed, spatial) | table | 0.85 | 16.1 | 0.0 | 0.77 | 1623 / -1222 |
+| **e8247 @838500** (mixed, lag + spatial) | table | 0.83 | 13.2 | 0.1 | 0.80 | 1373 / -1172 |
+| e8217 @799500 (mixed, spatial) | table | 0.85 | 16.1 | 0.0 | 0.77 | 1623 / -1222 |
 | e8214 @799500 (mixed, spatial) | table | 0.82 | 15.3 | 0.9 | 0.79 | 1482 / -1072 |
 | e8164 @877500 (mixed) | table | 0.82 | 14.9 | 0.5 | 0.74 | 1650 / -1194 |
 | e8222 @838500 (mixed, lag) | table | 0.88 | 16.5 | 3.9 | 0.80 | 1551 / -1719 |
