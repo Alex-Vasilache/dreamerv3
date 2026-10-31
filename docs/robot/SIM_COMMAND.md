@@ -21,6 +21,8 @@ run dirs under `/work/DoyaU/vasilache/work/`):
 | r6_mixed_fri | e8164_simrobot_command65_flat_20261030_233513_WNSm4b | 877500 | carpet and table (Friday-night pick, no spatial term) |
 | r6_mixed_b | e8136_simrobot_command65_flat_20261030_170717_sjT872 | 643500 | carpet and table (backup) |
 | r6_carpet_b | e8132_simrobot_command65_flat_20261030_170714_wSS4ze | 643500 | carpet only (backup) |
+| r6_mixed_lag | e8222_simrobot_command65_flat_20261031_093937_6hk65v | 838500 | carpet and table (trained with sensor-lag randomisation; tracks best, falls more on the table) |
+| r6_carpet_lag | e8226_simrobot_command65_flat_20261031_100006_wV1Q3O | 916500 | carpet only (trained with sensor-lag randomisation) |
 
 Do not put a carpet-only policy on the table: in sim it runs away there.
 Rounds 6i-6k (lower learning rates, sensor-lag randomisation, 6-h runs) did
@@ -765,8 +767,25 @@ the first change that makes a mixed policy about as steady across checkpoints
 as a carpet-only one. Ten-minute evaluations of the best checkpoints are in
 11.4; e8217 @799500 (spatial 0.3, noise 0.3) replaces e8164 as the mixed pick.
 
-Round 6m (running, ends ~14:00): the lag randomisation on the 6g mixed recipe
-(sigma 0.6, tilt 0.25), alone and with actor lr 1e-4, and on the carpet recipe.
+Round 6m (v100, 4 h): the tilt-lag randomisation of 6i on the 6g mixed
+recipe (sigma 0.6, tilt 0.25), alone (n=3) and with actor lr 1e-4 (n=3), and
+on the carpet recipe (n=2). Scored as in 6l.
+
+| arm | carpet corr | swing | falls/min | table corr | swing | falls/min |
+|---|---|---|---|---|---|---|
+| mixed + lag | 0.80 ± 0.02 | 0.06 | 2.0 | 0.86 ± 0.01 | 0.02 | 2.3 |
+| mixed + lag, actor lr 1e-4 | 0.75 ± 0.04 | 0.09 | 2.8 | 0.82 ± 0.02 | 0.08 | 17.9 |
+| carpet only + lag | 0.93 ± 0.01 | 0.02 | 0.0 | | | |
+
+The lag randomisation alone matches the spatial term on checkpoint swing and
+tracks slightly better (0.80 against 0.79 on carpet, 0.86 against 0.83 on the
+table) but falls more often, mostly on the table. The lower actor learning
+rate hurts again (one checkpoint of e8225 falls 240 times a minute on the
+table). In ten-minute evaluations e8222 @838500 tracks best of all mixed
+policies (carpet 0.88, table 0.88, worst variant 0.79/0.80) but falls 3.9
+times a minute on the table against 0 for e8217; it is listed as an
+alternative. The carpet-only lag run e8226 @916500 equals e8167 (0.94, no
+falls, worst variant 0.81).
 Round 6n (running, ends ~16:20): the same three arms with the spatial term
 (0.3, noise 0.3).
 
@@ -780,14 +799,17 @@ single checkpoints chosen by the sweeps):
 | e6031 (round 5) | carpet | 0.66 | 31 | 12.7 | 0.17 | 568 / -1105 |
 | **e8167 @916500** (carpet-only) | carpet | 0.93 | 9.2 | 0.0 | 0.83 | 648 / -673 |
 | e8132 @643500 (carpet-only) | carpet | 0.90 | 9.8 | 0.1 | 0.74 | 706 / -624 |
+| e8226 @916500 (carpet-only, lag) | carpet | 0.94 | 9.5 | 0.0 | 0.81 | 676 / -746 |
 | **e8217 @799500** (mixed, spatial) | carpet | 0.85 | 11.9 | 0.1 | 0.70 | 803 / -834 |
 | e8214 @799500 (mixed, spatial) | carpet | 0.87 | 11.6 | 0.2 | 0.77 | 974 / -780 |
 | e8164 @877500 (mixed) | carpet | 0.86 | 9.2 | 0.1 | 0.61 | 648 / -912 |
+| e8222 @838500 (mixed, lag) | carpet | 0.88 | 10.6 | 0.1 | 0.79 | 784 / -875 |
 | e8136 @643500 (mixed) | carpet | 0.83 | 12.9 | 0.1 | 0.66 | 710 / -888 |
 | e6033 (round 5) | table | 0.88 | 32.7 | 35.9 | 0.65 | 1668 / -858 |
 | **e8217 @799500** (mixed, spatial) | table | 0.85 | 16.1 | 0.0 | 0.77 | 1623 / -1222 |
 | e8214 @799500 (mixed, spatial) | table | 0.82 | 15.3 | 0.9 | 0.79 | 1482 / -1072 |
 | e8164 @877500 (mixed) | table | 0.82 | 14.9 | 0.5 | 0.74 | 1650 / -1194 |
+| e8222 @838500 (mixed, lag) | table | 0.88 | 16.5 | 3.9 | 0.80 | 1551 / -1719 |
 | e8136 @643500 (mixed) | table | 0.86 | 15.9 | 0.4 | 0.76 | 1626 / -1491 |
 
 In the sim, against round 5: tracking on carpet up from 0.66 to 0.93, wobble
