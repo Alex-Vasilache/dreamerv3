@@ -21,9 +21,10 @@ run dirs under `/work/DoyaU/vasilache/work/`):
 | r6_carpet_b | e8132_simrobot_command65_flat_20261030_170714_wSS4ze | 643500 | carpet only (backup) |
 
 Do not put a carpet-only policy on the table: in sim it runs away there.
-Round 6i-6k (lower learning rates, sensor-lag randomisation, 6-h runs of the
-best recipes) finish Saturday morning; this table is updated if they beat
-these picks.
+Rounds 6i-6k (lower learning rates, sensor-lag randomisation, 6-h runs) did
+not beat these picks (§11.3). Rounds 6l (CAPS spatial smoothing) and 6m
+(lag randomisation on the best mixed recipe) finish Saturday afternoon; this
+table is updated if they do.
 
 ## For Monday 10-26 (weekend)
 
@@ -702,6 +703,45 @@ carpet tracking from one checkpoint to the next while staying steady on the
 table. The swings do not follow which floor the run was on when the
 checkpoint was saved (carpet-phase vs table-phase checkpoints: e8163 0.84 vs
 0.75, e8164 0.72 vs 0.75, e8136 and e8137 equal).
+
+Round 6i (mixed 6d recipe, p100, 4 h ≈ 0.92M steps, n=2): is the swing
+between checkpoints a learning-rate effect? Each run is scored at its last
+five checkpoints (every 39k steps); the table gives the mean over those five
+and, as "swing", the SD across them, each averaged over the two seeds
+(`r6/ckptstats.py`).
+
+| arm | carpet corr | carpet swing | table corr | table swing |
+|---|---|---|---|---|
+| 6d recipe (lr 3e-4) | 0.64 ± 0.04 | 0.16 | 0.81 ± 0.03 | 0.03 |
+| actor lr 1e-4 | 0.66 ± 0.03 | 0.07 | 0.84 ± 0.01 | 0.04 |
+| world-model and actor lr 1e-4 | 0.68 ± 0.08 | 0.05 | 0.81 ± 0.02 | 0.02 |
+| tilt-sensor lag randomised 0-15 ms | 0.76 ± 0.04 | 0.07 | 0.84 ± 0.01 | 0.02 |
+
+A lower learning rate halves to thirds the swing on carpet but does not
+raise the level. Randomising the tilt lag (`sim_rand ...,tilt_lag:0:0.015`)
+gives the best carpet tracking of the round and the best worst-variant
+scores (0.58 and 0.66 against 0.34-0.50), at no cost on the table.
+
+![round 6i](figs/r6i_lr_lag.png)
+
+Round 6j/6k (v100, 6 h ≈ 1.38M steps): does longer training settle the
+mixed policies? Same scoring (last five checkpoints, every 39k steps).
+
+| arm | n | carpet corr | carpet swing | table corr | table swing |
+|---|---|---|---|---|---|
+| carpet only (e8132 recipe) | 2 | 0.89 ± 0.05 | 0.06 | | |
+| mixed 6d recipe, actor lr 1e-4 | 2 | 0.79 ± 0.04 | 0.08 | 0.74 ± 0.05 | 0.10 |
+| mixed sigma 0.6, tilt 0.25 (6g best) | 3 | 0.71 ± 0.04 | 0.16 | 0.83 ± 0.01 | 0.03 |
+| table only (6g recipe) | 1 | | | 0.72 | 0.20 |
+
+Six hours do not help the mixed policies: carpet tracking and its swing are
+the same as at 4 h (e8163/4), and on the table the 6 h checkpoints fall more
+often (1-11 falls/min against 0-1). Carpet-only training stays stable at any
+length (e8194: 0.94 at all five checkpoints, worst variant 0.80, same as
+e8167). The picks in 11.4 stay the 4 h runs.
+
+Round 6m (running, ends ~14:00): the lag randomisation on the 6g mixed recipe
+(sigma 0.6, tilt 0.25), alone and with actor lr 1e-4, and on the carpet recipe.
 
 ### 11.4 Picks for the robot
 
