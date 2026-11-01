@@ -1655,6 +1655,13 @@ no_gae_expl:
   agent:
     mgr_expl_weight: 0.0
 
+# TCE at a fixed strength (keeps the 0.5M half-life). With no_gae_expl the lean
+# controller switches TCE off before the first reward (e9600: advantage 0, lean
+# > 1 -> weight at its 0.001 floor, pin pads 0 at 2.5M).
+tce_wfix2:
+  agent:
+    mgr_fromto: {w_fixed: 2.0}
+
 # UCB in imagination, arm B as a TABLE (start 2 x goal 4 bins/block), meant for
 # the evenness codebook (goal_even), where index bins are even in goal space.
 # Fast held-out offline fit on V+SOM+even e2006-e2023 at 2M

@@ -639,6 +639,22 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+**e9600-e9629 (no_gae_expl, adaptive TCE weight) CANCELLED 2026-11-01 13:00** at 0.6-2.6M:
+pin pad four/five/six all 0 at 2.1-2.6M (every other arm solves four by 0.3M). Cause:
+with the reconstruction reward off and no task reward yet the manager advantage is
+exactly 0 (adv_mag 0), manager entropy sits at 0.8 > 0.5 target (entropy scale at its
+1e-5 floor) and lean > 1, so TCE's lean controller drives its weight to the 0.001
+floor -- nothing steers the manager. A controller interaction, not the intended test.
+Relaunched as **e9630-e9659 (array 4784610): `no_gae_expl tce_wfix2`** = TCE at fixed
+w = 2 (0.5M half-life) with Director's exploration reward off. Caveat: compare vs TCE
+(adaptive w, 1-4 in practice) -- the weight scheme differs slightly too.
+
+**V+SOM+TCE FINAL 2026-11-01 (e8600-e8629, 5 seeds, late 3.5-4.0M,
+`collapse_figs/somtce_matched.png`):** pin pad 4 298, 5 236, **6 37 (1/5)**, cartpole 691,
+cheetah 555, hopper 226; normalised 50% vs V+US-SOM+TCE 58%, V+SOM 53%, OG 50%. With
+TCE the evenness (US-SOM) matters: same on pin pad four/five, but pin pad six 1/5 vs
+4/5 and DMC 4-7 pts lower. Keep US-SOM.
+
 **Decision 2026-11-01 01:00: keep US-SOM.** V+SOM+TCE (e8600, n=3-4, late 3.5-4.0M):
 pin pad 4 297, 5 239, **6 46 (1/4 solved)**, cartpole 712, cheetah 562, hopper 206;
 normalised ~51% vs V+US-SOM+TCE 58% (pin pads level on four/five; the gap is pin pad
