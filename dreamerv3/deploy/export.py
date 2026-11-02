@@ -20,12 +20,12 @@ KEEP_PREFIXES = ('enc/', 'dyn/', 'pol/')
 DROP_PREFIXES = ('dyn/prior', 'dyn/priorlogit')
 
 
-def filter_params(params):
+def filter_params(params, dtype='float32'):
   keep = {}
   for k, v in params.items():
     if not k.startswith(KEEP_PREFIXES) or k.startswith(DROP_PREFIXES):
       continue
-    keep[k] = np.asarray(v, np.float32)
+    keep[k] = np.asarray(v, np.float32).astype(dtype)
   if not keep:
     raise ValueError(
         f'No policy params found. Keys looked like: {sorted(params)[:5]}')
@@ -106,9 +106,10 @@ def build_meta(config, params):
   return meta
 
 
-def pack(config, params):
-  """Return (npz_bytes, meta) for the policy params in `params`."""
-  keep = filter_params(params)
+def pack(config, params, dtype='float32'):
+  """Return (npz_bytes, meta) for the policy params in `params`. The phone
+  loads any float dtype into float32, so `dtype` only sets the bytes sent."""
+  keep = filter_params(params, dtype)
   meta = build_meta(config, keep)
   buffer = io.BytesIO()
   np.savez(buffer, __meta__=np.array(json.dumps(meta)), **keep)

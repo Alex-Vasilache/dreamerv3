@@ -53,7 +53,7 @@ class RobotSim(robot_env.SmartphoneRobot):
       sim_motor_tau=0.05, sim_top_speed=4900.0, sim_track=0.12,
       sim_noise=1.0, sim_eq_range=0.0175, sim_substep=0.002, seed=0, **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
-                'pace', 'config', 'policy_dir'):
+                'weights_dtype', 'weights_kbps', 'pace', 'config', 'policy_dir'):
       kwargs.pop(key, None)
     # Keys of the MuJoCo model (robot_mujoco.py); not used here.
     for key in ('sim_wheel_omega', 'sim_stall_torque', 'sim_armature',

@@ -17,6 +17,17 @@ elif [[ $JOB == local* ]]; then
 else
   trainer_sh "scancel $JOB" && echo "cancelled job $JOB"
 fi
+if [ -f "$RELAY_PID" ]; then
+  pkill -P "$(cat "$RELAY_PID")" 2>/dev/null; kill "$(cat "$RELAY_PID")" 2>/dev/null \
+    && echo "stopped the relay"
+  rm -f "$RELAY_PID"
+fi
 if command -v adb >/dev/null && adb get-state >/dev/null 2>&1; then
   adb shell am force-stop $APP && echo "stopped the phone app"
+  # A NO_BASE link test leaves the app in no-base mode, where saved policies
+  # run with the wheels off; put it back.
+  if adb shell cat $PHONE_FILES/trainer.json 2>/dev/null | grep -q '"no_base": true'; then
+    adb shell "sed -i 's/, \"no_base\": true//' $PHONE_FILES/trainer.json" \
+      && echo "phone back in base mode"
+  fi
 fi

@@ -23,6 +23,11 @@ ROBOT_TRAINER=${ROBOT_TRAINER:-local}
 ROBOT_RUNS=${ROBOT_RUNS:-$HOME/logdir/robot}
 ROBOT_SETUP=${ROBOT_SETUP:-}
 ROBOT_NUMBERS_CMD=${ROBOT_NUMBERS_CMD:-}
+# Slurm off the cluster's network (e.g. eduroam): relay the phone's link
+# through this computer and an ssh forward (train.sh).
+ROBOT_RELAY=${ROBOT_RELAY:-}
+RELAY_PID=${TMPDIR:-/tmp}/robot_relay.pid
+RELAY_LOG=${TMPDIR:-/tmp}/robot_relay.log
 
 robot_die() { echo "error: $*" >&2; exit 1; }
 

@@ -70,8 +70,15 @@ class _Link:
   a push never holds the env thread or a reset behind it.
   """
 
-  def __init__(self, sock, timeout, on_restart=None, on_pause=None):
+  def __init__(self, sock, timeout, on_restart=None, on_pause=None, rate=0.0):
     self.sock = sock
+    # Weight slices per second as bytes, 0 for as fast as the socket takes
+    # them. Over a slow relay the socket takes them far faster than the link
+    # drains: megabytes then sit in the relay's buffers ahead of every reply,
+    # and the phone sees rewards seconds late. Pacing below the link's rate
+    # keeps those buffers empty.
+    self._rate = float(rate)
+    self._next_slice = 0.0
     # Called on the reader thread when the phone asks for a fresh run, or to
     # pause or resume the robot or the training (with the frame); such a
     # frame is not queued, so the env thread only ever sees observations.
@@ -184,8 +191,13 @@ class _Link:
     try:
       while True:
         with self._cond:
-          while not self._closed and not self._ctrl and self._job is None:
-            self._cond.wait()
+          while not self._closed and not self._ctrl:
+            if self._job is None:
+              self._cond.wait()
+            elif (wait := self._next_slice - time.time()) > 0:
+              self._cond.wait(wait)
+            else:
+              break
           if self._closed:
             return
           ctrl = list(self._ctrl)
@@ -193,7 +205,7 @@ class _Link:
           job = self._job
         for data in ctrl:
           self.sock.sendall(data)
-        if job is None:
+        if job is None or time.time() < self._next_slice:
           continue
         header, blob, offset, chunk, on_done = job
         piece = blob[offset:offset + chunk]
@@ -203,6 +215,8 @@ class _Link:
           self.sock.sendall(_frame(dict(
               header, type='wchunk', offset=offset, total=len(blob)), piece))
         job[2] = offset + len(piece)
+        if self._rate > 0:
+          self._next_slice = time.time() + len(piece) / self._rate
         if job[2] >= len(blob):
           with self._cond:
             self._job = None
@@ -337,8 +351,8 @@ class SmartphoneRobot(embodied.Env):
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
-      policy_dir=None, weights_every=0.0, weights_poll=0.25, logdir=None,
-      pace=None, pause_file=None, start_paused=False):
+      policy_dir=None, weights_every=0.0, weights_dtype='float32',
+      weights_kbps=0.0, weights_poll=0.25, logdir=None, pace=None, pause_file=None, start_paused=False):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -371,6 +385,10 @@ class SmartphoneRobot(embodied.Env):
     # `online_publish_every` is what actually sets the cadence.
     self._weights_every = float(weights_every)
     self._weights_poll = float(weights_poll)
+    # float16 halves the push for a slow link (a learner across the world);
+    # the phone computes in float32 either way (numpy_policy.load).
+    self._weights_dtype = str(weights_dtype)
+    self._weights_kbps = float(weights_kbps)  # _Link: pacing, 0 off
     self._weights_stamp = None   # the policy the phone holds, as far as we know
     self._push_started = 0.0
     self._pusher = None
@@ -1086,7 +1104,7 @@ class SmartphoneRobot(embodied.Env):
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     link = _Link(sock, self.timeout, on_restart=(
         self._request_restart if self._restart_file else None),
-        on_pause=self._request_pause)
+        on_pause=self._request_pause, rate=self._weights_kbps * 1e3)
     try:
       hello, _ = link.get(self.timeout)
       if hello.get('type') != 'hello' or hello.get('protocol') != PROTOCOL:
@@ -1302,7 +1320,7 @@ class SmartphoneRobot(embodied.Env):
     data = _load_policy_pickle(path.read_bytes())
     params = data['params'] if isinstance(data, dict) and 'params' in data \
         else data
-    blob, _ = exportlib.pack(self._config, params)
+    blob, _ = exportlib.pack(self._config, params, self._weights_dtype)
     packed = time.time()
 
     def done(header):

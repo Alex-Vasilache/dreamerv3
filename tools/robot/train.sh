@@ -38,6 +38,13 @@ HZ=${HZ%.*}
 # Connected and ready, but the wheels held and the learner idle until the
 # dashboard starts each; minute 0 of its plots is when training starts.
 [ -z "${PAUSED:-}" ] || set -- "$@" --env.robot.start_paused True
+# Over the relay the weights cross a slow long-distance link (~100-300 KB/s
+# Saion to Europe): send them at half size, and paced below the link's rate
+# so the phone's rewards are not queued behind them. Flags given win.
+if [ -n "$ROBOT_RELAY" ]; then
+  [[ " $* " == *" --env.robot.weights_dtype"* ]] || set -- "$@" --env.robot.weights_dtype float16
+  [[ " $* " == *" --env.robot.weights_kbps"* ]] || set -- "$@" --env.robot.weights_kbps 64
+fi
 CONFIGS=${CONFIGS:-robot}
 STEPS=${STEPS:-100000}
 NO_BASE=${NO_BASE:-}
@@ -118,6 +125,19 @@ else
 fi
 [ -n "$IP" ] || robot_die "could not find an address for $NODE"
 echo "node $NODE ($IP), port $PORT, run dir $RUN_DIR"
+if [ -n "$ROBOT_RELAY" ] && [ "$ROBOT_TRAINER" = slurm ]; then
+  # Off the cluster's network: the phone connects to this computer, and an
+  # ssh forward carries it on to the node. Restarted if ssh drops; stop.sh
+  # ends it.
+  [ -f "$RELAY_PID" ] && { pkill -P "$(cat "$RELAY_PID")" 2>/dev/null; kill "$(cat "$RELAY_PID")" 2>/dev/null; }
+  nohup bash -c "while :; do ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+    -L 0.0.0.0:$PORT:$IP:$PORT $(q "$ROBOT_SSH"); sleep 3; done" >"$RELAY_LOG" 2>&1 </dev/null &
+  echo $! >"$RELAY_PID"
+  IP=$(local_ip)
+  [ -n "$IP" ] || robot_die "relay: could not find this computer's LAN address"
+  echo "relay: phone -> $IP:$PORT -> ssh $ROBOT_SSH -> node (log: $RELAY_LOG)"
+fi
 
 echo "== pointing the phone at it"
 # What the running app (if any) was started with, read before it is replaced.
