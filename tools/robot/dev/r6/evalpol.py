@@ -1,6 +1,6 @@
 """Evaluate trained command policies closed loop in the fitted sim and a robustness set,
 replaying a real recording's stick (hard forward/back).
-  python evalpol.py TAG CODE FLOOR RUN_DIR [RUN_DIR...]   (env MINUTES, CKPT)"""
+  python evalpol.py TAG CODE FLOOR RUN_DIR [RUN_DIR...]   (env MINUTES, CKPT, BAL=1 for balance policies)"""
 import os, subprocess, sys
 W = '/work/DoyaU/vasilache/work'; R = f'{W}/sysid/recordings/r5_robot_20261030'
 STICK = {'carpet': f'{R}/sim5_carpet_command_20261030_130541.csv', 'table': f'{R}/sim5_table_command_20261030_130843.csv'}
@@ -28,7 +28,7 @@ def main():
       base = f'{BASE},surface={floor},{BUMP[floor]}'
       specs.append(f'{name}:{base},' + opts.replace('C,', '').replace('C', ''))
     for k in range(0, len(specs), 5):
-      env = dict(os.environ, CODE=code, CMDS=STICK[floor])
+      env = dict(os.environ, CODE=code, CMDS='' if os.environ.get('BAL') else STICK[floor])  # BAL=1: balance, no stick
       out = subprocess.run(['sbatch', '--parsable', '-J', f'r6e_{tag}_{exp}', '-x', 'saion-gpu[01,02,04,06,07-10]',
                             f'{W}/sysid/r6/cl.sh', run, f'ev/{tag}/{exp}_{k}.json', os.environ.get('MINUTES', '3.5'), 'eval']
                            + specs[k:k + 5], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

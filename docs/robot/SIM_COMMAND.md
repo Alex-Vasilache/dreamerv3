@@ -23,6 +23,7 @@ run dirs under `/work/DoyaU/vasilache/work/`):
 | r6_mixed_sp | e8217_simrobot_command65_flat_20261031_071633_sNSoGP | 799500 | carpet and table, spatial smoothing without lag randomisation |
 | r6_mixed_lag | e8222_simrobot_command65_flat_20261031_093937_6hk65v | 838500 | carpet and table, lag randomisation without spatial smoothing (falls more on the table) |
 | r6_mixed_fri | e8164_simrobot_command65_flat_20261030_233513_WNSm4b | 877500 | carpet and table, Friday-night pick (neither) |
+| r6_bal_mixed | e9671_simrobot_balance65_flat_20261102_234625_H4ssVm | 760500 | balance only (no stick), carpet and table, same smoothing and lag randomisation (§11.5) |
 
 Do not put a carpet-only policy on the table: in sim it runs away there.
 The mixed pick combines sensor-lag randomisation (0-15 ms) with CAPS spatial
@@ -942,6 +943,44 @@ In the sim, against round 5: tracking on carpet up from 0.66 to 0.93, wobble
 down from 31 to 9 deg/s, falls from 13 to 0 per minute; on the table the
 same tracking with half the wobble and almost no falls. The mixed policies
 drive both floors; a carpet-only policy runs away on the table.
+
+### 11.5 Mixed-floor balance (round 6t, Monday night)
+
+Balance-only policies (task `balance`, no stick) trained with the command
+recipe's sim, randomisation (including sensor lag 0-15 ms) and smoothing
+(action-rate penalty 0.5, temporal CAPS 0.3, and the spatial CAPS term, now
+on by default at 0.3 / noise 0.5). Mixed floors (n=4, carpet bumper angles
+on both floors as for the mixed command policies) against carpet-only (n=2)
+and table-only (n=2, table bumper angles); v100, 4 h, e9670-e9677,
+`sbatch/sim_bal_r6t.txt`. Checkpoints were swept as in §11.3: wobble
+is the tilt-rate SD in the fitted sim, with the robot standing still.
+
+| arm | n | carpet wobble (deg/s) | falls/min | table wobble (deg/s) | falls/min | table worst-variant wobble |
+|---|---|---|---|---|---|---|
+| mixed | 4 | 2.0 ± 0.7 | 0.0 | 10.9 ± 2.0 | 3.3 ± 2.2 | 25.8 ± 3.4 |
+| carpet only | 2 | 1.4 ± 0.0 | 0.0 | | | |
+| table only | 2 | | | 8.7 ± 0.6 | 1.3 ± 0.3 | 37.4 ± 0.0 |
+
+![balance round 6t](figs/bal6t.png)
+
+Figure: round 6t balance policies; wobble, falls and worst-variant wobble
+over the last five checkpoints, bars mean ± std over seeds, dots single
+seeds.
+
+Carpet is easy for every run (about 1-2 deg/s, no falls). The table is where
+they differ: on average mixed training wobbles and falls a little more
+there than table-only training, but its seeds vary, and the best one, e9671,
+beats both table-only runs. In ten-minute evaluations e9671 @760500 wobbles
+0.8 deg/s on carpet and 7.7 on the table with no falls, and stays below
+9 deg/s with almost no falls on every robustness variant except one. That
+exception is the balance point: if the robot's true balance point sits 1 deg
+further forward than the policy's setpoint (`eqp1`), every balance policy
+falls on the table, 45-60 times a minute; 1 deg further back (`eqm1`) it
+wobbles at about 20 deg/s but does not fall. The command policies do not
+have this weakness, because the stick commands speed rather than a tilt
+setpoint. So on the table the balance point (`theta_zero`) has to be set
+correctly for the balance pick. e9671 @760500 is `r6_bal_mixed` in the
+table at the top.
 
 ## Bugs found on the way
 
