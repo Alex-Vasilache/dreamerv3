@@ -639,6 +639,21 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+### e10000-e10032: TCE with 4x12-bit world-model hash + fixed w=2 (2026-11-03, array 4792002)
+
+`... goal_som_line goal_even fromto_dir tce_hash4 pubmatch`: start side = 4 independent
+12-bit SimHashes of the per-state normalised deter, bonus averaged over the 4 tables
+(tile coding), TCE weight fixed at 2. 6 tasks x 5 seeds + pin pad six seeds 5-7
+(8 seeds there: pin pad six solve counts are too noisy at 5). Why: tce_hash (e9500,
+1x16-bit, adaptive w) is level with TCE overall (58%, -0.6 pts, p=0.90) and better on
+pin pad four/five, but on its pin pad six misses the adaptive weight fell to
+0.03-0.2. Offline (`experiments/goal_geometry/wm_multihash_check.py` on the hash
+study features): 4x12 vs 1x16 keeps more of a state's cells under resampling noise
+(pin pad 0.69 vs 0.61, cheetah 0.77 vs 0.70, cartpole 0.89 vs 0.91) and over 0.5M of
+drift (+0.06-0.11), with finer joint resolution (pin pad purity 0.997 vs 0.92).
+Exploration-reward-off arm (e9630) stopped 2026-11-02 23:30: conclusion already
+clear (can't drop Director's bonus); its last DMC seeds cancelled.
+
 **Interim 2026-11-02 17:00 (all TCE variants, finished runs, late 3-4M;
 `collapse_figs/tce_weekend_summary.md`, `weekend_matched.png`):** overall TCE 58% |
 world-model hash 56% (-2.4 pts vs TCE, p=0.53, n=3-4; pin pad four/five +25/+28,

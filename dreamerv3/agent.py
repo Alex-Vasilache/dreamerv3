@@ -413,9 +413,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           rc = config.dyn.rssm
           dim = (int(rc.deter) if self.fromto_hash.startswith('deter')
                  else int(rc.stoch) * int(rc.classes))
+          # hash_tables K > 1: K independent hashes, each with its own block of
+          # 2^bits rows; the bonus is averaged over them (tile coding), so a
+          # bit flip near one hash's boundary does not reset a state's count.
+          self._hash_k = int(getattr(_fcfg, 'hash_tables', 1))
+          self._hash_bits = bits
           self._hash_proj = np.random.default_rng(int(getattr(_fcfg, 'hash_seed', 0))).normal(
-              size=(dim, bits)).astype(np.float32)
-          hash_rows = 2 ** bits
+              size=(dim, self._hash_k * bits)).astype(np.float32)
+          hash_rows = self._hash_k * 2 ** bits
         self.fromto = fromto_mod.FromToCounts(
             start_bins=int(_fcfg.start_bins), goal_bins=int(_fcfg.goal_bins),
             classes=int(skill_shape_t[-1]), blocks=int(skill_shape_t[0]),
@@ -923,7 +928,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       st = sg(f32(feat['stoch']))
       x = st.reshape(st.shape[:-2] + (-1,))
     bits = (x @ jnp.asarray(self._hash_proj)) > 0
-    return (bits.astype(jnp.int32) * (2 ** jnp.arange(bits.shape[-1], dtype=jnp.int32))).sum(-1)
+    K, nb = getattr(self, '_hash_k', 1), getattr(self, '_hash_bits', bits.shape[-1])
+    if K == 1:
+      return (bits.astype(jnp.int32) * (2 ** jnp.arange(nb, dtype=jnp.int32))).sum(-1)
+    bits = bits.reshape(bits.shape[:-1] + (K, nb)).astype(jnp.int32)
+    rows = (bits * (2 ** jnp.arange(nb, dtype=jnp.int32))).sum(-1)       # (..., K)
+    return rows + jnp.arange(K, dtype=jnp.int32) * (2 ** nb)
 
   def policy(self, carry, obs, mode='train'):
     """One env step: encode obs, RSSM observe, sample policy action, update carry."""
@@ -1844,7 +1854,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       enc = enc['skill'] if isinstance(enc, dict) else enc
       start_ids = jnp.argmax(sg(enc.pred()), -1)                      # (M*n, L)
       if getattr(self, 'fromto_hash', ''):
-        start_ids = self._start_hash(imgfeat_eff).reshape(-1)          # (M*n,) rows
+        start_ids = self._start_hash(imgfeat_eff)
+        start_ids = (start_ids.reshape(-1) if getattr(self, '_hash_k', 1) == 1
+                     else start_ids.reshape(-1, self._hash_k))         # (M*n[, K]) rows
       logits = f32(_head_inner(mgr_policy['skill']).dist.logits)      # (M, n, L, C)
       probs = jax.nn.softmax(logits, -1).reshape((M_ * n_,) + logits.shape[2:])
       e_pi, e_uni = self.fromto.expected_novelty(start_ids, probs)

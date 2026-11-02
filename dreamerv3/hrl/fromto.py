@@ -60,8 +60,8 @@ class FromToCounts(nj.Module):
     self.tab = nj.Variable(jnp.zeros, (self.rows * self.cols,), f32, name='tab')
 
   def start_row(self, start_ids):
-    if self.hashed:
-      return start_ids.astype(i32).reshape(-1)
+    if self.hashed:   # (N,) or (N, K) row ids, K hash tables
+      return start_ids.astype(i32)
     q = jnp.minimum(start_ids.astype(i32) * self.start_bins // self.classes,
                     self.start_bins - 1)
     strides = self.start_bins ** jnp.arange(self.blocks - 1, -1, -1)
@@ -71,9 +71,12 @@ class FromToCounts(nj.Module):
     """``start_ids (N, L)`` ints (or ``(N,)`` row ids when hashed), ``probs (N, L, C)`` -> E_pi[b] (N,) and the
     uniform-policy E[b] (N,) for reference."""
     tab = jax.lax.stop_gradient(self.tab.read())
-    row = self.start_row(start_ids)                                  # (N,)
-    idx = row[:, None] * self.cols + jnp.arange(self.cols)[None]
-    bonus = 1.0 / jnp.sqrt(tab[idx] + 1.0)                           # (N, cols)
+    row = self.start_row(start_ids)                                  # (N,) or (N, K)
+    idx = row[..., None] * self.cols + jnp.arange(self.cols)
+    bonus = 1.0 / jnp.sqrt(tab[idx] + 1.0)                           # (N, [K,] cols)
+    mass = tab[idx].sum(-1)
+    if row.ndim == 2:   # K hash tables: average the bonus (E_pi is linear in it)
+      bonus, mass = bonus.mean(1), mass.mean(1)
     N, L, C = probs.shape
     # Class c -> bin min(c * bins // C, bins - 1), as in the counter; bins need
     # not divide C (3 bins over 8 classes: 3 / 3 / 2).
@@ -90,7 +93,7 @@ class FromToCounts(nj.Module):
 
     # Uniform over CLASSES (an untrained policy), binned like the policy.
     uni = jnp.broadcast_to(assign.mean(0), pb.shape)
-    self.last_row_mass = tab[idx].sum(-1)                            # evidence per state
+    self.last_row_mass = mass                                        # evidence per state
     return contract(bonus, pb), contract(bonus, uni)
 
 
@@ -140,8 +143,9 @@ class FromToCounter:
       hist.clear()
     code = np.asarray(code, np.int64)
     g = int((bin_ids(code, self.gb, self.C) * self._gstr).sum())
-    s_now = (int(start) if self.start_rows > 0 else
-             int((bin_ids(code, self.sb, self.C) * self._sstr).sum()))
+    # Hashed: one row per hash table (K >= 1); codebook: one binned row.
+    s_now = (np.atleast_1d(np.asarray(start, np.int64)) if self.start_rows > 0 else
+             np.array([int((bin_ids(code, self.sb, self.C) * self._sstr).sum())]))
     inflate = self._inflate()
     if proposal is not None and self.prop_w > 0:
       gp = int((bin_ids(np.asarray(proposal, np.int64), self.gb, self.C) * self._gstr).sum())

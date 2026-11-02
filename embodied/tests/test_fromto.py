@@ -204,3 +204,25 @@ def test_hashed_start_rows_count_and_novelty():
       g = int((np.array(cell) * GB ** np.arange(L - 1, -1, -1)).sum())
       want += np.prod([pb[n, l, cell[l]] for l in range(L)]) / np.sqrt(tab[row, g] + 1)
     assert float(e[n]) == pytest.approx(want, rel=1e-5)
+
+
+def test_multiple_hash_tables_average_the_bonus():
+  # K=2 tables of 4 rows each: rows 0-3 and 4-7. A pair counts once in each table;
+  # the bonus is the mean over tables.
+  K, R = 2, 4
+  c = FromToCounter(start_bins=SB, goal_bins=GB, classes=C, blocks=L, k_min=1, k_max=1,
+                    half_life=0.0, h=0.0, start_rows=K * R)
+  c.add(np.zeros(L), True, 0, start=np.array([1, 4 + 2]))
+  c.add(np.zeros(L), False, 0, start=np.array([3, 4 + 0]))
+  tab = np.asarray(jax.device_get(c.export())).reshape(K * R, GB ** L)
+  assert tab[1, 0] == pytest.approx(1.0) and tab[6, 0] == pytest.approx(1.0)
+  assert tab.sum() == pytest.approx(2.0)
+  m = FromToCounts(start_bins=SB, goal_bins=GB, classes=C, blocks=L, start_rows=K * R, name='ftk')
+  params = nj.init(lambda: m.tab.read())({}, seed=0)
+  params['ftk/tab/value'] = jnp.asarray(tab.reshape(-1))
+  probs = jax.nn.softmax(jnp.asarray(np.random.default_rng(1).normal(0, 1, (1, L, C)), jnp.float32), -1)
+  rows = jnp.asarray([[1, 5]])     # table 0 row 1 (counted), table 1 row 1 (not)
+  e, _ = nj.pure(lambda r, q: m.expected_novelty(r, q))(params, rows, probs, seed=0)[1]
+  e0, _ = nj.pure(lambda r, q: m.expected_novelty(r, q))(params, jnp.asarray([1]), probs, seed=0)[1]
+  e1, _ = nj.pure(lambda r, q: m.expected_novelty(r, q))(params, jnp.asarray([5]), probs, seed=0)[1]
+  assert float(e[0]) == pytest.approx(0.5 * (float(e0[0]) + float(e1[0])), rel=1e-6)
