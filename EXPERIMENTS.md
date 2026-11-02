@@ -639,6 +639,11 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+**e9500-e9529 tce_hash FINAL 2026-11-03 09:00 (5 seeds, late 3-4M):** pin pad 4 317 ± 13,
+5 259 ± 16, 6 125 ± 114 (3/5 solved), cartpole 757, cheetah 574, hopper 254; overall
+59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
+elsewhere; the start side no longer depends on the goal encoder.
+
 ### e10000-e10032: TCE with 4x12-bit world-model hash + fixed w=2 (2026-11-03, array 4792002)
 
 `... goal_som_line goal_even fromto_dir tce_hash4 pubmatch`: start side = 4 independent
