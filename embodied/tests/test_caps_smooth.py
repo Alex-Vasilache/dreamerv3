@@ -15,6 +15,6 @@ def test_flat_actor_trains_with_temporal_and_spatial_terms():
 
 
 def test_spatial_off_logs_no_gap():
-  agent = make_agent(**{'agent.use_hrl': False})
+  agent = make_agent(**{'agent.use_hrl': False, 'agent.imag_loss.spatial': 0.0})
   mets = train_steps(agent, steps=3)
   assert not any(k.endswith('smooth_gap') for k in mets)
