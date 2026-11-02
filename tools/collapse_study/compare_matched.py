@@ -113,6 +113,15 @@ SETS = {
         ('fts', 'V + SOM + TCE', '#CC79A7',
          'e86[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-fromto_dir-pubmatch_s*'),
     ],
+    'weekend': [
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('ft', 'V + US-SOM + TCE', '#0072B2',
+         'e62[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-pubmatch_s*'),
+        ('hash', 'TCE, world-model hash start', '#009E73',
+         'e95[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
+        ('noexpl', 'TCE w=2, Director expl reward off', '#D55E00',
+         'e96[3-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-no_gae_expl-tce_wfix2-pubmatch_s*'),
+    ],
     'someven': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('V', 'V (OG + fixed ent. + worker v3)', '#000000',
@@ -131,7 +140,7 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.'}
+STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--'}
 LATE = {'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 

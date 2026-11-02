@@ -639,6 +639,14 @@ robot session took e8120+), then start side counted from hashed world-model stat
 codebook bins, then the Director reconstruction-error exploration reward off
 (`no_gae_expl`, mgr_expl_weight 0) on the best combination.
 
+**Interim 2026-11-02 17:00 (all TCE variants, finished runs, late 3-4M;
+`collapse_figs/tce_weekend_summary.md`, `weekend_matched.png`):** overall TCE 58% |
+world-model hash 56% (-2.4 pts vs TCE, p=0.53, n=3-4; pin pad four/five +25/+28,
+pin pad six 1/3 + one more solving at 3M) | TCE-anneal 52% | TCE-grow 51% | TCE on
+plain SOM 50% | V+US-SOM 51% | OG 50% | **expl reward off 40% (-18.3, p<0.01)**: pin pad
+five fails on 2/3 seeds, pin pad six 0/3 -> remaining no_gae_expl pin pad seeds 3-4
+cancelled 2026-11-02 17:00 (DMC seeds kept).
+
 **e9600-e9629 (no_gae_expl, adaptive TCE weight) CANCELLED 2026-11-01 13:00** at 0.6-2.6M:
 pin pad four/five/six all 0 at 2.1-2.6M (every other arm solves four by 0.3M). Cause:
 with the reconstruction reward off and no task reward yet the manager advantage is
