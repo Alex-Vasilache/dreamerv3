@@ -41,7 +41,7 @@ HZ=${HZ%.*}
 # Over the relay the weights cross a slow long-distance link (~100-300 KB/s
 # Saion to Europe): send them at half size, and paced below the link's rate
 # so the phone's rewards are not queued behind them. Flags given win.
-if [ -n "$ROBOT_RELAY" ]; then
+if [ -n "$ROBOT_RELAY" ] && [ "$ROBOT_TRAINER" = slurm ]; then
   [[ " $* " == *" --env.robot.weights_dtype"* ]] || set -- "$@" --env.robot.weights_dtype float16
   [[ " $* " == *" --env.robot.weights_kbps"* ]] || set -- "$@" --env.robot.weights_kbps 64
 fi
