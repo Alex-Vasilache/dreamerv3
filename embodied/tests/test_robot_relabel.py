@@ -79,3 +79,20 @@ def test_mirror_keeps_reward():
   np.testing.assert_allclose(
       relabel._track(out, out['command'], sel),
       relabel._track(batch, batch['command'], sel), atol=1e-6)
+
+
+
+def test_rescoring_matches_env_with_the_fine_kernel():
+  KW.update(command_sigma_fine=0.15, command_fine_weight=0.5)
+  try:
+    batch = rollout()
+    relabel = CommandRelabel(robot_config(), relabel=1.0)
+    sel = np.ones(1, bool)
+    track = relabel._track(batch, batch['command'][sel], sel)
+    near = relabel._near(batch['orientation'][sel])
+    np.testing.assert_allclose(batch['reward'], np.where(near, -2.0, track) - rate_cost(batch), atol=1e-4)
+    zero = relabel._track(batch, np.zeros_like(batch['command'][sel]), sel)
+    wide = CommandRelabel(robot_config().update(command_sigma_fine=0.0), relabel=1.0)
+    assert (zero <= wide._track(batch, np.zeros_like(batch['command'][sel]), sel) + 1e-9).all()
+  finally:
+    KW.pop('command_sigma_fine'); KW.pop('command_fine_weight')

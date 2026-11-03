@@ -38,6 +38,8 @@ class CommandRelabel:
     if r.turn_source != 'wheels':
       raise NotImplementedError('relabelling needs turn_source wheels')
     self.r = r
+    self.fine = float(dict(r).get('command_sigma_fine', 0.0))
+    self.fine_w = float(dict(r).get('command_fine_weight', 0.5))
     self.rng = np.random.default_rng(seed)
 
   def __call__(self, batch):
@@ -105,4 +107,7 @@ class CommandRelabel:
     cf, ct = cmd[..., 0], cmd[..., 1]
     k = np.maximum(1.0, np.abs(cf) + np.abs(ct) * r.command_turn / r.command_speed)
     err = np.hypot(forward - cf / k, turn - ct / k)
-    return np.exp(-((err / r.command_sigma) ** 2))
+    track = np.exp(-((err / r.command_sigma) ** 2))
+    if self.fine:
+      track = (1 - self.fine_w) * track + self.fine_w * np.exp(-((err / self.fine) ** 2))
+    return track

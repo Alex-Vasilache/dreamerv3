@@ -523,7 +523,8 @@ class SmartphoneRobot(embodied.Env):
       ref_range=0.09, ref_hold=100, seed=0, status_every=0,
       recover_gain=0.0, recover_k=4.0, recover_tol=0.05, recover_max=250,
       recover_min=0.6, command_speed=1500.0, command_turn=1000.0,
-      command_sigma=0.5, command_reward='product', command_track_weight=2.0,
+      command_sigma=0.5, command_sigma_fine=0.0, command_fine_weight=0.5,
+      command_reward='product', command_track_weight=2.0,
       command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
       command_zeta_steps=40000, command_bias=0.0, command_ramp=0.0,
       friction_comp=False, bumper_lo=-0.120, bumper_hi=0.161,
@@ -711,6 +712,13 @@ class SmartphoneRobot(embodied.Env):
     self.command_speed = float(command_speed)
     self.command_turn = float(command_turn)
     self.command_sigma = float(command_sigma)
+    # command_sigma_fine > 0: tracking mixes in a second, narrow kernel,
+    # (1 - w) * wide + w * fine with w = command_fine_weight. The wide one
+    # alone barely tells 0.9 m/s from standing still at sigma 0.6 x 2500
+    # mm/s (0.70 vs 1.0): round 6u's best run held the stick at zero on the
+    # table by rolling backwards at ~0.9 m/s. The fine kernel pays precision.
+    self.command_sigma_fine = float(command_sigma_fine)
+    self.command_fine_weight = float(command_fine_weight)
     assert command_reward in (
         'product', 'sum', 'curriculum', 'taper_sum', 'balance',
         'gated', 'bumper', 'bumper_track'), command_reward
@@ -1171,6 +1179,9 @@ class SmartphoneRobot(embodied.Env):
     k = max(1.0, abs(cmd_f) + abs(cmd_t) * self.command_turn / self.command_speed)
     err = np.hypot(forward - cmd_f / k, turn - cmd_t / k)
     track = float(np.exp(-((err / self.command_sigma) ** 2)))
+    if self.command_sigma_fine:
+      fine = float(np.exp(-((err / self.command_sigma_fine) ** 2)))
+      track = (1 - self.command_fine_weight) * track + self.command_fine_weight * fine
     balance = 0.5 * linear + 0.5 * bonus
     if self.command_reward == 'curriculum':
       score = (self.command_balance_weight * balance
