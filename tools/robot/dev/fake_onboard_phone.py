@@ -63,7 +63,7 @@ def connect(args, runner, directory):
   write(sock, dict(type='hello', protocol=PROTOCOL, control_hz=args.hz,
                    robot_id=1, onboard=runner.ready, policy_stamp=runner.stamp,
                    pace='clock', max_hz=args.hz, wchunk=True,
-                   wstreams=not args.no_streams))
+                   wstreams=not args.no_streams, wdelta=not args.no_streams))
   receiver = bridge_link.Receiver(
       sock, build=lambda blob, header: PolicyRunner.build_blob(
           blob, directory + '/policy.npz'))
@@ -160,6 +160,7 @@ def main(argv=None):
   last_restart = time.monotonic()
 
   late_ms, policy_ms, during = [], [], []
+  wtiming = []         # the last push's report, sent with the next obs
   installs, ages = [], []
   sent = 0
   seq = 0
@@ -216,6 +217,7 @@ def main(argv=None):
                        cmd=cmd, cmd_src='auto',
                        wait_ms=0.0, work_ms=(applied - tick) * 1e3,
                        policy_ms=runner.last_ms, policy_stamp=runner.stamp,
+                       **({'wtiming': wtiming.pop()} if wtiming else {}),
                        sensors=snap))
       sent += 1
       if start is not None:
@@ -234,9 +236,14 @@ def main(argv=None):
         break
       header, payload = frame
       kind = header.get('type')
+      if kind == 'weights_failed':
+        wtiming[:] = [dict(stamp=header.get('stamp'), failed=True,
+                           error=header.get('error'))]
       if kind == 'weights_ready':
         stamp = header.get('stamp')
         runner.install(payload, stamp)
+        wtiming[:] = [dict(stamp=stamp, recv_s=header.get('recv_s'),
+                           build_ms=round(header.get('build_ms', 0.0), 1))]
         if hold:
           hold = False
           if restarts and restarts[-1][2] is None:

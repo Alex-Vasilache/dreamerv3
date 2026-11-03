@@ -278,7 +278,7 @@ class _Streams:
 
   # How long a push waits for the phone to report the new weights installed
   # before it counts as done anyway (a paused or playing phone may not say).
-  CONFIRM_S = 120.0
+  CONFIRM_S = 60.0
 
   def __init__(self, host, port, timeout):
     self.port = port
@@ -318,7 +318,7 @@ class _Streams:
       _close_socket(sock)
     return dict(port=self.port, n=int(n), session=session)
 
-  def push(self, stamp, blob, on_done, installed):
+  def push(self, stamp, blob, on_done, status):
     """Send `blob` across the streams in the background. False if there are
     none connected or a push is still going: the caller then falls back to
     the control link or waits."""
@@ -327,7 +327,7 @@ class _Streams:
       if not socks or self._job is not None:
         return False
       self._job = threading.Thread(
-          target=self._send, args=(stamp, blob, socks, on_done, installed),
+          target=self._send, args=(stamp, blob, socks, on_done, status),
           name='robot_wpush', daemon=True)
       self._job.start()
     return True
@@ -340,8 +340,9 @@ class _Streams:
     for _, sock in socks:
       _close_socket(sock)
 
-  def _send(self, stamp, blob, socks, on_done, installed):
+  def _send(self, stamp, blob, socks, on_done, status):
     try:
+      started = time.time()
       n = len(socks)
       size = -(-len(blob) // n)
       failed = []
@@ -374,11 +375,14 @@ class _Streams:
       # megabytes fit in the buffers on the way; so the push lasts until the
       # phone reports running the new weights, and the next one cannot pile
       # up behind it.
+      handed = time.time() - started
       deadline = time.time() + self.CONFIRM_S
-      while not installed() and time.time() < deadline:
-        time.sleep(0.05)
-      on_done(dict(stamp=stamp, via=f'{n} streams' + (
-          '' if installed() else ', not confirmed by the phone')))
+      while status() is None and time.time() < deadline:
+        time.sleep(0.02)
+      state = status()
+      on_done(dict(stamp=stamp, handed_s=handed, via=f'{n} streams' + (
+          '' if state == 'ok' else ', the phone could not load it'
+          if state == 'failed' else ', not confirmed by the phone')))
     finally:
       with self._lock:
         self._job = None
@@ -576,6 +580,14 @@ class SmartphoneRobot(embodied.Env):
     # push needs no pacing to keep resets and pauses from queueing behind it.
     self._weight_streams = int(weight_streams)
     self._streams = None
+    # Delta pushes (export.encode), for a phone that offers them: `_base` is
+    # the last push the phone reported running, as (stamp, arrays), and a new
+    # push only carries what changed from it. `_pending` is the push in
+    # flight, which becomes the base once the phone reports its stamp.
+    self._wdelta = False
+    self._base = None
+    self._pending = None
+    self._wtiming = {}           # the phone's report on the last push
     self._weights_stamp = None   # the policy the phone holds, as far as we know
     self._push_started = 0.0
     self._pusher = None
@@ -1315,6 +1327,10 @@ class SmartphoneRobot(embodied.Env):
     self._chunked = bool(hello.get('wchunk', False))
     self._phone_stamp = hello.get('policy_stamp')
     self._weights_stamp = self._phone_stamp
+    self._wdelta = bool(hello.get('wdelta', False))
+    self._confirm(self._phone_stamp)
+    if self._base and str(self._base[0]) != str(self._phone_stamp):
+      self._base = None   # the phone holds other weights: next push whole
     # Weights this run did not publish are another run's, typically the one
     # before a dashboard restart, and it would be that run's skill the phone
     # shows until our first push lands. So it holds the wheels until then.
@@ -1518,24 +1534,54 @@ class SmartphoneRobot(embodied.Env):
     data = _load_policy_pickle(path.read_bytes())
     params = data['params'] if isinstance(data, dict) and 'params' in data \
         else data
-    blob, _ = exportlib.pack(self._config, params, self._weights_dtype)
+    arrays, meta = exportlib.pack_arrays(
+        self._config, params, self._weights_dtype)
+    base = self._base if self._wdelta else None
+    blob = exportlib.encode(
+        meta, arrays, stamp=stamp, base=base,
+        compress=(self._weights_dtype == 'int8'))
+    self._pending = (stamp, arrays)
     packed = time.time()
 
     def done(header):
       self._weights_stamp = header['stamp']
       now = time.time()
+      t = self._wtiming if str(self._wtiming.get('stamp')) == str(stamp) \
+          else {}
+      phone = (f', phone: parts over {t.get("recv_s")}s, build '
+               f'{t.get("build_ms")}ms, install {t.get("install_ms")}ms'
+               if t and not t.get('failed') else '')
+      handed = header.get('handed_s')
       print(f'[robot] pushed policy {stamp} to the phone '
-            f'({len(blob) / 1e6:.1f} MB, pack {packed - started:.2f}s, '
-            f'send {now - packed:.2f}s, age {now - int(stamp) / 1e9:.1f}s, '
-            f'{header.get("via", "control link")})',
+            f'({len(blob) / 1e6:.2f} MB {"delta" if base else "whole"}, '
+            f'pack {packed - started:.2f}s, send {now - packed:.2f}s'
+            + (f' (sent off after {handed:.2f}s)' if handed is not None else '')
+            + f', age {now - int(stamp) / 1e9:.1f}s, '
+            f'{header.get("via", "control link")}{phone})',
             flush=True)
 
     self._push_started = started
     streams = self._streams
-    if streams and streams.push(
-        stamp, blob, done, lambda: str(self._phone_stamp) == str(stamp)):
+    if streams and streams.push(stamp, blob, done, lambda: self._status(stamp)):
       return
     link.push(dict(type='weights', stamp=stamp), blob, self._chunked, done)
+
+  def _confirm(self, stamp):
+    """The phone reports running `stamp`: the push in flight, if it is
+    that one, is now what the next delta builds on."""
+    pending = self._pending
+    if pending and stamp is not None and str(stamp) == str(pending[0]):
+      self._base, self._pending = pending, None
+
+  def _status(self, stamp):
+    """'ok' once the phone runs `stamp`, 'failed' if it said it could not
+    load it, else None (still on its way)."""
+    if str(self._phone_stamp) == str(stamp):
+      return 'ok'
+    t = self._wtiming
+    if t.get('failed') and str(t.get('stamp')) == str(stamp):
+      return 'failed'
+    return None
 
   def _executed(self):
     if self._onboard and self._onboard_act is not None:
@@ -1636,7 +1682,16 @@ class SmartphoneRobot(embodied.Env):
             'Onboard mode negotiated but the phone sent no action; refusing '
             'to record a transition whose action we would have to invent')
       self._onboard_act = np.asarray(act, np.float32)
+      wtiming = header.get('wtiming')
+      if wtiming:
+        self._wtiming = wtiming
+        if wtiming.get('failed'):
+          print(f'[robot] the phone could not load push {wtiming.get("stamp")}'
+                f' ({wtiming.get("error")}); sending the next one whole',
+                flush=True)
+          self._base = self._pending = None
       self._phone_stamp = header.get('policy_stamp', self._phone_stamp)
+      self._confirm(self._phone_stamp)
     self._timing = (
         float(header.get('wait_ms', 0.0)), float(header.get('work_ms', 0.0)),
         float(header.get('imu_age_ms', 0.0)),

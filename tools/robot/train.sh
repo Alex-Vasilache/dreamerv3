@@ -40,12 +40,12 @@ HZ=${HZ%.*}
 [ -z "${PAUSED:-}" ] || set -- "$@" --env.robot.start_paused True
 # Over the relay the weights cross a long-distance link where each TCP
 # connection gets ~200 KB/s from OIST to Europe (loss over a 300 ms round
-# trip, not the line): send them as int8 (1.3 MB instead of 5.4) over
+# trip, not the line): send them as int8 (1.3 MB instead of 5.4, and ~0.5 MB as a delta) over
 # RELAY_STREAMS connections of their own, each its own ssh connection. The
 # pacing only applies to a phone app too old for streams, which then gets the
 # pushes on the control link, kept below its rate so the phone's rewards are
 # not queued behind them. Flags given win.
-RELAY_STREAMS=${RELAY_STREAMS:-4}
+RELAY_STREAMS=${RELAY_STREAMS:-8}
 if [ -n "$ROBOT_RELAY" ] && [ "$ROBOT_TRAINER" = slurm ]; then
   [[ " $* " == *" --env.robot.weights_dtype"* ]] || set -- "$@" --env.robot.weights_dtype int8
   [[ " $* " == *" --env.robot.weights_kbps"* ]] || set -- "$@" --env.robot.weights_kbps 64

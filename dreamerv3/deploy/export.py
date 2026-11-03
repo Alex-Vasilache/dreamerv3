@@ -146,9 +146,48 @@ def pack(config, params, dtype='float32'):
   loads any float dtype, and int8 codes with their scales, into float32, so
   `dtype` only sets the bytes sent. int8 is also deflated: the codes compress
   by ~7%, float32 and float16 by nothing worth the time."""
+  arrays, meta = pack_arrays(config, params, dtype)
+  return encode(meta, arrays, compress=(dtype == 'int8')), meta
+
+
+def pack_arrays(config, params, dtype='float32'):
+  """The arrays `pack` would send, and their meta, not yet encoded."""
   keep = filter_params(params, dtype)
-  meta = build_meta(config, keep)
+  return keep, build_meta(config, keep)
+
+
+# Delta pushes. A delta names the push it builds on (`__base__`) and holds,
+# for every array the base has in the same shape and dtype, only how it
+# changed: int8 codes as their difference mod 256 (`<key>@d`, uint8), float16
+# arrays as the XOR of their bits (`<key>@x`, uint16), both zero where nothing
+# changed. Everything else goes whole. The phone rebuilds the full push
+# exactly (numpy_policy.expand_delta), so deltas never accumulate error. On
+# e10100's weights (2026-11-03) half the int8 codes move between pushes 2 s
+# apart, nearly all by one step, which deflates to ~1/3 of the full push
+# (553 KB vs 1.3 MB for pushes 6 s apart).
+DELTA_INT8 = '@d'
+DELTA_XOR = '@x'
+
+
+def encode(meta, arrays, stamp=None, base=None, compress=True):
+  """npz bytes for `arrays`. With `stamp`, the push records its own stamp
+  (`__stamp__`), which a later delta checks its base against. With `base` =
+  (base_stamp, base_arrays), a delta against those arrays."""
+  out = {'__meta__': np.array(json.dumps(meta))}
+  if stamp is not None:
+    out['__stamp__'] = np.array(str(stamp))
+  if base is not None:
+    out['__base__'] = np.array(str(base[0]))
+  for k, v in arrays.items():
+    old = None if base is None else base[1].get(k)
+    if old is not None and old.shape == v.shape and old.dtype == v.dtype:
+      if v.dtype == np.int8:
+        out[k + DELTA_INT8] = v.view(np.uint8) - old.view(np.uint8)
+        continue
+      if v.dtype == np.float16:
+        out[k + DELTA_XOR] = v.view(np.uint16) ^ old.view(np.uint16)
+        continue
+    out[k] = v
   buffer = io.BytesIO()
-  save = np.savez_compressed if dtype == 'int8' else np.savez
-  save(buffer, __meta__=np.array(json.dumps(meta)), **keep)
-  return buffer.getvalue(), meta
+  (np.savez_compressed if compress else np.savez)(buffer, **out)
+  return buffer.getvalue()
