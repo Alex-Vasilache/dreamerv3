@@ -120,7 +120,7 @@ SETS = {
         ('hash', 'TCE, world-model hash start', '#009E73',
          'e95[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
         ('hash4', 'TCE, 4x12-bit hash, w=2', '#CC79A7',
-         'e100[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash4-pubmatch_s*'),
+         'e1[09]0[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash4-pubmatch_s*'),
         ('noexpl', 'TCE w=2, Director expl reward off', '#D55E00',
          'e96[3-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-no_gae_expl-tce_wfix2-pubmatch_s*'),
     ],

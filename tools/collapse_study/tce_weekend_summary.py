@@ -26,7 +26,7 @@ ARMS = [
     ('TCE-grow (h=t/2, w=2)', f'e80[0-2]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_grow-pubmatch_s*'),
     ('TCE on plain SOM', f'e86[0-2]?_{{t}}_{B}-goal_som_line-fromto_dir-pubmatch_s*'),
     ('TCE, world-model hash start', f'e95[0-2]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
-    ('TCE, 4x12-bit world-model hash, w=2', f'e100[0-3]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_hash4-pubmatch_s*'),
+    ('TCE, 4x12-bit world-model hash, w=2', f'e1[09]0[0-3]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_hash4-pubmatch_s*'),
     ('TCE w=2, Director expl reward off', f'e96[3-5]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-no_gae_expl-tce_wfix2-pubmatch_s*'),
 ]
 REF = 'TCE (US-SOM, 0.5M half-life, adaptive w)'

@@ -644,7 +644,9 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
-### e10000-e10032: TCE with 4x12-bit world-model hash + fixed w=2 (2026-11-03, array 4792002)
+### e10000-e10009 + e19010-e19032: TCE with 4x12-bit world-model hash + fixed w=2 (2026-11-03, array 4792002)
+
+Renumbered 2026-11-04 01:00: rows 10-32 (not yet started) moved to e19010-e19032 because the robot session launched e10020-e10032.
 
 `... goal_som_line goal_even fromto_dir tce_hash4 pubmatch`: start side = 4 independent
 12-bit SimHashes of the per-state normalised deter, bonus averaged over the 4 tables
