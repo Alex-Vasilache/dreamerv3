@@ -62,12 +62,24 @@ def connect(args, runner, directory):
   sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
   write(sock, dict(type='hello', protocol=PROTOCOL, control_hz=args.hz,
                    robot_id=1, onboard=runner.ready, policy_stamp=runner.stamp,
-                   pace='clock', max_hz=args.hz, wchunk=True))
+                   pace='clock', max_hz=args.hz, wchunk=True,
+                   wstreams=not args.no_streams))
   receiver = bridge_link.Receiver(
       sock, build=lambda blob, header: PolicyRunner.build_blob(
           blob, directory + '/policy.npz'))
   hello, _ = receiver.get(timeout=60.0)
   assert hello['type'] == 'hello', hello
+  # Weight pushes over connections of their own, as the app opens them:
+  # to --wports when given (a relay's local ports), else n times to the
+  # trainer's own stream port.
+  receiver.streams = None
+  ws = hello.get('wstreams')
+  if ws:
+    ports = [int(p) for p in args.wports.split(',')] if args.wports \
+        else [int(ws['port'])] * int(ws['n'])
+    receiver.streams = bridge_link.WeightStreams(
+        [(args.host, p) for p in ports], ws['session'],
+        receiver.deliver_weights)
   onboard = bool(hello.get('onboard')) and runner.ready
   print(f'connected ({"onboard" if onboard else "trainer drives"}): '
         f'run={hello.get("run")} restart={hello.get("restart")} '
@@ -131,6 +143,10 @@ def main(argv=None):
   parser.add_argument('--connect_timeout', type=float, default=600.0)
   parser.add_argument('--out', default='')
   parser.add_argument('--restart_every', type=float, default=0.0)
+  parser.add_argument('--no_streams', action='store_true',
+                      help='do not offer weight streams (an older app)')
+  parser.add_argument('--wports', default='',
+                      help='comma-separated stream ports, as trainer.json wports')
   args = parser.parse_args(argv)
 
   directory = tempfile.mkdtemp(prefix='fake_phone_weights_')
@@ -165,7 +181,8 @@ def main(argv=None):
       time.sleep(remaining)
     tick = time.monotonic()
     # Whether a weight push was arriving: bytes for one landed this tick.
-    pushing = receiver._partial is not None
+    pushing = receiver._partial is not None or bool(
+        receiver.streams and receiver.streams.receiving)
     if (args.restart_every and onboard and hello.get('restart')
         and tick - last_restart >= args.restart_every):
       last_restart = tick
@@ -178,6 +195,7 @@ def main(argv=None):
       except (OSError, ConnectionError):
         pass
       receiver.close()
+      receiver.streams and receiver.streams.close()
       sock.close()
       sock, receiver, onboard, hello = connect(args, runner, directory)
       restarts[-1][1] = time.monotonic()
@@ -234,6 +252,7 @@ def main(argv=None):
         if not onboard:
           print('got a policy; reconnecting onboard')
           receiver.close()
+          receiver.streams and receiver.streams.close()
           sock.close()
           sock, receiver, onboard, hello = connect(args, runner, directory)
           next_tick = time.monotonic()
@@ -243,6 +262,7 @@ def main(argv=None):
       elif kind == 'ctrl' and header.get('reset'):
         runner.reset()
   receiver.close()
+  receiver.streams and receiver.streams.close()
   sock.close()
 
   late = np.array(late_ms)
@@ -260,6 +280,7 @@ def main(argv=None):
       weights_installed=len(installs),
       build_ms_p50=pct(installs, 50),
       push_interval_s=(args.seconds / len(installs)) if installs else None,
+      streams=len(receiver.streams.addresses) if receiver.streams else 0,
       weight_age_p50_s=pct(ages, 50), weight_age_max_s=max(ages) if ages else None,
       restarts=[[round(b - a, 2) if b else None, round(c - a, 2) if c else None]
                 for a, b, c in restarts],

@@ -31,6 +31,18 @@ RELAY_LOG=${TMPDIR:-/tmp}/robot_relay.log
 
 robot_die() { echo "error: $*" >&2; exit 1; }
 
+# End the relay's ssh loops (train.sh writes one pid per line: the control
+# link and each weight stream) and the ssh each is running.
+relay_stop() {
+  [ -f "$RELAY_PID" ] || return 0
+  local pid
+  while read -r pid; do
+    [ -n "$pid" ] || continue
+    pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null
+  done <"$RELAY_PID"
+  rm -f "$RELAY_PID"
+}
+
 robot_need() {  # robot_need VAR...: fail with a pointer to robot.env
   for v in "$@"; do
     [ -n "${!v:-}" ] || robot_die "$v is not set. Set it in tools/robot/robot.env (see robot.env.example)."

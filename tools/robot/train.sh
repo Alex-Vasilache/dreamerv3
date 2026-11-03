@@ -38,12 +38,18 @@ HZ=${HZ%.*}
 # Connected and ready, but the wheels held and the learner idle until the
 # dashboard starts each; minute 0 of its plots is when training starts.
 [ -z "${PAUSED:-}" ] || set -- "$@" --env.robot.start_paused True
-# Over the relay the weights cross a slow long-distance link (~100-300 KB/s
-# Saion to Europe): send them at half size, and paced below the link's rate
-# so the phone's rewards are not queued behind them. Flags given win.
+# Over the relay the weights cross a long-distance link where each TCP
+# connection gets ~200 KB/s from OIST to Europe (loss over a 300 ms round
+# trip, not the line): send them as int8 (1.3 MB instead of 5.4) over
+# RELAY_STREAMS connections of their own, each its own ssh connection. The
+# pacing only applies to a phone app too old for streams, which then gets the
+# pushes on the control link, kept below its rate so the phone's rewards are
+# not queued behind them. Flags given win.
+RELAY_STREAMS=${RELAY_STREAMS:-4}
 if [ -n "$ROBOT_RELAY" ] && [ "$ROBOT_TRAINER" = slurm ]; then
-  [[ " $* " == *" --env.robot.weights_dtype"* ]] || set -- "$@" --env.robot.weights_dtype float16
+  [[ " $* " == *" --env.robot.weights_dtype"* ]] || set -- "$@" --env.robot.weights_dtype int8
   [[ " $* " == *" --env.robot.weights_kbps"* ]] || set -- "$@" --env.robot.weights_kbps 64
+  [[ " $* " == *" --env.robot.weight_streams"* ]] || set -- "$@" --env.robot.weight_streams "$RELAY_STREAMS"
 fi
 CONFIGS=${CONFIGS:-robot}
 STEPS=${STEPS:-100000}
@@ -129,21 +135,29 @@ if [ -n "$ROBOT_RELAY" ] && [ "$ROBOT_TRAINER" = slurm ]; then
   # Off the cluster's network: the phone connects to this computer, and an
   # ssh forward carries it on to the node. Restarted if ssh drops; stop.sh
   # ends it.
-  [ -f "$RELAY_PID" ] && { pkill -P "$(cat "$RELAY_PID")" 2>/dev/null; kill "$(cat "$RELAY_PID")" 2>/dev/null; }
-  nohup bash -c "while :; do ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes \
-    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
-    -L 0.0.0.0:$PORT:$IP:$PORT $(q "$ROBOT_SSH"); sleep 3; done" >"$RELAY_LOG" 2>&1 </dev/null &
-  echo $! >"$RELAY_PID"
+  # One ssh connection for the control link and one per weight stream: the
+  # learner's streams listen on PORT+1, reached here on PORT+1..PORT+N.
+  relay_stop
+  : >"$RELAY_LOG"
+  WPORTS=
+  for i in $(seq 0 "$RELAY_STREAMS"); do
+    LOCAL=$((PORT + i)); REMOTE=$PORT; [ "$i" -gt 0 ] && REMOTE=$((PORT + 1))
+    [ "$i" -gt 0 ] && WPORTS+="${WPORTS:+, }$LOCAL"
+    nohup bash -c "while :; do ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes \
+      -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+      -L 0.0.0.0:$LOCAL:$IP:$REMOTE $(q "$ROBOT_SSH"); sleep 3; done" >>"$RELAY_LOG" 2>&1 </dev/null &
+    echo $! >>"$RELAY_PID"
+  done
   IP=$(local_ip)
   [ -n "$IP" ] || robot_die "relay: could not find this computer's LAN address"
-  echo "relay: phone -> $IP:$PORT -> ssh $ROBOT_SSH -> node (log: $RELAY_LOG)"
+  echo "relay: phone -> $IP:$PORT (+ weights on $WPORTS) -> ssh $ROBOT_SSH -> node (log: $RELAY_LOG)"
 fi
 
 echo "== pointing the phone at it"
 # What the running app (if any) was started with, read before it is replaced.
 OLD=$(adb shell cat $PHONE_FILES/trainer.json 2>/dev/null || true)
 tmp=$(mktemp -d)
-echo "{\"ip\": \"$IP\", \"port\": $PORT, \"max_hz\": $HZ${NO_BASE:+, \"no_base\": true}}" \
+echo "{\"ip\": \"$IP\", \"port\": $PORT, \"max_hz\": $HZ${WPORTS:+, \"wports\": [$WPORTS]}${NO_BASE:+, \"no_base\": true}}" \
   > "$tmp/trainer.json"
 adb shell mkdir -p $PHONE_FILES
 adb push "$tmp/trainer.json" $PHONE_FILES/ >/dev/null

@@ -20,12 +20,47 @@ KEEP_PREFIXES = ('enc/', 'dyn/', 'pol/')
 DROP_PREFIXES = ('dyn/prior', 'dyn/priorlogit')
 
 
+# dtype='int8': kernels of at least this many entries go as int8 codes with
+# one float16 scale per output channel; everything smaller (biases, norm
+# scales, the 512-entry action head) goes as float16. Measured on e9662's
+# weights (2026-11-03), stepping from the float32 policy's own state: int8
+# per channel moves the action by 0.0015 on average (p99 0.005) against a
+# policy stddev of at least 0.1, at half the bytes of float16; the action head
+# alone accounts for most of that, hence the size floor. int4 was 20x worse.
+INT8_MIN_SIZE = 4096
+SCALE_SUFFIX = '.scale'
+
+
+def quantize_int8(v):
+  """Symmetric per-output-channel int8: (codes, float16 scales).
+
+  The input axis is the second to last for every kernel here, plain
+  (in, out) and blocked (blocks, in, out) alike, so one scale covers each
+  output column. The scales are rounded to float16 before the codes are taken,
+  so codes * scales is exactly what the phone reconstructs.
+  """
+  v = np.asarray(v, np.float32)
+  amax = np.abs(v).max(axis=-2, keepdims=True)
+  scale = (np.maximum(amax, 1e-12) / 127.0).astype(np.float16)
+  codes = np.clip(np.round(v / scale.astype(np.float32)), -127, 127)
+  return codes.astype(np.int8), scale
+
+
 def filter_params(params, dtype='float32'):
+  """The acting params, as `dtype`. For 'int8' a quantized kernel `k` is
+  stored as int8 codes under `k` and its scales under `k + SCALE_SUFFIX`."""
   keep = {}
   for k, v in params.items():
     if not k.startswith(KEEP_PREFIXES) or k.startswith(DROP_PREFIXES):
       continue
-    keep[k] = np.asarray(v, np.float32).astype(dtype)
+    v = np.asarray(v, np.float32)
+    if dtype == 'int8':
+      if v.ndim >= 2 and v.size >= INT8_MIN_SIZE:
+        keep[k], keep[k + SCALE_SUFFIX] = quantize_int8(v)
+      else:
+        keep[k] = v.astype(np.float16)
+    else:
+      keep[k] = v.astype(dtype)
   if not keep:
     raise ValueError(
         f'No policy params found. Keys looked like: {sorted(params)[:5]}')
@@ -108,9 +143,12 @@ def build_meta(config, params):
 
 def pack(config, params, dtype='float32'):
   """Return (npz_bytes, meta) for the policy params in `params`. The phone
-  loads any float dtype into float32, so `dtype` only sets the bytes sent."""
+  loads any float dtype, and int8 codes with their scales, into float32, so
+  `dtype` only sets the bytes sent. int8 is also deflated: the codes compress
+  by ~7%, float32 and float16 by nothing worth the time."""
   keep = filter_params(params, dtype)
   meta = build_meta(config, keep)
   buffer = io.BytesIO()
-  np.savez(buffer, __meta__=np.array(json.dumps(meta)), **keep)
+  save = np.savez_compressed if dtype == 'int8' else np.savez
+  save(buffer, __meta__=np.array(json.dumps(meta)), **keep)
   return buffer.getvalue(), meta

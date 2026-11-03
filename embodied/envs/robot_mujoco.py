@@ -476,7 +476,8 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_scrape_from=0.07, sim_enc_q=0.0, sim_slope=0.0, sim_slope_ramp=0.0,
       seed=0, **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
-                'weights_dtype', 'weights_kbps', 'pace', 'config', 'policy_dir',
+                'weights_dtype', 'weights_kbps', 'weight_streams', 'pace',
+                'config', 'policy_dir',
                 'sim_air_speed'):
       kwargs.pop(key, None)
     # Keys of the planar model; not used here.

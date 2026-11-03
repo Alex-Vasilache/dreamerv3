@@ -247,6 +247,184 @@ def _parse(buffer):
   del buffer[:total]
   return header, blob
 
+
+def _close_socket(sock):
+  try:
+    sock.shutdown(socket.SHUT_RDWR)
+  except OSError:
+    pass
+  try:
+    sock.close()
+  except OSError:
+    pass
+
+
+class _Streams:
+  """Connections from the phone that carry nothing but weight pushes.
+
+  Each push is cut into one contiguous part per connection and the parts go
+  out at once. Over a long-distance link a single TCP connection is capped by
+  loss and round-trip time, not by the line (Darmstadt to OIST, 2026-11-03:
+  ~200 KB/s each, 4 at once ~640 KB/s), so N connections are ~N times faster.
+  They are separate from the control link, so a push never delays a reset or
+  a pause and needs no pacing.
+
+  The phone opens them after its hello, to `port`, each greeting with the
+  session token our hello gave it; a new control connection starts a new
+  session and drops the old streams. Over the relay each stream crosses its
+  own ssh connection (train.sh), since channels inside one ssh connection
+  would share its single TCP connection and its cap.
+  """
+
+  # How long a push waits for the phone to report the new weights installed
+  # before it counts as done anyway (a paused or playing phone may not say).
+  CONFIRM_S = 120.0
+
+  def __init__(self, host, port, timeout):
+    self.port = port
+    self._timeout = timeout
+    self._lock = threading.Lock()
+    self._session = None
+    self._socks = []      # (index, socket) of the current session
+    self._job = None
+    self._listener = None
+    try:
+      listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+      listener.bind((host, port))
+      listener.listen(16)
+    except OSError as e:
+      print(f'[robot] weight streams off, cannot listen on {port}: {e}',
+            flush=True)
+      return
+    self._listener = listener
+    threading.Thread(
+        target=self._accept_loop, name='robot_wstreams', daemon=True).start()
+
+  @property
+  def pushing(self):
+    return self._job is not None
+
+  def open_session(self, n):
+    """Forget the previous phone connection's streams and return what our
+    hello announces, or None when we cannot take any."""
+    if self._listener is None:
+      return None
+    with self._lock:
+      old, self._socks = self._socks, []
+      self._session = os.urandom(8).hex()
+      session = self._session
+    for _, sock in old:
+      _close_socket(sock)
+    return dict(port=self.port, n=int(n), session=session)
+
+  def push(self, stamp, blob, on_done, installed):
+    """Send `blob` across the streams in the background. False if there are
+    none connected or a push is still going: the caller then falls back to
+    the control link or waits."""
+    with self._lock:
+      socks = list(self._socks)
+      if not socks or self._job is not None:
+        return False
+      self._job = threading.Thread(
+          target=self._send, args=(stamp, blob, socks, on_done, installed),
+          name='robot_wpush', daemon=True)
+      self._job.start()
+    return True
+
+  def close(self):
+    listener, self._listener = self._listener, None
+    listener and _close_socket(listener)
+    with self._lock:
+      socks, self._socks = self._socks, []
+    for _, sock in socks:
+      _close_socket(sock)
+
+  def _send(self, stamp, blob, socks, on_done, installed):
+    try:
+      n = len(socks)
+      size = -(-len(blob) // n)
+      failed = []
+
+      def one(i, sock):
+        part = blob[i * size:(i + 1) * size]
+        try:
+          sock.sendall(_frame(dict(
+              type='wpart', stamp=stamp, part=i, parts=n, offset=i * size,
+              total=len(blob)), part))
+        except OSError as e:
+          failed.append((sock, e))
+
+      threads = [threading.Thread(target=one, args=(i, sock), daemon=True)
+                 for i, (_, sock) in enumerate(socks)]
+      for thread in threads:
+        thread.start()
+      for thread in threads:
+        thread.join()
+      if failed:
+        bad = {sock for sock, _ in failed}
+        with self._lock:
+          self._socks = [x for x in self._socks if x[1] not in bad]
+        for sock in bad:
+          _close_socket(sock)
+        print(f'[robot] weight stream lost during a push ({failed[0][1]}); '
+              f'{len(socks) - len(bad)} left, will send again', flush=True)
+        return
+      # sendall only hands the bytes to the kernel, and over the relay
+      # megabytes fit in the buffers on the way; so the push lasts until the
+      # phone reports running the new weights, and the next one cannot pile
+      # up behind it.
+      deadline = time.time() + self.CONFIRM_S
+      while not installed() and time.time() < deadline:
+        time.sleep(0.05)
+      on_done(dict(stamp=stamp, via=f'{n} streams' + (
+          '' if installed() else ', not confirmed by the phone')))
+    finally:
+      with self._lock:
+        self._job = None
+
+  def _accept_loop(self):
+    while True:
+      listener = self._listener
+      if listener is None:
+        return
+      try:
+        sock, address = listener.accept()
+      except OSError:
+        return
+      threading.Thread(target=self._greet, args=(sock, address),
+                       daemon=True).start()
+
+  def _greet(self, sock, address):
+    try:
+      sock.settimeout(self._timeout)
+      buffer = bytearray()
+      frame = None
+      while frame is None:
+        chunk = sock.recv(4096)
+        if not chunk:
+          raise ConnectionError('closed before its hello')
+        buffer.extend(chunk)
+        frame = _parse(buffer)
+      header, _ = frame
+      with self._lock:
+        ok = (header.get('type') == 'wstream'
+              and header.get('session') == self._session)
+        if ok:
+          self._socks.append((int(header.get('index', 0)), sock))
+          self._socks.sort(key=lambda x: x[0])
+          count = len(self._socks)
+      if not ok:
+        raise ValueError(f'not a weight stream of this session: {header}')
+      # A send may stall on a dead link; give up on it like on a quiet phone.
+      sock.settimeout(self._timeout)
+      print(f'[robot] weight stream {header.get("index")} connected from '
+            f'{address[0]}:{address[1]} ({count} up)', flush=True)
+    except Exception as e:  # noqa: BLE001 -- a bad stream must not end the run
+      print(f'[robot] refused a weight stream from {address[0]}: {e}',
+            flush=True)
+      _close_socket(sock)
+
 # Same wheel PWM table as apps/basicAssembler on the phone, so a discrete
 # policy trained here means the same thing if it is later moved on-device.
 MOTIONS = (
@@ -352,7 +530,8 @@ class SmartphoneRobot(embodied.Env):
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_dtype='float32',
-      weights_kbps=0.0, weights_poll=0.25, logdir=None, pace=None, pause_file=None, start_paused=False):
+      weights_kbps=0.0, weights_poll=0.25, weight_streams=0, logdir=None,
+      pace=None, pause_file=None, start_paused=False):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -389,6 +568,14 @@ class SmartphoneRobot(embodied.Env):
     # the phone computes in float32 either way (numpy_policy.load).
     self._weights_dtype = str(weights_dtype)
     self._weights_kbps = float(weights_kbps)  # _Link: pacing, 0 off
+    # Weight pushes over this many connections of their own (_Streams), on
+    # port + 1, for a phone that offers them; 0 keeps them on the control
+    # link. A long-distance link (Saion to Europe: 300 ms, 0.3% loss) caps
+    # each TCP connection near 200 KB/s however fast the line, so N of them
+    # carry ~N times that; and since none of them carries control frames, a
+    # push needs no pacing to keep resets and pauses from queueing behind it.
+    self._weight_streams = int(weight_streams)
+    self._streams = None
     self._weights_stamp = None   # the policy the phone holds, as far as we know
     self._push_started = 0.0
     self._pusher = None
@@ -811,6 +998,7 @@ class SmartphoneRobot(embodied.Env):
   def close(self):
     self._closing.set()
     self._drop()
+    self._streams and self._streams.close()
     try:
       self._listener and self._listener.close()
     except OSError:
@@ -1131,6 +1319,11 @@ class SmartphoneRobot(embodied.Env):
     # before a dashboard restart, and it would be that run's skill the phone
     # shows until our first push lands. So it holds the wheels until then.
     hold = self._onboard and not self._published(self._phone_stamp)
+    wstreams = None
+    if self.onboard and self._weight_streams > 0 and hello.get('wstreams'):
+      if self._streams is None:
+        self._streams = _Streams(self.host, self.port + 1, self.timeout)
+      wstreams = self._streams.open_session(self._weight_streams)
     link.send(dict(
         type='hello', protocol=PROTOCOL, discrete=self.discrete,
         pipeline=self.pipeline, onboard=self._onboard,
@@ -1143,6 +1336,7 @@ class SmartphoneRobot(embodied.Env):
         run=self._run_name(), settings=self._settings(),
         restart=bool(self._restart_file), hold=hold,
         pause=self._pause_message(),
+        **({'wstreams': wstreams} if wstreams else {}),
         **({'pace': self.pace} if self.pace else {})))
     self._link = link
     # Note `self.onboard`, not `self._onboard`: a phone that came up without
@@ -1258,7 +1452,7 @@ class SmartphoneRobot(embodied.Env):
           self._send_stats(link)
         except Exception as e:  # noqa: BLE001 -- display only
           print(f'[robot] could not forward learner metrics: {e}', flush=True)
-      if link.pushing:
+      if link.pushing or (self._streams and self._streams.pushing):
         continue
       if time.time() - self._push_started < self._weights_every:
         continue
@@ -1332,10 +1526,15 @@ class SmartphoneRobot(embodied.Env):
       now = time.time()
       print(f'[robot] pushed policy {stamp} to the phone '
             f'({len(blob) / 1e6:.1f} MB, pack {packed - started:.2f}s, '
-            f'send {now - packed:.2f}s, age {now - int(stamp) / 1e9:.1f}s)',
+            f'send {now - packed:.2f}s, age {now - int(stamp) / 1e9:.1f}s, '
+            f'{header.get("via", "control link")})',
             flush=True)
 
     self._push_started = started
+    streams = self._streams
+    if streams and streams.push(
+        stamp, blob, done, lambda: str(self._phone_stamp) == str(stamp)):
+      return
     link.push(dict(type='weights', stamp=stamp), blob, self._chunked, done)
 
   def _executed(self):
