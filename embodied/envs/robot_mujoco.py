@@ -473,7 +473,8 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_eq_range=0.0175, sim_eq_every=0.0, sim_substep=0.002,
       sim_friction=1.0, sim_inertia=1.0, sim_backlash=0.0, sim_gear_k=2.0,
       sim_rand='', sim_rand_every=0.0, sim_tilt_lag=0.0, sim_scrape=0.0,
-      sim_scrape_from=0.07, sim_enc_q=0.0, seed=0, **kwargs):
+      sim_scrape_from=0.07, sim_enc_q=0.0, sim_slope=0.0, sim_slope_ramp=0.0,
+      seed=0, **kwargs):
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'weights_dtype', 'weights_kbps', 'pace', 'config', 'policy_dir',
                 'sim_air_speed'):
@@ -532,7 +533,7 @@ class RobotMujoco(robot_sim.RobotSim):
     for part in [p for p in str(sim_rand).split(',') if p.strip()]:
       key, lo, hi = part.strip().split(':')
       assert key in ('inertia', 'backlash', 'tilt_lag', 'scrape', 'stick',
-                     'rstatic', 'stall', 'gear_k'), key
+                     'rstatic', 'stall', 'gear_k', 'slope'), key
       self._rand[key] = (float(lo), float(hi))
     assert 'backlash' not in self._rand or float(sim_backlash) > 0, (
         'sim_rand backlash needs sim_backlash > 0 for the motor joints')
@@ -556,6 +557,18 @@ class RobotMujoco(robot_sim.RobotSim):
     self._tilt_hist = []
     self._rand_next = self.rand_every
     self.model, self.data = self.physics.model, self.physics.data
+    # sim_slope: the floor inclines by this much (rad; positive: uphill
+    # toward the robot's starting forward, world +y), by tilting gravity, so
+    # the floor stays the plane the bumpers rest on. The phone's tilt is
+    # read against gravity, so on a slope it differs from the tilt against
+    # the floor by the slope along the robot's heading. sim_rand 'slope'
+    # draws a new incline every sim_rand_every s; sim_slope_ramp: the floor
+    # moves there over this many seconds rather than at once, as when the
+    # robot drives onto a ramp.
+    self.slope_ramp = float(sim_slope_ramp)
+    self.slope = self._slope_target = float(sim_slope)
+    self._slope_rate = 0.0
+    self._apply_slope()
     self._body = self.model.body('robot').id
     self._com = self.model.body_ipos[self._body].copy()
     # Upright in MuJoCo is theta_zero here: the phone reads tilt from its own
@@ -595,6 +608,13 @@ class RobotMujoco(robot_sim.RobotSim):
       self.physics.backlash = draw['backlash']
     if 'tilt_lag' in draw:
       self.tilt_lag = draw['tilt_lag']
+    if 'slope' in draw:
+      self._slope_target = draw['slope']
+      if self.slope_ramp:
+        self._slope_rate = abs(self._slope_target - self.slope) / self.slope_ramp
+      else:
+        self.slope = self._slope_target
+        self._apply_slope()
     if 'scrape' in draw:
       self._scrape = draw['scrape']
     self._floor_scrape()
@@ -712,6 +732,15 @@ class RobotMujoco(robot_sim.RobotSim):
     w, x, y, z = self.data.qpos[3:7]
     return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
 
+  def _apply_slope(self):
+    g = 9.81
+    self.model.opt.gravity[:] = (0.0, -g * math.sin(self.slope),
+                                 -g * math.cos(self.slope))
+
+  def slope_along(self):
+    """The incline along the robot's heading (rad, positive: facing uphill)."""
+    return self.slope * math.cos(self._yaw()) if self.slope else 0.0
+
   def _recv(self):
     dt = 1.0 / self.hz
     self.applied, self.previous = self.previous, self.pending
@@ -749,6 +778,12 @@ class RobotMujoco(robot_sim.RobotSim):
     if self.rand_every and self._sim_time >= self._rand_next:
       self._rand_next += self.rand_every
       self._draw_rand()
+    if self.slope != self._slope_target:
+      step = self._slope_rate * dt if self._slope_rate else np.inf
+      gap = self._slope_target - self.slope
+      self.slope = self._slope_target if abs(gap) <= step else (
+          self.slope + math.copysign(step, gap))
+      self._apply_slope()
     if self.eq_every and self._sim_time >= self._eq_next:
       self._eq_next += self.eq_every
       self.theta_eq = self.theta_zero + self.sim_rng.uniform(
@@ -785,13 +820,15 @@ class RobotMujoco(robot_sim.RobotSim):
       noisy = speed * (1 + 0.02 * n * rng.randn(2)) + 30 * n * rng.randn(2)
     # Yaw rate about the vertical, counter-clockwise positive, signed as the
     # phone's gyro is after yaw_sign.
+    along = self.slope_along()
     self._yaw_rate = self.yaw_sign * (
         float(self.data.qvel[5]) + 0.02 * n * rng.randn())
     self._last = dict(
         wheel_speed_l=float(noisy[0]), wheel_speed_r=float(noisy[1]),
         wheel_distance_l=float(self.distance[0]),
         wheel_distance_r=float(self.distance[1]),
-        theta=float(tilt[0] + 0.003 * n * rng.randn()),
+        theta=float(tilt[0] - along + 0.003 * n * rng.randn()),
+        theta_floor=float(tilt[0]),
         angular_velocity=float(tilt[1] + 0.05 * n * rng.randn()),
         battery_voltage=3.6)
     self._timing = (0.0, 0.0, 0.0, 0.0)

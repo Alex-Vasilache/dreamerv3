@@ -988,8 +988,12 @@ class SmartphoneRobot(embodied.Env):
       # implied: a robot cannot hold a lean while standing still, so at a
       # zero command the only way to keep tracking is to stay upright --
       # around its true balance point, not theta_zero, which was set by eye.
-      near = (offset >= self.bumper_hi - self.bumper_margin
-              or offset <= self.bumper_lo + self.bumper_margin)
+      # The bumpers rest on the floor: in the sim on a slope, where the
+      # phone's tilt (against gravity) is not the tilt against the floor,
+      # judge them by the floor's (theta_floor; the phone does not send it).
+      floor = float(sensors.get('theta_floor', theta)) - self.theta_zero
+      near = (floor >= self.bumper_hi - self.bumper_margin
+              or floor <= self.bumper_lo + self.bumper_margin)
       lean = offset / (self.bumper_hi if offset > 0 else -self.bumper_lo)
       c = cmd_f / k
       progress = abs(c) * min(1.0, max(0.0, forward / c)) if abs(c) > 0.05 else 0.0

@@ -88,3 +88,25 @@ def test_the_drawn_body_touches_the_floor_on_its_bumpers(side):
     world = verts @ data.geom_xmat[g].reshape(3, 3).T + data.geom_xpos[g]
     lowest = min(lowest, world[:, 2].min())
   assert abs(lowest) < 0.001   # m
+
+
+def test_on_a_slope_the_phone_reads_tilt_against_gravity_and_it_rolls_downhill():
+  slope = math.radians(4.0)
+  env = make('mujoco', sim_slope=slope, sim_surface='table')
+  env.theta, env.omega = env.theta_zero, 0.0   # square to the floor
+  y0 = float(env.data.qpos[1])
+  env.pending = np.zeros(2)
+  sensors, _ = env._recv()
+  # Facing uphill (+y) and square to the floor, it leans back against gravity.
+  assert abs(sensors['theta'] - (sensors['theta_floor'] - slope)) < 1e-6
+  run(env, [(0, 0)] * int(2 * HZ))
+  assert float(env.data.qpos[1]) < y0 - 0.005   # rolled down the slope
+
+
+def test_a_drawn_slope_ramps_in():
+  env = make('mujoco', sim_rand='slope:0.05:0.05', sim_slope_ramp=1.0)
+  assert env.slope == 0.0 and env._slope_target == 0.05
+  run(env, [(0, 0)] * int(0.5 * HZ))
+  assert 0.015 < env.slope < 0.035
+  run(env, [(0, 0)] * int(1.0 * HZ))
+  assert env.slope == 0.05
