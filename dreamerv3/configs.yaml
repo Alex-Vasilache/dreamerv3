@@ -1657,6 +1657,13 @@ tce_hash4:
   agent:
     mgr_fromto: {start_hash: deter_norm, hash_bits: 12, hash_tables: 4, w_fixed: 2.0}
 
+# The same 4x12-bit hash with TCE's adaptive (lean-1.0) weight: e10000 at fixed
+# w = 2 pushed lean to 1.35-1.38 on pin pad six and solved 0/2 (as TCE-anneal and
+# TCE-grow did at fixed w), so this isolates the multi-hash change.
+tce_hash4a:
+  agent:
+    mgr_fromto: {start_hash: deter_norm, hash_bits: 12, hash_tables: 4}
+
 # Director's reconstruction-error exploration reward off (manager advantage =
 # extrinsic only), to test whether TCE makes it redundant.
 no_gae_expl:

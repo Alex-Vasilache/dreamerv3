@@ -644,6 +644,17 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### e19100-e19132: TCE with 4x12-bit world-model hash, ADAPTIVE weight (2026-11-04, array 4795008)
+
+`... fromto_dir tce_hash4a pubmatch`; 6 tasks x 5 seeds + pin pad six seeds 5-7.
+Replaces the fixed-w hash4 batch (e10000), stopped 2026-11-04 05:00 after its two pin
+pad six seeds ended at 0 at 4M with lean 1.35-1.38 (single hash, adaptive w:
+~1.0-1.05; TCE-anneal/grow at fixed w: 1.08-1.14, also lost pin pad six); its other
+seeds also trailed the single hash (pin pad four 282/304 vs 317, five 244/259 vs 259,
+cartpole 616-732 vs 757, cheetah 410-503 vs 574). Fixed w = 2 is too strong once the
+bonus is averaged over 4 tables. e10003-e10005, e10009 (DMC, ~3.3M) left to finish.
+This batch changes only the hash (1x16 -> 4x12) vs e9500.
+
 ### e10000-e10009 + e19010-e19032: TCE with 4x12-bit world-model hash + fixed w=2 (2026-11-03, array 4792002)
 
 Renumbered 2026-11-04 01:00: rows 10-32 (not yet started) moved to e19010-e19032 because the robot session launched e10020-e10032.
