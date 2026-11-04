@@ -1048,6 +1048,27 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         **imag_kw)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_flat.items()})
     metrics.update(mets)
+    arousal = self.config.get('arousal_imag', {}) or {}
+    if float(arousal.get('weight', 0.0)):
+      # Arousal-tagged imagination (docs/robot/EMOTION.md): weight each
+      # replay start's actor and critic losses, relative to the batch, by how
+      # surprising that moment was to the world model. 'unexpected' is the
+      # surprise beyond the prior's own spread, H(q) + KL(q||p) - H(p)
+      # (Yu & Dayan 2005); 'kl' is the raw Bayesian surprise KL(q||p).
+      # Relative weights, because the optimizer normalises a global scale.
+      post = self.dyn._dist(sg(repfeat['logit']))
+      prior = self.dyn._dist(sg(self.dyn._prior(sg(repfeat['deter']))))
+      kl = post.kl(prior)
+      signal = kl if arousal.get('signal', 'unexpected') == 'kl' else (
+          post.entropy() + kl - prior.entropy())
+      signal = f32(signal[:, -K_imag:])
+      z = (signal - signal.mean()) / (signal.std() + 1e-6)
+      w = 1 + float(arousal['weight']) * jnp.clip(z, 0, float(arousal.get('clip', 3.0)))
+      w = sg(w / w.mean())
+      for k in ('policy', 'value'):
+        losses[k] = losses[k] * w
+      metrics['arousal/w_max'] = w.max()
+      metrics['arousal/signal'] = signal.mean()
     if self.config.repval_loss:
       feat = sg(repfeat, skip=self.config.repval_grad)
       last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]

@@ -18,6 +18,10 @@ KEEP_PREFIXES = ('enc/', 'dyn/', 'pol/')
 # ...except the RSSM prior, which only imagination uses. Dropping it saves
 # 460KB and makes it obvious that this file cannot dream.
 DROP_PREFIXES = ('dyn/prior', 'dyn/priorlogit')
+# With emotion=True the file also carries what deploy/emotion.py reads: the
+# prior (surprise, novelty, empowerment) and the critic and reward heads
+# (valence). About 1 MB more as int8.
+EMOTION_PREFIXES = ('dyn/prior', 'val/', 'rew/')
 
 
 # dtype='int8': kernels of at least this many entries go as int8 codes with
@@ -46,12 +50,13 @@ def quantize_int8(v):
   return codes.astype(np.int8), scale
 
 
-def filter_params(params, dtype='float32'):
+def filter_params(params, dtype='float32', emotion=False):
   """The acting params, as `dtype`. For 'int8' a quantized kernel `k` is
   stored as int8 codes under `k` and its scales under `k + SCALE_SUFFIX`."""
   keep = {}
   for k, v in params.items():
-    if not k.startswith(KEEP_PREFIXES) or k.startswith(DROP_PREFIXES):
+    wanted = k.startswith(KEEP_PREFIXES) and not k.startswith(DROP_PREFIXES)
+    if not (wanted or (emotion and k.startswith(EMOTION_PREFIXES))):
       continue
     v = np.asarray(v, np.float32)
     if dtype == 'int8':
@@ -150,19 +155,28 @@ def build_meta(config, params):
   return meta
 
 
-def pack(config, params, dtype='float32'):
+def pack(config, params, dtype='float32', emotion=False):
   """Return (npz_bytes, meta) for the policy params in `params`. The phone
   loads any float dtype, and int8 codes with their scales, into float32, so
   `dtype` only sets the bytes sent. int8 is also deflated: the codes compress
   by ~7%, float32 and float16 by nothing worth the time."""
-  arrays, meta = pack_arrays(config, params, dtype)
+  arrays, meta = pack_arrays(config, params, dtype, emotion)
   return encode(meta, arrays, compress=(dtype == 'int8')), meta
 
 
-def pack_arrays(config, params, dtype='float32'):
+def pack_arrays(config, params, dtype='float32', emotion=False):
   """The arrays `pack` would send, and their meta, not yet encoded."""
-  keep = filter_params(params, dtype)
-  return keep, build_meta(config, keep)
+  keep = filter_params(params, dtype, emotion)
+  meta = build_meta(config, keep)
+  if emotion:
+    # The critic's discount, for the TD error: 1 - 1/horizon steps.
+    r = config.env.robot
+    horizon = (float(r.horizon_s) * float(r.hz) if float(r.get('horizon_s', 0))
+               else float(config.agent.horizon))
+    meta['emotion'] = dict(gamma=1.0 - 1.0 / horizon)
+    meta['signature'] = '|'.join(
+        f'{k}={meta[k]}' for k in sorted(meta) if k != 'signature')
+  return keep, meta
 
 
 # Delta pushes. A delta names the push it builds on (`__base__`) and holds,

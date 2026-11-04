@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Robot Face</title>
+<style>
+/* A full-screen face driven by the robot's valence (TD error), arousal
+   (novelty + unexpected surprise + reward error - empowerment) and
+   dominance (empowerment). Served by the phone at /face (live, over /ws),
+   or with ?trace=URL / an embedded window.FACE_TRACE it replays a recording. */
+:root { --bg: #10161c; --fg: #e8edf2; --muted: #8896a3; --panel: #18212a; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+  font-family: "IBM Plex Sans", system-ui, sans-serif; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hud { position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  display: flex; gap: 10px; align-items: center; font: 12px "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); flex-wrap: wrap; }
+.hud button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid #2c3a47; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.hud button:focus-visible { outline: 2px solid #6fb6ff; outline-offset: 2px; }
+.bar { display: inline-flex; align-items: center; gap: 6px; }
+.bar i { display: inline-block; width: 80px; height: 6px; background: #26323d; border-radius: 3px; position: relative; overflow: hidden; }
+.bar i b { position: absolute; top: 0; bottom: 0; background: #6fb6ff; }
+</style>
+</head>
+<body>
+<canvas id="face" aria-label="Robot face showing its current valence and arousal"></canvas>
+<div class="hud">
+  <button id="sound" type="button">Sound off</button>
+  <span class="bar">valence <i><b id="bv"></b></i></span>
+  <span class="bar">arousal <i><b id="ba"></b></i></span>
+  <span id="src">connecting…</span>
+</div>
+<script>
+(() => {
+  const cv = document.getElementById('face'), ctx = cv.getContext('2d');
+  const target = { valence: 0, arousal: 0.4, dominance: 0 };
+  const now = { valence: 0, arousal: 0.4, dominance: 0 };
+  const src = document.getElementById('src');
+  let t0 = performance.now(), blinkAt = 0, blink = 0, phase = 0, lastValence = 0;
+
+  function resize() {
+    const r = window.devicePixelRatio || 1;
+    cv.width = innerWidth * r; cv.height = innerHeight * r;
+    ctx.setTransform(r, 0, 0, r, 0, 0);
+  }
+  addEventListener('resize', resize); resize();
+
+  // -- data: live from the phone, a trace, or idle --------------------------
+  function setState(e) {
+    if (!e) return;
+    for (const k of ['valence', 'arousal', 'dominance'])
+      if (typeof e[k] === 'number' && isFinite(e[k])) target[k] = e[k];
+  }
+  function playTrace(tr) {
+    src.textContent = 'recording';
+    const start = performance.now();
+    (function tick() {
+      const s = ((performance.now() - start) / 1000) % (tr.t[tr.t.length - 1] || 1);
+      let i = Math.min(tr.t.length - 1, Math.floor(s * (tr.hz || 10)));
+      setState({ valence: tr.valence[i], arousal: tr.arousal[i], dominance: (tr.dominance || [])[i] });
+      setTimeout(tick, 100);
+    })();
+  }
+  const q = new URLSearchParams(location.search);
+  if (window.FACE_TRACE) playTrace(window.FACE_TRACE);
+  else if (q.get('trace')) fetch(q.get('trace')).then(r => r.json()).then(playTrace)
+    .catch(() => { src.textContent = 'trace not found'; });
+  else {
+    try {
+      const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+      ws.onopen = () => { src.textContent = 'live'; };
+      ws.onmessage = m => { try { setState(JSON.parse(m.data).emotion); } catch (e) {} };
+      ws.onclose = () => { src.textContent = 'no robot (idle)'; };
+    } catch (e) { src.textContent = 'no robot (idle)'; }
+  }
+
+  // -- sound: a soft voice, pitch with arousal, interval with valence --------
+  let audio = null;
+  const btn = document.getElementById('sound');
+  btn.onclick = () => {
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+    audio.muted = !audio.muted; if (audio.state === 'suspended') audio.resume();
+    btn.textContent = audio.muted ? 'Sound off' : 'Sound on';
+  };
+  function chirp(v, a) {
+    if (!audio || audio.muted) return;
+    const base = 220 + 440 * a;                      // higher when aroused
+    const step = v >= 0 ? 1.26 : 0.84;               // major third up, or a fall
+    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+    o.type = v >= 0 ? 'sine' : 'triangle';
+    o.frequency.setValueAtTime(base, t);
+    o.frequency.exponentialRampToValueAtTime(base * step, t + 0.12 + 0.2 * (1 - a));
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.4);
+  }
+
+  // -- drawing ---------------------------------------------------------------
+  const lerp = (a, b, k) => a + (b - a) * k;
+  function hueFor(v) { return lerp(215, 40, (v + 1) / 2); }   // blue (sad) .. amber (glad)
+
+  function frame(ms) {
+    const dt = Math.min(0.1, (ms - t0) / 1000); t0 = ms;
+    const k = 1 - Math.exp(-dt * 4);
+    for (const key in now) now[key] = lerp(now[key], target[key], k);
+    const v = Math.max(-1, Math.min(1, now.valence)), a = Math.max(0, Math.min(1, now.arousal));
+    const d = Math.max(-1, Math.min(1, now.dominance));
+    document.getElementById('bv').style.cssText = v >= 0 ? `left:50%;width:${v * 50}%` : `left:${50 + v * 50}%;width:${-v * 50}%`;
+    document.getElementById('ba').style.cssText = `left:0;width:${a * 100}%`;
+
+    // A chirp when valence turns, or every few seconds when aroused.
+    phase += dt * (0.5 + 2.5 * a);
+    if (Math.abs(v - lastValence) > 0.5 || (Math.random() < dt * a * a * 0.6)) { chirp(v, a); lastValence = v; }
+
+    // Blinks: rarer and quicker when aroused.
+    if (ms > blinkAt) { blink = 1; blinkAt = ms + 1500 + Math.random() * (2000 + 5000 * (1 - a)) * (0.4 + a); }
+    blink = Math.max(0, blink - dt * 8);
+
+    const W = innerWidth, H = innerHeight, S = Math.min(W, H);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg'); ctx.fillRect(0, 0, W, H);
+    const jitter = a > 0.7 ? (a - 0.7) * 6 : 0;
+    const cx = W / 2 + Math.sin(phase * 7) * jitter, cy = H / 2 + Math.sin(phase) * S * 0.01 * (0.3 + a) + d * S * -0.02;
+    const hue = hueFor(v), sat = 45 + 35 * a, light = 55 + 8 * v;
+    const tilt = -d * 0.06;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
+
+    // Head glow
+    const R = S * 0.42;
+    const glow = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.1);
+    glow.addColorStop(0, `hsla(${hue},${sat}%,${light}%,0.20)`); glow.addColorStop(1, 'hsla(0,0%,0%,0)');
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, R * 1.1, 0, Math.PI * 2); ctx.fill();
+
+    // Eyes
+    const ex = S * 0.16, ey = -S * 0.06, ew = S * 0.085;
+    const open = Math.max(0.05, (0.45 + 0.75 * a) * (1 - blink));
+    const pupil = ew * (0.35 + 0.35 * a);
+    for (const s of [-1, 1]) {
+      ctx.save(); ctx.translate(s * ex, ey);
+      ctx.fillStyle = `hsl(${hue},${sat * 0.4}%,92%)`;
+      ctx.beginPath(); ctx.ellipse(0, 0, ew, ew * open, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, ew, ew * open, 0, 0, Math.PI * 2); ctx.clip();
+      const look = Math.sin(phase * 0.7) * ew * 0.25 * (0.3 + a);
+      ctx.fillStyle = `hsl(${hue},${sat}%,${light - 25}%)`;
+      ctx.beginPath(); ctx.arc(look, 0, pupil, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(look + pupil * 0.35, -pupil * 0.35, pupil * 0.22, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // Brows: inner end up when sad, down when angry-low-valence-high-arousal
+      ctx.strokeStyle = `hsl(${hue},${sat}%,${light}%)`; ctx.lineWidth = S * 0.018; ctx.lineCap = 'round';
+      const lift = ew * (1.25 + 0.35 * a);
+      const slant = -v * 0.25 * (1 - a) + (v < 0 ? a * 0.35 : 0);
+      ctx.beginPath(); ctx.moveTo(-ew * 0.9, -lift + s * slant * ew * 0.9 * -1); ctx.lineTo(ew * 0.9, -lift - s * slant * ew * 0.9 * -1);
+      ctx.stroke(); ctx.restore();
+    }
+
+    // Mouth: curve with valence, opening with arousal
+    const mw = S * 0.2, my = S * 0.17, curve = v * S * 0.07, gap = S * (0.004 + 0.05 * Math.max(0, a - 0.35));
+    ctx.strokeStyle = `hsl(${hue},${sat}%,${light}%)`; ctx.lineWidth = S * 0.02; ctx.lineCap = 'round';
+    ctx.fillStyle = `hsla(${hue},${sat}%,${light - 30}%,0.9)`;
+    ctx.beginPath(); ctx.moveTo(-mw / 2, my);
+    ctx.quadraticCurveTo(0, my + curve + gap, mw / 2, my);
+    ctx.quadraticCurveTo(0, my + curve - gap, -mw / 2, my);
+    ctx.closePath(); if (gap > S * 0.01) ctx.fill(); ctx.stroke();
+    ctx.restore();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

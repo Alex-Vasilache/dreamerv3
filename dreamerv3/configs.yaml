@@ -739,6 +739,10 @@ defaults:
     advnorm: {impl: none, rate: 0.01, limit: 1e-8}
     reward_grad: True
     repval_loss: True
+    # Arousal-tagged imagination (agent.py:_flat_ac_loss, flat actor only):
+    # weight 0 is off; > 0 weights each replay start's actor and critic loss by
+    # 1 + weight * clip(z(signal), 0, clip), renormalised to mean 1 per batch.
+    arousal_imag: {weight: 0.0, signal: unexpected, clip: 3.0}
     repval_grad: True
     # HRL only: let the replay value losses (manager task, manager exploration,
     # worker goal) backprop into enc/RSSM. Off since 2026-10-05: on, they reshape
