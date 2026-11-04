@@ -1105,6 +1105,56 @@ own drift (lean back while it keeps rolling forward). Longer training or a
 position term (penalise distance travelled at a zero stick) are the next
 things to try.
 
+### 11.7 The live demo running away on the table (round 7, Wednesday night)
+
+Live balance training from scratch on the table (demos e9662, e10100,
+e10101) spends seconds at a time at full drive in its first minutes: 5-21%
+of the worst minute in a runaway (mean wheel command beyond +-0.7 one way for
+>= 1 s), against 0-2% in the 15 OIST sessions of Oct 23-28. The live balance
+reward has not changed since Oct 26 and the phone's policy is 4-6 s old over
+the relay, so neither explains it. The fitted sim reproduces it on the table
+(1-3 min in) with CAPS spatial 0.3 or 0, and never on carpet: the policy
+catches a forward lean by driving under it and has to keep accelerating to
+hold the lean; full speed costs only ~0.8 of a reward worth up to 1. Sim,
+15 min, `sbatch/sim_bal_r7*.txt`, e19200-e19274; roaming = range of the
+position within a minute, from the wheels; n=3 per arm unless noted.
+
+| arm (table) | roaming, min 1-4 (m/min) | first minute > 80% upright | runaways |
+|---|---|---|---|
+| no brake (n=6) | 6.3 ± 1.9 | 3.7 ± 0.7 | 0-41% of the worst minute |
+| drift penalty 0.5 / 1.0, `still_speed` 3000 | | 1 of 3 / 3 of 3 lie on a bumper | |
+| wheel penalty 0.3 / 0.6, horizon 4 s | | as fast | as often |
+| brake (`runaway_s` 1) | 6.1 ± 0.3 | 4.3 ± 1.2 | 2-10% |
+| brake + leash 0.3, 30 s leak | 3.1 ± 1.2 | 5.7 ± 1.7 | 0-8% |
+| brake + leash 1.0, 30 s leak | 3.6 ± 1.3 | 10.0 ± 1.4 | 0-9% |
+| brake + leash 0.3, 120 s leak | 4.2 ± 1.3 | 7.3 ± 3.4 | 0-5% |
+| brake + cap 0.4 -> 1 over 5 min | 1.7 ± 0.2 | 6, 9, never | 0-8% |
+| brake + cap 0.4 -> 1 over 10 min | 2.8 ± 0.5 | 7.0 ± 1.6 | 0-7% |
+| **brake + cap 0.6 -> 1 over 5 min** | 5.2 ± 0.7 | 3.3 ± 0.5 | none |
+| brake + geofence 0.5 m + leash | 0.9 ± 0.1 | never | |
+
+![round 7](figs/r7.png)
+
+![round 7e, leash](figs/r7e.png)
+
+![round 7f, caps](figs/r7f.png)
+
+New env keys (all off by default): `runaway_s`, `runaway_drive`, `brake_s`
+(hold the wheels `brake_s` after `runaway_s` of full drive one way; the
+phone through a robot pause), `drive_cap0`, `drive_cap_s` (clip the wheel
+commands, cap rising from `drive_cap0` to 1; the phone clips with a
+dreamerBridge that reads `drive_cap`), `pos_tau`, `pos_penalty`,
+`pos_range`, `obs_pos_scale`, `pos_jump`, `pos_fence` (a leaky sum of the
+wheel distances as the `position` observation, a cost on it, a fence brake;
+the phone keeps the same sum in `deploy/policy_runner.py`). The `robot` block
+now sets the brake and the 0.6 cap; `robot_command` turns both off. In sim,
+every arm that changes the action records the executed one.
+
+Only the 0.6 cap is free; everything that keeps the robot closer to its spot
+in the first minutes also delays balancing (a 0.4 cap cannot catch a fall on
+the table, so the robot mostly lies on a bumper). Carpet is unaffected by
+any of it and remains the reliable demo floor.
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined

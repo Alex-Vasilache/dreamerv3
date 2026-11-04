@@ -209,6 +209,22 @@ def test_onboard_the_phone_is_paused_for_the_brake(tmp_path):
   env._link.close()
 
 
+def test_the_speed_cap_clips_and_rises_to_full(tmp_path):
+  env = make_env(tmp_path, discrete=False, symmetric=False, hz=10.0,
+                 drive_cap0=0.4, drive_cap_s=2.0)
+  sent = []
+  env._send = lambda left, right, reset: sent.append((left, right))
+  env._recv = lambda: (dict(env._last), 0.0)
+  executed = []
+  for _ in range(25):
+    obs = env._advance(dict(drive=np.array([1.0, -0.1], np.float32)))
+    executed.append(obs['executed/drive'])
+  assert sent[0] == pytest.approx((0.4, -0.1))   # small commands pass
+  assert sent[10][0] == pytest.approx(0.7)       # half way at 1 s
+  assert sent[-1] == pytest.approx((1.0, -0.1))  # full after 2 s
+  np.testing.assert_allclose(executed[0], [0.4, -0.1], rtol=1e-6)
+
+
 def test_the_learner_drops_its_ratio_debt_while_paused():
   # What run_learner does with should_train while paused: called and its
   # answer thrown away, so resuming does not try to catch up.

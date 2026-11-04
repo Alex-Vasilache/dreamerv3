@@ -76,6 +76,8 @@ def veckeys(config):
     keys.append('target')
   if task == 'command':
     keys.append('command')
+  if float(config.env.robot.get('pos_tau', 0.0)):
+    keys.append('position')
   return keys
 
 
@@ -134,6 +136,13 @@ def build_meta(config, params):
           obs_rate_scale=float(config.env.robot.obs_rate_scale),
           obs_wheel_scale=float(config.env.robot.obs_wheel_scale),
           obs_clip=float(config.env.robot.obs_clip),
+          # The leaky wheel distance (robot.py:track_position), when observed.
+          **(dict(
+              pos_tau=float(config.env.robot.pos_tau),
+              obs_pos_scale=float(config.env.robot.obs_pos_scale),
+              pos_jump=float(config.env.robot.pos_jump),
+              hz=float(config.env.robot.hz),
+          ) if float(config.env.robot.get('pos_tau', 0.0)) else {}),
       ),
   )
   meta['signature'] = '|'.join(

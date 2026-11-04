@@ -45,6 +45,16 @@ PLAYER_SETTINGS = (
     'command_sigma', 'command_reward', 'command_track_weight',
     'command_balance_weight', 'forward_sign', 'turn_source', 'yaw_rate_max')
 
+def track_position(pos, prev, sensors, tau, hz, jump):
+  """One step of the leaky wheel-distance sum; the phone runs a copy
+  (deploy/policy_runner.py), so change both."""
+  dist = np.array([float(sensors.get('wheel_distance_l', 0.0)),
+                   float(sensors.get('wheel_distance_r', 0.0))])
+  step = np.zeros(2) if prev is None else dist - np.asarray(prev)
+  step[np.abs(step) > jump] = 0.0
+  return pos * np.exp(-1.0 / (tau * hz)) + step
+
+
 # Anything that means the link went away rather than that the code is
 # wrong: socket errors and timeouts (both OSError), plus a truncated or
 # garbled frame from a half-closed connection.
@@ -537,7 +547,9 @@ class SmartphoneRobot(embodied.Env):
       policy_dir=None, weights_every=0.0, weights_dtype='float32',
       weights_kbps=0.0, weights_poll=0.25, weight_streams=0, logdir=None,
       pace=None, pause_file=None, start_paused=False, runaway_s=0.0,
-      runaway_drive=0.7, brake_s=1.0):
+      runaway_drive=0.7, brake_s=1.0, pos_tau=0.0, pos_penalty=0.0,
+      pos_range=12000.0, obs_pos_scale=1.67e-4, pos_jump=1000.0,
+      pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -679,6 +691,36 @@ class SmartphoneRobot(embodied.Env):
     self._run_steps = 0
     self._run_sign = 0.0
     self._brake_left = 0
+    # Where the robot is: each wheel's distance (phone mm) summed with a leak
+    # of time constant pos_tau s, so it reads how far the robot has gone from
+    # where it was over the last ~pos_tau s and needs no anchor that could
+    # jump. An observation ('position', obs_pos_scale x it, ~0.5 m per unit)
+    # when pos_tau > 0, and a cost of pos_penalty x the net displacement over
+    # pos_range (~1 m; 12178 phone mm per m), clipped at 1. Nothing else
+    # tells the policy it has left its spot: speed costs can only make it
+    # stop, and on the table early runs stop by lying on a bumper (round 7).
+    # The phone keeps the same sum (deploy/policy_runner.py). A step moving a
+    # wheel more than pos_jump is a counter reset, not motion.
+    self.pos_tau = float(pos_tau)
+    self.pos_penalty = float(pos_penalty)
+    self.pos_range = float(pos_range)
+    self.obs_pos_scale = float(obs_pos_scale)
+    self.pos_jump = float(pos_jump)
+    self._pos = np.zeros(2, np.float64)
+    self._prev_dist = None
+    self._pos_step = 0.0
+    # pos_fence > 0 (phone mm): the runaway brake also holds the wheels
+    # whenever the robot is past this net displacement and still moving
+    # away, a virtual wall that leaves speed inside it alone.
+    self.pos_fence = float(pos_fence)
+    # A speed cap for the first minutes of live training: every wheel
+    # command is clipped to +-cap, cap rising linearly from drive_cap0 to 1
+    # over drive_cap_s s of this process's steps. Clipped, not scaled, so
+    # the small corrections of balancing pass unchanged; the clipped action
+    # is what is recorded. 0 = off.
+    self.drive_cap0 = float(drive_cap0)
+    self.drive_cap_s = float(drive_cap_s)
+    self._cap_sent = None
     # The phone multiplies every wheel command by this before driving, so the
     # policy keeps its whole [-1, 1] range while the motors stay off full
     # power, the only regime where a driver was seen to cut out under load.
@@ -853,6 +895,9 @@ class SmartphoneRobot(embodied.Env):
         # [forward, turn], each in [-1, 1].
         **({'command': elements.Space(np.float32, (2,))}
            if self.task == 'command' else {}),
+        # Each wheel's leaky distance (pos_tau), scaled; see _track_position.
+        **({'position': elements.Space(np.float32, (2,))}
+           if self.pos_tau else {}),
         'reward': elements.Space(np.float32),
         'is_first': elements.Space(bool),
         'is_last': elements.Space(bool),
@@ -885,7 +930,7 @@ class SmartphoneRobot(embodied.Env):
             'log/forward', 'log/turn', 'log/turn_wheels', 'log/yaw_rate',
             'log/zeta')} if self.task == 'command' else {}),
         **({'executed/drive': elements.Space(np.float32, (2,), -1.0, 1.0)}
-           if self.onboard and not self.discrete else {}),
+           if self._records_executed() else {}),
     }
 
   @property
@@ -933,6 +978,7 @@ class SmartphoneRobot(embodied.Env):
         self._prev_act = np.zeros(2, np.float32)
         self._chatter = 0.0
         self._sent_act = (0.0, 0.0)
+        self._track_position(sensors)
         return self._obs(sensors, latency, 0.0, is_first=True)
       except LINKLOST as e:
         if not self.reconnect:
@@ -984,6 +1030,11 @@ class SmartphoneRobot(embodied.Env):
       self._ref = self.theta_zero + self._rng.uniform(
           -self.ref_range, self.ref_range)
     left, right = self._decode(action)
+    if self.drive_cap0:
+      cap = self._drive_cap()
+      left = float(np.clip(left, -cap, cap))
+      right = float(np.clip(right, -cap, cap))
+      self._tell_cap(cap)
     if self._pause['robot'] or self._brake_left:
       # The phone holds the wheels only for a policy it runs itself; here the
       # held wheels are this action, and recorded as what they did.
@@ -1024,9 +1075,13 @@ class SmartphoneRobot(embodied.Env):
     self._chatter2 = float(np.mean((act - self._prev_act) ** 2))
     self._prev_act = act
     self._runaway(act)
+    self._track_position(sensors)
     reward, terminal = self._evaluate(sensors)
     reward -= self.action_rate_penalty * self._chatter
     reward -= self.action_rate_quad * self._chatter2
+    if self.pos_penalty:
+      reward -= self.pos_penalty * min(
+          abs(float(self._pos.mean())) / self.pos_range, 1.0)
     self._reward = reward
     self._done = terminal or self._step >= self.length
     return self._obs(
@@ -1041,6 +1096,17 @@ class SmartphoneRobot(embodied.Env):
     except OSError:
       pass
     self._listener = None
+
+  def _track_position(self, sensors):
+    if not self.pos_tau:
+      return
+    before = float(self._pos.mean())
+    self._pos = track_position(
+        self._pos, self._prev_dist, sensors, self.pos_tau, self.hz,
+        self.pos_jump)
+    self._prev_dist = (float(sensors.get('wheel_distance_l', 0.0)),
+                       float(sensors.get('wheel_distance_r', 0.0)))
+    self._pos_step = float(self._pos.mean()) - before
 
   def _runaway(self, act):
     """Count steps of full drive one way; start or end a brake."""
@@ -1060,12 +1126,34 @@ class SmartphoneRobot(embodied.Env):
     else:
       self._run_steps = 1
     self._run_sign = sign
-    if self._run_steps >= self.runaway_s * self.hz:
+    fenced = (self.pos_fence and abs(float(self._pos.mean())) > self.pos_fence
+              and self._pos_step * float(self._pos.mean()) > 0)
+    if self._run_steps >= self.runaway_s * self.hz or fenced:
       self._run_steps = 0
       self._brake_left = max(1, int(round(self.brake_s * self.hz)))
-      print('[robot] runaway: full drive for %.1f s, holding the wheels %.1f s'
-            % (self.runaway_s, self.brake_s), flush=True)
+      print('[robot] %s, holding the wheels %.1f s' % (
+          'past the fence' if fenced else
+          'runaway: full drive for %.1f s' % self.runaway_s, self.brake_s),
+          flush=True)
       self._tell_brake(True)
+
+  def _drive_cap(self):
+    ramp = self._total_steps / max(self.drive_cap_s * self.hz, 1.0)
+    return min(1.0, self.drive_cap0 + (1.0 - self.drive_cap0) * ramp)
+
+  def _tell_cap(self, cap):
+    # Onboard the phone drives, so it clips (dreamerBridge 'drive_cap' in a
+    # pause frame); sent when it has moved by 0.02.
+    if not self._onboard or self._link is None:
+      return
+    if self._cap_sent is not None and abs(cap - self._cap_sent) < 0.02:
+      return
+    try:
+      self._link.send(dict(type='pause', **self._pause_message(),
+                           drive_cap=float(cap)))
+      self._cap_sent = cap
+    except LINKLOST:
+      pass
 
   def _tell_brake(self, on):
     # Onboard the phone drives, so it holds the wheels itself: a robot pause
@@ -1311,6 +1399,9 @@ class SmartphoneRobot(embodied.Env):
            if self.task == 'track' else {}),
         **({'command': np.array(self._cmd, np.float32)}
            if self.task == 'command' else {}),
+        **({'position': np.clip(
+            self._pos * self.obs_pos_scale, -self.obs_clip,
+            self.obs_clip).astype(np.float32)} if self.pos_tau else {}),
         reward=np.float32(reward),
         is_first=is_first,
         is_last=is_last,
@@ -1322,7 +1413,7 @@ class SmartphoneRobot(embodied.Env):
         # while a phone without weights is still bootstrapping on ours: then
         # the executed action is the one we sent.
         **({'executed/drive': self._executed()}
-           if self.onboard and not self.discrete else {}),
+           if self._records_executed() else {}),
         **{
             'log/theta_deg': np.float32(np.degrees(theta)),
             'log/distance_l': np.float32(sensors.get('wheel_distance_l', 0.0)),
@@ -1648,6 +1739,12 @@ class SmartphoneRobot(embodied.Env):
     if t.get('failed') and str(t.get('stamp')) == str(stamp):
       return 'failed'
     return None
+
+  def _records_executed(self):
+    # Onboard, and wherever this env changes the action it was given (the
+    # brake, the speed cap), the transition records what the wheels got.
+    return not self.discrete and bool(
+        self.onboard or self.drive_cap0 or self.runaway_s or self.pos_fence)
 
   def _executed(self):
     if self._onboard and self._onboard_act is not None:
