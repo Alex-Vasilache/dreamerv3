@@ -536,7 +536,8 @@ class SmartphoneRobot(embodied.Env):
       reconnect=True, pipeline=True, onboard=False, config=None,
       policy_dir=None, weights_every=0.0, weights_dtype='float32',
       weights_kbps=0.0, weights_poll=0.25, weight_streams=0, logdir=None,
-      pace=None, pause_file=None, start_paused=False):
+      pace=None, pause_file=None, start_paused=False, runaway_s=0.0,
+      runaway_drive=0.7, brake_s=1.0):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -664,6 +665,20 @@ class SmartphoneRobot(embodied.Env):
     self._prev_act = np.zeros(2, np.float32)
     self._chatter = 0.0
     self._sent_act = (0.0, 0.0)
+    # Runaway brake, for live training: once the wheels' mean command has
+    # stayed beyond +-runaway_drive in one direction for runaway_s, the
+    # wheels are held for brake_s (the phone through a robot pause, which it
+    # records as zero action). Early on the table every run passes through a
+    # phase of chasing a lean at full drive across the room (sim e19200-
+    # e19232: 1-3 min in, 5 of 9 runs; speed penalties only taught lying on
+    # a bumper). Trained policies never hold full drive for 1 s, so it stays
+    # out of their way and the wheels keep their whole range. 0 = off.
+    self.runaway_s = float(runaway_s)
+    self.runaway_drive = float(runaway_drive)
+    self.brake_s = float(brake_s)
+    self._run_steps = 0
+    self._run_sign = 0.0
+    self._brake_left = 0
     # The phone multiplies every wheel command by this before driving, so the
     # policy keeps its whole [-1, 1] range while the motors stay off full
     # power, the only regime where a driver was seen to cut out under load.
@@ -864,6 +879,7 @@ class SmartphoneRobot(embodied.Env):
         # acted on for this step. Sawtooths at the publish cadence when the
         # pushes keep up.
         'log/policy_age_s': elements.Space(np.float32),
+        'log/brake': elements.Space(np.float32),
         **({k: elements.Space(np.float32) for k in (
             'log/cmd_forward', 'log/cmd_turn', 'log/cmd_joystick',
             'log/forward', 'log/turn', 'log/turn_wheels', 'log/yaw_rate',
@@ -968,7 +984,7 @@ class SmartphoneRobot(embodied.Env):
       self._ref = self.theta_zero + self._rng.uniform(
           -self.ref_range, self.ref_range)
     left, right = self._decode(action)
-    if self._pause['robot']:
+    if self._pause['robot'] or self._brake_left:
       # The phone holds the wheels only for a policy it runs itself; here the
       # held wheels are this action, and recorded as what they did.
       left, right = 0.0, 0.0
@@ -1007,6 +1023,7 @@ class SmartphoneRobot(embodied.Env):
     self._chatter = float(np.mean(np.abs(act - self._prev_act)))
     self._chatter2 = float(np.mean((act - self._prev_act) ** 2))
     self._prev_act = act
+    self._runaway(act)
     reward, terminal = self._evaluate(sensors)
     reward -= self.action_rate_penalty * self._chatter
     reward -= self.action_rate_quad * self._chatter2
@@ -1024,6 +1041,43 @@ class SmartphoneRobot(embodied.Env):
     except OSError:
       pass
     self._listener = None
+
+  def _runaway(self, act):
+    """Count steps of full drive one way; start or end a brake."""
+    if not self.runaway_s:
+      return
+    if self._brake_left:
+      self._brake_left -= 1
+      if not self._brake_left:
+        self._tell_brake(False)
+      return
+    net = float(np.mean(act))
+    sign = float(np.sign(net)) if abs(net) > self.runaway_drive else 0.0
+    if not sign:
+      self._run_steps = 0
+    elif sign == self._run_sign:
+      self._run_steps += 1
+    else:
+      self._run_steps = 1
+    self._run_sign = sign
+    if self._run_steps >= self.runaway_s * self.hz:
+      self._run_steps = 0
+      self._brake_left = max(1, int(round(self.brake_s * self.hz)))
+      print('[robot] runaway: full drive for %.1f s, holding the wheels %.1f s'
+            % (self.runaway_s, self.brake_s), flush=True)
+      self._tell_brake(True)
+
+  def _tell_brake(self, on):
+    # Onboard the phone drives, so it holds the wheels itself: a robot pause
+    # it already understands, ended with the dashboard's own state.
+    if not self._onboard or self._link is None:
+      return
+    message = self._pause_message()
+    message['robot'] = bool(on) or message['robot']
+    try:
+      self._link.send(dict(type='pause', **message))
+    except LINKLOST:
+      pass
 
   def _decode(self, action):
     if self.discrete:
@@ -1284,6 +1338,7 @@ class SmartphoneRobot(embodied.Env):
             'log/dropped': np.float32(self._dropped),
             'log/backlog': np.float32(self._backlog),
             'log/policy_age_s': np.float32(self._policy_age()),
+            'log/brake': np.float32(self._brake_left > 0),
             **(self._command_logs(sensors) if self.task == 'command' else {}),
         },
     )

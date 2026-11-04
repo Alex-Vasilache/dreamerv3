@@ -150,6 +150,65 @@ def test_a_paused_robot_is_sent_zero_actions(tmp_path):
   assert sent[1] == pytest.approx((0.8, -0.5))
 
 
+def runaway_env(tmp_path, onboard=False):
+  env = make_env(tmp_path, discrete=False, symmetric=False, hz=10.0,
+                 runaway_s=1.0, brake_s=0.5)
+  sent = []
+  env._send = lambda left, right, reset: sent.append((left, right))
+
+  def recv():
+    if onboard:   # the phone drove what it was told, or held when paused
+      env._onboard_act = np.array(
+          [0.0, 0.0] if env._phone_paused else sent[-1], np.float32)
+    return dict(env._last), 0.0
+
+  env._recv = recv
+  env._phone_paused = False
+  return env, sent
+
+
+def test_a_runaway_gets_the_wheels_held_then_released(tmp_path):
+  env, sent = runaway_env(tmp_path)
+  full = dict(drive=np.array([0.9, 0.8], np.float32))
+  braked = []
+  for _ in range(20):
+    obs = env._advance(full)
+    braked.append(float(obs['log/brake']))
+  # 10 steps (1 s at 10 Hz) of full drive, then 5 held, then free again.
+  assert [s[0] for s in sent[:10]] == pytest.approx([0.9] * 10)
+  assert sent[10:15] == [(0.0, 0.0)] * 5
+  assert sent[15] == pytest.approx((0.9, 0.8))
+  assert braked[9:14] == [1.0] * 5 and braked[14] == 0.0
+
+
+def test_switching_direction_or_easing_off_is_no_runaway(tmp_path):
+  env, sent = runaway_env(tmp_path)
+  for i in range(40):
+    drive = 0.9 if (i // 5) % 2 else -0.9    # reverses every 0.5 s
+    env._advance(dict(drive=np.array([drive, drive], np.float32)))
+  for _ in range(40):
+    env._advance(dict(drive=np.array([0.6, 0.6], np.float32)))
+  assert (0.0, 0.0) not in sent
+
+
+def test_onboard_the_phone_is_paused_for_the_brake(tmp_path):
+  env, sent = runaway_env(tmp_path, onboard=True)
+  ours, phone = socket.socketpair()
+  env._link = robot._Link(ours, timeout=5.0)
+  env._onboard = True
+  full = dict(drive=np.array([-0.9, -0.9], np.float32))
+  for _ in range(10):
+    env._advance(full)
+  held = read_frame(phone)
+  assert held['type'] == 'pause' and held['robot'] and not held['training']
+  env._phone_paused = True
+  for _ in range(5):
+    env._advance(full)
+  released = read_frame(phone)
+  assert released['type'] == 'pause' and not released['robot']
+  env._link.close()
+
+
 def test_the_learner_drops_its_ratio_debt_while_paused():
   # What run_learner does with should_train while paused: called and its
   # answer thrown away, so resuming does not try to catch up.
