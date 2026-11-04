@@ -1729,6 +1729,13 @@ robot:
   # only with a dreamerBridge that reads 'drive_cap'; an older app ignores it.
   env.robot.drive_cap0: 0.6
   env.robot.drive_cap_s: 300
+  # Return home past 1 m (robot.py:_return_home; the phone drives it with the
+  # dreamerBridge patch tools/robot/dev/dreamerbridge_cap_home_face.patch, an
+  # older app ignores it and the trainer gives up after home_max_s). In sim on
+  # the table it halved the first minutes' roaming (5.2 -> 3.0 m/min) at the
+  # same time to balance (e19281-e19286). 0.5 m returned 22 times in 16 min
+  # in e30103; 1 m keeps the episodes longer.
+  env.robot.home_radius: 12000
   # No terminations: the body cannot self-right under proportional drive, and
   # terminating collapses a run into one-step episodes against a bumper.
   env.robot.fall_angle: 0.0
@@ -1904,6 +1911,7 @@ robot_command:
   # drive.
   env.robot.runaway_s: 0.0
   env.robot.drive_cap0: 0.0
+  env.robot.home_radius: 0.0
   # Off (was on): the balance runs that work on the robot run without it,
   # and in the fitted sim tracking was as good or better without
   # (e2108-e2115).
