@@ -644,7 +644,9 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
-### e30000-e30035 / e30100-e30135: 4x12 hash + smoothed controller, US-SOM vs plain SOM (2026-11-04, arrays 4796774 / 4796775)
+### h0001-h0036 / h0037-h0072: 4x12 hash + smoothed controller, US-SOM vs plain SOM (2026-11-04, arrays 4796774 / 4796775)
+
+**Numbering:** from here on HRL experiments use their own `h{NNNN}` series (robot keeps `e{N}`); these two arms were renamed from e30000/e30100 before starting.
 
 `... {goal_som_line goal_even | goal_som_line} fromto_dir tce_hash4e pubmatch`; 6 tasks x 5
 seeds + pin pad five and six seeds 5-7 (8 seeds there). Controller change vs e19100:
@@ -655,7 +657,7 @@ in a smoke test), floor `w_min 0.3` (pin pad five seeds that found reward on tim
 searched at w >= 0.22; the two late/failed ones at median 0.08-0.09). Questions: does
 the smoothed controller remove the pin pad five collapses (vs e19100), and does
 evenness still matter once the start side is a hash (US-SOM vs plain SOM)?
-Numbers: the robot session took e19200-e19250, so these moved to e30000+ before start.
+Numbers: the robot session took e19200-e19250 (first assignment), hence the move to the h series.
 
 ### e19100-e19132: TCE with 4x12-bit world-model hash, ADAPTIVE weight (2026-11-04, array 4795008)
 

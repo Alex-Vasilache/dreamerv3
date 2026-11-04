@@ -129,9 +129,9 @@ SETS = {
         ('hash', 'TCE, 1x16 hash', '#009E73',
          'e95[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
         ('h4e', 'TCE, 4x12 hash, smoothed w (US-SOM)', '#CC79A7',
-         'e300[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash4e-pubmatch_s*'),
+         'h00[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash4e-pubmatch_s*'),
         ('h4es', 'TCE, 4x12 hash, smoothed w (plain SOM)', '#D55E00',
-         'e301[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-fromto_dir-tce_hash4e-pubmatch_s*'),
+         'h00[3-7]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-fromto_dir-tce_hash4e-pubmatch_s*'),
     ],
     'weekend': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
