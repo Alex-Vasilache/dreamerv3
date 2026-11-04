@@ -1,0 +1,64 @@
+diff --git a/apps/dreamerBridge/src/main/python/main.py b/apps/dreamerBridge/src/main/python/main.py
+index e5a502b2..240b3157 100644
+--- a/apps/dreamerBridge/src/main/python/main.py
++++ b/apps/dreamerBridge/src/main/python/main.py
+@@ -332,6 +332,12 @@ hold_weights = False
+ can_pause = False
+ robot_paused = False
+ train_paused = False
++# Live training aids from the trainer (embodied/envs/robot.py): a cap on
++# every wheel command for its first minutes ('drive_cap' in a pause frame),
++# and between episodes a drive it asks for itself ('drive' in a ctrl frame:
++# the return home). Both reset at every new trainer connection.
++drive_cap = 1.0
++trainer_drive = None
+ pause_lock = threading.Lock()
+ pause_asked = {}   # web thread -> control loop: {'robot'/'training': bool}
+ # Playing a saved policy instead of training, chosen on the dashboard: the
+@@ -1137,6 +1143,12 @@ def loop_onboard():
+         snap, snap_stamp, snap_age = sample()
+         cmd = commands.tick()
+         obs, act = runner.act(snap, cmd)
++    if trainer_drive is not None:
++        # Between episodes the trainer drives (the return home).
++        act = [float(trainer_drive[0]), float(trainer_drive[1])]
++    elif drive_cap < 1.0:
++        # Clipped, and recorded as clipped: what the wheels were given.
++        act = [max(-drive_cap, min(drive_cap, float(a))) for a in act]
+     if hold_weights or robot_paused:
+         # Recorded as what it is: a step with the wheels held.
+         act = [0.0, 0.0]
+@@ -1494,8 +1506,10 @@ def send_pause():
+ def apply_pause(state):
+     """The trainer's pause state, from its hello or an answer to a request.
+     A trainer that does not offer pausing (state None) pauses nothing."""
+-    global robot_paused, train_paused
++    global robot_paused, train_paused, drive_cap
+     state = state or {}
++    if state.get('drive_cap') is not None:
++        drive_cap = min(1.0, max(0.0, float(state['drive_cap'])))
+     was = (robot_paused, train_paused)
+     robot_paused = bool(state.get('robot', False))
+     train_paused = bool(state.get('training', False))
+@@ -1680,7 +1694,9 @@ def wait_for_tick():
+ 
+ def apply_overrides(header):
+     """Per-frame knobs the trainer may set, mostly for experiments."""
+-    global slew_max, zero_mode, wake_lead_ms, spin_wait
++    global slew_max, zero_mode, wake_lead_ms, spin_wait, trainer_drive
++    # Only the frame that carries it drives; the next one without clears it.
++    trainer_drive = header.get('drive')
+     if 'spin' in header:
+         spin_wait = bool(header['spin'])
+     if 'warm' in header:
+@@ -1853,8 +1869,9 @@ def connect():
+         # actions rather than send its own.
+         global onboard, standalone, pace
+         pace = hello.get('pace', PACE)
+-        global cmd_scale
++        global cmd_scale, drive_cap, trainer_drive
+         cmd_scale = float(hello.get('cmd_scale', 1.0))
++        drive_cap, trainer_drive = 1.0, None
+         global command_bias, friction_comp
+         command_bias = float(hello.get('command_bias', 0.0))
+         friction_comp = bool(hello.get('friction_comp', False))

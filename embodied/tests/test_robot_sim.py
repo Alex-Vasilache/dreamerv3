@@ -110,3 +110,32 @@ def test_a_drawn_slope_ramps_in():
   assert 0.015 < env.slope < 0.035
   run(env, [(0, 0)] * int(1.0 * HZ))
   assert env.slope == 0.05
+
+
+def test_return_home_drives_back_to_the_start():
+  # Driven ~1 m away on the table, it comes back within home_inner.
+  env = make('mujoco', sim_surface='table', home_radius=12000.0)
+  env._away_prev = None
+  sensors, _ = env._recv()
+  origin = env.data.qpos[0:2].copy()
+  env._away(sensors)
+  for _ in range(int(4 * HZ)):
+    env._send(0.5, 0.5, reset=False)
+    sensors, _ = env._recv()
+    env._away(sensors)
+  for _ in range(int(2 * HZ)):   # and a turn, so the way back is not straight
+    env._send(0.5, -0.2, reset=False)
+    sensors, _ = env._recv()
+    env._away(sensors)
+  start = env._home_distance()
+  assert start > 6000, start
+  env._go_home = True
+  sensors, _ = env._return_home(sensors, 0.0)
+  env._away(sensors)
+  assert env._home_distance() < env.home_inner, (start, env._xyh)
+  # And the body itself is back: within 0.3 m of where it started, after
+  # going ~0.5-1 m (the odometry ignores slip).
+  away = np.hypot(*(env.data.qpos[0:2] - origin))
+  print('true distance from start %.2f m (odometry said %.2f m out)' % (
+      away, start / 12178.0))
+  assert away < 0.3, away

@@ -549,7 +549,9 @@ class SmartphoneRobot(embodied.Env):
       pace=None, pause_file=None, start_paused=False, runaway_s=0.0,
       runaway_drive=0.7, brake_s=1.0, pos_tau=0.0, pos_penalty=0.0,
       pos_range=12000.0, obs_pos_scale=1.67e-4, pos_jump=1000.0,
-      pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0):
+      pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0, home_radius=0.0,
+      home_inner=1200.0, home_speed=0.5, home_min=0.25, home_ramp=3000.0,
+      home_max_s=30.0, home_track=1634.0):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -721,6 +723,27 @@ class SmartphoneRobot(embodied.Env):
     self.drive_cap0 = float(drive_cap0)
     self.drive_cap_s = float(drive_cap_s)
     self._cap_sent = None
+    # Return home: home_radius > 0 (phone mm; 12178 per m) keeps the robot
+    # near where the run started. Its position is dead-reckoned from the
+    # wheels (x, y, heading; home_track = wheel track in phone mm, fitted to
+    # the MuJoCo body's turning: 1634 put its heading within about 2%), so
+    # turning on the spot does not count as travel. Past home_radius the
+    # episode ends and, before the next one, the robot steers back to the
+    # start (forward or backward, whichever faces home; proportional over
+    # home_ramp, between home_min and home_speed of full command) until it is
+    # within home_inner, or for at most home_max_s. Nothing of the drive home
+    # is recorded. The phone drives it from a 'drive' field in ctrl frames.
+    self.home_radius = float(home_radius)
+    self.home_inner = float(home_inner)
+    self.home_speed = float(home_speed)
+    self.home_min = float(home_min)
+    self.home_ramp = float(home_ramp)
+    self.home_max_s = float(home_max_s)
+    self.home_track = float(home_track)
+    self._xyh = np.zeros(3)
+    self._away_d = np.zeros(2)   # each wheel's travel since the run started
+    self._away_prev = None
+    self._go_home = False
     # The phone multiplies every wheel command by this before driving, so the
     # policy keeps its whole [-1, 1] range while the motors stay off full
     # power, the only regime where a driver was seen to cut out under load.
@@ -971,6 +994,7 @@ class SmartphoneRobot(embodied.Env):
         sensors, latency = self._recv()
         sensors, latency = self._wait_for_base(sensors, latency)
         sensors, latency = self._wait_while_paused(sensors, latency)
+        sensors, latency = self._return_home(sensors, latency)
         sensors, latency = self._recover(sensors, latency)
         self._step = 0
         self._done = False
@@ -980,6 +1004,7 @@ class SmartphoneRobot(embodied.Env):
         self._chatter = 0.0
         self._sent_act = (0.0, 0.0)
         self._track_position(sensors)
+        self.home_radius and self._away(sensors)
         return self._obs(sensors, latency, 0.0, is_first=True)
       except LINKLOST as e:
         if not self.reconnect:
@@ -1001,6 +1026,68 @@ class SmartphoneRobot(embodied.Env):
     print('[robot] base back after %.1f s (%s)' % (
         time.time() - start, self._base_health), flush=True)
     return sensors, latency
+
+  def _away(self, sensors):
+    """Each wheel's travel since the run started (phone mm), summed from
+    step increments: an episode reset may zero the counters (the sim's
+    does), and a jump past pos_jump is taken for that."""
+    dist = np.array([float(sensors.get('wheel_distance_l', 0.0)),
+                     float(sensors.get('wheel_distance_r', 0.0))])
+    if self._away_prev is not None:
+      step = dist - self._away_prev
+      step[np.abs(step) > self.pos_jump] = 0.0
+      self._away_d = self._away_d + step
+      ds, dh = step.mean(), (step[1] - step[0]) / self.home_track
+      x, y, h = self._xyh
+      self._xyh = np.array([x + ds * np.cos(h + dh / 2),
+                            y + ds * np.sin(h + dh / 2), h + dh])
+    self._away_prev = dist
+    return self._away_d
+
+  def _home_distance(self):
+    return float(np.hypot(self._xyh[0], self._xyh[1]))
+
+  def _return_home(self, sensors, latency):
+    if not (self.home_radius and self._go_home):
+      return sensors, latency
+    self._go_home = False
+    print('[robot] %.2f m from the start; driving back' % (
+        self._home_distance() / 12178.0), flush=True)
+    for _ in range(int(self.home_max_s * self.hz)):
+      self._away(sensors)
+      dist = self._home_distance()
+      if dist < self.home_inner:
+        break
+      x, y, h = self._xyh
+      # Bearing of home from the heading (the direction of positive wheel
+      # travel); drive backward when home is behind.
+      bearing = np.arctan2(-y, -x) - h
+      bearing = (bearing + np.pi) % (2 * np.pi) - np.pi
+      sign = 1.0
+      if abs(bearing) > np.pi / 2:
+        sign = -1.0
+        bearing = (bearing - np.pi + np.pi) % (2 * np.pi) - np.pi
+      speed = min(1.0, dist / self.home_ramp) * self.home_speed
+      speed = max(speed, self.home_min) * max(0.0, np.cos(bearing))
+      turn = float(np.clip(bearing, -1.0, 1.0)) * self.home_speed
+      # Wheel travel per wheel, then output: forward output turns the wheels
+      # backwards (negative speed), so travel u needs output -u.
+      left = float(np.clip(-(sign * speed - turn), -1.0, 1.0))
+      right = float(np.clip(-(sign * speed + turn), -1.0, 1.0))
+      self._send_drive(left, right)
+      sensors, latency = self._recv()
+    self._send(0.0, 0.0, reset=True)
+    return self._recv()
+
+  def _send_drive(self, left, right):
+    """Drive the wheels from here between episodes, onboard too."""
+    self._sent = time.time()
+    if self._onboard:
+      self._link.send(dict(
+          type='ctrl', reset=False, reward=0.0, seq=self._seq,
+          drive=[float(left), float(right)]))
+    else:
+      self._send(left, right, reset=False)
 
   def _wait_while_paused(self, sensors, latency):
     """Hold the episode start while the robot is paused from the dashboard.
@@ -1111,7 +1198,11 @@ class SmartphoneRobot(embodied.Env):
       reward -= self.pos_penalty * min(
           abs(float(self._pos.mean())) / self.pos_range, 1.0)
     self._reward = reward
-    self._done = terminal or self._step >= self.length
+    if self.home_radius and (
+        self._away(sensors) is not None
+        and self._home_distance() > self.home_radius):
+      self._go_home = True
+    self._done = terminal or self._go_home or self._step >= self.length
     return self._obs(
         sensors, latency, reward, is_last=self._done, is_terminal=terminal)
 
