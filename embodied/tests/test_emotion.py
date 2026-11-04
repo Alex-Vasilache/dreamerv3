@@ -70,3 +70,10 @@ def test_empowerment_is_finite_and_non_negative(weights):
   c = p.initial()
   e = emo._empowerment(c['deter'], c['stoch'])
   assert np.isfinite(e) and e >= 0
+
+
+def test_applied_feeds_the_wheels_action_to_the_next_step():
+  runner = PolicyRunner()
+  runner.carry = dict(deter=np.zeros(4), stoch=np.zeros((2, 2)), prevact=np.array([0.9, 0.9]))
+  runner.applied([0.6, -0.1])
+  np.testing.assert_allclose(runner.carry['prevact'], [0.6, -0.1])

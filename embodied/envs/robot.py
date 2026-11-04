@@ -1268,7 +1268,10 @@ class SmartphoneRobot(embodied.Env):
     # pause frame); sent when it has moved by 0.02.
     if not self._onboard or self._link is None:
       return
-    if self._cap_sent is not None and abs(cap - self._cap_sent) < 0.02:
+    # Every 0.02, and the final 1.0 exactly: stopping short of it left the
+    # phone clipping at 0.98 for the rest of a run (e30103).
+    if self._cap_sent is not None and abs(cap - self._cap_sent) < 0.02 and not (
+        cap >= 1.0 and self._cap_sent < 1.0):
       return
     try:
       self._link.send(dict(type='pause', **self._pause_message(),

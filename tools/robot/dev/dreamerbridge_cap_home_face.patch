@@ -236,7 +236,7 @@ index 00000000..bd5e4267
 +        novelty=novelty, unexpected=unexpected, reward_err=reward_err,
 +        empowerment=self.empowerment)
 diff --git a/apps/dreamerBridge/src/main/python/main.py b/apps/dreamerBridge/src/main/python/main.py
-index e5a502b2..593f02fa 100644
+index e5a502b2..3aa43e86 100644
 --- a/apps/dreamerBridge/src/main/python/main.py
 +++ b/apps/dreamerBridge/src/main/python/main.py
 @@ -332,6 +332,12 @@ hold_weights = False
@@ -270,7 +270,7 @@ index e5a502b2..593f02fa 100644
          weights_installed=weights_installed, stats=history.latest,
          can_restart=bool(trainer_restart and sock is not None and onboard),
          holding=hold_weights,
-@@ -1137,6 +1147,12 @@ def loop_onboard():
+@@ -1137,12 +1147,21 @@ def loop_onboard():
          snap, snap_stamp, snap_age = sample()
          cmd = commands.tick()
          obs, act = runner.act(snap, cmd)
@@ -283,7 +283,16 @@ index e5a502b2..593f02fa 100644
      if hold_weights or robot_paused:
          # Recorded as what it is: a step with the wheels held.
          act = [0.0, 0.0]
-@@ -1494,8 +1510,10 @@ def send_pause():
+         stop_wheels()
+     else:
+         policy_drive(act[0], act[1])
++    # The policy's next step starts from what the wheels really got (held,
++    # clipped or the trainer's drive), as the trainer's replay records it.
++    runner.applied(act)
+     applied = time.monotonic()
+     last_act = applied
+     seq += 1
+@@ -1494,8 +1513,10 @@ def send_pause():
  def apply_pause(state):
      """The trainer's pause state, from its hello or an answer to a request.
      A trainer that does not offer pausing (state None) pauses nothing."""
@@ -295,7 +304,7 @@ index e5a502b2..593f02fa 100644
      was = (robot_paused, train_paused)
      robot_paused = bool(state.get('robot', False))
      train_paused = bool(state.get('training', False))
-@@ -1680,7 +1698,9 @@ def wait_for_tick():
+@@ -1680,7 +1701,9 @@ def wait_for_tick():
  
  def apply_overrides(header):
      """Per-frame knobs the trainer may set, mostly for experiments."""
@@ -306,7 +315,7 @@ index e5a502b2..593f02fa 100644
      if 'spin' in header:
          spin_wait = bool(header['spin'])
      if 'warm' in header:
-@@ -1853,8 +1873,9 @@ def connect():
+@@ -1853,8 +1876,9 @@ def connect():
          # actions rather than send its own.
          global onboard, standalone, pace
          pace = hello.get('pace', PACE)
@@ -332,7 +341,7 @@ index a6441115..44efd85c 100644
      carry = dict(deter=deter, stoch=stoch, prevact=act)
      return act, carry
 diff --git a/apps/dreamerBridge/src/main/python/policy_runner.py b/apps/dreamerBridge/src/main/python/policy_runner.py
-index 3025a95e..61bbb86b 100644
+index 3025a95e..09d36e91 100644
 --- a/apps/dreamerBridge/src/main/python/policy_runner.py
 +++ b/apps/dreamerBridge/src/main/python/policy_runner.py
 @@ -16,6 +16,7 @@ import beyond the standard library.
@@ -432,7 +441,7 @@ index 3025a95e..61bbb86b 100644
    @staticmethod
    def build_blob(blob, path):
      """Write pushed weights to `path` and parse them; the slow half of an
-@@ -137,6 +211,17 @@ class PolicyRunner:
+@@ -137,8 +211,27 @@ class PolicyRunner:
      if 'command' in self.policy.meta['obs_keys']:
        obs['command'] = np.clip(np.asarray(
            command if command is not None else (0.0, 0.0), np.float32), -1, 1)
@@ -449,7 +458,17 @@ index 3025a95e..61bbb86b 100644
 +          self.pos * s['obs_pos_scale'], -clip, clip).astype(np.float32)
      return obs
  
++  def applied(self, act):
++    """The wheels got `act`, not the action act() chose (clipped by the
++    trainer's cap, held by a pause or a brake, or the trainer's own drive).
++    The next step's RSSM input is what really happened, as in replay."""
++    if self.carry is not None:
++      self.carry = dict(self.carry, prevact=np.asarray(act, np.float32))
++      self._pre = None
++
    def prepare(self):
+     """Run the observation-independent half of the next step now.
+ 
 diff --git a/apps/dreamerBridge/src/main/python/webpages/face.html b/apps/dreamerBridge/src/main/python/webpages/face.html
 new file mode 100644
 index 00000000..3a5db39b

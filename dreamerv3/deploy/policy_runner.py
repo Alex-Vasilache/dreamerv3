@@ -224,6 +224,14 @@ class PolicyRunner:
           self.pos * s['obs_pos_scale'], -clip, clip).astype(np.float32)
     return obs
 
+  def applied(self, act):
+    """The wheels got `act`, not the action act() chose (clipped by the
+    trainer's cap, held by a pause or a brake, or the trainer's own drive).
+    The next step's RSSM input is what really happened, as in replay."""
+    if self.carry is not None:
+      self.carry = dict(self.carry, prevact=np.asarray(act, np.float32))
+      self._pre = None
+
   def prepare(self):
     """Run the observation-independent half of the next step now.
 
