@@ -1206,9 +1206,24 @@ in-between floors but loses the carpet (fitted carpet 0.20-0.62 against
 0.92). r6_mixed itself tracks 0.83-0.92 from f -0.25 to the carpet with no
 falls and stands still at a zero stick (0-41 mm/s, wobble 1-11 deg/s); only
 f 1.2 (stickier than carpet) drops to 0.47. Round 8c (e19390-e19395)
-continues e8261 on floors up to 1.35.
+continued e8261 for 680k steps on floors -0.25..1.35 or 0.3..1.35 (n=3
+each) and got worse everywhere: fitted carpet 0.40 / 0.68, f 1.2 0.01 /
+0.21, table 0.82 / 0.83 with ~1 fall/min. r6_mixed stays the pick.
 
 ![round 8](figs/r8.png)
+
+![round 8c](figs/r8c.png)
+
+**Smoothing dose (round 9c, e19396-e19407, corrected code, table, 30 min,
+n=4).** Bumper crossings / wobble at minutes 10-30 over the seeds that got
+up: live recipe 27.7 ± 1.9 / 25.6 ± 1.3 (first minute > 80% upright 3, 4,
+5, 14); half smoothing (action_rate_quad 0.25, imag smooth 0.15) 21.0 ± 3.3
+/ 19.5 ± 1.1 (4, 4, 6, 7); full (0.5, 0.3) 21.1 ± 1.9 / 19.1 ± 1.0 (8, 12,
+12, never). Half smoothing is now in the `robot` block (e1d61ae);
+`robot_command` resets it to 0. A seed lying on a bumper scores few
+crossings, which is what made full smoothing look best in 9b.
+
+![round 9c](figs/r9c.png)
 
 ## Bugs found on the way
 
