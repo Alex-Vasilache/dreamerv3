@@ -534,7 +534,7 @@ class RobotMujoco(robot_sim.RobotSim):
     for part in [p for p in str(sim_rand).split(',') if p.strip()]:
       key, lo, hi = part.strip().split(':')
       assert key in ('inertia', 'backlash', 'tilt_lag', 'scrape', 'stick',
-                     'rstatic', 'stall', 'gear_k', 'slope'), key
+                     'rstatic', 'stall', 'gear_k', 'slope', 'floor'), key
       self._rand[key] = (float(lo), float(hi))
     assert 'backlash' not in self._rand or float(sim_backlash) > 0, (
         'sim_rand backlash needs sim_backlash > 0 for the motor joints')
@@ -620,6 +620,19 @@ class RobotMujoco(robot_sim.RobotSim):
       self._scrape = draw['scrape']
     self._floor_scrape()
     ph = self.physics
+    if 'floor' in draw:
+      # A floor between the fitted table (0) and carpet (1), and a little
+      # beyond either: rolling resistance, contact time, drag and stiction
+      # interpolated in log, bumper friction linearly; the carpet's pile
+      # scrape scales with it (none at 0 or below).
+      f = draw['floor']
+      t, c = SURFACES['table'], SURFACES['carpet']
+      mix = {k: float(t[k] ** (1 - f) * c[k] ** f) for k in (
+          'rolling', 'contact_tc', 'drag', 'rolling_static')}
+      mix['bumper_friction'] = float(
+          t['bumper_friction'] + f * (c['bumper_friction'] - t['bumper_friction']))
+      ph.set_floor(noslip=20, **dict(mix, **self._overrides))
+      ph.scrape = self._scrape * min(1.0, max(0.0, f))
     if 'stall' in draw:   # motor strength, a multiple of sim_stall_torque
       ph.stall = self._stall0 * draw['stall']
       for act in ph.acts:
