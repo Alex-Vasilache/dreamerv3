@@ -1155,6 +1155,61 @@ in the first minutes also delays balancing (a 0.4 cap cannot catch a fall on
 the table, so the robot mostly lies on a bumper). Carpet is unaffected by
 any of it and remains the reliable demo floor.
 
+### 11.8 The Germany lab floor, the live demo there, and one policy for all floors (Thursday night)
+
+**The floor.** Fitting the sim's floor to the four Germany live sessions
+(e10100, e10101, e30101 s01/s02; `tools/robot/dev/replay_to_sysid.py`,
+`sysid_fit.py`, outputs in `/work/DoyaU/vasilache/work/sysid/de/`): on
+upright stretches all four follow the OIST table (blend f ≈ 0) and not the
+carpet; stretches resting on a bumper prefer carpet even for the OIST table
+session, a sim bias. Free fits are poorly determined; keep
+`SURFACES['table']`.
+
+![floor scan](figs/floor_scan_de.png)
+
+**The live demo there.** From minute 3, bumper crossings (tilt crossing +6.5
+or -5 deg) per minute and wobble (tilt-rate SD): Oct 23-28 OIST 1.2-8.0 and
+6.7-23.7 deg/s; Germany e10100 8.6 / 18.6, e30101 s02 18.2 / 19.3, e30103
+48.2 / 31.9 (the first run with the patched app; it never settled). Not the
+cause: int8 weights (action off by 0.003, p99 0.017), timing (as in
+October), the return home (crossings as frequent right after an episode
+starts as later). Fixed: paused steps were recorded (5e9a076); the phone's
+policy continued from its chosen action, not the clipped, held or driven
+one (09db41b, `PolicyRunner.applied`); the cap's final 1.0 never reached the
+phone, which clipped at 0.98 all run (09db41b); the sim recorded actions a
+step late whenever the brake or cap was on, rounds 7f-10 and E1-E3
+(d096506). `tools/robot/dev/demo_stats.py` prints a session per minute.
+
+Sim table, live recipe + return home 0.5 m, 20 min, n=3, minutes 10-20
+(rounds 9, 9b, 10; e19320-e19337, e19384-e19389, e19367-e19372):
+
+| arm | first minute balanced | crossings/min | wobble (deg/s) |
+|---|---|---|---|
+| live recipe (corrected recording) | 4, 3, 3 | 19.0 ± 4.8 | 24.9 |
+| + smoothing (action_rate_quad 0.5, CAPS temporal 0.3) | 6, 6, never | 10.7 ± 6.9 | 12.8 |
+| minstd 0.03 † | 3, 3, 3 | 20.8 ± 8.9 | 28.4 |
+| CAPS spatial 0 † | 3, 2, 4 | 20.0 ± 1.7 | 28.8 |
+| rate penalty 0.2 † | 3, 2, 7 | 13.0 ± 2.1 | 28.9 |
+| world model from e9671, fresh policy † | 2, 3, 3 | 28.3 | 27.9 |
+| full warm start from e9671 † | 1, 1, 2 | 24.5 | 25.2 |
+
+† step-late recording; its control 12.4 ± 4.2 and 24.1 deg/s. Only
+smoothing lowers wobble, at the cost of learning speed. The `robot` block
+now also returns home at 1 m (it needs the app patch
+`tools/robot/dev/dreamerbridge_cap_home_face.patch`).
+
+**One command policy for all floors (round 8).** `sim_rand` key `floor`
+draws a floor between the fitted table (0) and carpet (1), log-blended, and
+beyond. Round 8 (e19300-e19307, r6_mixed recipe + fine kernel, floors
+-0.25..1.2 every 60 s, 4 h; A scratch, B warm from e8261) matches r6_mixed on
+in-between floors but loses the carpet (fitted carpet 0.20-0.62 against
+0.92). r6_mixed itself tracks 0.83-0.92 from f -0.25 to the carpet with no
+falls and stands still at a zero stick (0-41 mm/s, wobble 1-11 deg/s); only
+f 1.2 (stickier than carpet) drops to 0.47. Round 8c (e19390-e19395)
+continues e8261 on floors up to 1.35.
+
+![round 8](figs/r8.png)
+
 ## Bugs found on the way
 
 - `embodied/core/selectors.py`: `Recency` sampled `len(segment)` (undefined
