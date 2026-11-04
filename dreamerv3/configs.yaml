@@ -1713,6 +1713,13 @@ robot:
   # step (robot.py:_advance). e1982 (2026-10-22, real robot, 0.2 on this
   # block) balanced well; the default before it was 0.
   env.robot.action_rate_penalty: 0.2
+  # Half-strength smoothing: a squared action-change cost and temporal CAPS in
+  # imagination. In sim on the table (round 9c, n=4, 30 min) it cut bumper
+  # crossings 27.7 -> 21.0/min and wobble 25.6 -> 19.5 deg/s at minutes 10-30
+  # with all seeds up by minute 4-7; double strength (0.5, 0.3) did no better
+  # once up and one of four never got up (e19396-e19407).
+  env.robot.action_rate_quad: 0.25
+  agent.imag_loss.smooth: 0.15
   # Hold the wheels for 1 s whenever the mean wheel command has stayed beyond
   # +-0.7 one way for 1 s (robot.py:_runaway). Early on the table every run
   # chases a lean at full drive across the room for a while (live demos
@@ -1912,6 +1919,9 @@ robot_command:
   env.robot.runaway_s: 0.0
   env.robot.drive_cap0: 0.0
   env.robot.home_radius: 0.0
+  # The command recipes were tuned without the balance demo's smoothing.
+  env.robot.action_rate_quad: 0.0
+  agent.imag_loss.smooth: 0.0
   # Off (was on): the balance runs that work on the robot run without it,
   # and in the fitted sim tracking was as good or better without
   # (e2108-e2115).
