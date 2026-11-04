@@ -1866,10 +1866,14 @@ class SmartphoneRobot(embodied.Env):
     return None
 
   def _records_executed(self):
-    # Onboard, and wherever this env changes the action it was given (the
-    # brake, the speed cap), the transition records what the wheels got.
-    return not self.discrete and bool(
-        self.onboard or self.drive_cap0 or self.runaway_s or self.pos_fence)
+    # Onboard only. The phone reports, with each observation, the action it
+    # took AT that observation, which is what a transition pairs with it.
+    # Off the phone (the sim) the action this env could report is the one
+    # that LED to the observation, a step late: recorded as executed it
+    # shifted every action by one step (rounds 7f-10 and E1-E3, 11-04/05).
+    # So the sim records the policy's action, also where the brake or the
+    # cap changed it.
+    return not self.discrete and bool(self.onboard)
 
   def _executed(self):
     if self._onboard and self._onboard_act is not None:

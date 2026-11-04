@@ -215,14 +215,13 @@ def test_the_speed_cap_clips_and_rises_to_full(tmp_path):
   sent = []
   env._send = lambda left, right, reset: sent.append((left, right))
   env._recv = lambda: (dict(env._last), 0.0)
-  executed = []
   for _ in range(25):
-    obs = env._advance(dict(drive=np.array([1.0, -0.1], np.float32)))
-    executed.append(obs['executed/drive'])
+    env._advance(dict(drive=np.array([1.0, -0.1], np.float32)))
   assert sent[0] == pytest.approx((0.4, -0.1))   # small commands pass
   assert sent[10][0] == pytest.approx(0.7)       # half way at 1 s
   assert sent[-1] == pytest.approx((1.0, -0.1))  # full after 2 s
-  np.testing.assert_allclose(executed[0], [0.4, -0.1], rtol=1e-6)
+  # Off the phone nothing is reported as executed (it would be a step late).
+  assert 'executed/drive' not in env.obs_space
 
 
 def test_nothing_is_recorded_while_the_robot_is_paused(tmp_path):
