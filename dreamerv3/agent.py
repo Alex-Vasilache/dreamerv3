@@ -444,10 +444,20 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         self.fromto_w_fixed = float(getattr(_fcfg, 'w_fixed', 0.0))
         self.fromto_lean_target = float(getattr(_fcfg, 'lean_target', 0.0))
         if self.fromto_lean_target > 0 and self.fromto_w_fixed <= 0:
+          # w_thres: the controller's dead band (moves only when lean is
+          # outside [target/(1+thres), target*(1+thres)]); 0.1 is AutoAdapt's
+          # default. lean_ema > 0 drives it with a running average of lean
+          # instead of each batch: per-batch lean is noisy and, with the band,
+          # only its upper tail ever crossed it, ratcheting w down (e19101).
           self.fromto_adapt = embodied.jax.AutoAdapt(
               shape=(), impl='mult', target=self.fromto_lean_target,
               min=float(_fcfg.w_min), max=float(_fcfg.w_max), inverse=True,
-              init=float(_fcfg.w_init), vel=float(_fcfg.w_vel), name='fromto_adapt')
+              init=float(_fcfg.w_init), vel=float(_fcfg.w_vel),
+              thres=float(getattr(_fcfg, 'w_thres', 0.1)), name='fromto_adapt')
+          self.fromto_lean_ema_rate = float(getattr(_fcfg, 'lean_ema', 0.0))
+          if self.fromto_lean_ema_rate > 0:
+            self.fromto_lean_ema = nj.Variable(
+                lambda: jnp.full((), self.fromto_lean_target, f32), name='fromto_lean_ema')
       # Reward channel and its critic: only for the reward-shaped arm. The UCB
       # arm shares the table above but must NOT create these -- an unused critic
       # would still be built, checkpointed and optimized.
@@ -1869,7 +1879,15 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         wscale = self.fromto_w_fixed
         metrics['fromto/weight'] = jnp.asarray(wscale, f32)
       elif getattr(self, 'fromto_lean_target', 0.0) > 0:
-        self.fromto_adapt(sg(lean.mean()), update=training)
+        reg = sg(lean.mean())
+        if getattr(self, 'fromto_lean_ema_rate', 0.0) > 0:
+          prev = self.fromto_lean_ema.read()
+          ema = prev + self.fromto_lean_ema_rate * (reg - prev)
+          if training:
+            self.fromto_lean_ema.write(ema)
+          reg = ema
+          metrics['fromto/lean_ema'] = ema
+        self.fromto_adapt(reg, update=training)
         wscale = self.fromto_adapt.scale()
         metrics['fromto/weight'] = wscale
       else:

@@ -28,6 +28,8 @@ ARMS = [
     ('TCE, world-model hash start', f'e95[0-2]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
     ('TCE, 4x12-bit world-model hash, w=2', f'e1[09]0[0-3]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_hash4-pubmatch_s*'),
     ('TCE, 4x12-bit world-model hash, adaptive w', f'e191[0-3]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_hash4a-pubmatch_s*'),
+    ('TCE, 4x12 hash, smoothed w, floor 0.3 (US-SOM)', f'e300[0-3]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-tce_hash4e-pubmatch_s*'),
+    ('TCE, 4x12 hash, smoothed w, floor 0.3 (plain SOM)', f'e301[0-3]?_{{t}}_{B}-goal_som_line-fromto_dir-tce_hash4e-pubmatch_s*'),
     ('TCE w=2, Director expl reward off', f'e96[3-5]?_{{t}}_{B}-goal_som_line-goal_even-fromto_dir-no_gae_expl-tce_wfix2-pubmatch_s*'),
 ]
 REF = 'TCE (US-SOM, 0.5M half-life, adaptive w)'

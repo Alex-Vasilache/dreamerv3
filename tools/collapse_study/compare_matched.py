@@ -122,6 +122,17 @@ SETS = {
         ('hash', 'V + US-SOM + TCE (1x16-bit WM hash start)', '#CC79A7',
          'e95[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
     ],
+    'hash4e': [
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('ft', 'TCE (codebook start)', '#0072B2',
+         'e62[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-pubmatch_s*'),
+        ('hash', 'TCE, 1x16 hash', '#009E73',
+         'e95[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
+        ('h4e', 'TCE, 4x12 hash, smoothed w (US-SOM)', '#CC79A7',
+         'e300[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash4e-pubmatch_s*'),
+        ('h4es', 'TCE, 4x12 hash, smoothed w (plain SOM)', '#D55E00',
+         'e301[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-fromto_dir-tce_hash4e-pubmatch_s*'),
+    ],
     'weekend': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('ft', 'V + US-SOM + TCE', '#0072B2',
@@ -153,7 +164,7 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1))}
+STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1))}
 LATE = {'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
