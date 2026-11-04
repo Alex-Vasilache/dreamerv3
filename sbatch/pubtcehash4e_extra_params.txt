@@ -1,0 +1,12 @@
+director pinpad_five 5 h0031 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash4e pubmatch
+director pinpad_six 5 h0032 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash4e pubmatch
+director pinpad_five 6 h0033 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash4e pubmatch
+director pinpad_six 6 h0034 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash4e pubmatch
+director pinpad_five 7 h0035 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash4e pubmatch
+director pinpad_six 7 h0036 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash4e pubmatch
+director pinpad_five 5 h0067 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_hash4e pubmatch
+director pinpad_six 5 h0068 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_hash4e pubmatch
+director pinpad_five 6 h0069 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_hash4e pubmatch
+director pinpad_six 6 h0070 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_hash4e pubmatch
+director pinpad_five 7 h0071 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_hash4e pubmatch
+director pinpad_six 7 h0072 director_og wkr_ent_fixed wkr_v3 goal_som_line fromto_dir tce_hash4e pubmatch

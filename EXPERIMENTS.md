@@ -644,7 +644,7 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
-### h0001-h0036 / h0037-h0072: 4x12 hash + smoothed controller, US-SOM vs plain SOM (2026-11-04, arrays 4796774 / 4796775)
+### h0001-h0036 / h0037-h0072: 4x12 hash + smoothed controller, US-SOM vs plain SOM (2026-11-04, arrays 4796774 / 4796775; extra seeds 5-7 = array 4796786, afterany both)
 
 **Numbering:** from here on HRL experiments use their own `h{NNNN}` series (robot keeps `e{N}`); these two arms were renamed from e30000/e30100 before starting.
 
