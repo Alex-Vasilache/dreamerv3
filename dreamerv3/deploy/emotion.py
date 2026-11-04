@@ -179,10 +179,13 @@ class Emotion:
 
   # -- the step ---------------------------------------------------------------
 
-  def step(self, deter, post_logit, stoch, reward, is_first=False):
+  def step(self, deter, post_logit, stoch, reward, is_first=False, steps=1):
     """`deter`: the step's deterministic state (precompute's output);
     `post_logit`/`stoch`: the posterior logits and its sample; `reward`: the
-    reward that came with this observation. Returns a dict of signals."""
+    reward that came with this observation. Called every `steps` control
+    steps (the phone), `reward` is their discounted sum since the last call.
+    Returns a dict of signals. With every <= 0 empowerment is left to the
+    caller (`self.empowerment`, e.g. from a thread)."""
     unimix = self.p.meta['unimix']
     if is_first:
       self.reset()
@@ -195,9 +198,9 @@ class Emotion:
     r_hat = self.head('rew', deter, stoch)
     reward_err = abs(float(reward) - r_hat)
     td = 0.0 if self.prev_value is None else (
-        float(reward) + self.gamma * value - self.prev_value)
+        float(reward) + self.gamma ** steps * value - self.prev_value)
     self.prev_value = value
-    if self.steps % self.every == 0:
+    if self.every > 0 and self.steps % self.every == 0:
       self.empowerment = self._empowerment(deter, stoch)
     self.steps += 1
     z = {k: self.norm[k](v) for k, v in (

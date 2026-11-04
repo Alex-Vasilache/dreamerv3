@@ -1,0 +1,651 @@
+diff --git a/apps/dreamerBridge/src/main/python/emotion.py b/apps/dreamerBridge/src/main/python/emotion.py
+new file mode 100644
+index 00000000..bd5e4267
+--- /dev/null
++++ b/apps/dreamerBridge/src/main/python/emotion.py
+@@ -0,0 +1,231 @@
++"""Emotion signals from the world model, in numpy: valence and arousal.
++
++Runs beside `numpy_policy.NumpyPolicy` (same weights file, which then also
++needs the RSSM prior and the critic and reward heads: export with
++`emotion=True`), on the phone for its face and offline on recorded runs
++(`tools/robot/dev/emotion_trace.py`). Per step, with the posterior q_t the
++policy just formed from the observation and the prior p_t the world model
++predicted for it:
++
++  valence     TD error r_t + gamma V(s_t) - V(s_{t-1}) (Schultz et al. 1997):
++              better or worse than the critic expected
++  surprise    KL(q_t || p_t), nats: how much the observation moved the belief
++  novelty     H(p_t): how uncertain the prediction was before it
++  unexpected  CE(q_t, p_t) - H(p_t) = H(q_t) + KL - H(p_t): the surprise beyond
++              what the prediction's own spread expected (Yu & Dayan 2005's
++              unexpected uncertainty; static noise scores ~0)
++  reward_err  |r_t - r_hat(s_t)|: reward prediction error
++  empowerment one-step-to-n-step channel proxy: roll K fixed action sequences
++              n steps through the prior from s_t and take the mean KL of each
++              end prediction from their mixture (per latent, summed): how much
++              what the robot does changes where it ends up (Klyubin et al. 2005)
++
++and from those, normalised online (running mean and SD, `tau` steps):
++
++  arousal = sigmoid(w_n z(novelty) + w_u z(unexpected) + w_r z(reward_err)
++                    - w_e z(empowerment) + w_h z(|TD|) * (1 - control))
++  valence = tanh(TD error / its running RMS)        joy / distress, brief
++  mood    = tanh(z(V(s_t)), slow)                   hope / fear (Broekens 2015)
++  dominance = tanh(z(empowerment))
++
++The last arousal term is helplessness (Maier & Seligman 2016): large errors
++with little control, control = sigmoid(z(empowerment)). With a dense reward
++the TD error sits near 0 most of the time, so the face shows `face_valence`,
++mostly mood with the TD error's flashes on top.
++
++Arousal rises with novelty and unexpected surprise and falls with control;
++low control with large errors is the high-arousal corner either way, as
++in helplessness or gambling.
++"""
++
++import numpy as np
++
++from numpy_policy import F32, linear, rms_norm, silu, sigmoid, softmax  # noqa: E402  (flat layout on the phone)
++
++# Empowerment's action set: the 3x3 grid of constant wheel commands.
++ACTIONS = np.array([(l, r) for l in (-1.0, 0.0, 1.0) for r in (-1.0, 0.0, 1.0)],
++                   F32)
++
++
++def _probs(logit, unimix):
++  p = softmax(np.asarray(logit, F32), -1)
++  if unimix:
++    p = (1 - unimix) * p + unimix / p.shape[-1]
++  return p
++
++
++def _entropy(p):
++  return float(-(p * np.log(p + 1e-8)).sum())
++
++
++def _kl(p, q):
++  return float((p * (np.log(p + 1e-8) - np.log(q + 1e-8))).sum())
++
++
++def _twohot_bins(n):
++  half = np.linspace(-20, 0, (n - 1) // 2 + 1, dtype=np.float64)
++  half = np.sign(half) * (np.exp(np.abs(half)) - 1)   # symexp
++  return np.concatenate([half, -half[:-1][::-1]], 0).astype(F32)
++
++
++class Running:
++  """Exponential running mean and SD, for z-scores without a fixed scale."""
++
++  def __init__(self, tau):
++    self.a = 1.0 / float(tau)
++    self.mean, self.var, self.n = 0.0, 1.0, 0
++
++  def __call__(self, x):
++    x = float(x)
++    if self.n == 0:
++      self.mean, self.var = x, 1e-6
++    a = max(self.a, 1.0 / (self.n + 1))
++    d = x - self.mean
++    self.mean += a * d
++    self.var = (1 - a) * (self.var + a * d * d)
++    self.n += 1
++    return d / np.sqrt(self.var + 1e-8)
++
++
++class Emotion:
++
++  def __init__(self, policy, gamma=1 - 1 / 130, horizon=8, every=1, tau=650,
++               weights=(1.0, 1.0, 1.0, 1.0, 1.0)):
++    """`policy` is a loaded NumpyPolicy whose file has the prior and heads.
++    `every`: empowerment only every this many steps (it costs K x horizon
++    GRU steps), held in between. `tau`: steps of the running normalisation
++    (650 = 10 s at 65 Hz). `weights`: (novelty, unexpected, reward error,
++    empowerment, helplessness) in the arousal sum."""
++    self.p = policy
++    missing = [k for k in ('dyn/priorlogit/kernel', 'val/head/logits/kernel',
++                           'rew/head/logits/kernel') if k not in policy.w]
++    if missing:
++      raise ValueError(f'weights lack {missing}: export with emotion=True')
++    self.gamma, self.horizon, self.every = float(gamma), int(horizon), int(every)
++    self.w = np.asarray(weights, F32)
++    self.norm = {k: Running(tau) for k in (
++        'novelty', 'unexpected', 'reward_err', 'empowerment', 'td', 'abs_td')}
++    self.mood_norm = Running(tau * 6)
++    self.bins = _twohot_bins(policy.w['val/head/logits/bias'].shape[-1])
++    self.reset()
++
++  def reset(self):
++    self.prev_value = None
++    self.steps = 0
++    self.empowerment = 0.0
++
++  # -- network pieces the policy file does not use for acting --------------
++
++  def prior_logit(self, deter):
++    w, m = self.p.w, self.p.meta
++    x = deter
++    i = 0
++    while f'dyn/prior{i}/kernel' in w:
++      x = linear(x, w[f'dyn/prior{i}/kernel'], w[f'dyn/prior{i}/bias'])
++      x = silu(rms_norm(x, w[f'dyn/prior{i}norm/scale']))
++      i += 1
++    logit = linear(x, w['dyn/priorlogit/kernel'], w['dyn/priorlogit/bias'])
++    return logit.reshape(*deter.shape[:-1], m['stoch'], m['classes'])
++
++  def head(self, name, deter, stoch):
++    w = self.p.w
++    x = np.concatenate([deter, stoch.reshape(*deter.shape[:-1], -1)], -1)
++    i = 0
++    while f'{name}/mlp/linear{i}/kernel' in w:
++      x = linear(x, w[f'{name}/mlp/linear{i}/kernel'], w[f'{name}/mlp/linear{i}/bias'])
++      x = silu(rms_norm(x, w[f'{name}/mlp/norm{i}/scale']))
++      i += 1
++    logits = linear(x, w[f'{name}/head/logits/kernel'], w[f'{name}/head/logits/bias'])
++    return float((softmax(logits, -1) * self.bins).sum(-1))
++
++  def _core_batch(self, deter, stoch, action):
++    """NumpyPolicy._core over a leading batch axis."""
++    w, m = self.p.w, self.p.meta
++    g, B = m['blocks'], deter.shape[0]
++    stoch = stoch.reshape(B, -1)
++    action = action / np.maximum(1.0, np.abs(action))
++    x0 = silu(rms_norm(linear(deter, w['dyn/dynin0/kernel'], w['dyn/dynin0/bias']), w['dyn/dynin0norm/scale']))
++    x1 = silu(rms_norm(linear(stoch, w['dyn/dynin1/kernel'], w['dyn/dynin1/bias']), w['dyn/dynin1norm/scale']))
++    x2 = silu(rms_norm(linear(action, w['dyn/dynin2/kernel'], w['dyn/dynin2/bias']), w['dyn/dynin2norm/scale']))
++    x = np.concatenate([x0, x1, x2], -1)
++    x = np.repeat(x[:, None, :], g, axis=1)
++    x = np.concatenate([deter.reshape(B, g, -1), x], -1)          # (B, g, in)
++    for i in range(m['dynlayers']):
++      x = self._block(x, w[f'dyn/dynhid{i}/kernel'], w[f'dyn/dynhid{i}/bias'])
++      x = silu(rms_norm(x.reshape(B, -1), w[f'dyn/dynhid{i}norm/scale'])).reshape(B, g, -1)
++    x = self._block(x, w['dyn/dyngru/kernel'], w['dyn/dyngru/bias'])
++    reset, cand, update = np.split(x, 3, axis=-1)
++    reset, cand, update = (y.reshape(B, -1) for y in (reset, cand, update))
++    cand = np.tanh(sigmoid(reset) * cand)
++    update = sigmoid(update - 1.0)
++    return update * cand + (1 - update) * deter
++
++  @staticmethod
++  def _block(x, kernel, bias):
++    # x (B, g, in) with kernel (g, in, out): each block its own weights.
++    y = np.einsum('bgi,gio->bgo', x, kernel)
++    return y + bias.reshape(1, kernel.shape[0], -1)
++
++  def _empowerment(self, deter, stoch):
++    K, unimix = len(ACTIONS), self.p.meta['unimix']
++    d = np.repeat(deter[None], K, 0)
++    s = np.repeat(stoch[None], K, 0)
++    for _ in range(self.horizon):
++      d = self._core_batch(d, s, ACTIONS)
++      p = _probs(self.prior_logit(d), unimix)            # (K, stoch, classes)
++      s = np.eye(p.shape[-1], dtype=F32)[p.argmax(-1)]   # the likeliest latent
++    mix = p.mean(0, keepdims=True)
++    return float(np.mean([_kl(p[k], mix[0]) for k in range(K)]))
++
++  # -- the step ---------------------------------------------------------------
++
++  def step(self, deter, post_logit, stoch, reward, is_first=False, steps=1):
++    """`deter`: the step's deterministic state (precompute's output);
++    `post_logit`/`stoch`: the posterior logits and its sample; `reward`: the
++    reward that came with this observation. Called every `steps` control
++    steps (the phone), `reward` is their discounted sum since the last call.
++    Returns a dict of signals. With every <= 0 empowerment is left to the
++    caller (`self.empowerment`, e.g. from a thread)."""
++    unimix = self.p.meta['unimix']
++    if is_first:
++      self.reset()
++    q = _probs(post_logit, unimix)
++    pr = _probs(self.prior_logit(deter), unimix)
++    surprise = _kl(q, pr)
++    novelty = _entropy(pr)
++    unexpected = _entropy(q) + surprise - novelty
++    value = self.head('val', deter, stoch)
++    r_hat = self.head('rew', deter, stoch)
++    reward_err = abs(float(reward) - r_hat)
++    td = 0.0 if self.prev_value is None else (
++        float(reward) + self.gamma ** steps * value - self.prev_value)
++    self.prev_value = value
++    if self.every > 0 and self.steps % self.every == 0:
++      self.empowerment = self._empowerment(deter, stoch)
++    self.steps += 1
++    z = {k: self.norm[k](v) for k, v in (
++        ('novelty', novelty), ('unexpected', unexpected),
++        ('reward_err', reward_err), ('empowerment', self.empowerment))}
++    # RMS, not SD: a steady disappointment (lying on a bumper) is a TD error
++    # with a mean and little spread, and should read clearly negative, not
++    # saturate at -1.
++    a = max(self.norm['td'].a, 1.0 / (self.norm['td'].n + 1))
++    self._td_ms = (1 - a) * getattr(self, '_td_ms', td * td) + a * td * td
++    self.norm['td'].n += 1
++    td_scale = np.sqrt(self._td_ms + 1e-8)
++    control = float(sigmoid(np.float32(z['empowerment'])))
++    helpless = self.norm['abs_td'](abs(td)) * (1 - control)
++    drive = (self.w[0] * z['novelty'] + self.w[1] * z['unexpected']
++             + self.w[2] * z['reward_err'] - self.w[3] * z['empowerment']
++             + self.w[4] * helpless)
++    valence = float(np.tanh(td / max(td_scale, 1e-6)))
++    mood = float(np.tanh(self.mood_norm(value) / 2.0))
++    return dict(
++        valence=valence, mood=mood,
++        face_valence=float(np.clip(0.7 * mood + 0.3 * valence, -1, 1)),
++        helpless=float(helpless),
++        arousal=float(sigmoid(np.float32(drive / 2.0))),
++        dominance=float(np.tanh(z['empowerment'])),
++        td=td, value=value, reward_hat=r_hat, surprise=surprise,
++        novelty=novelty, unexpected=unexpected, reward_err=reward_err,
++        empowerment=self.empowerment)
+diff --git a/apps/dreamerBridge/src/main/python/main.py b/apps/dreamerBridge/src/main/python/main.py
+index e5a502b2..593f02fa 100644
+--- a/apps/dreamerBridge/src/main/python/main.py
++++ b/apps/dreamerBridge/src/main/python/main.py
+@@ -332,6 +332,12 @@ hold_weights = False
+ can_pause = False
+ robot_paused = False
+ train_paused = False
++# Live training aids from the trainer (embodied/envs/robot.py): a cap on
++# every wheel command for its first minutes ('drive_cap' in a pause frame),
++# and between episodes a drive it asks for itself ('drive' in a ctrl frame:
++# the return home). Both reset at every new trainer connection.
++drive_cap = 1.0
++trainer_drive = None
+ pause_lock = threading.Lock()
+ pause_asked = {}   # web thread -> control loop: {'robot'/'training': bool}
+ # Playing a saved policy instead of training, chosen on the dashboard: the
+@@ -994,6 +1000,9 @@ def note_reward(reward):
+     """
+     global reward_avg, ep_return, ep_steps, last_reward
+     last_reward = reward
++    if runner is not None:
++        # The face's emotion (policy_runner.feel; weights with emotion heads).
++        runner.feel(reward)
+     reward_avg += REWARD_AVG_ALPHA * (reward - reward_avg)
+     ep_return += reward
+     ep_steps += 1
+@@ -1091,6 +1100,7 @@ def web_state():
+         mode=commands.settings['mode'], measured=measured,
+         run=history.run, t0=history.t0, now=time.time(),
+         policy=str(runner.stamp) if runner is not None else None,
++        emotion=runner.emotion_state if runner is not None else None,
+         weights_installed=weights_installed, stats=history.latest,
+         can_restart=bool(trainer_restart and sock is not None and onboard),
+         holding=hold_weights,
+@@ -1137,6 +1147,12 @@ def loop_onboard():
+         snap, snap_stamp, snap_age = sample()
+         cmd = commands.tick()
+         obs, act = runner.act(snap, cmd)
++    if trainer_drive is not None:
++        # Between episodes the trainer drives (the return home).
++        act = [float(trainer_drive[0]), float(trainer_drive[1])]
++    elif drive_cap < 1.0:
++        # Clipped, and recorded as clipped: what the wheels were given.
++        act = [max(-drive_cap, min(drive_cap, float(a))) for a in act]
+     if hold_weights or robot_paused:
+         # Recorded as what it is: a step with the wheels held.
+         act = [0.0, 0.0]
+@@ -1494,8 +1510,10 @@ def send_pause():
+ def apply_pause(state):
+     """The trainer's pause state, from its hello or an answer to a request.
+     A trainer that does not offer pausing (state None) pauses nothing."""
+-    global robot_paused, train_paused
++    global robot_paused, train_paused, drive_cap
+     state = state or {}
++    if state.get('drive_cap') is not None:
++        drive_cap = min(1.0, max(0.0, float(state['drive_cap'])))
+     was = (robot_paused, train_paused)
+     robot_paused = bool(state.get('robot', False))
+     train_paused = bool(state.get('training', False))
+@@ -1680,7 +1698,9 @@ def wait_for_tick():
+ 
+ def apply_overrides(header):
+     """Per-frame knobs the trainer may set, mostly for experiments."""
+-    global slew_max, zero_mode, wake_lead_ms, spin_wait
++    global slew_max, zero_mode, wake_lead_ms, spin_wait, trainer_drive
++    # Only the frame that carries it drives; the next one without clears it.
++    trainer_drive = header.get('drive')
+     if 'spin' in header:
+         spin_wait = bool(header['spin'])
+     if 'warm' in header:
+@@ -1853,8 +1873,9 @@ def connect():
+         # actions rather than send its own.
+         global onboard, standalone, pace
+         pace = hello.get('pace', PACE)
+-        global cmd_scale
++        global cmd_scale, drive_cap, trainer_drive
+         cmd_scale = float(hello.get('cmd_scale', 1.0))
++        drive_cap, trainer_drive = 1.0, None
+         global command_bias, friction_comp
+         command_bias = float(hello.get('command_bias', 0.0))
+         friction_comp = bool(hello.get('friction_comp', False))
+diff --git a/apps/dreamerBridge/src/main/python/numpy_policy.py b/apps/dreamerBridge/src/main/python/numpy_policy.py
+index a6441115..44efd85c 100644
+--- a/apps/dreamerBridge/src/main/python/numpy_policy.py
++++ b/apps/dreamerBridge/src/main/python/numpy_policy.py
+@@ -217,7 +217,8 @@ class NumpyPolicy:
+     `deter` is what `precompute` returned for this same `carry`.
+     """
+     tokens = self._encode(obs)
+-    stoch, _ = self._obs_stoch(deter, tokens)
++    stoch, logit = self._obs_stoch(deter, tokens)
++    self.last_post = (deter, stoch, logit)   # for deploy/emotion.py
+     act = self._actor(deter, stoch, mode)
+     carry = dict(deter=deter, stoch=stoch, prevact=act)
+     return act, carry
+diff --git a/apps/dreamerBridge/src/main/python/policy_runner.py b/apps/dreamerBridge/src/main/python/policy_runner.py
+index 3025a95e..61bbb86b 100644
+--- a/apps/dreamerBridge/src/main/python/policy_runner.py
++++ b/apps/dreamerBridge/src/main/python/policy_runner.py
+@@ -16,6 +16,7 @@ import beyond the standard library.
+ 
+ import os
+ import tempfile
++import threading
+ import time
+ 
+ import numpy as np
+@@ -46,6 +47,18 @@ class PolicyRunner:
+     # distribution's mode, for running a finished policy (the player).
+     self.mode = 'train'
+     self.prepared = 0     # steps that used a prepared half
++    # Emotion (deploy/emotion.py), for weights exported with emotion=True:
++    # every FEEL_EVERY steps from the rewards since, empowerment on a thread
++    # of its own every EMPOWER_S so the control tick never waits for it.
++    self.emotion = None
++    self.emotion_state = None
++    self._feel = [0.0, 0, False]     # discounted reward sum, steps, a reset
++    self._emo_lock = threading.Lock()
++    self._emo_thread = None
++    # The leaky wheel distance of a policy that observes 'position'; kept
++    # across episodes and weight swaps, as the trainer keeps its own.
++    self.pos = np.zeros(2, np.float64)
++    self.prev_dist = None
+     if path and os.path.exists(path):
+       self.load_path(path, stamp='initial')
+ 
+@@ -71,8 +84,69 @@ class PolicyRunner:
+     self._pre = None
+     if self.carry is None:
+       self.carry = policy.initial()
++    self._install_emotion(policy)
+     return policy.meta
+ 
++  FEEL_EVERY = 4
++  EMPOWER_S = 0.5
++
++  def _install_emotion(self, policy):
++    if 'emotion' not in policy.meta:
++      self.emotion = None
++      return
++    try:
++      from emotion import Emotion  # noqa: E402  (flat layout on the phone)
++    except ImportError:
++      return
++    with self._emo_lock:
++      if self.emotion is None:
++        self.emotion = Emotion(policy, gamma=policy.meta['emotion']['gamma'],
++                               every=0, tau=650 // self.FEEL_EVERY)
++      else:
++        self.emotion.p = policy   # keep the running normalisation
++    if self._emo_thread is None:
++      self._emo_thread = threading.Thread(target=self._empower_loop, daemon=True)
++      self._emo_thread.start()
++
++  def _empower_loop(self):
++    while True:
++      time.sleep(self.EMPOWER_S)
++      emo, last = self.emotion, getattr(self.policy, 'last_post', None)
++      if emo is None or last is None:
++        continue
++      try:
++        value = emo._empowerment(last[0], last[1])
++        with self._emo_lock:
++          emo.empowerment = value
++      except Exception as e:  # noqa: BLE001 -- the face is never worth a crash
++        print('dreamerBridge: empowerment failed: %s' % e)
++
++  def feel(self, reward):
++    """After each step, with the reward it scored: updates emotion_state."""
++    emo = self.emotion
++    if emo is None or getattr(self.policy, 'last_post', None) is None:
++      return
++    acc = self._feel
++    acc[0] += (emo.gamma ** acc[1]) * float(reward)
++    acc[1] += 1
++    acc[2] = acc[2] or self.was_first
++    if acc[1] < self.FEEL_EVERY:
++      return
++    deter, stoch, logit = self.policy.last_post
++    try:
++      with self._emo_lock:
++        sig = emo.step(deter, logit, stoch, acc[0], is_first=acc[2],
++                       steps=acc[1])
++      self.emotion_state = dict(
++          valence=sig['face_valence'], arousal=sig['arousal'],
++          dominance=sig['dominance'], td=sig['td'], value=sig['value'],
++          surprise=sig['surprise'], unexpected=sig['unexpected'],
++          novelty=sig['novelty'], empowerment=sig['empowerment'])
++    except Exception as e:  # noqa: BLE001
++      print('dreamerBridge: emotion failed: %s' % e)
++      self.emotion = None
++    self._feel = [0.0, 0, False]
++
+   @staticmethod
+   def build_blob(blob, path):
+     """Write pushed weights to `path` and parse them; the slow half of an
+@@ -137,6 +211,17 @@ class PolicyRunner:
+     if 'command' in self.policy.meta['obs_keys']:
+       obs['command'] = np.clip(np.asarray(
+           command if command is not None else (0.0, 0.0), np.float32), -1, 1)
++    if 'position' in self.policy.meta['obs_keys']:
++      # Mirrors robot.py:track_position, one step per observation.
++      dist = np.array([float(sensors.get('wheel_distance_l', 0.0)),
++                       float(sensors.get('wheel_distance_r', 0.0))])
++      step = (np.zeros(2) if self.prev_dist is None
++              else dist - self.prev_dist)
++      step[np.abs(step) > s['pos_jump']] = 0.0
++      self.pos = self.pos * np.exp(-1.0 / (s['pos_tau'] * s['hz'])) + step
++      self.prev_dist = dist
++      obs['position'] = np.clip(
++          self.pos * s['obs_pos_scale'], -clip, clip).astype(np.float32)
+     return obs
+ 
+   def prepare(self):
+diff --git a/apps/dreamerBridge/src/main/python/webpages/face.html b/apps/dreamerBridge/src/main/python/webpages/face.html
+new file mode 100644
+index 00000000..3a5db39b
+--- /dev/null
++++ b/apps/dreamerBridge/src/main/python/webpages/face.html
+@@ -0,0 +1,172 @@
++<!doctype html>
++<html lang="en">
++<head>
++<meta charset="utf-8">
++<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
++<title>Robot Face</title>
++<style>
++/* A full-screen face driven by the robot's valence (TD error), arousal
++   (novelty + unexpected surprise + reward error - empowerment) and
++   dominance (empowerment). Served by the phone at /face (live, over /ws),
++   or with ?trace=URL / an embedded window.FACE_TRACE it replays a recording. */
++:root { --bg: #10161c; --fg: #e8edf2; --muted: #8896a3; --panel: #18212a; }
++html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
++  font-family: "IBM Plex Sans", system-ui, sans-serif; overflow: hidden; }
++canvas { display: block; width: 100%; height: 100%; touch-action: none; }
++.hud { position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px));
++  display: flex; gap: 10px; align-items: center; font: 12px "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); flex-wrap: wrap; }
++.hud button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid #2c3a47; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
++.hud button:focus-visible { outline: 2px solid #6fb6ff; outline-offset: 2px; }
++.bar { display: inline-flex; align-items: center; gap: 6px; }
++.bar i { display: inline-block; width: 80px; height: 6px; background: #26323d; border-radius: 3px; position: relative; overflow: hidden; }
++.bar i b { position: absolute; top: 0; bottom: 0; background: #6fb6ff; }
++</style>
++</head>
++<body>
++<canvas id="face" aria-label="Robot face showing its current valence and arousal"></canvas>
++<div class="hud">
++  <button id="sound" type="button">Sound off</button>
++  <span class="bar">valence <i><b id="bv"></b></i></span>
++  <span class="bar">arousal <i><b id="ba"></b></i></span>
++  <span id="src">connecting…</span>
++</div>
++<script>
++(() => {
++  const cv = document.getElementById('face'), ctx = cv.getContext('2d');
++  const target = { valence: 0, arousal: 0.4, dominance: 0 };
++  const now = { valence: 0, arousal: 0.4, dominance: 0 };
++  const src = document.getElementById('src');
++  let t0 = performance.now(), blinkAt = 0, blink = 0, phase = 0, lastValence = 0;
++
++  function resize() {
++    const r = window.devicePixelRatio || 1;
++    cv.width = innerWidth * r; cv.height = innerHeight * r;
++    ctx.setTransform(r, 0, 0, r, 0, 0);
++  }
++  addEventListener('resize', resize); resize();
++
++  // -- data: live from the phone, a trace, or idle --------------------------
++  function setState(e) {
++    if (!e) return;
++    for (const k of ['valence', 'arousal', 'dominance'])
++      if (typeof e[k] === 'number' && isFinite(e[k])) target[k] = e[k];
++  }
++  function playTrace(tr) {
++    src.textContent = 'recording';
++    const start = performance.now();
++    (function tick() {
++      const s = ((performance.now() - start) / 1000) % (tr.t[tr.t.length - 1] || 1);
++      let i = Math.min(tr.t.length - 1, Math.floor(s * (tr.hz || 10)));
++      setState({ valence: tr.valence[i], arousal: tr.arousal[i], dominance: (tr.dominance || [])[i] });
++      setTimeout(tick, 100);
++    })();
++  }
++  const q = new URLSearchParams(location.search);
++  if (window.FACE_TRACE) playTrace(window.FACE_TRACE);
++  else if (q.get('trace')) fetch(q.get('trace')).then(r => r.json()).then(playTrace)
++    .catch(() => { src.textContent = 'trace not found'; });
++  else {
++    try {
++      const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
++      ws.onopen = () => { src.textContent = 'live'; };
++      ws.onmessage = m => { try { setState(JSON.parse(m.data).emotion); } catch (e) {} };
++      ws.onclose = () => { src.textContent = 'no robot (idle)'; };
++    } catch (e) { src.textContent = 'no robot (idle)'; }
++  }
++
++  // -- sound: a soft voice, pitch with arousal, interval with valence --------
++  let audio = null;
++  const btn = document.getElementById('sound');
++  btn.onclick = () => {
++    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
++    audio.muted = !audio.muted; if (audio.state === 'suspended') audio.resume();
++    btn.textContent = audio.muted ? 'Sound off' : 'Sound on';
++  };
++  function chirp(v, a) {
++    if (!audio || audio.muted) return;
++    const base = 220 + 440 * a;                      // higher when aroused
++    const step = v >= 0 ? 1.26 : 0.84;               // major third up, or a fall
++    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
++    o.type = v >= 0 ? 'sine' : 'triangle';
++    o.frequency.setValueAtTime(base, t);
++    o.frequency.exponentialRampToValueAtTime(base * step, t + 0.12 + 0.2 * (1 - a));
++    g.gain.setValueAtTime(0.0001, t);
++    g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
++    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
++    o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.4);
++  }
++
++  // -- drawing ---------------------------------------------------------------
++  const lerp = (a, b, k) => a + (b - a) * k;
++  function hueFor(v) { return lerp(215, 40, (v + 1) / 2); }   // blue (sad) .. amber (glad)
++
++  function frame(ms) {
++    const dt = Math.min(0.1, (ms - t0) / 1000); t0 = ms;
++    const k = 1 - Math.exp(-dt * 4);
++    for (const key in now) now[key] = lerp(now[key], target[key], k);
++    const v = Math.max(-1, Math.min(1, now.valence)), a = Math.max(0, Math.min(1, now.arousal));
++    const d = Math.max(-1, Math.min(1, now.dominance));
++    document.getElementById('bv').style.cssText = v >= 0 ? `left:50%;width:${v * 50}%` : `left:${50 + v * 50}%;width:${-v * 50}%`;
++    document.getElementById('ba').style.cssText = `left:0;width:${a * 100}%`;
++
++    // A chirp when valence turns, or every few seconds when aroused.
++    phase += dt * (0.5 + 2.5 * a);
++    if (Math.abs(v - lastValence) > 0.5 || (Math.random() < dt * a * a * 0.6)) { chirp(v, a); lastValence = v; }
++
++    // Blinks: rarer and quicker when aroused.
++    if (ms > blinkAt) { blink = 1; blinkAt = ms + 1500 + Math.random() * (2000 + 5000 * (1 - a)) * (0.4 + a); }
++    blink = Math.max(0, blink - dt * 8);
++
++    const W = innerWidth, H = innerHeight, S = Math.min(W, H);
++    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg'); ctx.fillRect(0, 0, W, H);
++    const jitter = a > 0.7 ? (a - 0.7) * 6 : 0;
++    const cx = W / 2 + Math.sin(phase * 7) * jitter, cy = H / 2 + Math.sin(phase) * S * 0.01 * (0.3 + a) + d * S * -0.02;
++    const hue = hueFor(v), sat = 45 + 35 * a, light = 55 + 8 * v;
++    const tilt = -d * 0.06;
++    ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
++
++    // Head glow
++    const R = S * 0.42;
++    const glow = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.1);
++    glow.addColorStop(0, `hsla(${hue},${sat}%,${light}%,0.20)`); glow.addColorStop(1, 'hsla(0,0%,0%,0)');
++    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, R * 1.1, 0, Math.PI * 2); ctx.fill();
++
++    // Eyes
++    const ex = S * 0.16, ey = -S * 0.06, ew = S * 0.085;
++    const open = Math.max(0.05, (0.45 + 0.75 * a) * (1 - blink));
++    const pupil = ew * (0.35 + 0.35 * a);
++    for (const s of [-1, 1]) {
++      ctx.save(); ctx.translate(s * ex, ey);
++      ctx.fillStyle = `hsl(${hue},${sat * 0.4}%,92%)`;
++      ctx.beginPath(); ctx.ellipse(0, 0, ew, ew * open, 0, 0, Math.PI * 2); ctx.fill();
++      ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, ew, ew * open, 0, 0, Math.PI * 2); ctx.clip();
++      const look = Math.sin(phase * 0.7) * ew * 0.25 * (0.3 + a);
++      ctx.fillStyle = `hsl(${hue},${sat}%,${light - 25}%)`;
++      ctx.beginPath(); ctx.arc(look, 0, pupil, 0, Math.PI * 2); ctx.fill();
++      ctx.fillStyle = 'rgba(255,255,255,0.8)';
++      ctx.beginPath(); ctx.arc(look + pupil * 0.35, -pupil * 0.35, pupil * 0.22, 0, Math.PI * 2); ctx.fill();
++      ctx.restore();
++      // Brows: inner end up when sad, down when angry-low-valence-high-arousal
++      ctx.strokeStyle = `hsl(${hue},${sat}%,${light}%)`; ctx.lineWidth = S * 0.018; ctx.lineCap = 'round';
++      const lift = ew * (1.25 + 0.35 * a);
++      const slant = -v * 0.25 * (1 - a) + (v < 0 ? a * 0.35 : 0);
++      ctx.beginPath(); ctx.moveTo(-ew * 0.9, -lift + s * slant * ew * 0.9 * -1); ctx.lineTo(ew * 0.9, -lift - s * slant * ew * 0.9 * -1);
++      ctx.stroke(); ctx.restore();
++    }
++
++    // Mouth: curve with valence, opening with arousal
++    const mw = S * 0.2, my = S * 0.17, curve = v * S * 0.07, gap = S * (0.004 + 0.05 * Math.max(0, a - 0.35));
++    ctx.strokeStyle = `hsl(${hue},${sat}%,${light}%)`; ctx.lineWidth = S * 0.02; ctx.lineCap = 'round';
++    ctx.fillStyle = `hsla(${hue},${sat}%,${light - 30}%,0.9)`;
++    ctx.beginPath(); ctx.moveTo(-mw / 2, my);
++    ctx.quadraticCurveTo(0, my + curve + gap, mw / 2, my);
++    ctx.quadraticCurveTo(0, my + curve - gap, -mw / 2, my);
++    ctx.closePath(); if (gap > S * 0.01) ctx.fill(); ctx.stroke();
++    ctx.restore();
++    requestAnimationFrame(frame);
++  }
++  requestAnimationFrame(frame);
++})();
++</script>
++</body>
++</html>
+diff --git a/apps/dreamerBridge/src/main/python/webui.py b/apps/dreamerBridge/src/main/python/webui.py
+index f25c83c7..59db157b 100644
+--- a/apps/dreamerBridge/src/main/python/webui.py
++++ b/apps/dreamerBridge/src/main/python/webui.py
+@@ -120,6 +120,7 @@ class WebUI:
+         self.state = {}   # the latest published, never mutated
+         self.page = pkgutil.get_data('webpages', 'index.html')
+         self.dash = pkgutil.get_data('webpages', 'dashboard.html')
++        self.face = pkgutil.get_data('webpages', 'face.html')
+         self._server = None
+         self._clients = set()
+         self._cond = threading.Condition()
+@@ -207,6 +208,8 @@ class WebUI:
+                     self._send(200, ui.page, 'text/html; charset=utf-8')
+                 elif path == '/dash':
+                     self._send(200, ui.dash, 'text/html; charset=utf-8')
++                elif path == '/face':
++                    self._send(200, ui.face, 'text/html; charset=utf-8')
+                 elif path == '/history':
+                     self._json(ui.history())
+                 elif path == '/state':

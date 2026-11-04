@@ -551,7 +551,7 @@ class SmartphoneRobot(embodied.Env):
       pos_range=12000.0, obs_pos_scale=1.67e-4, pos_jump=1000.0,
       pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0, home_radius=0.0,
       home_inner=1200.0, home_speed=0.5, home_min=0.25, home_ramp=3000.0,
-      home_max_s=30.0, home_track=1634.0):
+      home_max_s=30.0, home_track=1634.0, weights_emotion=False):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -741,6 +741,9 @@ class SmartphoneRobot(embodied.Env):
     self.home_max_s = float(home_max_s)
     self.home_track = float(home_track)
     self._xyh = np.zeros(3)
+    # Push the RSSM prior and the critic and reward heads with the policy, so
+    # the phone can compute its emotion (deploy/emotion.py) for the face.
+    self.weights_emotion = bool(weights_emotion)
     self._away_d = np.zeros(2)   # each wheel's travel since the run started
     self._away_prev = None
     self._go_home = False
@@ -1811,7 +1814,7 @@ class SmartphoneRobot(embodied.Env):
     params = data['params'] if isinstance(data, dict) and 'params' in data \
         else data
     arrays, meta = exportlib.pack_arrays(
-        self._config, params, self._weights_dtype)
+        self._config, params, self._weights_dtype, self.weights_emotion)
     base = self._base if self._wdelta else None
     blob = exportlib.encode(
         meta, arrays, stamp=stamp, base=base,

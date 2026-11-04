@@ -16,6 +16,7 @@ import beyond the standard library.
 
 import os
 import tempfile
+import threading
 import time
 
 import numpy as np
@@ -46,6 +47,14 @@ class PolicyRunner:
     # distribution's mode, for running a finished policy (the player).
     self.mode = 'train'
     self.prepared = 0     # steps that used a prepared half
+    # Emotion (deploy/emotion.py), for weights exported with emotion=True:
+    # every FEEL_EVERY steps from the rewards since, empowerment on a thread
+    # of its own every EMPOWER_S so the control tick never waits for it.
+    self.emotion = None
+    self.emotion_state = None
+    self._feel = [0.0, 0, False]     # discounted reward sum, steps, a reset
+    self._emo_lock = threading.Lock()
+    self._emo_thread = None
     # The leaky wheel distance of a policy that observes 'position'; kept
     # across episodes and weight swaps, as the trainer keeps its own.
     self.pos = np.zeros(2, np.float64)
@@ -75,7 +84,68 @@ class PolicyRunner:
     self._pre = None
     if self.carry is None:
       self.carry = policy.initial()
+    self._install_emotion(policy)
     return policy.meta
+
+  FEEL_EVERY = 4
+  EMPOWER_S = 0.5
+
+  def _install_emotion(self, policy):
+    if 'emotion' not in policy.meta:
+      self.emotion = None
+      return
+    try:
+      from emotion import Emotion  # noqa: E402  (flat layout on the phone)
+    except ImportError:
+      return
+    with self._emo_lock:
+      if self.emotion is None:
+        self.emotion = Emotion(policy, gamma=policy.meta['emotion']['gamma'],
+                               every=0, tau=650 // self.FEEL_EVERY)
+      else:
+        self.emotion.p = policy   # keep the running normalisation
+    if self._emo_thread is None:
+      self._emo_thread = threading.Thread(target=self._empower_loop, daemon=True)
+      self._emo_thread.start()
+
+  def _empower_loop(self):
+    while True:
+      time.sleep(self.EMPOWER_S)
+      emo, last = self.emotion, getattr(self.policy, 'last_post', None)
+      if emo is None or last is None:
+        continue
+      try:
+        value = emo._empowerment(last[0], last[1])
+        with self._emo_lock:
+          emo.empowerment = value
+      except Exception as e:  # noqa: BLE001 -- the face is never worth a crash
+        print('dreamerBridge: empowerment failed: %s' % e)
+
+  def feel(self, reward):
+    """After each step, with the reward it scored: updates emotion_state."""
+    emo = self.emotion
+    if emo is None or getattr(self.policy, 'last_post', None) is None:
+      return
+    acc = self._feel
+    acc[0] += (emo.gamma ** acc[1]) * float(reward)
+    acc[1] += 1
+    acc[2] = acc[2] or self.was_first
+    if acc[1] < self.FEEL_EVERY:
+      return
+    deter, stoch, logit = self.policy.last_post
+    try:
+      with self._emo_lock:
+        sig = emo.step(deter, logit, stoch, acc[0], is_first=acc[2],
+                       steps=acc[1])
+      self.emotion_state = dict(
+          valence=sig['face_valence'], arousal=sig['arousal'],
+          dominance=sig['dominance'], td=sig['td'], value=sig['value'],
+          surprise=sig['surprise'], unexpected=sig['unexpected'],
+          novelty=sig['novelty'], empowerment=sig['empowerment'])
+    except Exception as e:  # noqa: BLE001
+      print('dreamerBridge: emotion failed: %s' % e)
+      self.emotion = None
+    self._feel = [0.0, 0, False]
 
   @staticmethod
   def build_blob(blob, path):

@@ -5,6 +5,7 @@ import json
 import multiprocessing as mp
 import os
 import pickle
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -223,9 +224,12 @@ class SharedPolicyWeights:
   # disk -- ~7 MB each, which at a 2 s cadence is 100 GB over an 8 h job.
   KEEP = 8
 
-  def __init__(self, directory):
+  def __init__(self, directory, extra=''):
     self.directory = elements.Path(directory)
     self.directory.mkdir(parents=True, exist_ok=True)
+    # Regex of params published beside policy_keys (the actor ignores them):
+    # the critic and reward head for the phone's emotion.
+    self.extra = re.compile(extra) if extra else None
     self.latest = self.directory / 'latest'
     self._stamp = None
     self._pool = None
@@ -252,7 +256,8 @@ class SharedPolicyWeights:
     # same keys out anyway, and a new actor asks for exactly this set.
     keys = getattr(agent, 'policy_keys', None)
     if keys:
-      params = {k: v for k, v in data['params'].items() if k in set(keys)}
+      params = {k: v for k, v in data['params'].items()
+                if k in set(keys) or (self.extra and self.extra.search(k))}
       assert params, (
           'policy_keys matched nothing in the saved params; publishing an '
           'empty weight set would silently freeze the actor')
@@ -610,7 +615,8 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   logger = make_logger()
   replay = make_replay()
   shared_buffer = SharedExperienceBuffer(replay)
-  shared_policy = SharedPolicyWeights(paths.policy)
+  shared_policy = SharedPolicyWeights(
+      paths.policy, getattr(args, 'online_publish_extra', ''))
 
   logdir = elements.Path(args.logdir)
   step = logger.step
