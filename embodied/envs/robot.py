@@ -970,6 +970,7 @@ class SmartphoneRobot(embodied.Env):
         self._send(0.0, 0.0, reset=True)
         sensors, latency = self._recv()
         sensors, latency = self._wait_for_base(sensors, latency)
+        sensors, latency = self._wait_while_paused(sensors, latency)
         sensors, latency = self._recover(sensors, latency)
         self._step = 0
         self._done = False
@@ -1001,6 +1002,24 @@ class SmartphoneRobot(embodied.Env):
         time.time() - start, self._base_health), flush=True)
     return sensors, latency
 
+  def _wait_while_paused(self, sensors, latency):
+    """Hold the episode start while the robot is paused from the dashboard.
+
+    The phone keeps reporting while it holds the wheels, and those steps
+    used to be recorded: a demo left paused for 4-9 min before starting
+    filled replay with the robot lying on a bumper at zero action, and its
+    policy learned to lie there (e2831 s01, e9662, e30101 never balanced;
+    sessions held under 2.5 min balanced in 2-5 min). Nothing is recorded
+    until it runs."""
+    if not self._pause['robot']:
+      return sensors, latency
+    print('[robot] robot paused; recording nothing until it runs', flush=True)
+    while self._pause['robot']:
+      self._send(0.0, 0.0, reset=True)
+      sensors, latency = self._recv()
+    print('[robot] robot running; starting an episode', flush=True)
+    return sensors, latency
+
   def _recover(self, sensors, latency):
     """Drive the body back under itself so the next episode can start upright.
 
@@ -1026,6 +1045,15 @@ class SmartphoneRobot(embodied.Env):
     return self._recv()
 
   def _advance(self, action):
+    if self._pause['robot']:
+      # Paused from the dashboard: close the episode here; the next one
+      # starts only once the robot runs again (_wait_while_paused), so the
+      # held stretch never reaches replay.
+      self._send(0.0, 0.0, reset=False)
+      sensors, latency = self._recv()
+      self._sent_act = (0.0, 0.0)
+      self._done = True
+      return self._obs(sensors, latency, 0.0, is_last=True)
     if self.task == 'track' and self._step % self.ref_hold == 0:
       self._ref = self.theta_zero + self._rng.uniform(
           -self.ref_range, self.ref_range)

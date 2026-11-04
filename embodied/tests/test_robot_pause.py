@@ -225,6 +225,29 @@ def test_the_speed_cap_clips_and_rises_to_full(tmp_path):
   np.testing.assert_allclose(executed[0], [0.4, -0.1], rtol=1e-6)
 
 
+def test_nothing_is_recorded_while_the_robot_is_paused(tmp_path):
+  env = make_env(tmp_path, discrete=False, symmetric=False)
+  env._connect = lambda: None
+  sent = []
+  env._send = lambda left, right, reset: sent.append(reset)
+  recvs = []
+
+  def recv():
+    recvs.append(1)
+    if len(recvs) == 5:          # the dashboard resumes the robot
+      env._request_pause(dict(robot=False))
+    return dict(env._last), 0.0
+
+  env._recv = recv
+  env._request_pause(dict(robot=True))
+  drive = dict(drive=np.array([0.5, 0.5], np.float32), reset=False)
+  obs = env._advance(drive)            # paused mid-episode: it ends here
+  assert obs['is_last'] and sent == [False]
+  obs = env.step(drive)                # the next episode waits for resume
+  assert obs['is_first'] and len(recvs) == 5 and all(sent[1:])
+  assert not env._advance(drive)['is_last']
+
+
 def test_the_learner_drops_its_ratio_debt_while_paused():
   # What run_learner does with should_train while paused: called and its
   # answer thrown away, so resuming does not try to catch up.
