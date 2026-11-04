@@ -40,7 +40,9 @@ def main():
       # BAL=1: balance policy, no stick; ZERO=1: a command policy held at a zero stick
       cmds = '' if os.environ.get('BAL') else f'{W}/sysid/r6/zero_stick.csv' if os.environ.get('ZERO') else STICK[floor]
       env = dict(os.environ, CODE=code, CMDS=cmds)
-      out = subprocess.run(['sbatch', '--parsable', '-J', f'r6e_{tag}_{exp}', '-x', 'saion-gpu[01,02,04,06,07-10]',
+      out = subprocess.run(['sbatch', '--parsable', '-J', f'r6e_{tag}_{exp}']
+                           # p100 CPUs are capped at 72; intel has no cap (but preempts and requeues).
+                           + (['-p', 'intel'] if (k // 5 + int(exp.split('@')[1]) // 19500) % 2 else ['-x', 'saion-gpu[01,02,04,06,07-10]']) + [
                             f'{W}/sysid/r6/cl.sh', run, f'ev/{tag}/{exp}_{k}.json', os.environ.get('MINUTES', '3.5'), 'eval']
                            + specs[k:k + 5], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
       print(exp, k, out.stdout.strip(), out.stderr.strip()[:200])

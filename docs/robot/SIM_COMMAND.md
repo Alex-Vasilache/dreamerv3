@@ -8,6 +8,27 @@ repo `EXPERIMENTS.md`), launchers `sbatch/sim_*.txt`, figures in
 (copy in the bucket, `results/robot_weekend_20261024/`; runs archived to
 `results/dreamerv3/`, with their experience). Tables are mean ± std over seeds; n in each row.
 
+## For Thursday 11-05: one policy for the stick and for balancing (rounds 6u-6w, §11.6)
+
+Command policies that also balance with the stick at zero, find their own
+balance point, and keep balancing when the floor tilts. Export as before
+(`tools/robot/from_sim.sh try <name> <run dir> <step>`, run dirs under
+`/work/DoyaU/vasilache/work/`; pull the branch first):
+
+| name | run dir | step | for |
+|---|---|---|---|
+| r6w_unified | e10071_simrobot_command65_flat_20261104_100044_1zn9JE | 682500 | carpet and table, stick or zero stick: try this first |
+| r6v_unified | e10054_simrobot_command65_flat_20261104_054529_JXPlRY | 916500 | the same, better on carpet, rolls more at a zero stick on the table |
+| r6u_unified | e10025_simrobot_command65_flat_20261104_000850_vv5rHz | 760500 | the run both were warm-started from, no stand-still term |
+
+In the sim, against `r6_mixed`, these fall far less when the balance point
+is off by 2-3 deg or the floor slopes by 3-5 deg (table: 2.4 against 39
+falls/min with the stick, 0.1 against 67 at a zero stick), but track the stick
+less closely on the nominal floors (correlation 0.49-0.67 against 0.86-0.89).
+At a zero stick on the table, `r6w_unified` still rolls slowly when the
+balance point is off (about 0.2-1.2 m/s at 2-3 deg); on slopes it holds
+still. Details in §11.6.
+
 ## For Monday 11-02 (round 6, §11)
 
 Sim policies to try (`tools/robot/from_sim.sh try <name> <run dir> <step>`,
@@ -981,6 +1002,108 @@ have this weakness, because the stick commands speed rather than a tilt
 setpoint. So on the table the balance point (`theta_zero`) has to be set
 correctly for the balance pick. e9671 @760500 is `r6_bal_mixed` in the
 table at the top.
+
+### 11.6 One policy for the stick and for balancing (rounds 6u-6w, Wednesday)
+
+Goal (Alex, 11-04): one policy for both command following and balancing,
+which finds its own balance point instead of a set `theta_zero`, and keeps
+balancing when the floor starts to incline. The command reward
+(`bumper_track`) already has no tilt setpoint: at a zero stick it pays for
+standing still and staying off the bumpers, which can only be done around the
+robot's true balance point. Two things were missing: training that moves the
+balance point and the floor enough, and a reward that tells rolling from
+standing still.
+
+Sim changes (b1c09cf, 24a1e6a):
+
+* Slopes. `sim_slope` tilts gravity by the slope angle (the floor stays the
+  world plane); `sim_rand` key `slope` draws a new slope with the other
+  randomisation, ramped in over `sim_slope_ramp` seconds. The phone measures
+  tilt against gravity (theta_floor - slope * cos(yaw)), so on a slope the
+  balance point in the phone's frame does not move, but standing still needs
+  wheel torque (13% of stall at 5 deg). The bumpers rest on the floor, so the
+  reward judges them by the tilt against the floor (`theta_floor`, sim only).
+* Balance point. `sim_eq_range` 0.0524 (+-3 deg, was +-1), redrawn every
+  180 s. This moves the centre of mass, so the balance point in the phone's
+  frame moves too: this is the "find your own balance point" case.
+* `command_sigma_fine`: tracking mixes a second, narrow kernel into the wide
+  one, (1 - w) exp(-(e/sigma)^2) + w exp(-(e/sigma_fine)^2), w =
+  `command_fine_weight` (0.5). The wide kernel alone (sigma 0.6 x 2500 mm/s)
+  pays 0.70 for rolling at 0.9 m/s against 1.0 for standing still, and round
+  6u's best run used that: it held a zero stick on the table by rolling
+  backwards at about 0.9 m/s. The relabeller rescores with the same kernel.
+  Default off; not sent to the phone.
+
+Evaluation. A hard set per floor: the fitted sim, balance point off by
+-1.8, +2.2, -2.8 and +3.2 deg (the policy cannot know it), slopes of +-3
+and +-5 deg (up and down), and a slope ramping to 5 deg over 20 s. Each
+policy is run with the recorded stick and with the stick held at zero
+(balancing). Rolling is |mean wheel speed| at a zero stick.
+
+Training. All arms are the `r6_mixed` recipe (§11.3) plus the wider balance
+point; v100/p100, `sbatch/sim_cmd_r6u.txt`, `r6u2`, `r6v`, `r6v2`, `r6w`.
+Round 6u (4 h, e10020-e10032, e10040-e10042): A slopes +-5 deg; B A + half the
+commands zero; C A + no tilt penalty; D no slopes; E slopes +-3 deg; F A +
+balance point redrawn every 60 s. Round 6v (4 h, e10050-e10065): C + fine
+kernel 0.15, from scratch (G, I with 0.25) or warm-started from 6u's best
+checkpoint (H: e10025 @760500; J: 6u D's e10028 @916500). Round 6w (3 h,
+e10070-e10077): H continued from e10053/e10054 @916500, as is (K), with the
+balance point redrawn every 30 s (L, M), and with fine weight 0.8 (N). Arms on
+the hard set, each run averaged over its last 2-3 checkpoints (3.5 min each):
+
+| arm | n | carpet corr | carpet falls/min | table corr | table falls/min | table zero-stick falls/min | table zero-stick roll (mm/s) |
+|---|---|---|---|---|---|---|---|
+| 6u A: eq +-3, slope +-5 | 3 | 0.06 ± 0.05 | 9.7 ± 2.0 | 0.17 ± 0.08 | 46.8 ± 22.3 | 38.0 ± 15.7 | 1538 ± 262 |
+| 6u B: A + p_zero .5 | 2 | 0.21 ± 0.19 | 6.0 ± 0.5 | 0.25 ± 0.12 | 34.4 ± 14.8 | 10.3 ± 5.8 | 1377 ± 875 |
+| 6u C: A + tilt penalty 0 | 5 | 0.25 ± 0.13 | 5.2 ± 3.4 | 0.37 ± 0.13 | 22.5 ± 13.7 | 10.7 ± 8.9 | 1219 ± 796 |
+| 6u D: eq +-3 only | 2 | 0.59 ± 0.01 | 22.0 ± 6.2 | 0.57 ± 0.03 | 33.8 ± 8.7 | 21.1 ± 0.6 | 526 ± 114 |
+| 6u E: eq +-3, slope +-3 | 2 | 0.44 ± 0.04 | 21.8 ± 4.6 | 0.28 ± 0.20 | 15.3 ± 7.8 | 8.4 ± 4.7 | 1703 ± 779 |
+| 6u F: A + eq every 60 s | 2 | 0.19 ± 0.18 | 3.2 ± 2.6 | 0.25 ± 0.16 | 28.4 ± 9.5 | 19.8 ± 5.8 | 1024 ± 431 |
+| 6v H: C + fine .15, warm e10025 | 7 | 0.40 ± 0.07 | 5.2 ± 2.4 | 0.34 ± 0.07 | 17.3 ± 5.4 | 6.9 ± 6.1 | 919 ± 222 |
+| 6v J: C + fine .15, warm e10028 | 2 | 0.29 ± 0.05 | 6.4 ± 2.4 | 0.39 ± 0.04 | 16.1 ± 10.1 | 8.2 ± 8.0 | 831 ± 98 |
+| 6w K: H continued | 2 | 0.41 ± 0.11 | 6.3 ± 0.2 | 0.35 ± 0.20 | 22.6 ± 16.3 | 23.3 ± 21.9 | 1064 ± 278 |
+| 6w L/M: H continued, eq every 30 s | 4 | 0.35 ± 0.10 | 4.1 ± 2.2 | 0.34 ± 0.09 | 18.0 ± 5.6 | 11.4 ± 8.7 | 1171 ± 326 |
+| 6w N: L + fine weight .8 | 2 | 0.15 ± 0.05 | 5.7 ± 2.1 | 0.33 ± 0.18 | 14.9 ± 10.6 | 10.7 ± 10.6 | 1200 ± 640 |
+
+`r6_mixed` (e8261 @838500) on the same set: carpet 0.61, 18.6 falls/min;
+table 0.49, 35.2 falls/min, at a zero stick 67.6 falls/min and 900 mm/s.
+
+Ten-minute evaluations of the picks (standard set §11.3 and hard set; bars
+mean over the set's variants, error SD over variants):
+
+![rounds 6u-6w](figs/r6u.png)
+
+What this shows:
+
+* Slopes are learnable; a moved balance point only partly. On the table
+  `r6w_unified` falls 0.7-4.0 times a minute on the slopes against 40-126 for
+  `r6_mixed` (10 min, with the stick), and at a zero stick it stands still
+  there (|roll| under 50 mm/s). When the balance point is moved, they
+  still roll, at a speed that grows with the offset (`r6w_unified` on the
+  table: -1.2 m/s at -2.8 deg, +0.7 at +3.2), though they rarely fall.
+  `r6_mixed` does the same. Carpet's rolling resistance stops the roll there.
+* Slopes make learning less reliable. With slopes most seeds learn to
+  balance but not to follow the stick on carpet (arm A: carpet corr 0.06);
+  dropping the tilt penalty helped (C), but only one seed in five (e10025)
+  learned both. Every later arm is warm-started from that seed; averaged over
+  seeds and checkpoints none tracks as well as `r6_mixed`. The picks are the
+  best checkpoints of the best runs, confirmed in ten-minute evaluations.
+* The cost is nominal tracking: on the fitted floors the picks follow the
+  stick at 0.49-0.70 against 0.86-0.89 for `r6_mixed`.
+* Redrawing the balance point more often (F, L/M) or weighting the fine
+  kernel more (N) did not help within 3-4 h.
+
+Picks (10 min): `r6w_unified` (e10071 @682500) on the table tracks 0.65 on
+the hard set with 2.4 falls/min (r6_mixed 0.49, 39.2), at a zero stick 0.1
+falls/min and 300 mm/s (r6_mixed 67.1, 910); on carpet 0.55 with 8.1
+falls/min (r6_mixed 0.62, 24.9). `r6v_unified` (e10054 @916500) is better on
+carpet (0.59, 2.3 falls/min; standard set 0.64) and rolls more at a zero
+stick on the table (566 mm/s).
+
+Next: the roll at a moved balance point needs the policy to integrate its
+own drift (lean back while it keeps rolling forward). Longer training or a
+position term (penalise distance travelled at a zero stick) are the next
+things to try.
 
 ## Bugs found on the way
 
