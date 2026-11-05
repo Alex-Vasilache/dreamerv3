@@ -109,3 +109,27 @@ the settings in its pause frames as `emotion`):
 1. `loop_onboard`: after `obs, act = runner.act(snap, cmd)`, `act = runner.modulate(act)`.
 2. `apply_pause(state)`: `runner.configure(state.get('emotion'))`.
 3. The obs message: add `emotion_event=runner.event` (the trainer forwards a new one to the learner).
+
+### Sim results (2026-11-06; report https://claude.ai/artifact/3TxrKuGtzwhbcYrByMpPwp)
+
+Sim table, sim_phone, pushes `5:0.05:0.15` and walls 0.5 m, 30 min, minutes
+10-30, n = 4 seeds per arm (mean +- std).
+
+- Alone, on the robot defaults (round EA, e19410-e19437): fear (weight 1) is
+  the one clear win, upright 0.95 vs 0.68, crossings 4.0 +- 1.0 vs 14.1 +- 3.0 a
+  minute, falls per push 0.04 vs 0.26; the same pain as a reward penalty
+  (`balance_bumper 1`) gets half of it. Arousal-triggered weight changes,
+  catch, vigour and exploration alone did not help (boost lost two seeds).
+- Arousal is not selective: it falls at bumper hits (novelty drops, the model
+  is sure of itself there). `event_signal salience` (|TD valence| + pain,
+  phasic threshold 1.0) gives 4-6 events a minute, 97% within 1 s of a hit.
+- Combined, on the e30114 recipe (rounds EB/EC, e19442-e19489): fear + catch
+  0.5 is the pick, crossings 5.5 +- 1.8 vs 16.2 +- 2.5 a minute and falls per
+  push 0.08 vs 0.22 (n = 8 vs 4); without pushes or walls 5.4 +- 1.8 vs
+  13.2 +- 4.0. Fear can replace the bumper penalty. Fear weight 0.5-2 and
+  catch 0.5-1 are within the seed spread; the salience boost adds nothing.
+
+Live: the e30114 flags plus `--env.robot.weights_emotion True
+--env.robot.cost_obs True --agent.fear.weight 1.0 --env.robot.affect_catch 0.5`,
+and the three phone lines above (without them fear still trains; only the
+catch and the face's fear are missing).
