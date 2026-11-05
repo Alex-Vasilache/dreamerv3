@@ -44,8 +44,11 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   const src = document.getElementById('src');
   let t0 = performance.now(), blinkAt = 0, blink = 0, phase = 0, lastValence = 0;
 
+  const q = new URLSearchParams(location.search);
   function resize() {
-    const r = window.devicePixelRatio || 1;
+    // At most 1.5 canvas pixels per CSS pixel (?dpr= to change): the robot's
+    // Pixel 3a is 2.75, and drawing at full resolution took 60% of a core.
+    const r = Math.min(window.devicePixelRatio || 1, parseFloat(q.get('dpr')) || 1.5);
     cv.width = innerWidth * r; cv.height = innerHeight * r;
     ctx.setTransform(r, 0, 0, r, 0, 0);
   }
@@ -67,7 +70,6 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
       setTimeout(tick, 100);
     })();
   }
-  const q = new URLSearchParams(location.search);
   if (window.FACE_TRACE) playTrace(window.FACE_TRACE);
   else if (q.get('trace')) fetch(q.get('trace')).then(r => r.json()).then(playTrace)
     .catch(() => { src.textContent = 'trace not found'; });
@@ -108,11 +110,12 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   // -- drawing ---------------------------------------------------------------
   const lerp = (a, b, k) => a + (b - a) * k;
+  const NEG = '#ff6b6b', POS = '#5fd38d';   // below / above the middle of an axis
   function hueFor(v) { return lerp(215, 40, (v + 1) / 2); }   // blue (sad) .. amber (glad)
 
   // The phone sends a new value every ~60 ms; the face follows a moving average
   // with this time constant (s), ?tau=0.5 to change it.
-  const TAU = Math.max(0.05, parseFloat(q.get('tau')) || 2);
+  const TAU = Math.max(0.05, parseFloat(q.get('tau')) || 1);
 
   // Valence, arousal and dominance as a 3D box, top right: valence left to
   // right, arousal up, dominance front (in control) to back (helpless). The
@@ -184,8 +187,10 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     // shadows and the dot
     const hue = hueFor(v), dot = P(v, y, d);
     const shadows = [P(v, -1, d), P(v, y, zw), P(xw, y, d)];
-    ctx.strokeStyle = `hsla(${hue},60%,65%,0.6)`; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
-    for (const q of shadows) line(dot, q);
+    // each line's length is one coordinate: to the floor arousal, to the back
+    // wall dominance, to the side wall valence; red below the middle, green above
+    ctx.setLineDash([4, 3]); ctx.lineWidth = 1.6;
+    [y, d, v].forEach((c, i) => { ctx.strokeStyle = c < 0 ? NEG : POS; line(dot, shadows[i]); });
     ctx.setLineDash([]);
     ctx.fillStyle = `hsla(${hue},50%,60%,0.55)`;
     for (const q of shadows) { ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, Math.PI * 2); ctx.fill(); }
@@ -194,7 +199,10 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     ctx.restore();
   }
 
+  // Drawn at most FPS times a second (?fps= to change), for the phone's sake.
+  const FPS = Math.max(5, parseFloat(q.get('fps')) || 30);
   function frame(ms) {
+    if (ms - t0 < 1000 / FPS - 2) { requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, (ms - t0) / 1000); t0 = ms;
     // Two moving averages in a row (TAU/2 each): about TAU overall, and a change
     // eases in instead of starting at full speed.
@@ -203,10 +211,11 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     const v = Math.max(-1, Math.min(1, now.valence)), a = Math.max(0, Math.min(1, now.arousal));
     window.__face = { now, target, dt };   // for checking the smoothing from devtools
     const d = Math.max(-1, Math.min(1, now.dominance));
-    document.getElementById('bv').style.cssText = v >= 0 ? `left:50%;width:${v * 50}%` : `left:${50 + v * 50}%;width:${-v * 50}%`;
+    const bar = (id, x) => { document.getElementById(id).style.cssText =
+      (x >= 0 ? `left:50%;width:${x * 50}%` : `left:${50 + x * 50}%;width:${-x * 50}%`) + `;background:${x < 0 ? NEG : POS}`; };
+    bar('bv', v);
     const ac = 2 * a - 1;   // arousal 0..1, shown about its middle like the others
-    document.getElementById('ba').style.cssText = ac >= 0 ? `left:50%;width:${ac * 50}%` : `left:${50 + ac * 50}%;width:${-ac * 50}%`;
-    document.getElementById('bd').style.cssText = d >= 0 ? `left:50%;width:${d * 50}%` : `left:${50 + d * 50}%;width:${-d * 50}%`;
+    bar('ba', ac); bar('bd', d);
 
     // A chirp when valence turns, or every few seconds when aroused.
     phase += dt * (0.5 + 2.5 * a);
