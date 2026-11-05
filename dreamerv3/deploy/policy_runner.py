@@ -26,6 +26,41 @@ from numpy_policy import NumpyPolicy, expand_delta, is_delta  # noqa: E402  (fla
 __all__ = ['PolicyRunner']
 
 
+class Fatigue:
+  """Fades a wheel command the policy holds: each wheel's output is scaled by
+  1 - held/steps, so a command kept within `tol` of where it started, in the
+  same direction and beyond `dead`, reaches 0 after `steps` control steps.
+  Any larger change (or a reversal) restarts that wheel at full strength.
+  Short bursts to catch a fall pass nearly whole; steady driving cannot last.
+  steps 0: off. The trainer (embodied/envs/robot.py) and the phone
+  (deploy/policy_runner.py) each keep a copy, so change both."""
+
+  def __init__(self, steps=0, tol=0.15, dead=0.05):
+    self.set(steps, tol, dead)
+
+  def set(self, steps, tol=0.15, dead=0.05):
+    self.steps, self.tol, self.dead = int(steps), float(tol), float(dead)
+    self.reset()
+
+  def reset(self):
+    self.ref = [None, None]
+    self.held = [0, 0]
+
+  def __call__(self, act):
+    if self.steps <= 0:
+      return [float(a) for a in act]
+    out = []
+    for i, a in enumerate(act[:2]):
+      a, ref = float(a), self.ref[i]
+      if (ref is not None and abs(a) > self.dead and a * ref > 0
+          and abs(a - ref) <= self.tol):
+        self.held[i] += 1
+      else:
+        self.ref[i], self.held[i] = a, 0
+      out.append(a * max(0.0, 1.0 - self.held[i] / self.steps))
+    return out
+
+
 class PolicyRunner:
 
   def __init__(self, path=None):
@@ -59,6 +94,8 @@ class PolicyRunner:
     # across episodes and weight swaps, as the trainer keeps its own.
     self.pos = np.zeros(2, np.float64)
     self.prev_dist = None
+    # Set from the trainer's pause frames; the app applies it to each action.
+    self.fatigue = Fatigue()
     if path and os.path.exists(path):
       self.load_path(path, stamp='initial')
 
@@ -188,6 +225,7 @@ class PolicyRunner:
       self.carry = self.policy.initial()
     self.is_first = True
     self._pre = None
+    self.fatigue.reset()
 
   def observe(self, sensors, command=None):
     """Sensor dict -> the observation the network expects.

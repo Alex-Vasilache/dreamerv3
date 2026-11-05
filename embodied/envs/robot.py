@@ -55,6 +55,41 @@ def track_position(pos, prev, sensors, tau, hz, jump):
   return pos * np.exp(-1.0 / (tau * hz)) + step
 
 
+class Fatigue:
+  """Fades a wheel command the policy holds: each wheel's output is scaled by
+  1 - held/steps, so a command kept within `tol` of where it started, in the
+  same direction and beyond `dead`, reaches 0 after `steps` control steps.
+  Any larger change (or a reversal) restarts that wheel at full strength.
+  Short bursts to catch a fall pass nearly whole; steady driving cannot last.
+  steps 0: off. The trainer (embodied/envs/robot.py) and the phone
+  (deploy/policy_runner.py) each keep a copy, so change both."""
+
+  def __init__(self, steps=0, tol=0.15, dead=0.05):
+    self.set(steps, tol, dead)
+
+  def set(self, steps, tol=0.15, dead=0.05):
+    self.steps, self.tol, self.dead = int(steps), float(tol), float(dead)
+    self.reset()
+
+  def reset(self):
+    self.ref = [None, None]
+    self.held = [0, 0]
+
+  def __call__(self, act):
+    if self.steps <= 0:
+      return [float(a) for a in act]
+    out = []
+    for i, a in enumerate(act[:2]):
+      a, ref = float(a), self.ref[i]
+      if (ref is not None and abs(a) > self.dead and a * ref > 0
+          and abs(a - ref) <= self.tol):
+        self.held[i] += 1
+      else:
+        self.ref[i], self.held[i] = a, 0
+      out.append(a * max(0.0, 1.0 - self.held[i] / self.steps))
+    return out
+
+
 # Anything that means the link went away rather than that the code is
 # wrong: socket errors and timeouts (both OSError), plus a truncated or
 # garbled frame from a half-closed connection.
@@ -551,7 +586,8 @@ class SmartphoneRobot(embodied.Env):
       pos_range=12000.0, obs_pos_scale=1.67e-4, pos_jump=1000.0,
       pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0, home_radius=0.0,
       home_inner=1200.0, home_speed=0.5, home_min=0.25, home_ramp=3000.0,
-      home_max_s=30.0, home_track=1634.0, weights_emotion=False):
+      home_max_s=30.0, home_track=1634.0, weights_emotion=False,
+      fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -852,6 +888,11 @@ class SmartphoneRobot(embodied.Env):
     # either bumper (0, the default: no such term; the upright score alone
     # is ~0 there, as good as a fall the policy cannot see coming).
     self.balance_bumper = float(balance_bumper)
+    # fatigue_s > 0: a wheel command held roughly constant fades to 0 over
+    # fatigue_s s (Fatigue above); onboard the phone applies it (told in
+    # pause frames), here it is applied before the cap.
+    self.fatigue_s = float(fatigue_s)
+    self._fatigue = Fatigue(round(self.fatigue_s * float(hz)), fatigue_tol, fatigue_dead)
     # ... plus track_progress * |c| * clip(forward / c, 0, 1) for a forward
     # command c: the Gaussian pays ~0 until the speed is close (carpet at
     # 600 of 2500 mm/s earns 0.03), so partial progress gets a linear slope.
@@ -1007,6 +1048,7 @@ class SmartphoneRobot(embodied.Env):
         self._done = False
         self._reward = 0.0
         self._ref = float(self.theta_zero)
+        self._fatigue.reset()
         self._prev_act = np.zeros(2, np.float32)
         self._chatter = 0.0
         self._sent_act = (0.0, 0.0)
@@ -1152,6 +1194,8 @@ class SmartphoneRobot(embodied.Env):
       self._ref = self.theta_zero + self._rng.uniform(
           -self.ref_range, self.ref_range)
     left, right = self._decode(action)
+    if self.fatigue_s:
+      left, right = self._fatigue((left, right))
     if self.drive_cap0:
       cap = self._drive_cap()
       left = float(np.clip(left, -cap, cap))
@@ -1696,7 +1740,10 @@ class SmartphoneRobot(embodied.Env):
                 train_started_ago=(None if started is None
                                    else max(0.0, time.time() - started)),
                 # Started paused and not yet trained: no minute 0 yet.
-                waiting=state['from_start'] and started is None)
+                waiting=state['from_start'] and started is None,
+                **({'fatigue': dict(steps=self._fatigue.steps, tol=self._fatigue.tol,
+                                    dead=self._fatigue.dead)}
+                   if self.fatigue_s else {}))
 
   def _request_pause(self, request):
     """The phone's dashboard paused or resumed the robot and/or the
