@@ -20,21 +20,27 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .bar { display: inline-flex; align-items: center; gap: 6px; }
 .bar i { display: inline-block; width: 80px; height: 6px; background: #26323d; border-radius: 3px; position: relative; overflow: hidden; }
 .bar i b { position: absolute; top: 0; bottom: 0; background: #6fb6ff; }
+.bar i::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #4a5a69; }
+/* connection status: out of the way, top left, faint */
+#src { position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); top: max(10px, env(safe-area-inset-top, 0px));
+  font: 11px "IBM Plex Mono", ui-monospace, monospace; color: var(--muted); opacity: 0.55; }
 </style>
 </head>
 <body>
-<canvas id="face" aria-label="Robot face showing its current valence and arousal"></canvas>
+<canvas id="face" aria-label="Robot face showing its current valence, arousal and dominance"></canvas>
 <div class="hud">
-  <button id="sound" type="button">Sound off</button>
+  <button id="sound" type="button">Sound: tap to turn on</button>
   <span class="bar">valence <i><b id="bv"></b></i></span>
   <span class="bar">arousal <i><b id="ba"></b></i></span>
-  <span id="src">connecting…</span>
+  <span class="bar">dominance <i><b id="bd"></b></i></span>
 </div>
+<div id="src">connecting…</div>
 <script>
 (() => {
   const cv = document.getElementById('face'), ctx = cv.getContext('2d');
   const target = { valence: 0, arousal: 0.4, dominance: 0 };
-  const now = { valence: 0, arousal: 0.4, dominance: 0 };
+  const mid = { valence: 0, arousal: 0.4, dominance: 0 };   // first smoothing stage
+  const now = { valence: 0, arousal: 0.4, dominance: 0 };   // what is shown
   const src = document.getElementById('src');
   let t0 = performance.now(), blinkAt = 0, blink = 0, phase = 0, lastValence = 0;
 
@@ -67,23 +73,27 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     .catch(() => { src.textContent = 'trace not found'; });
   else {
     try {
-      const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-      ws.onopen = () => { src.textContent = 'live'; };
+      // ?robot=host:port reads a phone from a page served elsewhere (e.g. this file opened on a laptop).
+      const host = q.get('robot') || location.host;
+      const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + host + '/ws');
+      ws.onopen = () => { src.textContent = '● connected'; };
       ws.onmessage = m => { try { setState(JSON.parse(m.data).emotion); } catch (e) {} };
       ws.onclose = () => { src.textContent = 'no robot (idle)'; };
     } catch (e) { src.textContent = 'no robot (idle)'; }
   }
 
   // -- sound: a soft voice, pitch with arousal, interval with valence --------
-  let audio = null;
+  // Browsers only allow audio after a tap, so it starts off.
+  let audio = null, soundOn = false;
   const btn = document.getElementById('sound');
   btn.onclick = () => {
-    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
-    audio.muted = !audio.muted; if (audio.state === 'suspended') audio.resume();
-    btn.textContent = audio.muted ? 'Sound off' : 'Sound on';
+    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { btn.textContent = 'Sound: not available'; return; } }
+    soundOn = !soundOn; if (audio.state === 'suspended') audio.resume();
+    btn.textContent = soundOn ? 'Sound: on' : 'Sound: off';
+    if (soundOn) chirp(now.valence, now.arousal);
   };
   function chirp(v, a) {
-    if (!audio || audio.muted) return;
+    if (!audio || !soundOn) return;
     const base = 220 + 440 * a;                      // higher when aroused
     const step = v >= 0 ? 1.26 : 0.84;               // major third up, or a fall
     const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
@@ -100,18 +110,107 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   const lerp = (a, b, k) => a + (b - a) * k;
   function hueFor(v) { return lerp(215, 40, (v + 1) / 2); }   // blue (sad) .. amber (glad)
 
+  // The phone sends a new value every ~60 ms; the face follows a moving average
+  // with this time constant (s), ?tau=0.5 to change it.
+  const TAU = Math.max(0.05, parseFloat(q.get('tau')) || 2);
+
+  // Valence, arousal and dominance as a 3D box, top right: valence left to
+  // right, arousal up, dominance front (in control) to back (helpless). The
+  // state is a dot with its shadows on the floor and the two back walls and
+  // the last 10 s as a trail. Drag the box to turn it.
+  const trail = []; let trailT = 0;
+  let az = -0.6, el = 0.38, box = null, drag = null;
+  cv.addEventListener('pointerdown', e => {
+    if (box && Math.abs(e.clientX - box.cx) < box.r && Math.abs(e.clientY - box.cy) < box.r) {
+      drag = { x: e.clientX, y: e.clientY, az, el }; cv.setPointerCapture(e.pointerId);
+    }
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    az = drag.az + (e.clientX - drag.x) * 0.01;
+    el = Math.max(0.05, Math.min(1.3, drag.el + (e.clientY - drag.y) * 0.01));
+  });
+  cv.addEventListener('pointerup', () => { drag = null; });
+  function drawAxes(v, a, d, dt) {
+    const y = 2 * a - 1;
+    trailT += dt;
+    if (trailT >= 0.2) { trailT = 0; trail.push([v, y, d]); if (trail.length > 50) trail.shift(); }
+    const W = innerWidth, H = innerHeight;
+    const L = Math.max(55, Math.min(95, Math.min(W, H) * 0.1));   // half a box edge, px
+    const r = L * 1.95, cx = W - 14 - r, cy = 14 + r;
+    box = { cx, cy, r };
+    const ca = Math.cos(az), sa = Math.sin(az), ce = Math.cos(el), se = Math.sin(el);
+    // world (x valence, y arousal, z dominance; +z toward the viewer) -> screen
+    const depth = (x, z) => -x * sa + z * ca;
+    const P = (x, yy, z) => [cx + (x * ca + z * sa) * L, cy - (yy * ce - depth(x, z) * se) * L];
+    const line = (p, q) => { ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); };
+    const poly = pts => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); };
+    const muted = getComputedStyle(document.documentElement).getPropertyValue('--muted');
+    // the far walls: the x side and the z side that face away from the viewer
+    const xw = depth(1, 0) < 0 ? 1 : -1, zw = depth(0, 1) < 0 ? 1 : -1;
+    ctx.save();
+    ctx.fillStyle = 'rgba(24,33,42,0.88)'; ctx.strokeStyle = '#2c3a47'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(cx - r, cy - r, 2 * r, 2 * r, 10) : ctx.rect(cx - r, cy - r, 2 * r, 2 * r);
+    ctx.fill(); ctx.stroke();
+    // walls with a grid
+    const walls = [
+      [(u, w) => P(u, -1, w), 'rgba(111,182,255,0.06)'],    // floor: valence x dominance
+      [(u, w) => P(u, w, zw), 'rgba(111,182,255,0.04)'],    // back: valence x arousal
+      [(u, w) => P(xw, w, u), 'rgba(111,182,255,0.04)'],    // side: dominance x arousal
+    ];
+    for (const [f, fill] of walls) {
+      poly([f(-1, -1), f(1, -1), f(1, 1), f(-1, 1)]); ctx.fillStyle = fill; ctx.fill();
+      ctx.strokeStyle = '#2a3743'; ctx.lineWidth = 1;
+      for (const g of [-1, -0.5, 0, 0.5, 1]) { line(f(g, -1), f(g, 1)); line(f(-1, g), f(1, g)); }
+    }
+    // the middle of arousal, around both back walls
+    ctx.strokeStyle = '#5b6b7a'; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+    line(P(-1, 0, zw), P(1, 0, zw)); line(P(xw, 0, -1), P(xw, 0, 1)); ctx.setLineDash([]);
+    // axes through the middle of the floor and up the far corner
+    ctx.strokeStyle = muted; ctx.lineWidth = 1.3;
+    line(P(-1, -1, 0), P(1, -1, 0)); line(P(0, -1, -1), P(0, -1, 1)); line(P(xw, -1, zw), P(xw, 1, zw));
+    ctx.fillStyle = muted; ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const label = (t, p, dx, dy) => ctx.fillText(t, p[0] + dx, p[1] + dy);
+    label('glad', P(1.22, -1, 0), 0, 0); label('sad', P(-1.22, -1, 0), 0, 0);
+    label('in control', P(0, -1, 1.28), 0, 4); label('helpless', P(0, -1, -1.28), 0, -2);
+    label('aroused', P(xw, 1, zw), 0, -9); label('calm', P(xw, -0.88, zw), -18, 0);
+    // trail
+    trail.forEach((t, i) => {
+      const q = P(t[0], t[1], t[2]);
+      ctx.fillStyle = `hsla(${hueFor(t[0])},70%,60%,${0.06 + 0.4 * i / trail.length})`;
+      ctx.beginPath(); ctx.arc(q[0], q[1], 2, 0, Math.PI * 2); ctx.fill();
+    });
+    // shadows and the dot
+    const hue = hueFor(v), dot = P(v, y, d);
+    const shadows = [P(v, -1, d), P(v, y, zw), P(xw, y, d)];
+    ctx.strokeStyle = `hsla(${hue},60%,65%,0.6)`; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    for (const q of shadows) line(dot, q);
+    ctx.setLineDash([]);
+    ctx.fillStyle = `hsla(${hue},50%,60%,0.55)`;
+    for (const q of shadows) { ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = `hsl(${hue},75%,62%)`; ctx.strokeStyle = '#10161c'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(dot[0], dot[1], 6.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
   function frame(ms) {
     const dt = Math.min(0.1, (ms - t0) / 1000); t0 = ms;
-    const k = 1 - Math.exp(-dt * 4);
-    for (const key in now) now[key] = lerp(now[key], target[key], k);
+    // Two moving averages in a row (TAU/2 each): about TAU overall, and a change
+    // eases in instead of starting at full speed.
+    const k = 1 - Math.exp(-dt / (TAU / 2));
+    for (const key in now) { mid[key] = lerp(mid[key], target[key], k); now[key] = lerp(now[key], mid[key], k); }
     const v = Math.max(-1, Math.min(1, now.valence)), a = Math.max(0, Math.min(1, now.arousal));
+    window.__face = { now, target, dt };   // for checking the smoothing from devtools
     const d = Math.max(-1, Math.min(1, now.dominance));
     document.getElementById('bv').style.cssText = v >= 0 ? `left:50%;width:${v * 50}%` : `left:${50 + v * 50}%;width:${-v * 50}%`;
-    document.getElementById('ba').style.cssText = `left:0;width:${a * 100}%`;
+    const ac = 2 * a - 1;   // arousal 0..1, shown about its middle like the others
+    document.getElementById('ba').style.cssText = ac >= 0 ? `left:50%;width:${ac * 50}%` : `left:${50 + ac * 50}%;width:${-ac * 50}%`;
+    document.getElementById('bd').style.cssText = d >= 0 ? `left:50%;width:${d * 50}%` : `left:${50 + d * 50}%;width:${-d * 50}%`;
 
     // A chirp when valence turns, or every few seconds when aroused.
     phase += dt * (0.5 + 2.5 * a);
-    if (Math.abs(v - lastValence) > 0.5 || (Math.random() < dt * a * a * 0.6)) { chirp(v, a); lastValence = v; }
+    if (Math.abs(v - lastValence) > 0.25 || (Math.random() < dt * a * a * 0.6)) { chirp(v, a); lastValence = v; }
 
     // Blinks: rarer and quicker when aroused.
     if (ms > blinkAt) { blink = 1; blinkAt = ms + 1500 + Math.random() * (2000 + 5000 * (1 - a)) * (0.4 + a); }
@@ -119,7 +218,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
     const W = innerWidth, H = innerHeight, S = Math.min(W, H);
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg'); ctx.fillRect(0, 0, W, H);
-    const jitter = a > 0.7 ? (a - 0.7) * 6 : 0;
+    const jitter = a > 0.7 ? (a - 0.7) * 6 : 0;   // a tremble when highly aroused
     const cx = W / 2 + Math.sin(phase * 7) * jitter, cy = H / 2 + Math.sin(phase) * S * 0.01 * (0.3 + a) + d * S * -0.02;
     const hue = hueFor(v), sat = 45 + 35 * a, light = 55 + 8 * v;
     const tilt = -d * 0.06;
@@ -149,7 +248,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
       // Brows: inner end up when sad, down when angry-low-valence-high-arousal
       ctx.strokeStyle = `hsl(${hue},${sat}%,${light}%)`; ctx.lineWidth = S * 0.018; ctx.lineCap = 'round';
       const lift = ew * (1.25 + 0.35 * a);
-      const slant = -v * 0.25 * (1 - a) + (v < 0 ? a * 0.35 : 0);
+      const slant = -v * 0.25 * (1 - a) + a * 0.35 * Math.min(1, Math.max(0, -v) * 3);   // no step at v = 0
       ctx.beginPath(); ctx.moveTo(-ew * 0.9, -lift + s * slant * ew * 0.9 * -1); ctx.lineTo(ew * 0.9, -lift - s * slant * ew * 0.9 * -1);
       ctx.stroke(); ctx.restore();
     }
@@ -161,8 +260,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     ctx.beginPath(); ctx.moveTo(-mw / 2, my);
     ctx.quadraticCurveTo(0, my + curve + gap, mw / 2, my);
     ctx.quadraticCurveTo(0, my + curve - gap, -mw / 2, my);
-    ctx.closePath(); if (gap > S * 0.01) ctx.fill(); ctx.stroke();
+    ctx.closePath(); ctx.globalAlpha = Math.min(1, Math.max(0, (gap / S - 0.004) / 0.012)); ctx.fill(); ctx.globalAlpha = 1; ctx.stroke();
     ctx.restore();
+    drawAxes(v, a, d, dt);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

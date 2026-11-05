@@ -539,7 +539,7 @@ class SmartphoneRobot(embodied.Env):
       command_zeta_steps=40000, command_bias=0.0, command_ramp=0.0,
       friction_comp=False, bumper_lo=-0.120, bumper_hi=0.161,
       bumper_margin=0.0175, bumper_penalty=1.0, tilt_penalty=0.0,
-      track_progress=0.0,
+      track_progress=0.0, balance_bumper=0.0,
       turn_source='wheels', yaw_rate_max=1.5,
       yaw_axis='y', yaw_sign=-1.0, command_mode='auto', command_hold_min=2.0,
       command_hold_max=5.0, command_p_zero=0.3, command_p_axis=0.4,
@@ -848,6 +848,10 @@ class SmartphoneRobot(embodied.Env):
     # bumper)^2 off the bumpers, so leaning to the edge of the margin costs
     # something (e6031 drove the real carpet at +4.6 deg, p95 7.5).
     self.tilt_penalty = float(tilt_penalty)
+    # The balance task pays minus balance_bumper on or within bumper_margin of
+    # either bumper (0, the default: no such term; the upright score alone
+    # is ~0 there, as good as a fall the policy cannot see coming).
+    self.balance_bumper = float(balance_bumper)
     # ... plus track_progress * |c| * clip(forward / c, 0, 1) for a forward
     # command c: the Gaussian pays ~0 until the speed is close (carpet at
     # 600 of 2500 mm/s earns 0.03), so partial progress gets a linear slope.
@@ -1364,6 +1368,11 @@ class SmartphoneRobot(embodied.Env):
           - self.drift_penalty * drift
           - self.wheel_penalty * self._wheel_effort(speed_l, speed_r)
           - self.yaw_penalty * min(abs(self._yaw_rate), 2.0))
+      if self.balance_bumper:
+        floor = float(sensors.get('theta_floor', theta)) - self.theta_zero
+        if (floor >= self.bumper_hi - self.bumper_margin
+            or floor <= self.bumper_lo + self.bumper_margin):
+          reward -= self.balance_bumper
     elif self.task == 'command':
       reward = self._command_reward(sensors)
     else:
