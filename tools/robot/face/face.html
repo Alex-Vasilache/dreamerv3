@@ -121,8 +121,8 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   const lerp = (a, b, k) => a + (b - a) * k;
   // Critically damped springs, one per face feature: position and velocity
   // both stay continuous, so a feature starts and stops moving gently.
-  // ?spring= sets the stiffness (rad/s; 9 settles in ~0.5 s).
-  const OMEGA = Math.max(1, parseFloat(new URLSearchParams(location.search).get('spring')) || 9);
+  // ?spring= sets the stiffness (rad/s; 14 settles in ~0.3 s).
+  const OMEGA = Math.max(1, parseFloat(new URLSearchParams(location.search).get('spring')) || 14);
   const springs = {};
   function spring(name, goal, dt) {
     const s = springs[name] || (springs[name] = { x: goal, v: 0 });
@@ -137,7 +137,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   // The phone sends a new value every ~60 ms; the face follows a moving average
   // with this time constant (s), ?tau=0.5 to change it.
-  const TAU = Math.max(0.05, parseFloat(q.get('tau')) || 1);
+  const TAU = Math.max(0.05, parseFloat(q.get('tau')) || 0.5);
   const FAST = Math.min(TAU, Math.max(0.03, parseFloat(q.get('fast')) || 0.05));   // ?fast= for big changes
 
   // Valence, arousal and dominance as a 3D box, top right: valence left to
@@ -230,14 +230,14 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     if (ms - t0 < 1000 / FPS - 2) { requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, (ms - t0) / 1000); t0 = ms;
     // The phone's values jitter sample to sample (valence by up to ~0.5 at
-    // ~40 Hz), so they are first averaged over 0.12 s. The face then follows
+    // ~40 Hz), so they are first averaged over 0.05 s. The face then follows
     // that slowly (TAU) through small changes and fast (FAST) through big
     // ones: a bump shows within ~0.2 s, and the face does not twitch.
-    const kj = 1 - Math.exp(-dt / 0.12);
+    const kj = 1 - Math.exp(-dt / 0.05);
     for (const key in now) {
       mid[key] = lerp(mid[key], target[key], kj);
       const gap = Math.abs(mid[key] - now[key]) * (key === 'arousal' ? 2 : 1);   // arousal spans 0..1
-      const tau = lerp(TAU, FAST, Math.min(1, Math.max(0, (gap - 0.08) / 0.25)));
+      const tau = lerp(TAU, FAST, Math.min(1, Math.max(0, (gap - 0.06) / 0.14)));
       now[key] = lerp(now[key], mid[key], 1 - Math.exp(-dt / tau));
     }
     const v = Math.max(-1, Math.min(1, now.valence)), a = Math.max(0, Math.min(1, now.arousal));
