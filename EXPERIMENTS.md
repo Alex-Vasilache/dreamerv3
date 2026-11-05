@@ -644,6 +644,21 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0073-h0102 / h0103-h0132: TCE-KL, log-count bonus inside the entropy term (2026-11-05, arrays 4798833 / 4798834)
+
+`... goal_som_line goal_even fromto_dir {tce_kl | tce_kl4} pubmatch`, 6 tasks x 5 seeds, no extra
+seeds. Bonus -log(n+1) weighted by the manager entropy controller's alpha divided by the
+per-block entropy range, so entropy + TCE = -alpha * KL(pi || q), q(g|s) ~ 1/(n(s,g)+1): the
+50% entropy controller sets how random the manager is, the counts set where. No lean
+controller, band, floor or separate weight. Start side 1x16 hash (tce_kl, isolates the
+change vs e9500) and 4x12 hash (tce_kl4). Why: every TCE weight scheme so far was
+task-dependent (1/sqrt(n) differences shrink with count size; the right w differed
+between pin pad five and six); log counts make preferences depend only on count ratios.
+Risk: alpha is small (0.002 in smoke), so the push may be weak.
+The smoothed-floor arms (h0001-h0072) were cancelled 2026-11-05 after 2 seeds: floor 0.3
+fixed pin pad five but bound 96% of the time on pin pad six with lean 1.10-1.26 (0/3).
+Extra pin pad six seeds of e19100 (e19130-e19132) cancelled at the user's request.
+
 ### h0001-h0036 / h0037-h0072: 4x12 hash + smoothed controller, US-SOM vs plain SOM (2026-11-04, arrays 4796774 / 4796775; extra seeds 5-7 = array 4796786, afterany both)
 
 **Numbering:** from here on HRL experiments use their own `h{NNNN}` series (robot keeps `e{N}`); these two arms were renamed from e30000/e30100 before starting.

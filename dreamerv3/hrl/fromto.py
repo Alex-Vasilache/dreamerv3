@@ -67,13 +67,18 @@ class FromToCounts(nj.Module):
     strides = self.start_bins ** jnp.arange(self.blocks - 1, -1, -1)
     return (q * strides).sum(-1)
 
-  def expected_novelty(self, start_ids, probs):
+  def expected_novelty(self, start_ids, probs, bonus='sqrt'):
     """``start_ids (N, L)`` ints (or ``(N,)`` row ids when hashed), ``probs (N, L, C)`` -> E_pi[b] (N,) and the
-    uniform-policy E[b] (N,) for reference."""
+    uniform-policy E[b] (N,) for reference. ``bonus``: 'sqrt' b = 1/sqrt(n+1);
+    'log' b = -log(n+1) (nats: with the entropy term, alpha*H + alpha*E_pi[b]
+    = -alpha*KL(pi || q), q(g|s) proportional to 1/(n(s,g)+1))."""
     tab = jax.lax.stop_gradient(self.tab.read())
     row = self.start_row(start_ids)                                  # (N,) or (N, K)
     idx = row[..., None] * self.cols + jnp.arange(self.cols)
-    bonus = 1.0 / jnp.sqrt(tab[idx] + 1.0)                           # (N, [K,] cols)
+    if bonus == 'log':
+      bonus = -jnp.log(tab[idx] + 1.0)                               # (N, [K,] cols)
+    else:
+      bonus = 1.0 / jnp.sqrt(tab[idx] + 1.0)                         # (N, [K,] cols)
     mass = tab[idx].sum(-1)
     if row.ndim == 2:   # K hash tables: average the bonus (E_pi is linear in it)
       bonus, mass = bonus.mean(1), mass.mean(1)

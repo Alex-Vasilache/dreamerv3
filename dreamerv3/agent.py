@@ -1869,7 +1869,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
                      else start_ids.reshape(-1, self._hash_k))         # (M*n[, K]) rows
       logits = f32(_head_inner(mgr_policy['skill']).dist.logits)      # (M, n, L, C)
       probs = jax.nn.softmax(logits, -1).reshape((M_ * n_,) + logits.shape[2:])
-      e_pi, e_uni = self.fromto.expected_novelty(start_ids, probs)
+      fbonus = str(getattr(self.config.mgr_fromto, 'bonus', 'sqrt'))
+      e_pi, e_uni = self.fromto.expected_novelty(start_ids, probs, bonus=fbonus)
       e_pi, e_uni = e_pi.reshape(M_, n_), e_uni.reshape(M_, n_)
       nd = los_mgr['mgr_policy'].shape[1]
       lean = e_pi[:, :nd] / jnp.maximum(e_uni[:, :nd], 1e-8)
@@ -1893,10 +1894,19 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       else:
         wscale = (sg(self.mgr_actent.scale().mean()) if self.manager_actent_adapt
                   else self.config.manager_actent) * self.mgr_fromto_c
+        if fbonus == 'log':
+          # Same units as the entropy term, which is normalised per block by
+          # that block's entropy range: alpha*H_l/(hi-lo) per block. Dividing
+          # by (hi-lo) makes entropy + TCE exactly -alpha'*KL(pi || 1/(n+1)).
+          sk = _head_inner(mgr_policy['skill'])
+          Lb = probs.shape[-2]
+          wscale = wscale / jnp.maximum((sk.maxent - sk.minent) / Lb, 1e-8)
+        metrics['fromto/weight'] = jnp.asarray(wscale, f32)
       los_mgr['mgr_policy'] = los_mgr['mgr_policy'] - wscale * e_pi[:, :nd]
       metrics['fromto/novelty'] = e_pi[:, :nd].mean()
       metrics['fromto/novelty_uniform'] = e_uni[:, :nd].mean()
       metrics['fromto/lean'] = (e_pi[:, :nd] / jnp.maximum(e_uni[:, :nd], 1e-8)).mean()
+      metrics['fromto/gap'] = (e_pi[:, :nd] - e_uni[:, :nd]).mean()
       metrics['fromto/mass'] = self.fromto.tab.read().sum()
       rm = self.fromto.last_row_mass.reshape(M_, n_)[:, :nd]
       metrics['fromto/row_mass_median'] = jnp.median(rm)

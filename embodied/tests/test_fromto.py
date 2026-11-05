@@ -226,3 +226,21 @@ def test_multiple_hash_tables_average_the_bonus():
   e0, _ = nj.pure(lambda r, q: m.expected_novelty(r, q))(params, jnp.asarray([1]), probs, seed=0)[1]
   e1, _ = nj.pure(lambda r, q: m.expected_novelty(r, q))(params, jnp.asarray([5]), probs, seed=0)[1]
   assert float(e[0]) == pytest.approx(0.5 * (float(e0[0]) + float(e1[0])), rel=1e-6)
+
+
+def test_log_bonus_matches_brute_force():
+  m, p = module()
+  rng = np.random.default_rng(3)
+  p['ft/tab/value'] = jnp.asarray(rng.integers(0, 50, SB ** L * GB ** L).astype(np.float32))
+  start = jnp.asarray(rng.integers(0, C, (4, L)))
+  probs = jax.nn.softmax(jnp.asarray(rng.normal(0, 1, (4, L, C)), jnp.float32), -1)
+  e, eu = run(m, p, lambda s, q: m.expected_novelty(s, q, bonus='log'), start, probs)
+  tab = np.asarray(p['ft/tab/value'])
+  for n in range(4):
+    row = int((bin_ids(np.asarray(start[n]), SB, C) * SB ** np.arange(L - 1, -1, -1)).sum())
+    pb = np.asarray(probs[n]).reshape(L, GB, C // GB).sum(-1)
+    want = 0.0
+    for cell in itertools.product(range(GB), repeat=L):
+      g = int((np.array(cell) * GB ** np.arange(L - 1, -1, -1)).sum())
+      want += np.prod([pb[l, cell[l]] for l in range(L)]) * -np.log(tab[row * GB ** L + g] + 1)
+    assert float(e[n]) == pytest.approx(want, rel=1e-5)
