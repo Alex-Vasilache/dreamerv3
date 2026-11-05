@@ -26,6 +26,21 @@ from numpy_policy import NumpyPolicy, expand_delta, is_delta  # noqa: E402  (fla
 __all__ = ['PolicyRunner']
 
 
+def travel_limit(act, pos, lo, hi):
+  """Scale wheel commands that push the robot further the way it has already
+  travelled: none below `lo` of leaky travel (`pos`, the mean of the two
+  wheels' leaky distances, phone mm over ~pos_tau s), linearly to 0 at `hi`.
+  Commands that brake or reverse pass whole, so short full-speed catches
+  stay full while sustained driving fades. hi <= 0: off. A wheel command a
+  turns its wheel backwards (travel -a), so it pushes on when -a has the
+  sign of pos. The trainer (embodied/envs/robot.py) and the phone
+  (deploy/policy_runner.py) each keep a copy, so change both."""
+  if hi <= 0 or abs(pos) <= lo:
+    return [float(a) for a in act]
+  k = min(1.0, max(0.0, (hi - abs(pos)) / max(hi - lo, 1e-6)))
+  return [float(a) * k if -float(a) * pos > 0 else float(a) for a in act]
+
+
 class Fatigue:
   """Fades a wheel command the policy holds: each wheel's output is scaled by
   1 - held/steps, so a command kept within `tol` of where it started, in the
@@ -96,6 +111,7 @@ class PolicyRunner:
     self.prev_dist = None
     # Set from the trainer's pause frames; the app applies it to each action.
     self.fatigue = Fatigue()
+    self.travel = (0.0, 0.0)   # (lo, hi) from the trainer; see limit()
     if path and os.path.exists(path):
       self.load_path(path, stamp='initial')
 
@@ -261,6 +277,14 @@ class PolicyRunner:
       obs['position'] = np.clip(
           self.pos * s['obs_pos_scale'], -clip, clip).astype(np.float32)
     return obs
+
+  def limit(self, act):
+    """The trainer's limits on the action act() chose: fatigue, then travel."""
+    act = self.fatigue(act)
+    lo, hi = self.travel
+    if hi > 0:
+      act = travel_limit(act, float(self.pos.mean()), lo, hi)
+    return act
 
   def applied(self, act):
     """The wheels got `act`, not the action act() chose (clipped by the

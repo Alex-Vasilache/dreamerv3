@@ -55,6 +55,21 @@ def track_position(pos, prev, sensors, tau, hz, jump):
   return pos * np.exp(-1.0 / (tau * hz)) + step
 
 
+def travel_limit(act, pos, lo, hi):
+  """Scale wheel commands that push the robot further the way it has already
+  travelled: none below `lo` of leaky travel (`pos`, the mean of the two
+  wheels' leaky distances, phone mm over ~pos_tau s), linearly to 0 at `hi`.
+  Commands that brake or reverse pass whole, so short full-speed catches
+  stay full while sustained driving fades. hi <= 0: off. A wheel command a
+  turns its wheel backwards (travel -a), so it pushes on when -a has the
+  sign of pos. The trainer (embodied/envs/robot.py) and the phone
+  (deploy/policy_runner.py) each keep a copy, so change both."""
+  if hi <= 0 or abs(pos) <= lo:
+    return [float(a) for a in act]
+  k = min(1.0, max(0.0, (hi - abs(pos)) / max(hi - lo, 1e-6)))
+  return [float(a) * k if -float(a) * pos > 0 else float(a) for a in act]
+
+
 class Fatigue:
   """Fades a wheel command the policy holds: each wheel's output is scaled by
   1 - held/steps, so a command kept within `tol` of where it started, in the
@@ -587,7 +602,8 @@ class SmartphoneRobot(embodied.Env):
       pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0, home_radius=0.0,
       home_inner=1200.0, home_speed=0.5, home_min=0.25, home_ramp=3000.0,
       home_max_s=30.0, home_track=1634.0, weights_emotion=False,
-      fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05):
+      fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05, travel_lo=0.0,
+      travel_hi=0.0):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -893,6 +909,11 @@ class SmartphoneRobot(embodied.Env):
     # pause frames), here it is applied before the cap.
     self.fatigue_s = float(fatigue_s)
     self._fatigue = Fatigue(round(self.fatigue_s * float(hz)), fatigue_tol, fatigue_dead)
+    # travel_hi > 0 (phone mm; needs pos_tau): commands pushing further the
+    # way the robot already went fade from travel_lo to 0 at travel_hi of
+    # leaky travel (travel_limit above); onboard the phone applies it.
+    self.travel_lo, self.travel_hi = float(travel_lo), float(travel_hi)
+    assert not self.travel_hi or float(pos_tau) > 0, 'travel_hi needs pos_tau'
     # ... plus track_progress * |c| * clip(forward / c, 0, 1) for a forward
     # command c: the Gaussian pays ~0 until the speed is close (carpet at
     # 600 of 2500 mm/s earns 0.03), so partial progress gets a linear slope.
@@ -1196,6 +1217,9 @@ class SmartphoneRobot(embodied.Env):
     left, right = self._decode(action)
     if self.fatigue_s:
       left, right = self._fatigue((left, right))
+    if self.travel_hi:
+      left, right = travel_limit(
+          (left, right), float(self._pos.mean()), self.travel_lo, self.travel_hi)
     if self.drive_cap0:
       cap = self._drive_cap()
       left = float(np.clip(left, -cap, cap))
@@ -1743,7 +1767,9 @@ class SmartphoneRobot(embodied.Env):
                 waiting=state['from_start'] and started is None,
                 **({'fatigue': dict(steps=self._fatigue.steps, tol=self._fatigue.tol,
                                     dead=self._fatigue.dead)}
-                   if self.fatigue_s else {}))
+                   if self.fatigue_s else {}),
+                **({'travel': dict(lo=self.travel_lo, hi=self.travel_hi)}
+                   if self.travel_hi else {}))
 
   def _request_pause(self, request):
     """The phone's dashboard paused or resumed the robot and/or the
