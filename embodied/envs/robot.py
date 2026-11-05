@@ -55,18 +55,33 @@ def track_position(pos, prev, sensors, tau, hz, jump):
   return pos * np.exp(-1.0 / (tau * hz)) + step
 
 
-def travel_limit(act, pos, lo, hi):
+def travel_limit(act, pos, lo, hi, state=None):
   """Scale wheel commands that push the robot further the way it has already
   travelled: none below `lo` of leaky travel (`pos`, the mean of the two
   wheels' leaky distances, phone mm over ~pos_tau s), linearly to 0 at `hi`.
-  Commands that brake or reverse pass whole, so short full-speed catches
-  stay full while sustained driving fades. hi <= 0: off. A wheel command a
-  turns its wheel backwards (travel -a), so it pushes on when -a has the
-  sign of pos. The trainer (embodied/envs/robot.py) and the phone
-  (deploy/policy_runner.py) each keep a copy, so change both."""
-  if hi <= 0 or abs(pos) <= lo:
+  Reaching `hi` latches: pushing on that way stays blocked until the travel
+  is back under `lo` (state, a 1-list holding the blocked direction, keeps
+  the latch between calls); a proportional fade alone let a policy that kept
+  pushing settle into a steady crawl at hi (e30111, 0.08 m/s). Commands that
+  brake or reverse pass whole, so short full-speed catches stay full while
+  sustained driving stops. hi <= 0: off. A wheel command a turns its wheel
+  backwards (travel -a), so it pushes on when -a has the sign of pos. The
+  trainer (embodied/envs/robot.py) and the phone (deploy/policy_runner.py)
+  each keep a copy, so change both."""
+  if hi <= 0:
     return [float(a) for a in act]
-  k = min(1.0, max(0.0, (hi - abs(pos)) / max(hi - lo, 1e-6)))
+  state = state if state is not None else [0.0]
+  side = float(np.sign(pos))
+  if state[0] and (abs(pos) < lo or side != state[0]):
+    state[0] = 0.0
+  if abs(pos) >= hi:
+    state[0] = side
+  if state[0]:
+    k = 0.0
+  elif abs(pos) <= lo:
+    return [float(a) for a in act]
+  else:
+    k = min(1.0, max(0.0, (hi - abs(pos)) / max(hi - lo, 1e-6)))
   return [float(a) * k if -float(a) * pos > 0 else float(a) for a in act]
 
 
@@ -914,6 +929,7 @@ class SmartphoneRobot(embodied.Env):
     # leaky travel (travel_limit above); onboard the phone applies it.
     self.travel_lo, self.travel_hi = float(travel_lo), float(travel_hi)
     assert not self.travel_hi or float(pos_tau) > 0, 'travel_hi needs pos_tau'
+    self._travel_latch = [0.0]
     # ... plus track_progress * |c| * clip(forward / c, 0, 1) for a forward
     # command c: the Gaussian pays ~0 until the speed is close (carpet at
     # 600 of 2500 mm/s earns 0.03), so partial progress gets a linear slope.
@@ -1219,7 +1235,8 @@ class SmartphoneRobot(embodied.Env):
       left, right = self._fatigue((left, right))
     if self.travel_hi:
       left, right = travel_limit(
-          (left, right), float(self._pos.mean()), self.travel_lo, self.travel_hi)
+          (left, right), float(self._pos.mean()), self.travel_lo, self.travel_hi,
+          self._travel_latch)
     if self.drive_cap0:
       cap = self._drive_cap()
       left = float(np.clip(left, -cap, cap))
