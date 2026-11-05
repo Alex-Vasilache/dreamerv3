@@ -18,6 +18,7 @@ ARMS = [
     ('WM hash 1x16, adaptive w', '#009E73', '-', f'e95[0-2]?_{{t}}_{B}-tce_hash-pubmatch_s*'),
     ('WM hash 4x12, w=2', '#D55E00', '--', f'e1[09]0[0-3]?_{{t}}_{B}-tce_hash4-pubmatch_s*'),
     ('WM hash 4x12, adaptive w', '#000000', '-.', f'e191[0-3]?_{{t}}_{B}-tce_hash4a-pubmatch_s*'),
+    ('WM hash 4x12, smoothed w, floor 0.3', '#56B4E9', '-', f'h00[0-3]?_{{t}}_{B}-tce_hash4e-pubmatch_s*'),
 ]
 TASKS = [('pinpad_five', 'Pin Pad Five'), ('pinpad_six', 'Pin Pad Six')]
 BW = 2.5e5
