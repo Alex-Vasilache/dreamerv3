@@ -1686,6 +1686,21 @@ tce_kl4:
     mgr_fromto_c: 1.0
     mgr_fromto: {start_hash: deter_norm, hash_bits: 12, hash_tables: 4, bonus: log, lean_target: 0.0, w_fixed: 0.0}
 
+# TCE-KL with one fixed multiplier c on the TCE part (layer after tce_kl):
+# entropy + c*TCE = -alpha * KL(pi || q), q(g|s) ~ (n(s,g)+1)^-c. At c=1
+# (h0073-h0077) alpha' was 0.003-0.01 and the pre-reward gap stayed NEGATIVE on
+# pin pad five/six (-0.15..-0.35: the manager kept to well-tried goals). In
+# gradient terms at the observed counts (n ~ 0-2) c=1 is ~0.01 of the old
+# sqrt bonus weight; the 1x16-hash seeds that found reward searched at w
+# ~0.2-0.4 (pin pad six) and ~1.0 (five), so c=10 / c=30 bracket that range.
+tce_kl_c10:
+  agent:
+    mgr_fromto_c: 10.0
+
+tce_kl_c30:
+  agent:
+    mgr_fromto_c: 30.0
+
 tce_hash4e:
   agent:
     mgr_fromto: {start_hash: deter_norm, hash_bits: 12, hash_tables: 4, lean_ema: 0.002, w_thres: 0.0, w_vel: 0.002, w_min: 0.3}

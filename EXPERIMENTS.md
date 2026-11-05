@@ -644,7 +644,25 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0133-h0162 / h0163-h0192: TCE-KL with a fixed multiplier c = 10 / 30 (2026-11-06, arrays 4799105 / 4799106)
+
+`... fromto_dir tce_kl {tce_kl_c10 | tce_kl_c30} pubmatch`, 1x16 hash, 6 tasks x 5 seeds, `%4` each.
+entropy + c*TCE = -alpha * KL(pi || q) with q(g|s) ~ (n(s,g)+1)^-c; one c for every task, still
+no controller. Why: at c=1 (h0073-h0077) alpha' was 0.003-0.01 and before any reward the
+gap E_pi - E_uniform of the log bonus stayed negative on pin pad five and six
+(-0.15..-0.35 through 0.9M; h0074 had no reward at 0.89M): the manager kept to well-tried
+goals, i.e. TCE was effectively off. In gradient terms at the observed counts (n ~ 0-2) c=1
+equals ~0.01 of the old 1/sqrt bonus weight, while the 1x16-hash seeds that found reward
+(e9500) searched at w ~1.0 (pin pad five) and ~0.2-0.4 (six); c=10 and 30 bracket that.
+Expect: gap > 0 before the first reward, pin pad five first reward by ~0.8M, pin pad six
+solved in >= 3/5. Rest of the c=1 arms cancelled 2026-11-06 02:50 (4798833 tasks 6-29,
+all of 4798834 = tce_kl4); seed 0 of c=1 (h0073-h0078) runs to the end as the reference.
+The 1x16 vs 4x12 question is deferred until the strength is right.
+
 ### h0073-h0102 / h0103-h0132: TCE-KL, log-count bonus inside the entropy term (2026-11-05, arrays 4798833 / 4798834)
+
+**Stopped 2026-11-06 02:50 after seed 0 (h0073-h0078):** push too weak, see h0133 entry above;
+h0079-h0132 never ran.
 
 `... goal_som_line goal_even fromto_dir {tce_kl | tce_kl4} pubmatch`, 6 tasks x 5 seeds, no extra
 seeds. Bonus -log(n+1) weighted by the manager entropy controller's alpha divided by the
