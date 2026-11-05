@@ -259,7 +259,7 @@ class PolicyRunner:
     self._pre = None
     self.fatigue.reset()
 
-  def observe(self, sensors, command=None):
+  def observe(self, sensors, command=None, track=True):
     """Sensor dict -> the observation the network expects.
 
     Mirrors `robot.py:_obs`. Kept as its own method so the same scaling can be
@@ -281,7 +281,14 @@ class PolicyRunner:
     if 'command' in self.policy.meta['obs_keys']:
       obs['command'] = np.clip(np.asarray(
           command if command is not None else (0.0, 0.0), np.float32), -1, 1)
-    if 'position' in self.policy.meta['obs_keys']:
+    if 'position' in self.policy.meta['obs_keys'] and not track:
+      # warm() and benchmark() pass made-up sensors with no wheel distances:
+      # tracking those threw away the next real step's travel as a counter
+      # jump and leaked an extra step, so the phone's position (its policy's
+      # input and the travel limiter's) read ~1/3 of the trainer's (e30112).
+      obs['position'] = np.clip(
+          self.pos * s['obs_pos_scale'], -clip, clip).astype(np.float32)
+    elif 'position' in self.policy.meta['obs_keys']:
       # Mirrors robot.py:track_position, one step per observation.
       dist = np.array([float(sensors.get('wheel_distance_l', 0.0)),
                        float(sensors.get('wheel_distance_r', 0.0))])
@@ -358,7 +365,7 @@ class PolicyRunner:
                    wheel_speed_l=0.0, wheel_speed_r=0.0)
     pre = self._pre
     deter = pre[2] if pre is not None else self.policy.precompute(self.carry)
-    self.policy.finish(self.observe(sensors), self.carry, deter)
+    self.policy.finish(self.observe(sensors, track=False), self.carry, deter)
     self.last_warm_ms = (time.monotonic() - t0) * 1e3
 
   # -- diagnostics --------------------------------------------------------
@@ -375,7 +382,7 @@ class PolicyRunner:
     import numpy as _np
     sensors = dict(theta=0.02, angular_velocity=0.1,
                    wheel_speed_l=10.0, wheel_speed_r=-10.0)
-    obs = self.observe(sensors)
+    obs = self.observe(sensors, track=False)
     carry = self.policy.initial()
     p = self.policy
     # Warm up: first touch of each array pays page-in and any lazy dispatch.
