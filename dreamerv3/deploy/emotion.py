@@ -201,6 +201,10 @@ class Emotion:
     novelty = _entropy(pr)
     unexpected = _entropy(q) + surprise - novelty
     value = self.head('val', deter, stoch)
+    # Fear: the fear critic's prediction of pain to come (agent.fear), when
+    # the weights carry one; its rise is anticipatory pain.
+    fear = (-self.head('cval', deter, stoch)
+            if 'cval/head/logits/kernel' in self.p.w else 0.0)
     r_hat = self.head('rew', deter, stoch)
     reward_err = abs(float(reward) - r_hat)
     td = 0.0 if self.prev_value is None else (
@@ -230,7 +234,7 @@ class Emotion:
     return dict(
         valence=valence, mood=mood,
         face_valence=float(np.clip(0.7 * mood + 0.3 * valence - hurt, -1, 1)),
-        pain=float(pain), hurt=hurt,
+        pain=float(pain), hurt=hurt, fear=float(fear),
         helpless=float(helpless),
         arousal=float(sigmoid(np.float32(drive / 2.0))),
         dominance=float(np.tanh(z['empowerment'])),

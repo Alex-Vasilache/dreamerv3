@@ -21,7 +21,8 @@ DROP_PREFIXES = ('dyn/prior', 'dyn/priorlogit')
 # With emotion=True the file also carries what deploy/emotion.py reads: the
 # prior (surprise, novelty, empowerment) and the critic and reward heads
 # (valence). About 1 MB more as int8.
-EMOTION_PREFIXES = ('dyn/prior', 'val/', 'rew/')
+# cval/ is the fear critic (agent.fear), when the run has one.
+EMOTION_PREFIXES = ('dyn/prior', 'val/', 'rew/', 'cval/')
 
 
 # dtype='int8': kernels of at least this many entries go as int8 codes with

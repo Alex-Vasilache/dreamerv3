@@ -19,10 +19,11 @@ import numpy as np
 
 HZ = 65
 W = '/work/DoyaU/vasilache/work'
+BUCKET = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
 
 
 def run(n):
-  dirs = glob.glob(f'{W}/e{n}_*')
+  dirs = glob.glob(f'{W}/e{n}_*') or glob.glob(f'{BUCKET}/e{n}_*')
   if not dirs:
     return None
   d = dirs[0] + '/logdir'

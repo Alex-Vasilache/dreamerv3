@@ -37,7 +37,7 @@ if _DEPLOY not in sys.path:
 from policy_runner import PolicyRunner  # noqa: E402
 
 FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
-          'td', 'unexpected', 'empowerment', 'pain', 'hurt', 'explore',
+          'td', 'unexpected', 'empowerment', 'pain', 'hurt', 'fear', 'explore',
           'event', 'push', 'theta', 'act0', 'chosen0')
 
 

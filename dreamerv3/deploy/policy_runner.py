@@ -253,7 +253,7 @@ class PolicyRunner:
           surprise=sig['surprise'], unexpected=sig['unexpected'],
           novelty=sig['novelty'], empowerment=sig['empowerment'],
           mood=sig['mood'], pain=sig['pain'], hurt=sig['hurt'],
-          td_valence=sig['valence'])
+          td_valence=sig['valence'], fear=sig['fear'])
       # 'salience': how much this moment stood out in value or hurt, |TD
       # error| (scaled) plus pain (Bromberg-Martin et al. 2010's salience
       # signal). In the sim arousal, led by novelty, fell at bumper hits
