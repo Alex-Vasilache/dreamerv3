@@ -1741,8 +1741,12 @@ robot:
   # older app ignores it and the trainer gives up after home_max_s). In sim on
   # the table it halved the first minutes' roaming (5.2 -> 3.0 m/min) at the
   # same time to balance (e19281-e19286). 0.5 m returned 22 times in 16 min
-  # in e30103; 1 m keeps the episodes longer.
-  env.robot.home_radius: 12000
+  # in e30103; 1 m keeps the episodes longer. Since e30108 (2026-11-05) 0.2 m,
+  # as the live demo uses, driven back at full wheel speed until ~10 cm out
+  # (home_ramp) so the wait between episodes stays short.
+  env.robot.home_radius: 2436
+  env.robot.home_speed: 1.0
+  env.robot.home_ramp: 1200
   # No terminations: the body cannot self-right under proportional drive, and
   # terminating collapses a run into one-step episodes against a bumper.
   env.robot.fall_angle: 0.0
