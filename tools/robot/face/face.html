@@ -6,8 +6,8 @@
 <title>Robot Face</title>
 <style>
 /* A full-screen face driven by the robot's valence (TD error), arousal
-   (novelty + unexpected surprise + reward error - empowerment) and
-   dominance (empowerment). Served by the phone at /face (live, over /ws),
+   (novelty + unexpected surprise + reward error - empowerment + pain),
+   dominance (empowerment) and pain (a wince). Served by the phone at /face (live, over /ws),
    or with ?trace=URL / an embedded window.FACE_TRACE it replays a recording. */
 :root { --bg: #10161c; --fg: #e8edf2; --muted: #8896a3; --panel: #18212a; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
@@ -47,9 +47,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 <script>
 (() => {
   const cv = document.getElementById('face'), ctx = cv.getContext('2d');
-  const target = { valence: 0, arousal: 0.4, dominance: 0 };
-  const mid = { valence: 0, arousal: 0.4, dominance: 0 };   // the stream with its jitter filtered out
-  const now = { valence: 0, arousal: 0.4, dominance: 0 };   // what is shown
+  const target = { valence: 0, arousal: 0.4, dominance: 0, pain: 0 };
+  const mid = { valence: 0, arousal: 0.4, dominance: 0, pain: 0 };   // the stream with its jitter filtered out
+  const now = { valence: 0, arousal: 0.4, dominance: 0, pain: 0 };   // what is shown
   const src = document.getElementById('src');
   let t0 = performance.now(), blinkAt = 0, blinkT = 1, phase = 0, lastValence = 0;
 
@@ -66,7 +66,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   // -- data: live from the phone, a trace, or idle --------------------------
   function setState(e) {
     if (!e) return;
-    for (const k of ['valence', 'arousal', 'dominance'])
+    for (const k of ['valence', 'arousal', 'dominance', 'pain'])
       if (typeof e[k] === 'number' && isFinite(e[k])) target[k] = e[k];
   }
   function playTrace(tr) {
@@ -243,6 +243,9 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     const v = Math.max(-1, Math.min(1, now.valence)), a = Math.max(0, Math.min(1, now.arousal));
     window.__face = { now, target, dt, blinkT, springs };   // for checking from devtools
     const d = Math.max(-1, Math.min(1, now.dominance));
+    // Pain (the body near a bumper, a reflex overriding it): a wince, eyes
+    // squeezed, brows pulled down and in, a quick shake.
+    const pn = Math.max(0, Math.min(1, now.pain || 0));
     const bar = (id, x) => { document.getElementById(id).style.cssText =
       (x >= 0 ? `left:50%;width:${x * 50}%` : `left:${50 + x * 50}%;width:${-x * 50}%`) + `;background:${x < 0 ? NEG : POS}`; };
     bar('bv', v);
@@ -267,7 +270,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     // (OMEGA), so a sudden change in the signals still moves the face smoothly.
     const sp = (name, goal) => spring(name, goal, dt);
     const hue = sp('hue', hueFor(v)), sat = sp('sat', 45 + 35 * a), light = sp('light', 55 + 8 * v);
-    const tremble = sp('tremble', a > 0.7 ? (a - 0.7) * 6 : 0);   // a tremble when highly aroused
+    const tremble = sp('tremble', (a > 0.7 ? (a - 0.7) * 6 : 0) + 4 * pn);   // a tremble when highly aroused or hurt
     const cx = W / 2 + Math.sin(phase * 7) * tremble;
     // Dominance is posture: in control the face is bigger, higher and steady
     // with a bright glow; helpless it shrinks, sinks, dims, its lids droop and
@@ -285,10 +288,10 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
     // Eyes: wider and bigger-pupilled when aroused
     const ex = S * 0.16, ey = -S * 0.06, ew = S * 0.085;
-    const open = Math.max(0.05, sp('open', 0.45 + 0.75 * a) * (1 - 0.95 * blink));
+    const open = Math.max(0.05, sp('open', (0.45 + 0.75 * a) * (1 - 0.75 * pn)) * (1 - 0.95 * blink));
     const pupil = ew * sp('pupil', 0.35 + 0.35 * a);
     const lift = ew * sp('lift', 1.25 + 0.35 * a);
-    const slant = sp('slant', -v * 0.25 * (1 - a) + a * 0.35 * Math.min(1, Math.max(0, -v) * 3));
+    const slant = sp('slant', -v * 0.25 * (1 - a) + a * 0.35 * Math.min(1, Math.max(0, -v) * 3) + 0.45 * pn);
     const wander = ew * 0.25 * (0.3 + a) * (1 - 0.6 * control) * (1 + helpless);
     const look = Math.sin(phase * 0.7) * wander + helpless * ew * 0.3 * Math.sin(phase * 0.13);
     const lookY = helpless * ew * 0.3;   // eyes down when helpless

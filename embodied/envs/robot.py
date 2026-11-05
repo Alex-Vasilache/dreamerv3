@@ -647,7 +647,8 @@ class SmartphoneRobot(embodied.Env):
       home_max_s=30.0, home_track=1634.0, weights_emotion=False,
       fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05, travel_lo=0.0,
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
-      pain_zone=0.035, emotion_event=0.0, cost_obs=False):
+      pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
+      cost_obs=False):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -970,6 +971,7 @@ class SmartphoneRobot(embodied.Env):
                        explore=float(affect_explore))
     self.pain_zone = float(pain_zone)
     self.emotion_event = float(emotion_event)
+    self.event_signal = str(event_signal)
     # cost_obs: report the body's pain as 'cost' beside the reward, for the
     # agent's fear critic (agent.fear); never part of the reward.
     self.cost_obs = bool(cost_obs)
@@ -1858,6 +1860,7 @@ class SmartphoneRobot(embodied.Env):
                 # gains, the body for pain, the arousal event threshold.
                 **({'emotion': dict(
                     affect=self.affect, emotion_event=self.emotion_event,
+                    event_signal=self.event_signal,
                     body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
                               hi=self.bumper_hi, zone=self.pain_zone))}
                    if self.weights_emotion else {}))

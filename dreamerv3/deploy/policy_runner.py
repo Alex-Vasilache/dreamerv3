@@ -161,6 +161,7 @@ class PolicyRunner:
     # `event` ({n, t, intensity}); the app sends it with each observation and
     # the trainer has the learner change its weights at once.
     self.event_threshold = 0.0
+    self.event_signal = 'arousal'   # or 'salience'
     self.event = None
     self._arousal_base = None
     self._events = 0
@@ -251,8 +252,15 @@ class PolicyRunner:
           dominance=sig['dominance'], td=sig['td'], value=sig['value'],
           surprise=sig['surprise'], unexpected=sig['unexpected'],
           novelty=sig['novelty'], empowerment=sig['empowerment'],
-          mood=sig['mood'], pain=sig['pain'], hurt=sig['hurt'])
-      self._detect_event(sig['arousal'])
+          mood=sig['mood'], pain=sig['pain'], hurt=sig['hurt'],
+          td_valence=sig['valence'])
+      # 'salience': how much this moment stood out in value or hurt, |TD
+      # error| (scaled) plus pain (Bromberg-Martin et al. 2010's salience
+      # signal). In the sim arousal, led by novelty, fell at bumper hits
+      # while the TD error and pain rose (e19410-e19425).
+      self._detect_event(
+          abs(sig['valence']) + sig['pain'] if self.event_signal == 'salience'
+          else sig['arousal'])
     except Exception as e:  # noqa: BLE001
       print('dreamerBridge: emotion failed: %s' % e)
       self.emotion = None
@@ -285,6 +293,7 @@ class PolicyRunner:
     if settings.get('body'):
       self.body = dict(settings['body'])
     self.event_threshold = float(settings.get('emotion_event') or 0.0)
+    self.event_signal = settings.get('event_signal') or 'arousal'
 
   @staticmethod
   def build_blob(blob, path):

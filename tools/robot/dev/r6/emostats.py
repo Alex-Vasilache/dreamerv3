@@ -6,7 +6,7 @@ Per minute of a run's recorded experience: time upright (|tilt| < 3 deg),
 bumper crossings (tilt crossing +6.5 or -5 deg, as demo_stats.py), wobble
 (tilt-rate SD, deg/s), mean |wheel speed| (mm/s), reward. From the run's
 emotion.csv (sim_phone): pushes and the share of them followed within 1 s
-by a bumper crossing (falls per push), arousal events, mean arousal and
+by a bumper crossing (falls per push, pushes on an upright body only), arousal events, mean arousal and
 pain.
 """
 
@@ -59,7 +59,9 @@ def run(n):
   for i in range(len(tilt) // (60 * HZ)):
     a, b = i * 60 * HZ, (i + 1) * 60 * HZ
     ps = [p for p in pushes if a <= p < b]
-    fell = [bool(cross[p:p + HZ].any()) for p in ps]
+    # Only pushes that met an upright body: one lying on a bumper cannot fall.
+    fell = [bool(cross[p:p + HZ].any()) for p in ps
+            if p < len(tilt) and abs(tilt[p]) < 3]
     ar = [v for k, v in arousal if a <= k < b]
     pa = [v for k, v in pain if a <= k < b]
     out.append(dict(

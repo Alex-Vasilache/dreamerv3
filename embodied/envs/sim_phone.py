@@ -44,7 +44,7 @@ FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
 class SimPhone:
 
   def __init__(self, config, shared, dtype='int8', delay=3.0, poll=1.0,
-               affect=None, body=None, event=0.0, log=None,
+               affect=None, body=None, event=0.0, event_signal='arousal', log=None,
                seed=0):
     self.config = config
     self.shared = str(shared)
@@ -53,7 +53,7 @@ class SimPhone:
     self.poll = float(poll)
     self.runner = PolicyRunner()
     self.runner.configure(dict(affect=affect or {}, body=body,
-                               emotion_event=event))
+                               emotion_event=event, event_signal=event_signal))
     self._event_n = None
     self._dir = tempfile.mkdtemp(prefix='sim_phone_')
     # (policy, stamp, published_at) built off-thread; each lands on the

@@ -822,7 +822,8 @@ class RobotMujoco(robot_sim.RobotSim):
           'sim_phone needs the agent config and the shared policy dir')
       self._phone = sim_phone.SimPhone(
           a['config'], a['shared'], dtype=a['dtype'], delay=a['delay'],
-          affect=self.affect, event=self.emotion_event, seed=self._seed,
+          affect=self.affect, event=self.emotion_event,
+          event_signal=self.event_signal, seed=self._seed,
           body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
                     hi=self.bumper_hi, zone=self.pain_zone),
           log=str(a['shared']) + '/../emotion.csv')

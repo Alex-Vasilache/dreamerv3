@@ -79,3 +79,33 @@ controllable pain is less aversive). Kept out of the task reward, so reward
 cannot buy violations. Nociception = constraint proximity (tilt vs the
 bumpers, wheel saturation, distance from home); intensity = violation +
 size of the reflex's correction.
+
+## Emotion acting on behaviour and learning (2026-11-06)
+
+All off by default; each is one setting, so it can be tested alone and on
+the robot. The phone does the fast parts, the learner the slow one.
+
+| Part | Where | Setting | What it does |
+|---|---|---|---|
+| Pain | `policy_runner.pain_signal` (copy in `robot.py`) | `env.robot.pain_zone` (0.035 rad) | 0 upright; rises to 1 over the last `pain_zone` before a bumper; plus the size of a reflex's override (brake, cap, limit). Raises arousal (+3 x pain inside the sigmoid) and lowers the face's valence by pain x (1 - 0.5 control). A sensation, not a prediction. |
+| Vigour | `PolicyRunner.modulate` | `env.robot.affect_vigour` | Excited (arousal x positive valence): action x (1 + k arousal valence+). |
+| Catch | `PolicyRunner.modulate` | `env.robot.affect_catch` | In pain toward a bumper: + k (front - back) on both wheels (positive drives forward, under a forward lean). |
+| Exploration | `PolicyRunner.explore_scale` | `env.robot.affect_explore` | The policy's sampling spread x clip(1 + k arousal max(0, -mood) - k pain, 0.5, 2). |
+| Arousal events | `PolicyRunner._detect_event` -> trainer -> `online/ArousalBoost` | `env.robot.emotion_event` (phasic threshold), `online_arousal.{lr,updates,burst,publish}` | Arousal rising `emotion_event` above its ~10 s average fires an event (2 s apart). The learner multiplies every optimizer group's update by 1 + lr x intensity, decaying over `updates` updates, after the RMS normalisation (`MultiOptimizer` `lr_scale`; a loss weight would be normalised away), runs `burst` x intensity extra updates and publishes at once. |
+| Fear | `agent.py` (`cst`, `cval`) | `env.robot.cost_obs True`, `agent.fear.weight` | The env reports pain as `cost` beside the reward; a cost head and its own critic over the imagined rollouts; the actor's objective is the reward's advantage minus weight x the cost's. Never in the reward. |
+
+The sim runs the phone's own loop (`embodied/envs/sim_phone.py`,
+`env.robot.sim_phone True`): `PolicyRunner` on int8 pushes of the learner's
+published weights, installed 3 s after publishing, then the trainer's limits,
+recorded as the executed action, as onboard. Perturbations:
+`env.robot.sim_push every:lo:hi` (a 0.1 s horizontal push at the body's top,
+forward or back) and `env.robot.sim_walls` (a square of walls). Per-step
+signals go to `<logdir>/emotion.csv`; `tools/robot/dev/r6/emostats.py`
+summarises a round.
+
+On the phone (dreamerBridge `main.py`, three lines; the trainer already sends
+the settings in its pause frames as `emotion`):
+
+1. `loop_onboard`: after `obs, act = runner.act(snap, cmd)`, `act = runner.modulate(act)`.
+2. `apply_pause(state)`: `runner.configure(state.get('emotion'))`.
+3. The obs message: add `emotion_event=runner.event` (the trainer forwards a new one to the learner).
