@@ -144,6 +144,7 @@ class NumpyPolicy:
     self.w = {}
     self.meta = {}
     self.nonfinite = 0  # actions refused by the finite check in _actor
+    self.explore = 1.0  # scale on the sampled action's spread ('train' mode)
     if path is not None:
       self.load(path)
 
@@ -320,7 +321,10 @@ class NumpyPolicy:
     if mode == 'eval':
       act = mean
     else:
-      act = mean + stddev * self.rng.standard_normal(mean.shape).astype(F32)
+      # explore: a scale on the policy's own spread, set from outside
+      # (PolicyRunner's affect: arousal widens it, pain narrows it).
+      act = mean + self.explore * stddev * self.rng.standard_normal(
+          mean.shape).astype(F32)
     # A non-finite action would go straight to the wheels as a garbage PWM
     # value, so it is worth the two microseconds to refuse it. This has never
     # fired in testing; it is here because the failure it prevents is physical.

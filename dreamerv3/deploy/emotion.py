@@ -106,6 +106,7 @@ class Emotion:
     self.norm = {k: Running(tau) for k in (
         'novelty', 'unexpected', 'reward_err', 'empowerment', 'td', 'abs_td')}
     self.mood_norm = Running(tau * 6)
+    self.pain_w = 1.0
     self.bins = _twohot_bins(policy.w['val/head/logits/bias'].shape[-1])
     self.reset()
 
@@ -179,13 +180,18 @@ class Emotion:
 
   # -- the step ---------------------------------------------------------------
 
-  def step(self, deter, post_logit, stoch, reward, is_first=False, steps=1):
+  def step(self, deter, post_logit, stoch, reward, is_first=False, steps=1,
+           pain=0.0):
     """`deter`: the step's deterministic state (precompute's output);
     `post_logit`/`stoch`: the posterior logits and its sample; `reward`: the
     reward that came with this observation. Called every `steps` control
     steps (the phone), `reward` is their discounted sum since the last call.
     Returns a dict of signals. With every <= 0 empowerment is left to the
-    caller (`self.empowerment`, e.g. from a thread)."""
+    caller (`self.empowerment`, e.g. from a thread). `pain` (0-1, from the
+    body: closeness to a bumper, a reflex overriding the policy; see
+    policy_runner.pain_signal) is a sensation, not a prediction: it raises
+    arousal whatever its context, and lowers the face's valence by less the
+    more the robot is in control (Salomons et al. 2004)."""
     unimix = self.p.meta['unimix']
     if is_first:
       self.reset()
@@ -217,12 +223,14 @@ class Emotion:
     helpless = self.norm['abs_td'](abs(td)) * (1 - control)
     drive = (self.w[0] * z['novelty'] + self.w[1] * z['unexpected']
              + self.w[2] * z['reward_err'] - self.w[3] * z['empowerment']
-             + self.w[4] * helpless)
+             + self.w[4] * helpless + self.pain_w * 3.0 * pain)
+    hurt = float(pain) * (1.0 - 0.5 * control)
     valence = float(np.tanh(td / max(td_scale, 1e-6)))
     mood = float(np.tanh(self.mood_norm(value) / 2.0))
     return dict(
         valence=valence, mood=mood,
-        face_valence=float(np.clip(0.7 * mood + 0.3 * valence, -1, 1)),
+        face_valence=float(np.clip(0.7 * mood + 0.3 * valence - hurt, -1, 1)),
+        pain=float(pain), hurt=hurt,
         helpless=float(helpless),
         arousal=float(sigmoid(np.float32(drive / 2.0))),
         dominance=float(np.tanh(z['empowerment'])),

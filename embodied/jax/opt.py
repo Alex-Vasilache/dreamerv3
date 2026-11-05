@@ -121,8 +121,15 @@ class MultiOptimizer(nj.Module):
 
   summary_depth: int = 2
 
-  def __init__(self, groups, freeze=None):
+  def __init__(self, groups, freeze=None, lr_scale=False):
     self.groups = {k: (tuple(ms), opt) for k, (ms, opt) in groups.items()}
+    # lr_scale: a multiplier per group on its updates, after the optax chain
+    # (so after the RMS normalisation, which would cancel a scale on the
+    # loss), held in a variable the learner can set between steps
+    # (embodied/run/online.py ArousalBoost). 1 leaves training unchanged.
+    self.lr_scale = {
+        k: nj.Variable(jnp.array, 1.0, f32, name=f'lr_scale_{k}')
+        for k in self.groups} if lr_scale else {}
     self.allmods = tuple(m for ms, _ in self.groups.values() for m in ms)
     # ``freeze`` maps a name to ``(modules, at)``: once the update counter
     # reaches ``at``, those modules' parameters are written back unchanged, so
@@ -164,6 +171,10 @@ class MultiOptimizer(nj.Module):
       assert gparams, (gname, prefixes, sorted(params.keys())[:4])
       state = self.sub(f'state_{gname}', nj.Tree, opt.init, gparams)
       updates, new_state = opt.update(ggrads, state.read(), gparams)
+      if gname in self.lr_scale:
+        scale = self.lr_scale[gname].read()
+        updates = jax.tree.map(lambda u: (u * scale).astype(u.dtype), updates)
+        metrics[f'{gname}_lr_scale'] = scale
       newparams = optax.apply_updates(gparams, updates)
       for fname, (fmods, at) in self.freeze.items():
         fpre = tuple(m.path + '/' for m in fmods)

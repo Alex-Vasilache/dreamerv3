@@ -55,6 +55,34 @@ def track_position(pos, prev, sensors, tau, hz, jump):
   return pos * np.exp(-1.0 / (tau * hz)) + step
 
 
+def write_event(shared, event):
+  """An arousal event for the learner (embodied/run/online.py
+  ArousalBoost): <shared>/emotion_event as {n, t, intensity}."""
+  path = os.path.join(str(shared), 'emotion_event')
+  tmp = path + '.tmp'
+  with open(tmp, 'w') as f:
+    json.dump(dict(n=event.get('n'), t=event.get('t', time.time()),
+                   intensity=float(event.get('intensity', 1.0))), f)
+  os.replace(tmp, path)
+
+
+def pain_signal(theta, body, act=None, chosen=None):
+  """Pain from the body, 0 (none) to 1+: (pain, front, back); a copy of
+  deploy/policy_runner.py's, so change both. `body` is dict(theta_zero, lo,
+  hi, zone): the bumpers' tilts (rad) and how far before them closeness
+  starts to hurt; a reflex that overrode the policy (`act` the wheels got,
+  `chosen` the policy's) hurts as much as its correction's size."""
+  rel = float(theta) - float(body['theta_zero'])
+  zone = max(float(body['zone']), 1e-6)
+  front = min(1.0, max(0.0, (rel - (float(body['hi']) - zone)) / zone))
+  back = min(1.0, max(0.0, ((float(body['lo']) + zone) - rel) / zone))
+  pain = max(front, back)
+  if act is not None and chosen is not None:
+    pain += min(1.0, float(np.mean(np.abs(
+        np.asarray(act, np.float32) - np.asarray(chosen, np.float32)))))
+  return pain, front, back
+
+
 def travel_limit(act, pos, lo, hi, state=None):
   """Scale wheel commands that push the robot further the way it has already
   travelled: none below `lo` of leaky travel (`pos`, the mean of the two
@@ -618,7 +646,8 @@ class SmartphoneRobot(embodied.Env):
       home_inner=1200.0, home_speed=0.5, home_min=0.25, home_ramp=3000.0,
       home_max_s=30.0, home_track=1634.0, weights_emotion=False,
       fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05, travel_lo=0.0,
-      travel_hi=0.0):
+      travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
+      pain_zone=0.035, emotion_event=0.0, cost_obs=False):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -930,6 +959,26 @@ class SmartphoneRobot(embodied.Env):
     self.travel_lo, self.travel_hi = float(travel_lo), float(travel_hi)
     assert not self.travel_hi or float(pos_tau) > 0, 'travel_hi needs pos_tau'
     self._travel_latch = [0.0]
+    # Emotion acting on the phone's behaviour and on learning
+    # (deploy/policy_runner.py modulate/explore_scale, deploy/emotion.py; in
+    # the sim through sim_phone.py): gains for vigour with excitement, a
+    # catch drive with pain, exploration with distressed arousal; how far
+    # before a bumper closeness starts to hurt (rad); how far arousal must
+    # rise above its ~10 s average for an event to go to the learner
+    # (embodied/run/online.py). 0: off.
+    self.affect = dict(vigour=float(affect_vigour), catch=float(affect_catch),
+                       explore=float(affect_explore))
+    self.pain_zone = float(pain_zone)
+    self.emotion_event = float(emotion_event)
+    # cost_obs: report the body's pain as 'cost' beside the reward, for the
+    # agent's fear critic (agent.fear); never part of the reward.
+    self.cost_obs = bool(cost_obs)
+    self._chosen_act = None
+    self._cost_pair = (None, None)   # (applied, chosen) of the last step
+    self._event_n = None
+    # The action a policy run beside this env (the sim's phone) chose and
+    # the limits below already shaped, for the step about to be taken.
+    self._phone_final = None
     # ... plus track_progress * |c| * clip(forward / c, 0, 1) for a forward
     # command c: the Gaussian pays ~0 until the speed is close (carpet at
     # 600 of 2500 mm/s earns 0.03), so partial progress gets a linear slope.
@@ -1007,6 +1056,7 @@ class SmartphoneRobot(embodied.Env):
         **({'position': elements.Space(np.float32, (2,))}
            if self.pos_tau else {}),
         'reward': elements.Space(np.float32),
+        **({'cost': elements.Space(np.float32)} if self.cost_obs else {}),
         'is_first': elements.Space(bool),
         'is_last': elements.Space(bool),
         'is_terminal': elements.Space(bool),
@@ -1230,23 +1280,15 @@ class SmartphoneRobot(embodied.Env):
     if self.task == 'track' and self._step % self.ref_hold == 0:
       self._ref = self.theta_zero + self._rng.uniform(
           -self.ref_range, self.ref_range)
-    left, right = self._decode(action)
-    if self.fatigue_s:
-      left, right = self._fatigue((left, right))
-    if self.travel_hi:
-      left, right = travel_limit(
-          (left, right), float(self._pos.mean()), self.travel_lo, self.travel_hi,
-          self._travel_latch)
-    if self.drive_cap0:
-      cap = self._drive_cap()
-      left = float(np.clip(left, -cap, cap))
-      right = float(np.clip(right, -cap, cap))
-      self._tell_cap(cap)
-    if self._pause['robot'] or self._brake_left:
-      # The phone holds the wheels only for a policy it runs itself; here the
-      # held wheels are this action, and recorded as what they did.
-      left, right = 0.0, 0.0
+    if self._phone_final is not None:
+      # The sim's phone chose this step's action from the observation it
+      # was recorded with, and _limits already shaped it (sim_phone.py).
+      left, right = self._phone_final
+    else:
+      self._chosen_act = self._decode(action)
+      left, right = self._limits(*self._chosen_act)
     self._sent_act = (left, right)
+    self._cost_pair = ((left, right), self._chosen_act)
     self._send(left, right, reset=False)
     sensors, latency = self._recv()
     if not self._base_ok:
@@ -1297,6 +1339,26 @@ class SmartphoneRobot(embodied.Env):
     self._done = terminal or self._go_home or self._step >= self.length
     return self._obs(
         sensors, latency, reward, is_last=self._done, is_terminal=terminal)
+
+  def _limits(self, left, right):
+    """The trainer's limits on a wheel command: fatigue, travel, the cap,
+    and held wheels while paused or braking."""
+    if self.fatigue_s:
+      left, right = self._fatigue((left, right))
+    if self.travel_hi:
+      left, right = travel_limit(
+          (left, right), float(self._pos.mean()), self.travel_lo, self.travel_hi,
+          self._travel_latch)
+    if self.drive_cap0:
+      cap = self._drive_cap()
+      left = float(np.clip(left, -cap, cap))
+      right = float(np.clip(right, -cap, cap))
+      self._tell_cap(cap)
+    if self._pause['robot'] or self._brake_left:
+      # The phone holds the wheels only for a policy it runs itself; here the
+      # held wheels are this action, and recorded as what they did.
+      left, right = 0.0, 0.0
+    return float(left), float(right)
 
   def close(self):
     self._closing.set()
@@ -1622,6 +1684,11 @@ class SmartphoneRobot(embodied.Env):
             self._pos * self.obs_pos_scale, -self.obs_clip,
             self.obs_clip).astype(np.float32)} if self.pos_tau else {}),
         reward=np.float32(reward),
+        **({'cost': np.float32(pain_signal(
+            sensors['theta'], dict(theta_zero=self.theta_zero,
+                                   lo=self.bumper_lo, hi=self.bumper_hi,
+                                   zone=self.pain_zone),
+            *self._cost_pair)[0])} if self.cost_obs else {}),
         is_first=is_first,
         is_last=is_last,
         is_terminal=is_terminal,
@@ -1786,7 +1853,14 @@ class SmartphoneRobot(embodied.Env):
                                     dead=self._fatigue.dead)}
                    if self.fatigue_s else {}),
                 **({'travel': dict(lo=self.travel_lo, hi=self.travel_hi)}
-                   if self.travel_hi else {}))
+                   if self.travel_hi else {}),
+                # Emotion on the phone (PolicyRunner.configure): the affect
+                # gains, the body for pain, the arousal event threshold.
+                **({'emotion': dict(
+                    affect=self.affect, emotion_event=self.emotion_event,
+                    body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
+                              hi=self.bumper_hi, zone=self.pain_zone))}
+                   if self.weights_emotion else {}))
 
   def _request_pause(self, request):
     """The phone's dashboard paused or resumed the robot and/or the
@@ -1972,10 +2046,15 @@ class SmartphoneRobot(embodied.Env):
     # shifted every action by one step (rounds 7f-10 and E1-E3, 11-04/05).
     # So the sim records the policy's action, also where the brake or the
     # cap changed it.
-    return not self.discrete and bool(self.onboard)
+    return not self.discrete and (bool(self.onboard) or self._phone_runs())
+
+  def _phone_runs(self):
+    return False   # the sim's phone (robot_mujoco.py, sim_phone)
 
   def _executed(self):
-    if self._onboard and self._onboard_act is not None:
+    if self._phone_final is not None:
+      act = self._phone_final
+    elif self._onboard and self._onboard_act is not None:
       act = self._onboard_act
     else:
       act = self._sent_act
@@ -2083,6 +2162,11 @@ class SmartphoneRobot(embodied.Env):
           self._base = self._pending = None
       self._phone_stamp = header.get('policy_stamp', self._phone_stamp)
       self._confirm(self._phone_stamp)
+      event = header.get('emotion_event')
+      if event and event.get('n') != self._event_n and self._policy_dir:
+        # The phone's arousal event: the learner changes its weights now.
+        self._event_n = event.get('n')
+        write_event(self._policy_dir, event)
     self._timing = (
         float(header.get('wait_ms', 0.0)), float(header.get('work_ms', 0.0)),
         float(header.get('imu_age_ms', 0.0)),

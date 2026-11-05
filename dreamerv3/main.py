@@ -162,6 +162,7 @@ def main(argv=None):
           config.env.get('robot', {}).get('weights_emotion', False)) else ''),
       online_replay_sync_interval=config.online_replay_sync_interval,
       online_max_train_repeats=config.online_max_train_repeats,
+      online_arousal=config.online_arousal,
   )
 
   if config.script == 'train':
@@ -290,6 +291,8 @@ def make_agent(config):
       report_length=config.report_length,
       replica=config.replica,
       replicas=config.replicas,
+      # A learning-rate multiplier the learner can set (online_arousal).
+      lr_scale_var=bool(config.online_arousal.lr),
   ))
 
 
@@ -464,7 +467,7 @@ def make_env(config, index, **overrides):
     print('[robot] onboard policy needs a flat agent; HRL acts from the '
           'trainer (env.robot.onboard False)')
     kwargs['onboard'] = False
-  if suite == 'robot' and kwargs.get('onboard'):
+  if suite == 'robot' and (kwargs.get('onboard') or kwargs.get('sim_phone')):
     # The env pushes policy weights to the phone, so it has to be able to build
     # the on-device .npz -- which needs the agent config, not just env.robot.
     # Passed as a whole rather than picked apart so the manifest stays a single

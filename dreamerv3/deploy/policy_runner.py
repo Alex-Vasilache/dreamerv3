@@ -91,6 +91,26 @@ class Fatigue:
     return out
 
 
+def pain_signal(theta, body, act=None, chosen=None):
+  """Pain from the body, 0 (none) to 1+: (pain, front, back). `body` is
+  dict(theta_zero, lo, hi, zone): the tilts (rad) the bumpers rest at and
+  how far before them closeness starts to hurt. front/back are how deep
+  into that zone the body leans toward each bumper (0-1). A reflex that
+  overrode the policy (brake, cap, limit: `act` the wheels got, `chosen`
+  the policy's) hurts as much as its correction's size. Not a prediction,
+  a sensation; the trainer (embodied/envs/robot.py) keeps a copy for the
+  cost it records, so change both."""
+  rel = float(theta) - float(body['theta_zero'])
+  zone = max(float(body['zone']), 1e-6)
+  front = min(1.0, max(0.0, (rel - (float(body['hi']) - zone)) / zone))
+  back = min(1.0, max(0.0, ((float(body['lo']) + zone) - rel) / zone))
+  pain = max(front, back)
+  if act is not None and chosen is not None:
+    pain += min(1.0, float(np.mean(np.abs(
+        np.asarray(act, np.float32) - np.asarray(chosen, np.float32)))))
+  return pain, front, back
+
+
 class PolicyRunner:
 
   def __init__(self, path=None):
@@ -117,7 +137,7 @@ class PolicyRunner:
     # of its own every EMPOWER_S so the control tick never waits for it.
     self.emotion = None
     self.emotion_state = None
-    self._feel = [0.0, 0, False]     # discounted reward sum, steps, a reset
+    self._feel = [0.0, 0, False, 0.0]  # discounted reward sum, steps, a reset, max pain
     self._emo_lock = threading.Lock()
     self._emo_thread = None
     # The leaky wheel distance of a policy that observes 'position'; kept
@@ -128,6 +148,25 @@ class PolicyRunner:
     self.fatigue = Fatigue()
     self.travel = (0.0, 0.0)   # (lo, hi) from the trainer; see limit()
     self._travel_latch = [0.0]
+    # Affect acting on behaviour (modulate(), and the exploration scale in
+    # act()), gains from the trainer, 0 = off: vigour scales the action up
+    # with excitement (arousal x positive valence); catch drives toward the
+    # bumper the body is falling to (wheels back under it) with pain;
+    # explore widens the policy's sampling with distressed arousal and
+    # narrows it with pain. `body` (theta_zero, lo, hi, zone) for pain.
+    self.affect = dict(vigour=0.0, catch=0.0, explore=0.0)
+    self.body = None
+    # Arousal events (event_threshold > 0): arousal rising that far above
+    # its own ~10 s average, at most every EVENT_REFRACTORY s. The newest is
+    # `event` ({n, t, intensity}); the app sends it with each observation and
+    # the trainer has the learner change its weights at once.
+    self.event_threshold = 0.0
+    self.event = None
+    self._arousal_base = None
+    self._events = 0
+    self.pain = (0.0, 0.0, 0.0)   # (pain, front, back) of the last step
+    self._chosen = None
+    self._theta = None
     if path and os.path.exists(path):
       self.load_path(path, stamp='initial')
 
@@ -199,22 +238,53 @@ class PolicyRunner:
     acc[0] += (emo.gamma ** acc[1]) * float(reward)
     acc[1] += 1
     acc[2] = acc[2] or self.was_first
+    acc[3] = max(acc[3], self.pain[0])
     if acc[1] < self.FEEL_EVERY:
       return
     deter, stoch, logit = self.policy.last_post
     try:
       with self._emo_lock:
         sig = emo.step(deter, logit, stoch, acc[0], is_first=acc[2],
-                       steps=acc[1])
+                       steps=acc[1], pain=min(acc[3], 1.0))
       self.emotion_state = dict(
           valence=sig['face_valence'], arousal=sig['arousal'],
           dominance=sig['dominance'], td=sig['td'], value=sig['value'],
           surprise=sig['surprise'], unexpected=sig['unexpected'],
-          novelty=sig['novelty'], empowerment=sig['empowerment'])
+          novelty=sig['novelty'], empowerment=sig['empowerment'],
+          mood=sig['mood'], pain=sig['pain'], hurt=sig['hurt'])
+      self._detect_event(sig['arousal'])
     except Exception as e:  # noqa: BLE001
       print('dreamerBridge: emotion failed: %s' % e)
       self.emotion = None
-    self._feel = [0.0, 0, False]
+    self._feel = [0.0, 0, False, 0.0]
+
+  EVENT_REFRACTORY = 2.0
+  EVENT_TAU_S = 10.0
+
+  def _detect_event(self, arousal):
+    """Phasic arousal: a moment that stands out from the last ~10 s (a
+    push, a hit), not a robot that has been lying on a bumper all along."""
+    base = self._arousal_base
+    n = self.EVENT_TAU_S * self.policy.meta.get('obs_scale', {}).get('hz', 65.0) \
+        / self.FEEL_EVERY
+    self._arousal_base = arousal if base is None else base + (arousal - base) / n
+    if not self.event_threshold or base is None:
+      return
+    phasic = arousal - base
+    now = time.time()
+    if phasic >= self.event_threshold and (
+        self.event is None or now - self.event['t'] >= self.EVENT_REFRACTORY):
+      self._events += 1
+      self.event = dict(n=self._events, t=now, intensity=min(1.0, phasic / 0.5))
+
+  def configure(self, settings):
+    """The trainer's emotion settings (its pause frames' 'emotion')."""
+    if not settings:
+      return
+    self.affect.update(settings.get('affect') or {})
+    if settings.get('body'):
+      self.body = dict(settings['body'])
+    self.event_threshold = float(settings.get('emotion_event') or 0.0)
 
   @staticmethod
   def build_blob(blob, path):
@@ -316,6 +386,8 @@ class PolicyRunner:
     if self.carry is not None:
       self.carry = dict(self.carry, prevact=np.asarray(act, np.float32))
       self._pre = None
+    if self.body is not None and self._theta is not None:
+      self.pain = pain_signal(self._theta, self.body, act, self._chosen)
 
   def prepare(self):
     """Run the observation-independent half of the next step now.
@@ -342,6 +414,10 @@ class PolicyRunner:
     """
     t0 = time.monotonic()
     obs = self.observe(sensors, command)
+    self._theta = float(sensors['theta'])
+    if self.body is not None:
+      self.pain = pain_signal(self._theta, self.body)
+    self.policy.explore = self.explore_scale()
     self.was_first = self.is_first
     pre = self._pre
     self._pre = None
@@ -354,7 +430,38 @@ class PolicyRunner:
     self.is_first = False
     self.steps += 1
     self.last_ms = (time.monotonic() - t0) * 1e3
-    return obs, [float(act[0]), float(act[1])]
+    self._chosen = [float(act[0]), float(act[1])]
+    return obs, list(self._chosen)
+
+  def explore_scale(self):
+    """How widely to sample around the policy's mean: wider with arousal
+    while the mood is low (distress, a plateau: Aston-Jones & Cohen 2005's
+    tonic mode), narrower with pain (do what is known to work)."""
+    k = float(self.affect.get('explore', 0.0))
+    st = self.emotion_state
+    if not k or not st:
+      return 1.0
+    scale = 1.0 + k * st['arousal'] * max(0.0, -st['mood']) - k * self.pain[0]
+    return float(min(2.0, max(0.5, scale)))
+
+  def modulate(self, act):
+    """The policy's action after affect, before the trainer's limits.
+    Excited (arousal with a good mood) moves bigger: x(1 + vigour x arousal
+    x valence+). In pain toward a bumper it drives to catch the fall: a
+    positive wheel command drives forward, the way to catch a forward
+    lean. The app calls this between act() and limit()."""
+    vig, catch = (float(self.affect.get(k, 0.0)) for k in ('vigour', 'catch'))
+    st = self.emotion_state
+    if vig and st:
+      g = 1.0 + vig * st['arousal'] * max(0.0, st['valence'])
+      act = [a * g for a in act]
+    if catch and self.body is not None:
+      _, front, back = self.pain
+      act = [a + catch * (front - back) for a in act]
+    # What the trainer's limits are measured against: a reflex overriding
+    # this hurts (applied), the affect's own change does not.
+    self._chosen = [float(min(1.0, max(-1.0, a))) for a in act]
+    return list(self._chosen)
 
   def warm(self):
     """A throwaway step on the current carry, to bring the core up to speed

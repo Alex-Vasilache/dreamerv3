@@ -142,10 +142,24 @@ MESHES = {
 }
 
 
+def _walls(half):
+  """Four walls, a square `half` m from the start each way (0: none),
+  12 cm high: obstacles the robot can drive into."""
+  if not half:
+    return ''
+  w = 0.01
+  boxes = [(0, half + w, half + w, w), (0, -half - w, half + w, w),
+           (half + w, 0, w, half + w), (-half - w, 0, w, half + w)]
+  return ''.join(
+      f'\n    <geom name="wall{i}" type="box" pos="{x} {y} 0.06" '
+      f'size="{sx} {sy} 0.06" rgba=".55 .5 .45 1" friction="0.5 0.005 0.0001"/>'
+      for i, (x, y, sx, sy) in enumerate(boxes))
+
+
 def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
               armature=5e-4, friction=1.0, rolling=0.0, contact_tc=0.02,
               bumper_friction=0.5, fixed=False, visual=None, meshdir=None,
-              backlash=0.0):
+              backlash=0.0, walls=0.0):
   """MJCF of the robot. bumper_back > 0 and bumper_front > 0 are the pitch
   magnitudes (rad, from geometric upright) at which the body rests on the rear
   and front bumper. `visual` (an RGB phone colour) adds what a video needs --
@@ -234,7 +248,7 @@ def model_xml(bumper_back, bumper_front, com_z=0.028, timestep=0.002,
     <!-- MuJoCo takes the larger of two geoms' frictions: the floor's is low
          so that the wheels' and bumpers' own are the ones that apply. -->
     <geom name="floor" type="plane" size="50 50 0.1" rgba=".8 .8 .8 1"
-          friction="0.01 0 0" {floor}/>
+          friction="0.01 0 0" {floor}/>{_walls(walls)}
     <body name="robot" pos="0 0 {0.3 if fixed else WHEEL_R}">
       {'' if fixed else '<freejoint name="robot"/>'}
       <inertial pos="0 0 {com_z}" mass="0.514"
@@ -287,7 +301,7 @@ class Physics:
                bumper_friction=0.5, drag=0.0, rolling_static=None,
                noslip=0, fixed=False, torque_max=0.0, com_z=None,
                inertia=1.0, backlash=0.0, gear_k=2.0, scrape=0.0,
-               scrape_from=0.07):
+               scrape_from=0.07, walls=0.0):
     self.omega_max = float(wheel_omega)
     # Carpet pile brushing the front bumper (round 6, 2026-10-30: driving
     # forward on carpet the real robot went 537 mm/s at +4.6 deg where the
@@ -305,7 +319,8 @@ class Physics:
     self.model = mujoco.MjModel.from_xml_string(model_xml(
         bumper_back, bumper_front, timestep=timestep, armature=armature,
         friction=friction, rolling=rolling, contact_tc=contact_tc,
-        bumper_friction=bumper_friction, fixed=fixed, backlash=backlash))
+        bumper_friction=bumper_friction, fixed=fixed, backlash=backlash,
+        walls=walls))
     self.data = mujoco.MjData(self.model)
     joints = [self.model.joint(n).id for n in PHONE_WHEELS]
     self.dofs = [int(self.model.jnt_dofadr[j]) for j in joints]
@@ -474,7 +489,25 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_friction=1.0, sim_inertia=1.0, sim_backlash=0.0, sim_gear_k=2.0,
       sim_rand='', sim_rand_every=0.0, sim_tilt_lag=0.0, sim_scrape=0.0,
       sim_scrape_from=0.07, sim_enc_q=0.0, sim_slope=0.0, sim_slope_ramp=0.0,
-      seed=0, **kwargs):
+      sim_phone=False, sim_phone_dtype='int8', sim_phone_delay=3.0,
+      sim_push='', sim_walls=0.0, seed=0, **kwargs):
+    # sim_phone: the phone's own onboard loop picks the actions (sim_phone.py)
+    # from the learner's published weights, as on the robot.
+    self.sim_phone = bool(sim_phone)
+    self._phone_args = dict(config=kwargs.get('config'),
+                            shared=kwargs.get('policy_dir'),
+                            dtype=sim_phone_dtype, delay=float(sim_phone_delay))
+    self._phone = None
+    self._seed = seed
+    # sim_push 'every:lo:hi': a push on the body's top every ~`every` s (an
+    # exponential wait), forward or back at random, of lo..hi N for 0.1 s,
+    # as a hand's nudge. sim_walls: walls `sim_walls` m from the start.
+    parts = [float(x) for x in str(sim_push).split(':')] if sim_push else []
+    self.push_every, self.push_lo, self.push_hi = (parts + [0.0, 0.0, 0.0])[:3]
+    self._push_left = 0.0
+    self._push_force = 0.0
+    self._push_next = None
+    self.walls = float(sim_walls)
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'weights_dtype', 'weights_kbps', 'weight_streams', 'pace',
                 'config', 'policy_dir',
@@ -526,7 +559,8 @@ class RobotMujoco(robot_sim.RobotSim):
         slide=sim_slide, armature=float(sim_armature), unit=sim_speed_unit,
         friction=float(sim_friction), inertia=float(sim_inertia),
         backlash=float(sim_backlash), gear_k=float(sim_gear_k),
-        scrape=float(sim_scrape), scrape_from=float(sim_scrape_from), **floor)
+        scrape=float(sim_scrape), scrape_from=float(sim_scrape_from),
+        walls=self.walls, **floor)
     # sim_rand: draw body and gearbox parameters from ranges, anew every
     # sim_rand_every seconds of sim time (0: once per run), so a policy does
     # not learn one guess at them by heart: 'inertia:1:4,backlash:0:0.06'.
@@ -742,6 +776,70 @@ class RobotMujoco(robot_sim.RobotSim):
     self.kicked[wheel] = False
     return out
 
+  def _push(self, dt):
+    """A hand's nudge on the top of the body, now and then (sim_push)."""
+    if not self.push_every:
+      return
+    d, body = self.data, self._body
+    if self._push_next is None:
+      self._push_next = self._sim_time + self.sim_rng.exponential(self.push_every)
+    if self._push_left <= 0 and self._sim_time >= self._push_next:
+      self._push_left = 0.1
+      self._push_force = self.sim_rng.choice([-1.0, 1.0]) * self.sim_rng.uniform(
+          self.push_lo, self.push_hi)
+      self._push_next = self._sim_time + 0.1 + self.sim_rng.exponential(
+          self.push_every)
+    if self._push_left > 0:
+      self._push_left -= dt
+      # Along the body's forward axis (its y), at 10 cm above its CoM.
+      fwd = d.xmat[body].reshape(3, 3)[:, 1].copy()
+      fwd[2] = 0.0
+      fwd /= max(np.linalg.norm(fwd), 1e-6)
+      up = np.array([0.0, 0.0, 0.10])
+      force = self._push_force * fwd
+      d.xfrc_applied[body, :3] = force
+      d.xfrc_applied[body, 3:] = np.cross(up, force)
+    else:
+      d.xfrc_applied[body] = 0.0
+
+  def _phone_runs(self):
+    return self.sim_phone
+
+  def _obs(self, sensors, latency, reward, is_first=False, is_last=False,
+           is_terminal=False):
+    if self.sim_phone:
+      self._phone_decide(sensors, reward, is_first)
+    return super()._obs(sensors, latency, reward, is_first=is_first,
+                        is_last=is_last, is_terminal=is_terminal)
+
+  def _phone_decide(self, sensors, reward, is_first):
+    """The phone's action for these sensors, through the trainer's limits:
+    what the next step applies and what replay records with them."""
+    if self._phone is None:
+      from embodied.envs import sim_phone
+      a = self._phone_args
+      assert a['config'] is not None and a['shared'] is not None, (
+          'sim_phone needs the agent config and the shared policy dir')
+      self._phone = sim_phone.SimPhone(
+          a['config'], a['shared'], dtype=a['dtype'], delay=a['delay'],
+          affect=self.affect, event=self.emotion_event, seed=self._seed,
+          body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
+                    hi=self.bumper_hi, zone=self.pain_zone),
+          log=str(a['shared']) + '/../emotion.csv')
+    act = self._phone.decide(
+        sensors, reward, is_first,
+        self._cmd if self.task == 'command' else None)
+    self._phone.push = self._push_force if self._push_left > 0 else 0.0
+    self._chosen_act = tuple(act) if act is not None else None
+    final = self._limits(*(act if act is not None else (0.0, 0.0)))
+    self._phone.applied(final, self._total_steps)
+    self._phone_final = final
+
+  def close(self):
+    if self._phone is not None:
+      self._phone.close()
+    super().close()
+
   def _yaw(self):
     w, x, y, z = self.data.qpos[3:7]
     return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
@@ -767,6 +865,7 @@ class RobotMujoco(robot_sim.RobotSim):
       sent.append(out)
     if self._carry:
       self._hold(dt)
+    self._push(dt)
     if self.tilt_lag or 'tilt_lag' in self._rand:
       sub = dt / self.substeps
       for _ in range(self.substeps):

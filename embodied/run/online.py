@@ -327,6 +327,82 @@ class SharedPolicyWeights:
     return self.apply_to_agent(agent, pending)
 
 
+class ArousalBoost:
+  """The learner's side of an arousal event from the robot (online_arousal).
+
+  The phone (or the sim's phone, embodied/envs/sim_phone.py) writes
+  <shared>/emotion_event as {n, t, intensity} when its arousal crosses
+  env.robot.emotion_event. On each new one: the learning rate of every
+  optimizer group is multiplied by 1 + lr * intensity, decaying linearly to 1
+  over `updates` updates (Nassar et al. 2012: arousal at a surprise raises
+  how far new evidence moves beliefs); `burst` * intensity extra updates run
+  at once; with `publish`, the weights go to the phone right after them, so
+  the robot acts on what it learnt a few seconds after the moment. The scale
+  lives in the agent's params (MultiOptimizer lr_scale), set between steps:
+  it multiplies the update after the optimizer's RMS normalisation, which a
+  weight on the loss would not survive."""
+
+  POLL = 0.25
+
+  def __init__(self, shared, lr=0.0, updates=300, burst=0, publish=False):
+    self.path = os.path.join(str(shared), 'emotion_event')
+    self.lr, self.updates = float(lr), max(int(updates), 1)
+    self.burst, self.publish = int(burst), bool(publish)
+    self.seen = None
+    self.polled = 0.0
+    self.left = 0
+    self.intensity = 0.0
+    self.events = 0
+    self.current = 1.0
+
+  @property
+  def on(self):
+    return self.lr > 0
+
+  def poll(self):
+    """New event's intensity (0-1), or None."""
+    if not self.on or time.time() - self.polled < self.POLL:
+      return None
+    self.polled = time.time()
+    try:
+      with open(self.path) as f:
+        event = json.load(f)
+    except (OSError, ValueError):
+      return None
+    if self.seen is None:
+      self.seen = event.get('n')   # one from before a restart: not new
+      return None
+    if event.get('n') == self.seen:
+      return None
+    self.seen = event.get('n')
+    self.events += 1
+    self.intensity = min(1.0, max(0.0, float(event.get('intensity', 1.0))))
+    self.left = self.updates
+    return self.intensity
+
+  def scale(self):
+    if not self.left:
+      return 1.0
+    return 1.0 + self.lr * self.intensity * self.left / self.updates
+
+  def apply(self, agent):
+    """Set the scale for the next update; counts the update down."""
+    if not self.on:
+      return
+    value = self.scale()
+    if self.left:
+      self.left -= 1
+    if abs(value - self.current) < 1e-3:
+      return
+    import jax
+    for key in agent.params:
+      if '/lr_scale_' in '/' + key:   # e.g. opt/lr_scale_model/value
+        old = agent.params[key]
+        agent.params[key] = jax.device_put(
+            np.asarray(value, np.float32), old.sharding)
+    self.current = value
+
+
 def _shared_paths(logdir):
   paths = OnlineSharedPaths(str(elements.Path(logdir) / 'online_shared'))
   paths.experience.mkdir(parents=True, exist_ok=True)
@@ -633,6 +709,9 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   should_sync_replay = embodied.LocalClock(args.online_replay_sync_interval)
   carry_train = agent.init_train(args.batch_size)
   last_actor_step = -1
+  boost = ArousalBoost(
+      os.path.dirname(str(paths.pause)),
+      **dict(getattr(args, 'online_arousal', None) or {}))
 
   def write_logs():
     logger.add(train_agg.result())
@@ -722,12 +801,22 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
     # costs no training throughput (the debt is still owed and still worked
     # off, just in slices) and puts a floor under the weight-refresh cadence.
     repeats = min(repeats, args.online_max_train_repeats)
-    for _ in range(repeats):
+    burst = 0
+    hit = boost.poll()
+    if hit is not None:
+      burst = int(round(boost.burst * hit))
+      _log_learner(logdir, f'arousal event {boost.events} intensity '
+                   f'{hit:.2f} step={int(step)} burst={burst}')
+    for _ in range(repeats + burst):
       if _actor_finished(paths, args, coordination):
         break
       with elements.timer.section('stream_next'):
         batch = next(stream_train)
+      boost.apply(agent)
       carry_train, outs, mets = agent.train(carry_train, batch)
+      if boost.on:
+        mets = dict(mets, arousal_lr=np.float32(boost.current),
+                    arousal_events=np.float32(boost.events))
       train_fps.step(batch_steps)
       step.increment(batch_steps)
       if not trained:
@@ -752,6 +841,9 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
           carry_report, mets = agent.report(carry_report, next(stream_report))
           agg.add(mets)
         logger.add(agg.result(), prefix='report')
+    if hit is not None and boost.publish:
+      with elements.timer.section('publish'):
+        shared_policy.publish(agent, background=True)
     if should_sync_policy(step):
       with elements.timer.section('publish'):
         shared_policy.publish(agent, background=True)

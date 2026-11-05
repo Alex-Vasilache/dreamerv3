@@ -185,7 +185,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     self.goal_shape = (self.config.dyn.rssm.deter,)
 
     # Encoder/decoder omit control/meta keys; dynamics still sees actions separately.
-    exclude = ('is_first', 'is_last', 'is_terminal', 'reward')
+    exclude = ('is_first', 'is_last', 'is_terminal', 'reward', 'cost')
     enc_space = {k: v for k, v in obs_space.items() if k not in exclude}
     dec_space = {k: v for k, v in obs_space.items() if k not in exclude}
     self.enc = {
@@ -251,6 +251,23 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # Reward and continue predictors on RSSM features (Gaussian / Bernoulli heads).
     self.rew = embodied.jax.MLPHead(scalar, **config.rewhead, name='rew')
     self.con = embodied.jax.MLPHead(binary, **config.conhead, name='con')
+    # Fear (flat actor only; docs/robot/EMOTION_LITERATURE.md section 8): a
+    # cost the env reports beside the reward ('cost', the body's pain), its
+    # own predictor and its own critic over imagined rollouts. The actor
+    # maximises the reward's advantage and minimises fear's, weighted by
+    # fear.weight; the cost never enters the reward or its critic, so the
+    # reward cannot buy pain.
+    fear = getattr(config, 'fear', None) or {}
+    self.fear = float(fear.get('weight', 0.0)) if 'cost' in obs_space else 0.0
+    if self.fear:
+      self.cst = embodied.jax.MLPHead(scalar, **config.rewhead, name='cst')
+      self.cval = embodied.jax.MLPHead(scalar, **config.value, name='cval')
+      self.slowcval = embodied.jax.SlowModel(
+          embodied.jax.MLPHead(scalar, **config.value, name='slowcval'),
+          source=self.cval, **config.slowvalue)
+      self.cretnorm = embodied.jax.Normalize(**config.retnorm, name='cretnorm')
+      self.cvalnorm = embodied.jax.Normalize(**config.valnorm, name='cvalnorm')
+      self.cadvnorm = embodied.jax.Normalize(**config.advnorm, name='cadvnorm')
 
     d1, d2 = config.policy_dist_disc, config.policy_dist_cont
     policy_outs = {k: d1 if v.discrete else d2 for k, v in act_space.items()}
@@ -626,6 +643,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       }
     else:
       ac_modules = [self.pol, self.val]
+      if self.fear:
+        model_modules = model_modules + [self.cst]
+        ac_modules = ac_modules + [self.cval]
       groups = {
           'model': (model_modules, self._make_opt(**config.opt)),
           'ac': (ac_modules, self._make_opt(**config.ac_opt)),
@@ -645,7 +665,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         if at > 0:
           freeze[fname] = (mods, at)
     self.opt = embodied.jax.MultiOptimizer(
-        groups, freeze=freeze, summary_depth=1, name='opt')
+        groups, freeze=freeze, summary_depth=1, name='opt',
+        lr_scale=bool(getattr(config, 'lr_scale_var', False)))
 
     # One ``rec`` scale is expanded to every reconstruction key in ``dec_space``.
     scales = self.config.loss_scales.copy()
@@ -700,6 +721,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       scales.pop('goal_soft_reuse', None)
       if not self.config.repval_loss:
         scales.pop('repval', None)
+      if self.fear:
+        scales['cost'] = scales['rew']
+        scales['fear_policy'] = self.fear
+        scales['fear_value'] = scales['value']
     self.scales = scales
 
   @property
@@ -985,6 +1010,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.wkr_goal_slowval.update()
     else:
       self.slowval.update()
+      if self.fear:
+        self.slowcval.update()
     outs = {}
     if self.config.replay_context:
       updates = elements.tree.flatdict(dict(
@@ -1048,6 +1075,25 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         **imag_kw)
     losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_flat.items()})
     metrics.update(mets)
+    if self.fear:
+      # Fear: the same rollouts scored by minus the predicted cost, with
+      # their own critic and return normalisation; no second entropy bonus.
+      los_c, _, mets_c = imag_loss(
+          imgact,
+          -self.cst(inp, 2).pred(),
+          self.con(inp, 2).prob(1),
+          self.pol(inp, 2),
+          self.cval(inp, 2),
+          self.slowcval(inp, 2),
+          self.cretnorm, self.cvalnorm, self.cadvnorm,
+          update=training,
+          contdisc=self.config.contdisc,
+          horizon=self.config.horizon,
+          lam=imag_kw.get('lam', 0.95), slowreg=imag_kw.get('slowreg', 1.0),
+          actent=0.0)
+      for k in ('policy', 'value'):
+        losses[f'fear_{k}'] = los_c[k].mean(1).reshape((B, K_imag))
+      metrics.update({f'fear/{k}': v for k, v in mets_c.items()})
     arousal = self.config.get('arousal_imag', {}) or {}
     if float(arousal.get('weight', 0.0)):
       # Arousal-tagged imagination (docs/robot/EMOTION.md): weight each
@@ -1442,6 +1488,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # Optional stop-gradient on features feeding reward head (stabilize WM vs AC).
     inp = sg(self.feat2tensor(repfeat), skip=self.config.reward_grad)
     losses['rew'] = self.rew(inp, 2).loss(obs['reward'])
+    if self.fear:
+      losses['cost'] = self.cst(inp, 2).loss(f32(obs['cost']))
     # Continue target: 1 until terminal; optional finite-horizon downweighting.
     con = f32(~obs['is_terminal'])
     if self.config.contdisc:
