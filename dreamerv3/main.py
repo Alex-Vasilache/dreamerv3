@@ -165,6 +165,7 @@ def main(argv=None):
       online_ratio_switch=config.online_ratio_switch,
       online_ratio_late=config.online_ratio_late,
       online_wm_ratio=config.online_wm_ratio,
+      online_learner_fps=config.online_learner_fps,
       online_sp=config.online_sp,
       online_arousal=config.online_arousal,
   )

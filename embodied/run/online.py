@@ -730,6 +730,10 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   sp_every = int(sp.get('every', 0) or 0)
   sp_next = int(sp.get('start', 0) or sp_every) if sp_every else 0
   sp_count = 0
+  fps_cap = float(getattr(args, 'online_learner_fps', 0) or 0)
+  fps_t0, fps_n = None, 0
+  sp_stats = agent.init_stats(sp['regex']) if sp_every else None
+  sp_rng = np.random.default_rng(int(getattr(agent.config, 'seed', 0)) + 7919)
 
   def set_wm_scale(value):
     import jax
@@ -859,13 +863,24 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
         if want:
           wm_budget -= 1
           wm_done += 1
+      if fps_cap:
+        # Emulate a slower GPU: hold the long-run sample rate at fps_cap.
+        now = time.time()
+        if fps_t0 is None:
+          fps_t0 = now
+        wait = fps_t0 + fps_n * batch_steps / fps_cap - now
+        if wait > 0:
+          time.sleep(wait)
+        elif wait < -2.0:
+          fps_t0, fps_n = now, 0   # no catching up after a stall
+        fps_n += 1
       carry_train, outs, mets = agent.train(carry_train, batch)
       updates += 1
       if wm_should is not None:
         mets = dict(mets, wm_update_frac=np.float32(wm_done / updates))
       if sp_every and updates >= sp_next:
         sp_count += 1
-        keys = agent.shrink_params(sp['regex'], float(sp['alpha']), salt=sp_count)
+        keys = agent.shrink_params(sp_stats, float(sp['alpha']), sp_rng)
         sp_next += sp_every
         _log_learner(logdir, f'shrink-perturb {sp_count} alpha={sp["alpha"]} '
                      f'params={len(keys)} updates={updates} actor_step={actor_step}')

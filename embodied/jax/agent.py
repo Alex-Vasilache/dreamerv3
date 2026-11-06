@@ -377,36 +377,41 @@ class Agent(embodied.Agent):
             policy_params, self.policy_params_sharding)
     return keys
 
-  def shrink_params(self, regex, alpha, salt=1):
-    """Shrink and perturb (Ash & Adams 2020; D'Oro et al. 2023): move every
-    parameter whose name matches ``regex`` a fraction ``alpha`` of the way
-    to a fresh initialisation drawn with ``salt`` (alpha 1 = full reset).
-    Optimizer state is kept."""
+  def init_stats(self, regex):
+    """Mean and std of each float parameter matching ``regex``, taken at the
+    start of training as the scale of a fresh draw for shrink_params."""
     pattern = re.compile(regex)
-    keys = sorted(k for k in self.params if pattern.search(k))
-    assert keys, f'shrink regex {regex!r} matches no parameter'
+    stats = {}
+    for k, v in self.params.items():
+      if pattern.search(k) and jnp.issubdtype(v.dtype, jnp.floating):
+        x = np.asarray(jax.device_get(v), np.float32)
+        stats[k] = (float(x.mean()), float(x.std()))
+    assert stats, f'shrink regex {regex!r} matches no parameter'
+    return stats
+
+  def shrink_params(self, stats, alpha, rng):
+    """Shrink and perturb (Ash & Adams 2020; D'Oro et al. 2023): move each
+    parameter in ``stats`` a fraction ``alpha`` of the way to a fresh draw,
+    mean + std x N(0, 1) with its initial statistics, so kernels get new
+    random weights at their init scale and constant-initialised norms,
+    biases and zero-init heads go back to their init value. Optimizer
+    state is kept."""
     with contextlib.ExitStack() as stack:
       stack.enter_context(self.train_lock)
       stack.enter_context(self.policy_lock)
-      fresh, _ = self._init_params(salt)
-      for k in keys:
+      for k, (mean, std) in stats.items():
         old = self.params[k]
-        new = fresh.pop(k)
-        if not jnp.issubdtype(old.dtype, jnp.floating):
-          new.delete()   # counters and the like stay as they are
-          continue
-        mixed = (1 - alpha) * old + alpha * new.astype(old.dtype)
+        fresh = mean + std * rng.standard_normal(old.shape).astype(np.float32)
+        mixed = (1 - alpha) * old + alpha * jnp.asarray(fresh, old.dtype)
         self.params[k] = jax.device_put(mixed, old.sharding)
-        new.delete()
         old.delete()
-      jax.tree.map(lambda x: x.delete(), list(fresh.values()))
       if self.jaxcfg.enable_policy:
         jax.tree.map(lambda x: x.delete(), self.policy_params)
         policy_params = {
             k: self.params[k].copy() for k in self.policy_keys}
         self.policy_params = internal.move(
             policy_params, self.policy_params_sharding)
-    return keys
+    return list(stats)
 
   @elements.timer.section('jaxagent_load')
   def load(self, data, regex=None):

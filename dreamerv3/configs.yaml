@@ -40,6 +40,10 @@ defaults:
   # replayed steps per robot step (model group lr x 0 on the other updates),
   # while the actor-critic takes every update the GPU can do. 0: off.
   online_wm_ratio: 0
+  # Cap the learner's speed at this many replayed samples per second (sleeps
+  # between updates), to emulate a slower GPU: unlike run.train_ratio it
+  # keeps training while the robot is paused or driving home. 0: off.
+  online_learner_fps: 0
   # Periodic shrink and perturb: every `every` updates (from `start`), the
   # parameters matching `regex` move `alpha` of the way to a fresh init
   # (embodied/jax/agent.py shrink_params). every 0: off.
