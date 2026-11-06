@@ -303,15 +303,16 @@ class SharedPolicyWeights:
     Pure I/O, so the actor can run this on a worker thread while the policy
     keeps stepping the robot. Returns what apply_to_agent expects.
     """
-    if not self.latest.exists():
+    # Missing for a moment while the learner replaces it (BeeGFS), or pruned
+    # since: the next call picks up the newest one.
+    try:
+      stamp = self.latest.read_text().strip()
+      if not stamp or stamp == self._stamp:
+        return None
+      blob = (self.directory / f'policy_{stamp}.pkl').read_bytes()
+    except FileNotFoundError:
       return None
-    stamp = self.latest.read_text().strip()
-    if stamp == self._stamp:
-      return None
-    path = self.directory / f'policy_{stamp}.pkl'
-    if not path.exists():
-      return None
-    return stamp, _compat_loads(path.read_bytes())
+    return stamp, _compat_loads(blob)
 
   def apply_to_agent(self, agent, pending):
     """Install fetched weights. Touches the agent, so keep it on one thread."""
@@ -503,9 +504,19 @@ def _write_actor_step(path, step):
 
 
 def _read_actor_step(path):
-  if not path.exists():
-    return 0
-  return int(path.read_text().strip())
+  # On BeeGFS (IAS cluster) a reader can find the file missing, or empty,
+  # for a moment while _atomic_write replaces it; that crashed e40001's
+  # learner. Retry briefly, then treat it as not written yet.
+  for _ in range(5):
+    try:
+      return int(path.read_text().strip())
+    except FileNotFoundError:
+      if not path.parent.exists():
+        return 0
+    except ValueError:
+      pass
+    time.sleep(0.01)
+  return 0
 
 
 def _actor_finished(paths, args, coordination):
