@@ -39,3 +39,30 @@ Each stage is analysed before the next is designed; the stage log below
 records what was found and why the next one looks as it does.
 
 ## Log
+
+### Fri 11-06 ~19:30: IA1 in, W1 and K1 launched
+
+IA1 (e41001-e41048, n = 4, no ratio schedule): crossings a minute after
+minute 15, by learner speed (samples/s).
+
+| arm | P100 17.5k | V100 26k | A5000 uncapped |
+|---|---|---|---|
+| C control | 16.9 ± 3.1 | 22.4 ± 5.6 | 26.4 ± 9.3 |
+| W world model capped at ratio 128 | 16.9 ± 4.5 | 16.5 ± 5.3 | 31.2 ± 15.5 |
+| S actor-critic shrink-perturb 0.5 / 4000 updates | 9.3 ± 3.4 | 21.6 ± 5.3 | 22.9 ± 5.3 |
+| L actor-critic L2-to-init wd 0.1 | 10.2 ± 0.2 | 21.4 ± 8.0 | 24.8 ± 8.2 |
+
+First minute upright ≥ 0.9: C 4.2 / 3.2 / 3.0, so the faster learner does
+learn a little faster; W slows learning 3-8x; S and L lose the fast start on
+the A5000 (10.0 and 8.5, seeds stuck). The actor-critic regularisers halve
+the drift only at P100 speed, so the drift is not fixed by resetting or
+anchoring the actor-critic: it follows the number of updates per sample.
+Decision: keep the ratio schedule (uncapped for 5 min, then 128 — the late
+phase is then the same on every GPU), and spend W1 on making the first five
+minutes faster. IA2 (world-model regularisers, critic feature norm) still runs.
+
+W1 (e42033-e42160): live recipe e40006 + ratio schedule, one factor at a time,
+4 seeds, on Saion P100s (e42033-e42096) and IAS A5000/3090s (e42097-e42160).
+Arms: base, batch 16 / 64, batch length 32, both lrs x2, actor-critic lr x2,
+small / big model, horizon 1 s / 3 s, entropy 1e-3, fear critic, stronger
+smoothing, stronger stillness penalties, switch at 3 min, schedule + L2-to-init.

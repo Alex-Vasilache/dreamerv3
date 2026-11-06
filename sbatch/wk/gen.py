@@ -35,7 +35,9 @@ SEEDS8 = SEEDS4 + [815, 816, 817, 818]
 # Round W1 (balance, speed-up screen): one factor at a time against the base,
 # at the slowest (P100, uncapped ~280) and fastest (IAS A5000/3090, ~570)
 # learner. The base's drift control is filled in from rounds IA1/IA2.
-W1_BASE = None  # set by round(): IA1/IA2 winner flags
+# IA1 (11-06): actor-critic shrink-perturb / L2-to-init did not stop the drift
+# at V100/A5000 learner speeds, so the base keeps the live ratio schedule.
+W1_BASE = SCHED
 W1_ARMS = [
     ('base', ''),
     ('b16', '--batch_size 16'),
@@ -51,6 +53,8 @@ W1_ARMS = [
     ('fear', '--env.robot.cost_obs True --agent.fear.weight 1.0'),
     ('smooth', '--env.robot.action_rate_quad 0.5'),
     ('still', '--env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 2.0'),
+    ('sw3', '--online_ratio_switch 11700'),
+    ('acwd', '--agent.ac_opt.wd 0.1 --agent.ac_opt.wdinit True'),
 ]
 
 
@@ -87,7 +91,7 @@ def main():
       for arm, flags in K1_ARMS:
         lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', 'v100', flags, seed)); n += 1
   elif rnd.startswith('w1'):
-    base = sys.argv[4] if len(sys.argv) > 4 else ''
+    base = W1_BASE
     gpu = {'w1p': 'p100', 'w1i': 'any'}[rnd]
     for seed in SEEDS4:
       for arm, flags in W1_ARMS:

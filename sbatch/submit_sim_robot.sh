@@ -36,7 +36,7 @@ while read -r exp arm task hz gpu extra; do
   esac
   configs="$configs robot_sim"
   case $gpu in
-    v100) gflags="-p gpu-v100 --gres=gpu:v100:1 --exclude=saion-gpu20" ;;
+    v100) gflags="-p gpu-v100 --gres=gpu:v100:1 ${V100_EXCLUDE---exclude=saion-gpu20}" ;;
     p100) gflags="-p gpu-p100 --gres=gpu:p100:1 --exclude=saion-gpu[01,02,04,06,07-10]" ;;
     a100) gflags="-p gpu-a100 --gres=gpu:a100:1" ;;
     a100s) gflags="-p short-a100 --gres=gpu:a100:1" ;;
