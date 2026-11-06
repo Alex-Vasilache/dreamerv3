@@ -644,6 +644,14 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0193-h0222: TCE-KL c=10 on the 4x12 hash (2026-11-06, array 4800784)
+
+`... fromto_dir tce_kl4 tce_kl_c10 pubmatch`, 6 tasks x 5 seeds, %4
+(`sbatch/pubtcekl4c10_params.txt`). Why: the 1x16 vs 4x12 question was deferred until the TCE-KL
+strength was right; c=10 is it (c=1 off, c=30 over-pushes). Compare with h0133-h0162 (same, 1x16).
+Expect: same pin pad behaviour as 1x16 c=10; if 4x12 averages the bonus over 4 tables, the gap
+may be smaller early. Plan and decision rules: `docs/PLAN_TCE_THEN_VARLEN_2026-11.md`.
+
 ### h0133-h0162 / h0163-h0192: TCE-KL with a fixed multiplier c = 10 / 30 (2026-11-06, arrays 4799105 / 4799106)
 
 `... fromto_dir tce_kl {tce_kl_c10 | tce_kl_c30} pubmatch`, 1x16 hash, 6 tasks x 5 seeds, `%4` each.
@@ -663,6 +671,11 @@ The 1x16 vs 4x12 question is deferred until the strength is right.
 reward 0.03 / 0.07 / 0.53M; gap rose from -0.2 to ~0 / +0.2 once alpha' reached 0.1-0.3.
 Reference c=1 seed 0: pin pad five 280 (first reward 0.9M), pin pad six 0 over 4M; cartpole
 682 (c=1) vs 724 at 3M (c=10). c=30 seed 0: pin pad five first reward 0.11M, alpha' ~0.7-1.9.
+
+**c=30 cancelled 2026-11-06 19:10 (all of 4799106):** over-pushes. Seed 0: gap +0.35 / +0.6 for the
+whole run, pin pad six 0 at 4M (c=10: 208), pin pad four 248 (c=10: 307), and the lowest DMC scores
+at matched steps (cheetah 375, hopper 73 at 1.4M). h0163-h0168 finished or stopped; h0169
+(pin pad four seed 1) stopped at 2.1M; h0170-h0192 never ran. c=10 continues.
 
 ### h0073-h0102 / h0103-h0132: TCE-KL, log-count bonus inside the entropy term (2026-11-05, arrays 4798833 / 4798834)
 
