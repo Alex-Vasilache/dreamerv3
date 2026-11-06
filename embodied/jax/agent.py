@@ -377,6 +377,37 @@ class Agent(embodied.Agent):
             policy_params, self.policy_params_sharding)
     return keys
 
+  def shrink_params(self, regex, alpha, salt=1):
+    """Shrink and perturb (Ash & Adams 2020; D'Oro et al. 2023): move every
+    parameter whose name matches ``regex`` a fraction ``alpha`` of the way
+    to a fresh initialisation drawn with ``salt`` (alpha 1 = full reset).
+    Optimizer state is kept."""
+    pattern = re.compile(regex)
+    keys = sorted(k for k in self.params if pattern.search(k))
+    assert keys, f'shrink regex {regex!r} matches no parameter'
+    with contextlib.ExitStack() as stack:
+      stack.enter_context(self.train_lock)
+      stack.enter_context(self.policy_lock)
+      fresh, _ = self._init_params(salt)
+      for k in keys:
+        old = self.params[k]
+        new = fresh.pop(k)
+        if not jnp.issubdtype(old.dtype, jnp.floating):
+          new.delete()   # counters and the like stay as they are
+          continue
+        mixed = (1 - alpha) * old + alpha * new.astype(old.dtype)
+        self.params[k] = jax.device_put(mixed, old.sharding)
+        new.delete()
+        old.delete()
+      jax.tree.map(lambda x: x.delete(), list(fresh.values()))
+      if self.jaxcfg.enable_policy:
+        jax.tree.map(lambda x: x.delete(), self.policy_params)
+        policy_params = {
+            k: self.params[k].copy() for k in self.policy_keys}
+        self.policy_params = internal.move(
+            policy_params, self.policy_params_sharding)
+    return keys
+
   @elements.timer.section('jaxagent_load')
   def load(self, data, regex=None):
     params = data['params']
@@ -436,7 +467,7 @@ class Agent(embodied.Agent):
     seeds = rng.integers(0, np.iinfo(np.uint32).max, (2,), np.uint32)
     return internal.device_put(seeds, sharding)
 
-  def _init_params(self):
+  def _init_params(self, salt=0):
     B = min(self.config.batch_size, len(self.jaxcfg.train_devices))
     GB = B * jax.process_count()
     T = self.config.batch_length
@@ -445,7 +476,8 @@ class Agent(embodied.Agent):
     us = self.jaxcfg.use_shardmap
 
     with jax._src.config.explicit_device_get_scope():
-      seed = jax.device_put(np.array([self.config.seed, 0], np.uint32), tm)
+      seed = jax.device_put(
+          np.array([self.config.seed, salt], np.uint32), tm)
     data = internal.device_put(self._zeros(self.spaces, (B, T + C)), ts)
     pr, ar = self.partition_rules
 

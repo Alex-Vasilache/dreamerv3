@@ -36,6 +36,14 @@ defaults:
   # after it balances; 128 holds best late but learns ~4 min slower.
   online_ratio_switch: 0
   online_ratio_late: 0
+  # Decoupled ratios: the world model trains at most `online_wm_ratio`
+  # replayed steps per robot step (model group lr x 0 on the other updates),
+  # while the actor-critic takes every update the GPU can do. 0: off.
+  online_wm_ratio: 0
+  # Periodic shrink and perturb: every `every` updates (from `start`), the
+  # parameters matching `regex` move `alpha` of the way to a fresh init
+  # (embodied/jax/agent.py shrink_params). every 0: off.
+  online_sp: {every: 0, start: 0, regex: '^(pol|val|slowval)/', alpha: 0.5}
   # Arousal events from the robot (env.robot.emotion_event; the phone's or the
   # sim phone's) change the weights at once (run/online.py ArousalBoost):
   # the learning rate of every optimizer group is multiplied by 1 + lr x

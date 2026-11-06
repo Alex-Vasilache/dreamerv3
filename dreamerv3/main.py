@@ -164,6 +164,8 @@ def main(argv=None):
       online_max_train_repeats=config.online_max_train_repeats,
       online_ratio_switch=config.online_ratio_switch,
       online_ratio_late=config.online_ratio_late,
+      online_wm_ratio=config.online_wm_ratio,
+      online_sp=config.online_sp,
       online_arousal=config.online_arousal,
   )
 
@@ -294,7 +296,8 @@ def make_agent(config):
       replica=config.replica,
       replicas=config.replicas,
       # A learning-rate multiplier the learner can set (online_arousal).
-      lr_scale_var=bool(config.online_arousal.lr),
+      lr_scale_var=bool(config.online_arousal.lr) or bool(
+          getattr(config, 'online_wm_ratio', 0)),
   ))
 
 

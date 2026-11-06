@@ -723,6 +723,21 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   ratio_switch = int(getattr(args, 'online_ratio_switch', 0) or 0)
   ratio_late = float(getattr(args, 'online_ratio_late', 0) or 0)
   ratio_switched = not (ratio_switch > 0 and ratio_late > 0)
+  wm_ratio = float(getattr(args, 'online_wm_ratio', 0) or 0)
+  wm_should = elements.when.Ratio(wm_ratio / batch_steps) if wm_ratio else None
+  wm_budget, wm_scale, wm_done, updates = 0, None, 0, 0
+  sp = dict(getattr(args, 'online_sp', None) or {})
+  sp_every = int(sp.get('every', 0) or 0)
+  sp_next = int(sp.get('start', 0) or sp_every) if sp_every else 0
+  sp_count = 0
+
+  def set_wm_scale(value):
+    import jax
+    for key in agent.params:
+      if 'lr_scale_model' in key:
+        old = agent.params[key]
+        agent.params[key] = jax.device_put(
+            np.asarray(value, np.float32), old.sharding)
   boost = ArousalBoost(
       os.path.dirname(str(paths.pause)),
       **dict(getattr(args, 'online_arousal', None) or {}))
@@ -804,6 +819,8 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       ratio_switched = True
       _log_learner(logdir, f'train ratio -> {ratio_late:g} step={int(step)} actor_step={actor_step}')
     repeats = should_train(actor_step)
+    if wm_should is not None:
+      wm_budget += wm_should(actor_step)
     if paused:
       # The ratio's debt is dropped, not saved up: the steps the robot takes
       # meanwhile are in replay, but the learner resumes at train_ratio from
@@ -834,7 +851,24 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       with elements.timer.section('stream_next'):
         batch = next(stream_train)
       boost.apply(agent)
+      if wm_should is not None:
+        want = 1.0 if wm_budget > 0 else 0.0
+        if want != wm_scale:
+          set_wm_scale(want)
+          wm_scale = want
+        if want:
+          wm_budget -= 1
+          wm_done += 1
       carry_train, outs, mets = agent.train(carry_train, batch)
+      updates += 1
+      if wm_should is not None:
+        mets = dict(mets, wm_update_frac=np.float32(wm_done / updates))
+      if sp_every and updates >= sp_next:
+        sp_count += 1
+        keys = agent.shrink_params(sp['regex'], float(sp['alpha']), salt=sp_count)
+        sp_next += sp_every
+        _log_learner(logdir, f'shrink-perturb {sp_count} alpha={sp["alpha"]} '
+                     f'params={len(keys)} updates={updates} actor_step={actor_step}')
       if boost.on:
         mets = dict(mets, arousal_lr=np.float32(boost.current),
                     arousal_events=np.float32(boost.events))

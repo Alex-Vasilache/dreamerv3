@@ -3,9 +3,9 @@
 #SBATCH -p gpu-v100
 #SBATCH -t 0-2:00:00
 #SBATCH -N 1
-#SBATCH -c 8
+#SBATCH -c 3
 #SBATCH --gres=gpu:v100:1
-#SBATCH --mem=48G
+#SBATCH --mem=8G
 #SBATCH -o /work/DoyaU/vasilache/work/slurm_logs/%x-%j.out
 #SBATCH -e /work/DoyaU/vasilache/work/slurm_logs/%x-%j.err
 
