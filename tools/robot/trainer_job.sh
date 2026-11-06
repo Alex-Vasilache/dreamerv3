@@ -2,9 +2,12 @@
 #SBATCH -J robot
 #SBATCH -t 0-8:00:00
 #SBATCH -N 1
-#SBATCH -c 8
-#SBATCH --mem=64G
+#SBATCH -c 4
+#SBATCH --mem=16G
 
+# Sized from use: the learner runs on ~1-1.5 cores and ~4.4 GB, with the
+# demo's standby session (e40006 on IAS, 2026-11-06); ask no more.
+#
 # The learner for a robot run. tools/robot/train.sh starts it, either with
 # sbatch on a cluster (partition, GPU and log paths come from its command
 # line) or as a plain background process on this computer. Not usually run
