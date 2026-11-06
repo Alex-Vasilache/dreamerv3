@@ -162,3 +162,14 @@ W2 (e42361-e42440 Saion P100, e42441-e42520 IAS; n = 8, seeds 811-818): CR2's
 recipe ("old") against the live settings, each live setting on the old recipe
 alone (home drive 1.0/1.2 s/10 s cap, publish every sync, policy age 1.3 s), live
 without the schedule, and the reward gate (+ batch 16) on both.
+
+W2 fix: `online_ratio_switch_reward` defaulted to the int -100, so 0.4 was
+rejected and the gated arms of the first seed crashed at start (e42367-e42370,
+IAS e42447-e42450). Default now -100.0 (snapshots patched, queued runs fine);
+the eight reran as e42521-e42524 (P100) and e42525-e42528 (IAS), in arm order
+old_gate, live_gate, old_gate_b16, live_gate_b16, seed 811.
+
+Bumper trap found: a stuck seed rests on the front bumper at 8.1° tilt, just
+under the penalty zone (bumper_hi 9.2° − margin 1.0° = 8.2°), so lying there
+pays +0.08 a step instead of −1. With the balance point randomised by ±1° some
+seeds land in this hole. Next balance round: `bumper_margin` 0.035 (2°).

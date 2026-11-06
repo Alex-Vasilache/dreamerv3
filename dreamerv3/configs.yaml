@@ -40,7 +40,7 @@ defaults:
   # last minute (3900 steps) reaches this value; balance: 0.4 ~ upright 0.9,
   # stuck on a bumper ~0.08. A seed that has not learnt yet keeps the fast
   # learner, whatever the GPU. -100: no gate.
-  online_ratio_switch_reward: -100
+  online_ratio_switch_reward: -100.0
   # Decoupled ratios: the world model trains at most `online_wm_ratio`
   # replayed steps per robot step (model group lr x 0 on the other updates),
   # while the actor-critic takes every update the GPU can do. 0: off.
