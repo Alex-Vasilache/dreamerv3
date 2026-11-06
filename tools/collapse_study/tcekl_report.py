@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from compare_late import runs, scores, OUT, TASKS  # noqa: E402
+from compare_late import runs, scores, binned, OUT, TASKS  # noqa: E402
 from figs import figdir  # noqa: E402
 
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir'
@@ -82,6 +82,15 @@ for t, title, _ in TASKS:
         ax1[1, j].plot(x, smooth(m[:, 1]), **kw)
         ax2[0, j].plot(x, smooth(m[:, 2]), label=f'{arm} seed {seed}', **kw)
         ax2[1, j].plot(x, smooth(m[:, 3]), **kw)
+REFS = [('Director (OG), mean of 5', '#E69F00', ':', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('V + US-SOM (no TCE), mean of 5', '#000000', (0, (1, 1)),
+         'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*')]
+for j, (pt, _) in enumerate(PLOT):
+  for lab, col, ls, pat in REFS:
+    st = [binned(scores(d)) for d in runs(pat.format(t=pt))]
+    if st:
+      with np.errstate(all='ignore'):
+        ax1[0, j].plot((np.arange(0, 4e6, 1e5) + 5e4) / 1e6, np.nanmean(np.stack(st), 0), color=col, ls=ls, lw=2.0, label=lab)
 for fig, axes, ylab, name in ((f1, ax1, ('episode score', 'gap (policy - uniform bonus)'), 'tcekl_mech_score_gap'),
                               (f2, ax2, ("TCE weight alpha'", 'manager entropy scale alpha'), 'tcekl_mech_weight_ent')):
   for j, (_, title) in enumerate(PLOT):
@@ -98,7 +107,7 @@ for fig, axes, ylab, name in ((f1, ax1, ('episode score', 'gap (policy - uniform
   else:
     for a in axes.flat:
       a.set_yscale('log')
-  axes[0, 2].legend(fontsize=12, frameon=False, ncol=2)
+  axes[0, 2].legend(fontsize=11, frameon=False, ncol=2) if name.endswith('gap') else axes[0, 2].legend(fontsize=12, frameon=False, ncol=2)
   fig.suptitle('TCE-KL per seed (smoothed over 9 log points)', fontsize=17)
   fig.tight_layout()
   for ext in ('png', 'pdf'):
