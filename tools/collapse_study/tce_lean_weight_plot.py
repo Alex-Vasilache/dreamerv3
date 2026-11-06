@@ -9,6 +9,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import runs, OUT  # noqa: E402
+from figs import figdir  # noqa: E402
 
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir'
 ARMS = [
@@ -61,5 +62,5 @@ h, l = axes[0, 1].get_legend_handles_labels()
 fig.legend(h, l, loc='lower center', ncol=3, fontsize=13, frameon=False)
 fig.text(0.5, 0.115, 'median over seeds; lean > 1 = manager prefers rarely tried start->goal cells', ha='center', fontsize=13)
 fig.tight_layout(rect=(0, 0.14, 1, 1))
-fig.savefig(f'{OUT}/tce_lean_weight.png', dpi=200, facecolor='white'); fig.savefig(f'{OUT}/tce_lean_weight.pdf')
-print(f'{OUT}/tce_lean_weight.png')
+fig.savefig(f'{figdir("tce_lean_weight")}/tce_lean_weight.png', dpi=200, facecolor='white'); fig.savefig(f'{figdir("tce_lean_weight")}/tce_lean_weight.pdf')
+print(f'{figdir("tce_lean_weight")}/tce_lean_weight.png')

@@ -9,6 +9,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import TASKS, runs, OUT  # noqa: E402
+from figs import figdir  # noqa: E402
 
 PAT = 'e62[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-pubmatch_s*'
 KEYS = [('train/fromto/weight', 'weight w (log scale)'), ('train/fromto/lean', 'lean (policy / random novelty)'),
@@ -49,8 +50,8 @@ axes[1].axhline(1.0, color='#8a8880', ls='--', lw=1)
 h, l = axes[0].get_legend_handles_labels()
 fig.legend(h, l, loc='lower center', ncol=6, fontsize=14, frameon=False)
 fig.tight_layout(rect=(0, 0.08, 1, 1))
-fig.savefig(f'{OUT}/fromto_weight.png', dpi=200, facecolor='white'); fig.savefig(f'{OUT}/fromto_weight.pdf')
-print(f'{OUT}/fromto_weight.png')
+fig.savefig(f'{figdir("fromto_weight")}/fromto_weight.png', dpi=200, facecolor='white'); fig.savefig(f'{figdir("fromto_weight")}/fromto_weight.pdf')
+print(f'{figdir("fromto_weight")}/fromto_weight.png')
 pick = [0.25, 0.5, 1, 2, 3, 3.75]
 print('median w per task at', pick, 'M')
 for t, title, _ in TASKS:

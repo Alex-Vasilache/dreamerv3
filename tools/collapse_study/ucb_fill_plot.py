@@ -21,7 +21,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-D = '/work/DoyaU/vasilache/work/collapse_figs/ucb_fill'
+D = '/work/DoyaU/vasilache/work/collapse_figs/ucb/ucb_fill'
 EXP = sys.argv[1] if len(sys.argv) > 1 else 'e1821'
 LABEL = sys.argv[2] if len(sys.argv) > 2 else 'arm A, Pin Pad Five'
 z = np.load(os.path.join(D, f'{EXP}.npz'))

@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 
 W = '/work/DoyaU/vasilache/work'
 B = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
-OUT = f'{W}/collapse_figs/now_vs_v3.png'
+OUT = f'{W}/collapse_figs/baselines/now_vs_v3.png'
 TASKS = [('pinpad_four', 'Pin Pad Four'), ('pinpad_five', 'Pin Pad Five'), ('pinpad_six', 'Pin Pad Six'),
          ('dmc_cartpole_swingup', 'Cartpole Swingup'), ('dmc_cheetah_run', 'Cheetah Run'), ('dmc_hopper_hop', 'Hopper Hop')]
 ARMS = [('og', 'Director, ours (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),

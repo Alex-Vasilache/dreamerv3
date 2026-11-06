@@ -17,7 +17,7 @@ Writes /work/.../collapse_figs/ucb_fill/<exp>.npz with, per milestone:
 import glob, os, pickle, sys
 import numpy as np
 
-OUT = '/work/DoyaU/vasilache/work/collapse_figs/ucb_fill'
+OUT = '/work/DoyaU/vasilache/work/collapse_figs/ucb/ucb_fill'
 
 
 def goal_table(tab, cfg_goal_bins, state_bins):

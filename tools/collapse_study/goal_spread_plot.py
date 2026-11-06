@@ -20,7 +20,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-D = '/work/DoyaU/vasilache/work/collapse_figs/goal_spread'
+D = '/work/DoyaU/vasilache/work/collapse_figs/som/goal_spread'
 TASK = sys.argv[1] if len(sys.argv) > 1 else 'pinpad_five'
 TITLE = {'pinpad_five': 'Pin Pad Five'}.get(TASK, TASK)
 # ``<task>_flat.npz``: one plain int8 array per '<run>|<milestone>' (the probe's

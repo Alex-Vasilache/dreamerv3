@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 W = '/work/DoyaU/vasilache/work'
 B = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
-OUT = '/work/DoyaU/vasilache/work/collapse_figs/b64_vs_b32.png'  # + .pdf
+OUT = '/work/DoyaU/vasilache/work/collapse_figs/baselines/b64_vs_b32.png'  # + .pdf
 TASKS = [('pinpad_four', 'Pin Pad Four', [1071, 1072, 1073], 1101),
          ('pinpad_five', 'Pin Pad Five', [1080, 1081, 1082], 1098),
          ('pinpad_six', 'Pin Pad Six', [1083, 1084, 1085], 1095),

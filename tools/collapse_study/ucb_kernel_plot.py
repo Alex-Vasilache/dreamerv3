@@ -27,7 +27,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 R = '/work/DoyaU/vasilache/work/paper_geom/ucb_kernel'
-OUT = '/work/DoyaU/vasilache/work/collapse_figs/ucb_kernel_geometry'
+OUT = '/work/DoyaU/vasilache/work/collapse_figs/ucb/ucb_kernel_geometry'
 ARMS = [('og', 'OG', '#E69F00'), ('som', 'OG + SOM', '#CC79A7'), ('somlip', 'OG + SOM + LiP', '#0072B2')]
 # `ucb_kernel_plot.py someven`: V + SOM against V + SOM + evenness loss (e2000-e2059).
 if len(sys.argv) > 1 and sys.argv[1] == 'someven':

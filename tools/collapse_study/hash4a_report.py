@@ -17,6 +17,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import runs, scores, binned, cross50, OUT, TASKS  # noqa: E402
+from figs import figdir  # noqa: E402
 
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line'
 SETS = {
@@ -94,7 +95,7 @@ axes[0, 1].legend(fontsize=14, frameon=False)
 fig.suptitle(f'{TITLE}: per seed', fontsize=17)
 fig.tight_layout()
 for ext in ('png', 'pdf'):
-  fig.savefig(f'{OUT}/{WHICH}_seeds.{ext}', dpi=200)
-open(f'{OUT}/{WHICH}_table.md', 'w').write('\n'.join(rows) + '\n')
+  fig.savefig(f'{figdir(WHICH)}/{WHICH}_seeds.{ext}', dpi=200)
+open(f'{figdir(WHICH)}/{WHICH}_table.md', 'w').write('\n'.join(rows) + '\n')
 print('\n'.join(rows))
-print(f'{OUT}/{WHICH}_seeds.png')
+print(f'{figdir(WHICH)}/{WHICH}_seeds.png')

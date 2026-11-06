@@ -113,7 +113,7 @@ def perm_p(x, y):
 
 name, others = SETS[os.environ.get('SET', 'v3')]
 arms = [NOW] + others
-out = f'{W}/collapse_figs/{name}.png'
+out = f'{W}/collapse_figs/wm_collapse/{name}.png'
 fig, axes = plt.subplots(2, 3, figsize=(13, 8.2)); axes = axes.ravel()
 x = (np.arange(0, XMAX, BW) + BW / 2) / 1e6
 stats = {}

@@ -18,6 +18,8 @@ Writes collapse_figs/{set}_returns.{png,pdf}, {set}_diag.{png,pdf}, {set}_table.
 import glob, itertools, json, os, sys
 import numpy as np
 import matplotlib
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from figs import figdir  # noqa: E402
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -190,9 +192,9 @@ def main(which):
     lines.append(f'| {title} | ' + ' | '.join(cells) + ' |')
     ax.set_xlim(0, 4); ax.set_ylim(bottom=0)
     style(ax, title)
-  finish(fig, axes, 'environment steps (M)', 'episode return', min(len(arms), 3), f'{OUT}/{which}_returns')
+  finish(fig, axes, 'environment steps (M)', 'episode return', min(len(arms), 3), f'{figdir(which)}/{which}_returns')
   table = '\n'.join(lines)
-  open(f'{OUT}/{which}_table.md', 'w').write(table + '\n')
+  open(f'{figdir(which)}/{which}_table.md', 'w').write(table + '\n')
   print(table)
 
   # Diagnostics: one panel per metric, one line per task (mean over seeds), for
@@ -217,7 +219,7 @@ def main(which):
                   label=title if len(diag_arms) == 1 else f'{title}, {label}')
     ax.set_xlim(0, 4)
     style(ax, mtitle)
-  finish(fig, axes, 'environment steps (M)', '', 3 if len(diag_arms) == 1 else 2, f'{OUT}/{which}_diag')
+  finish(fig, axes, 'environment steps (M)', '', 3 if len(diag_arms) == 1 else 2, f'{figdir(which)}/{which}_diag')
 
 
 if __name__ == '__main__':

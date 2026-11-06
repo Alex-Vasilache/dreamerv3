@@ -10,6 +10,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import runs, scores, OUT  # noqa: E402
+from figs import figdir  # noqa: E402
 
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir'
 GROUPS = [
@@ -82,5 +83,5 @@ h, l = axes[0, 0].get_legend_handles_labels()
 fig.legend(h, l, loc='lower center', ncol=2, fontsize=13.5, frameon=False)
 fig.text(0.5, 0.105, 'Pin pad five. Dashed grey lines on the lean panel: the controller\'s dead band (weight moves only outside 0.909-1.1).', ha='center', fontsize=13)
 fig.tight_layout(rect=(0, 0.13, 1, 1))
-fig.savefig(f'{OUT}/pp5_failure.png', dpi=200, facecolor='white'); fig.savefig(f'{OUT}/pp5_failure.pdf')
-print(f'{OUT}/pp5_failure.png')
+fig.savefig(f'{figdir("pp5_failure")}/pp5_failure.png', dpi=200, facecolor='white'); fig.savefig(f'{figdir("pp5_failure")}/pp5_failure.pdf')
+print(f'{figdir("pp5_failure")}/pp5_failure.png')

@@ -14,6 +14,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import TASKS, runs, scores, cross50, OUT  # noqa: E402
+from figs import figdir  # noqa: E402
 from compare_arms import MAXRET, overall  # noqa: E402
 
 B = 'director-director_og-wkr_ent_fixed-wkr_v3'
@@ -73,7 +74,7 @@ def main():
     s6 = f'{six[name][0]}/{six[name][1]}'
     lines.append(f'| {name} | ' + ' | '.join(cells) + f' | {s6} | {ov_s} | {vs} |')
   table = '\n'.join(lines)
-  out = f'{OUT}/tce_weekend_summary.md'
+  out = f'{figdir("tce_weekend")}/tce_weekend_summary.md'
   open(out, 'w').write('Late 3-4M mean per seed (finished runs only), mean ± sd over seeds; overall = mean over tasks of % of max achievable; vs TCE = stratified difference in overall points, permutation p.\n\n' + table + '\n')
   print(out); print(table)
 

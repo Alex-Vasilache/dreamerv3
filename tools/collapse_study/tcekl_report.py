@@ -16,6 +16,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import runs, scores, OUT, TASKS  # noqa: E402
+from figs import figdir  # noqa: E402
 
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir'
 ARMS = [('c=1', '#999999', f'h00[7-9]?_{{t}}_{B}-tce_kl-pubmatch_s*'),
@@ -101,7 +102,7 @@ for fig, axes, ylab, name in ((f1, ax1, ('episode score', 'gap (policy - uniform
   fig.suptitle('TCE-KL per seed (smoothed over 9 log points)', fontsize=17)
   fig.tight_layout()
   for ext in ('png', 'pdf'):
-    fig.savefig(f'{OUT}/{name}.{ext}', dpi=200)
-  print(f'{OUT}/{name}.png')
-open(f'{OUT}/tcekl_mech_table.md', 'w').write('\n'.join(rows) + '\n')
+    fig.savefig(f'{figdir("tcekl")}/{name}.{ext}', dpi=200)
+  print(f'{figdir("tcekl")}/{name}.png')
+open(f'{figdir("tcekl")}/tcekl_mech_table.md', 'w').write('\n'.join(rows) + '\n')
 print('\n'.join(rows))

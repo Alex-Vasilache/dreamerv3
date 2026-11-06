@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 W = '/work/DoyaU/vasilache/work'
 B = '/bucket/DoyaU/vasilache/bucket/results/dreamerv3'
-OUT = '/work/DoyaU/vasilache/work/collapse_figs'
+OUT = '/work/DoyaU/vasilache/work/collapse_figs/wm_collapse'
 INK, MUTED, GRID = '#1f1f1e', '#6b6a63', '#e4e3dc'
 BLUE, GRAY = '#2a78d6', '#9a998f'
 

@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import TASKS, runs, OUT  # noqa: E402
+from figs import figdir  # noqa: E402
 
 PAT = 'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*'
 KEYS = [('train/goal/even_step_cv', 'step-size variation (CV)', 0.0),
@@ -68,7 +69,7 @@ def main():
   h, l = axes[0].get_legend_handles_labels()
   fig.legend(h, l, loc='lower center', ncol=6, fontsize=14, frameon=False)
   fig.tight_layout(rect=(0, 0.08, 1, 1))
-  out = f'{OUT}/even_train'
+  out = f'{figdir("even_train")}/even_train'
   fig.savefig(out + '.png', dpi=200, facecolor='white'); fig.savefig(out + '.pdf')
   print(out + '.png')
 

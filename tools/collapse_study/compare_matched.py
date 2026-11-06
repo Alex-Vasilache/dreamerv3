@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compare_late import TASKS, runs, scores, binned, style, OUT, XMAX, BW, perm_p  # noqa: E402
+from figs import figdir  # noqa: E402
 
 MAXRET = {'pinpad_four': 411, 'pinpad_five': 352, 'pinpad_six': 292,
           'dmc_cartpole_swingup': 1000, 'dmc_cheetah_run': 1000, 'dmc_hopper_hop': 1000}
@@ -250,7 +251,7 @@ def main(which):
       '   (shaded: scoring window; dashed: one seed so far)' if which not in LATE else
       '   (scores: mean over 3-4M, % of max achievable)'), ha='center', fontsize=14)
   fig.tight_layout(rect=(0, 0.19, 1, 1), h_pad=2.0)
-  out = f'{OUT}/{which}_matched'
+  out = f'{figdir(which)}/{which}_matched'
   fig.savefig(out + '.png', dpi=200, facecolor='white'); fig.savefig(out + '.pdf')
   head = '| task | window | ' + ' | '.join(label for _, label, *_ in arms) + ' |'
   table = '\n'.join([head, '|---' * (len(arms) + 2) + '|'] + rows)
