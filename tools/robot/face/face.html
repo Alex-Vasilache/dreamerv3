@@ -392,11 +392,11 @@ canvas.inst { display: block; width: 100%; }
     // arousal (Vector: a washed-out face when bored); red is pain's alone.
     const sat = sp('sat', 30 + 60 * a), light = (0.5 + 0.5 * sp('bright', 0.3 + 0.7 * a)) * (1 + flash)
       * (1 + 0.04 * (Math.random() - 0.5) * (0.5 + a));   // a slight shimmer
-    let [R, G, B] = hsl(188, sat, 60);
-    // Cyan and red mix through grey, so the colour turns over quickly in
-    // the middle (mostly cyan below 0.15, mostly red above 0.5).
+    // Pain's red replaces cyan LED by LED (an ordered dither), so the eye
+    // goes cyan -> speckled -> red and never through a mixed grey or blue.
+    // All cyan below pain 0.15, all red from 0.5.
     const pr = clamp((pq - 0.15) / 0.35, 0, 1);
-    R = lerp(R, 255, pr * 0.85); G = lerp(G, 72, pr * 0.85); B = lerp(B, 60, pr * 0.85);
+    const [R, G, B] = hsl(188, sat, 60), [Rp, Gp, Bp] = hsl(358, 85, 60);
 
     // Geometry, in LED units, centred on the matrix. A blink squashes the
     // eye to a line that widens (Vector's), it is not a lid.
@@ -426,8 +426,9 @@ canvas.inst { display: block; width: 100%; }
         if (n < 0.05) continue;
         const hs = 0.8 + 0.35 * Math.exp(-((i - e.cx - (hx - cx0)) ** 2 + (j - hy) ** 2) / (12 * S * S));
         const k = (j * cols + i) * 4, w = Math.min(1, n / 9 * light * hs);
-        data[k] = Math.max(data[k], R * w); data[k + 1] = Math.max(data[k + 1], G * w);
-        data[k + 2] = Math.max(data[k + 2], B * w); data[k + 3] = 255;
+        const red = pr > 0 && (BAYER[(j & 3) * 4 + (i & 3)] + 0.5) / 16 < pr;
+        data[k] = Math.max(data[k], (red ? Rp : R) * w); data[k + 1] = Math.max(data[k + 1], (red ? Gp : G) * w);
+        data[k + 2] = Math.max(data[k + 2], (red ? Bp : B) * w); data[k + 3] = 255;
       }
     }
     bctx.putImageData(img, 0, 0);
@@ -446,22 +447,23 @@ canvas.inst { display: block; width: 100%; }
     if ('filter' in gctx) gctx.filter = 'none';
     ctx.drawImage(glow, ox - cell / 2 - cell, oy - cell / 2 - cell, (cols + 2) * cell, (rows + 2) * cell);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-    // The LEDs, batched by brightness.
-    const LV = 8, paths = Array.from({ length: LV }, () => new Path2D()), cols8 = new Array(LV);
+    // The LEDs, batched by brightness and colour (cyan, or pain's red).
+    const LV = 8, paths = Array.from({ length: 2 * LV }, () => new Path2D());
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
       const k = (j * cols + i) * 4, m = Math.max(data[k], data[k + 1], data[k + 2]);
       if (m < 6) continue;
-      const lv = Math.min(LV - 1, Math.floor(m / 256 * LV));
+      const lv = Math.min(LV - 1, Math.floor(m / 256 * LV)) + (data[k] > data[k + 2] ? LV : 0);
       const x = ox + i * cell, y = oy + j * cell;
       paths[lv].moveTo(x + cell * 0.4, y); paths[lv].arc(x, y, cell * 0.4, 0, 2 * Math.PI);
     }
-    for (let lv = 0; lv < LV; lv++) {
-      const w = (lv + 1) / LV;
-      ctx.fillStyle = `rgb(${Math.min(255, R * w + 30 * w * w)},${Math.min(255, G * w + 30 * w * w)},${Math.min(255, B * w + 30 * w * w)})`;
+    for (let lv = 0; lv < 2 * LV; lv++) {
+      const w = (lv % LV + 1) / LV, [r, g, b] = lv < LV ? [R, G, B] : [Rp, Gp, Bp];
+      ctx.fillStyle = `rgb(${Math.min(255, r * w + 30 * w * w)},${Math.min(255, g * w + 30 * w * w)},${Math.min(255, b * w + 30 * w * w)})`;
       ctx.fill(paths[lv]);
     }
     window.__face = { mid, target, eyes, springs, frames: (window.__face?.frames || 0) + 1, ms: performance.now() - ms };
   }
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];   // 4x4 ordered dither
   function hsl(h, s, l) {
     s /= 100; l /= 100;
     const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);

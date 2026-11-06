@@ -185,8 +185,9 @@ research agents (DOIs checked against Crossref there; each claim marked
   visible by ~0.3 s in facial EMG.)
 - Pain is a squint of the same eyes, not a separate `> <` shape cross-faded
   in: upper lid down, lower lid up (orbit tightening, AU6/7), a slight
-  brow-lowering slant (AU4), flatter and wider (Vector's squash), red mixed in
-  by strength. It rises at once and eases over ~0.4 s (was 0.8 s). Pain
+  brow-lowering slant (AU4), flatter and wider (Vector's squash). Red replaces
+  cyan LED by LED (an ordered dither) from pain 0.15 to 0.5, so the eye never
+  passes through a mixed grey or blue. It rises at once and eases over ~0.4 s (was 0.8 s). Pain
   narrows the eyes, fear widens them, which keeps the two apart.
 - The phone's empowerment rollout (~100 ms of Python per call) held the
   interpreter and dropped the 65 Hz control loop to ~47-55 Hz. It now runs
