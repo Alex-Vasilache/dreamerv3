@@ -384,7 +384,8 @@ class Agent(embodied.Agent):
     stats = {}
     for k, v in self.params.items():
       if pattern.search(k) and jnp.issubdtype(v.dtype, jnp.floating):
-        x = np.asarray(jax.device_get(v), np.float32)
+        with jax._src.config.explicit_device_get_scope():
+          x = np.asarray(jax.device_get(v), np.float32)
         stats[k] = (float(x.mean()), float(x.std()))
     assert stats, f'shrink regex {regex!r} matches no parameter'
     return stats
@@ -401,9 +402,12 @@ class Agent(embodied.Agent):
       stack.enter_context(self.policy_lock)
       for k, (mean, std) in stats.items():
         old = self.params[k]
-        fresh = mean + std * rng.standard_normal(old.shape).astype(np.float32)
-        mixed = (1 - alpha) * old + alpha * jnp.asarray(fresh, old.dtype)
-        self.params[k] = jax.device_put(mixed, old.sharding)
+        with jax._src.config.explicit_device_get_scope():
+          host = np.asarray(jax.device_get(old), np.float32)
+        fresh = mean + std * rng.standard_normal(host.shape).astype(np.float32)
+        mixed = ((1 - alpha) * host + alpha * fresh).astype(old.dtype)
+        with jax._src.config.explicit_device_put_scope():
+          self.params[k] = jax.device_put(mixed, old.sharding)
         old.delete()
       if self.jaxcfg.enable_policy:
         jax.tree.map(lambda x: x.delete(), self.policy_params)
