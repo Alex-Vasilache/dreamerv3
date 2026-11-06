@@ -54,6 +54,11 @@ side = dict(
     published=time.strftime('%Y-%m-%d %H:%M', time.localtime(int(stamp) / 1e9)),
     task=config.task, hz=float(r['hz']) if 'hz' in r else None,
     **{k: r[k] for k in keys})
+# env.robot.length 0 means episode_s seconds at hz (robot.py). The player
+# resets the policy's memory every `length` steps, so a literal 0 reset it on
+# every step and the policy could not balance (e40006, 2026-11-06).
+if not int(side['length'] or 0):
+  side['length'] = int(round(float(r['hz']) * float(r['episode_s'])))
 (out / f'{name}.json').write_text(json.dumps(side, indent=1))
 print(f'{name}: {len(blob) / 1e6:.1f} MB, weights of {side["published"]} from {run}')
 PY
