@@ -709,6 +709,9 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   should_sync_replay = embodied.LocalClock(args.online_replay_sync_interval)
   carry_train = agent.init_train(args.batch_size)
   last_actor_step = -1
+  ratio_switch = int(getattr(args, 'online_ratio_switch', 0) or 0)
+  ratio_late = float(getattr(args, 'online_ratio_late', 0) or 0)
+  ratio_switched = not (ratio_switch > 0 and ratio_late > 0)
   boost = ArousalBoost(
       os.path.dirname(str(paths.pause)),
       **dict(getattr(args, 'online_arousal', None) or {}))
@@ -782,6 +785,13 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
     if changed:
       _log_learner(logdir, f'training {"paused" if paused else "resumed"} '
                    f'step={int(step)} actor_step={actor_step}')
+    if not ratio_switched and actor_step >= ratio_switch:
+      # A fresh Ratio starts from this step, so the debt the uncapped
+      # phase built up is forgiven rather than worked off at the new rate.
+      should_train = elements.when.Ratio(ratio_late / batch_steps)
+      should_train(actor_step)
+      ratio_switched = True
+      _log_learner(logdir, f'train ratio -> {ratio_late:g} step={int(step)} actor_step={actor_step}')
     repeats = should_train(actor_step)
     if paused:
       # The ratio's debt is dropped, not saved up: the steps the robot takes

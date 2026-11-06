@@ -28,6 +28,14 @@ defaults:
   # logging and checkpointing all happen after that loop, so an
   # uncapped batch starves them exactly when the learner is behind.
   online_max_train_repeats: 32
+  # Replay-ratio schedule: once the actor has taken `online_ratio_switch`
+  # steps, the learner trains at `online_ratio_late` (run.train_ratio units,
+  # replayed steps per robot step) instead of run.train_ratio, dropping any
+  # debt it owes. 0: off. Live demos and sim round CR1 (docs/robot/PLAN.md):
+  # an uncapped V100 learner (~420) learns fastest but its crossings drift up
+  # after it balances; 128 holds best late but learns ~4 min slower.
+  online_ratio_switch: 0
+  online_ratio_late: 0
   # Arousal events from the robot (env.robot.emotion_event; the phone's or the
   # sim phone's) change the weights at once (run/online.py ArousalBoost):
   # the learning rate of every optimizer group is multiplied by 1 + lr x

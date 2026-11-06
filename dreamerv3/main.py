@@ -162,6 +162,8 @@ def main(argv=None):
           config.env.get('robot', {}).get('weights_emotion', False)) else ''),
       online_replay_sync_interval=config.online_replay_sync_interval,
       online_max_train_repeats=config.online_max_train_repeats,
+      online_ratio_switch=config.online_ratio_switch,
+      online_ratio_late=config.online_ratio_late,
       online_arousal=config.online_arousal,
   )
 

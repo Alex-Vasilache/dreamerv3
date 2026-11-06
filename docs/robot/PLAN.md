@@ -44,6 +44,37 @@ keeps balancing, not getting worse later.
 - Keeping all experience (`replay.size 1e6`) fixed it.
 - The `robot` block keeps 1e6 (`replay.size`, `online_actor_replay_size`), and the live runs were shorter than the old 26 min buffer anyway, so replay eviction is unlikely to explain the live fall-back.
 
+**Late collapse = learner replay ratio (2026-11-06 evening, rounds CR1/CR2).**
+- The learner is uncapped (`run.train_ratio 8192`), so its replay ratio is set
+  by the GPU. A V100 gets ~420 replayed steps per robot step and a P100 ~280.
+  Live, e10100-e30101 trained at ~285 and settled to 1-8 crossings a minute,
+  e10100 for 15 min. From e30102 on, the trainer ran at 430-560 (V100 speed),
+  and those runs fall back after minute 7.
+- Sim rounds EA-EC split their seeds over V100/P100. Paired over 20 arms,
+  V100 had +3.6 ± 1.2 crossings/min after min 15 (worse in 16/20), with no
+  faster learning (`figs/collapse/ratio_evidence.png`).
+- CR1 (e19490-e19505, e30114 recipe, sim table, no pushes, n = 4, seeds 791-794):
+
+  | train ratio | first min upright ≥ 0.9 | crossings/min, min 15-29 |
+  |---|---|---|
+  | uncapped (~420) | 3.8 ± 1.3 | 18.4 ± 3.1 |
+  | 256 | 4.5 ± 1.1 | 12.6 ± 1.9 |
+  | 128 | 7.8 ± 0.8 | 9.5 ± 2.0 |
+  | 64 | 10.5 ± 1.8 | 10.6 ± 1.9 |
+  | uncapped, 3 min -> 128 | 3.2 ± 0.4 | 13.9 ± 6.6 |
+  | **uncapped, 5 min -> 128** | 3.5 ± 0.9 | 10.1 ± 1.8 |
+  | uncapped, 8 min -> 128 | 3.2 ± 0.4 | 9.0 ± 2.7 |
+  | uncapped, 5 min -> 64 | 3.5 ± 0.9 | 13.6 ± 4.6 |
+
+  The last four rows are CR2 (e19506-e19521), using the new
+  `online_ratio_switch` (actor steps) and `online_ratio_late` keys (off by
+  default). At the switch, the debt from the uncapped phase is dropped.
+  Figure: `figs/collapse/cr_arms.png`.
+- **Live pick:** the e30114 flags plus `--online_ratio_switch 19500
+  --online_ratio_late 128` (5 min at 65 Hz). It needs no app change.
+- Caveat: the sim's after-15-min drift is milder than live. The live fall-back
+  is at min 7-10, so the 5 min switch comes before it.
+
 **Candidate fixes, untested live.**
 - *Fear critic + catch reflex:*
   - Flags: `--env.robot.cost_obs True --agent.fear.weight 1.0 --env.robot.affect_catch 0.5`.
@@ -155,9 +186,11 @@ default.
 | e19438-e19441 | e30114 recipe |
 | e19442-e19465 | Round EB |
 | e19466-e19489 | Round EC |
+| e19490-e19505 | Round CR1 (train ratio) |
+| e19506-e19521 | Round CR2 (ratio schedule) |
 
 All runs include `logdir/emotion.csv` and `online_shared/experience`.
-Experiment numbers: the robot series `e<N>` was last used at e19489.
+Experiment numbers: the robot series `e<N>` was last used at e19521 (sim) / e30114 (live).
 
 ## Full plan (Alex, 2026-11-06)
 
