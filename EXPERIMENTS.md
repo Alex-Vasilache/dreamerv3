@@ -659,6 +659,11 @@ solved in >= 3/5. Rest of the c=1 arms cancelled 2026-11-06 02:50 (4798833 tasks
 all of 4798834 = tce_kl4); seed 0 of c=1 (h0073-h0078) runs to the end as the reference.
 The 1x16 vs 4x12 question is deferred until the strength is right.
 
+**Seed 0 at c=10 (4M, 2026-11-06):** pin pad four / five / six last-10 307 / 254 / 207, first
+reward 0.03 / 0.07 / 0.53M; gap rose from -0.2 to ~0 / +0.2 once alpha' reached 0.1-0.3.
+Reference c=1 seed 0: pin pad five 280 (first reward 0.9M), pin pad six 0 over 4M; cartpole
+682 (c=1) vs 724 at 3M (c=10). c=30 seed 0: pin pad five first reward 0.11M, alpha' ~0.7-1.9.
+
 ### h0073-h0102 / h0103-h0132: TCE-KL, log-count bonus inside the entropy term (2026-11-05, arrays 4798833 / 4798834)
 
 **Stopped 2026-11-06 02:50 after seed 0 (h0073-h0078):** push too weak, see h0133 entry above;
