@@ -57,12 +57,13 @@ blob, meta = export.pack(config, params)
 r = config.env.robot
 keys = ('theta_zero', 'theta_lo', 'theta_hi', 'theta_sigma', 'speed_scale',
         'drift_penalty', 'drift_clip', 'wheel_penalty', 'rate_penalty',
-        'action_rate_penalty', 'command_scale', 'length')
+        'action_rate_penalty', 'command_scale', 'length', 'bumper_lo',
+        'bumper_hi', 'pain_zone')
 side = dict(
     name=name, run=run, job=job, stamp=stamp,
     published=time.strftime('%Y-%m-%d %H:%M', time.localtime(int(stamp) / 1e9)),
     task=config.task, hz=float(r['hz']) if 'hz' in r else None,
-    **{k: r[k] for k in keys})
+    **{k: r[k] for k in keys if k in r})
 # env.robot.length 0 means episode_s seconds at hz (robot.py). The player
 # resets the policy's memory every `length` steps, so a literal 0 reset it on
 # every step and the policy could not balance (e40006, 2026-11-06).
