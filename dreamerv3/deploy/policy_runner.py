@@ -137,7 +137,7 @@ class PolicyRunner:
     # of its own every EMPOWER_S so the control tick never waits for it.
     self.emotion = None
     self.emotion_state = None
-    self._feel = [0.0, 0, False, 0.0]  # discounted reward sum, steps, a reset, max pain
+    self._feel = [0.0, 0, False, 0.0, 0.0]  # discounted reward sum, steps, a reset, max pain, reward sum
     self._emo_lock = threading.Lock()
     self._emo_thread = None
     # The leaky wheel distance of a policy that observes 'position'; kept
@@ -167,6 +167,7 @@ class PolicyRunner:
     self._events = 0
     self.pain = (0.0, 0.0, 0.0)   # (pain, front, back) of the last step
     self._chosen = None
+    self._applied = None
     self._theta = None
     if path and os.path.exists(path):
       self.load_path(path, stamp='initial')
@@ -240,6 +241,7 @@ class PolicyRunner:
     acc[1] += 1
     acc[2] = acc[2] or self.was_first
     acc[3] = max(acc[3], self.pain[0])
+    acc[4] += float(reward)
     if acc[1] < self.FEEL_EVERY:
       return
     deter, stoch, logit = self.policy.last_post
@@ -253,7 +255,9 @@ class PolicyRunner:
           surprise=sig['surprise'], unexpected=sig['unexpected'],
           novelty=sig['novelty'], empowerment=sig['empowerment'],
           mood=sig['mood'], pain=sig['pain'], hurt=sig['hurt'],
-          td_valence=sig['valence'], fear=sig['fear'])
+          td_valence=sig['valence'], fear=sig['fear'],
+          # For the face page's instruments: the body behind the feeling.
+          reward=acc[4] / acc[1], **self._body_state())
       # 'salience': how much this moment stood out in value or hurt, |TD
       # error| (scaled) plus pain (Bromberg-Martin et al. 2010's salience
       # signal). In the sim arousal, led by novelty, fell at bumper hits
@@ -264,7 +268,24 @@ class PolicyRunner:
     except Exception as e:  # noqa: BLE001
       print('dreamerBridge: emotion failed: %s' % e)
       self.emotion = None
-    self._feel = [0.0, 0, False, 0.0]
+    self._feel = [0.0, 0, False, 0.0, 0.0]
+
+  def _body_state(self):
+    """For the face page: tilt from upright and the bumpers' tilts (rad),
+    the policy's wheel commands and what the wheels got (-1..1). Scalars
+    only, each left out while unknown."""
+    out = {}
+    for name, act in (('chosen', self._chosen), ('act', self._applied)):
+      if act is not None:
+        out[name + '_l'], out[name + '_r'] = float(act[0]), float(act[1])
+    if self._theta is not None:
+      zero = float(self.body['theta_zero']) if self.body else 0.0
+      out['tilt'] = self._theta - zero
+    if self.body:
+      out['bumper_back'] = float(self.body['lo'])
+      out['bumper_front'] = float(self.body['hi'])
+      out['pain_zone'] = float(self.body['zone'])
+    return out
 
   EVENT_REFRACTORY = 2.0
   EVENT_TAU_S = 10.0
@@ -392,6 +413,7 @@ class PolicyRunner:
     """The wheels got `act`, not the action act() chose (clipped by the
     trainer's cap, held by a pause or a brake, or the trainer's own drive).
     The next step's RSSM input is what really happened, as in replay."""
+    self._applied = [float(a) for a in act]
     if self.carry is not None:
       self.carry = dict(self.carry, prevact=np.asarray(act, np.float32))
       self._pre = None
