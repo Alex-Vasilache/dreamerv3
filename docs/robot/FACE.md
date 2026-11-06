@@ -148,3 +148,16 @@ LOGDIR/emotion.csv OUT.json`, then `face.html?trace=OUT.json`;
   touches the controller. Not done.
 - Listen with people: whether the phrases read as glad / sad / scared
   without the face, and with it (Read & Belpaeme: context dominates).
+
+## On the phone (2026-11-06)
+
+Pain needs the trainer's emotion settings (`body`: theta_zero, bumpers, pain
+zone) passed to `PolicyRunner.configure`. The installed app (5ab754e7) did not
+do that, so pain was always 0; fixed in the app's `main.py` `apply_pause`
+(smartphone-robot-android 'dreamer-bridge', local commit), currently on the
+phone as an override via `tools/robot/dev/push_python.sh` together with
+`policy_runner.py`, `numpy_policy.py` and `emotion.py` from this repo (the
+app's built-in `emotion.py` lacks the new `step()` arguments). `--clear` the
+overrides after the next app build. Emotion on the face during training needs
+`--env.robot.weights_emotion True`. The face WebView keeps the page it loaded:
+swipe back to the gauges and to the face again after pushing `face.html`.
