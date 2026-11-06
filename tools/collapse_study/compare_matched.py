@@ -21,7 +21,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from compare_late import TASKS, runs, scores, binned, style, OUT, XMAX, BW, perm_p  # noqa: E402
+from compare_late import TASKS, runs, scores, binned, style, OUT, XMAX, BW, perm_p, B, FULL  # noqa: E402
 from figs import figdir  # noqa: E402
 
 MAXRET = {'pinpad_four': 411, 'pinpad_five': 352, 'pinpad_six': 292,
@@ -194,7 +194,12 @@ LATE = {'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window l
 def main(which):
   arms = SETS[which]
   window = LATE.get(which, WINDOW)
-  data = {(k, t): [scores(d) for d in runs(p.format(t=t))] for k, _, _, p in arms for t, _, _ in TASKS}
+  paths = {(k, t): runs(p.format(t=t)) for k, _, _, p in arms for t, _, _ in TASKS}
+  data = {key: [scores(d) for d in v] for key, v in paths.items()}
+  # A stopped arm (every run archived in the bucket, none reached 4M) is drawn but does
+  # not set the shared window; otherwise one cancelled arm drags every arm back to its last step.
+  stopped = {key for key, v in paths.items()
+             if v and all(d.startswith(B) for d in v) and max(len(a) and a[:, 0].max() for a in data[key]) < FULL}
   data = {key: [a for a in v if len(a)] for key, v in data.items()}
   fig, axes = plt.subplots(2, 3, figsize=(13, 8.2))
   x = (np.arange(0, XMAX, BW) + BW / 2) / 1e6
@@ -204,7 +209,7 @@ def main(which):
     # An arm counts on a task once its most advanced run passes MIN_REACH;
     # earlier than that it would drag the shared window back to the first steps.
     reach = {k: min(max(a[:, 0].max() for a in data[k, task]), XMAX) for k, *_ in arms if data[k, task]}
-    counted = {k for k, r in reach.items() if r >= MIN_REACH}
+    counted = {k for k, r in reach.items() if r >= MIN_REACH and (k, task) not in stopped}
     hi = min(reach[k] for k in counted); lo = hi - window
     cells = []
     for key, label, color, _ in arms:
@@ -216,7 +221,7 @@ def main(which):
           m = np.where(n_ok >= 1, np.nanmean(st, 0), np.nan)
           sd = np.where(n_ok >= 2, np.nanstd(st, 0, ddof=1), np.nan)
         ax.fill_between(x, m - sd, m + sd, color=color, lw=0, alpha=0.13)
-        ls = STYLE.get((which, key), '--' if len(seeds) < 2 else '-')
+        ls = STYLE.get((which, key), '-')
         ax.plot(x, m, color=color, lw=2.4, ls=ls, label=label)
       w = [window_mean(a, lo, hi) for a in seeds] if key in counted else []
       w = [v for v in w if not np.isnan(v)]
@@ -238,17 +243,19 @@ def main(which):
   for key, label, *_ in arms:
     tasks = [t for t in norm[key] if t in norm['og']]
     if not tasks:
-      labels.append(f'{label}\nno data yet'); continue
+      labels.append(f'{label}\nno data in a scored window'); continue
     a = np.mean([np.mean(norm[key][t]) for t in tasks])
     b = np.mean([np.mean(norm['og'][t]) for t in tasks])
     ntask = '' if len(tasks) == len(TASKS) else f', {len(tasks)} tasks'
+    ns = [len(data[key, t]) for t, *_ in TASKS if data[key, t]]
+    label = f'{label} ({min(ns)}-{max(ns)} seeds)' if min(ns) != max(ns) else f'{label} ({ns[0]} seed{"s" * (ns[0] > 1)})'
     labels.append(f'{label}\n{100 * a:.0f}%' if key == 'og' else
                   f'{label}\n{100 * a:.0f}% ({100 * (a - b) / b:+.0f}% vs OG{ntask})')
   order = [l.index(lab) for _, lab, *_ in arms if lab in l]
   fig.legend([h[i] for i in order], labels, loc='lower center', ncol=3, fontsize=12.5,
              frameon=False, bbox_to_anchor=(0.5, 0.0))
   fig.text(0.5, 0.165, 'environment steps (M)' + (
-      '   (shaded: scoring window; dashed: one seed so far)' if which not in LATE else
+      '   (shaded: scoring window, ending where the least-advanced live arm is)' if which not in LATE else
       '   (scores: mean over 3-4M, % of max achievable)'), ha='center', fontsize=14)
   fig.tight_layout(rect=(0, 0.19, 1, 1), h_pad=2.0)
   out = f'{figdir(which)}/{which}_matched'
