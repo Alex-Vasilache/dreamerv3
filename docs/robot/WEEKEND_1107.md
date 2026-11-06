@@ -57,6 +57,7 @@ learn a little faster; W slows learning 3-8x; S and L lose the fast start on
 the A5000 (10.0 and 8.5, seeds stuck). The actor-critic regularisers halve
 the drift only at P100 speed, so the drift is not fixed by resetting or
 anchoring the actor-critic: it follows the number of updates per sample.
+Figure: `figs/weekend/ia1.png` (on the A5000, S and L leave two of four seeds stuck at ~0.5 upright for 10 min).
 Decision: keep the ratio schedule (uncapped for 5 min, then 128 — the late
 phase is then the same on every GPU), and spend W1 on making the first five
 minutes faster. IA2 (world-model regularisers, critic feature norm) still runs.
