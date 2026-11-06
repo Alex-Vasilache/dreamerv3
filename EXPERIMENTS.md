@@ -644,6 +644,20 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0223-h0252: TCE-KL c=10 with an alpha floor, 1x16 hash (2026-11-06 21:30, array 4800914)
+
+`... fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch`, 6 tasks x 5 seeds, %4
+(`sbatch/pubtceklfloor_params.txt`). New key `mgr_fromto.alpha_floor` (default 0): the TCE part
+uses alpha' = c * max(alpha, 0.04) / log 8; the entropy term keeps the controller's alpha.
+Why (early-weakness rule of the plan doc, met): at c=10 the manager entropy controller's alpha
+sits at 0.005-0.02 on the pin pads that miss reward, so alpha' stays ~0.08-0.1: h0141 (1x16, pin
+pad six seed 1) no reward at 3.8M with w 0.085-0.106; h0194 (4x12, pin pad five seed 0) w ~0.08,
+first reward only at 1.02M; h0195 (4x12, pin pad six) no reward at 1.24M, w 0.10. The seeds that
+solved early ran at w >= 0.2. CPU smoke: w = 0.192 at alpha 0.001. Expect: pin pad five first
+reward <= 0.8M on 5/5, pin pad six >= 3/5; watch cartpole, where alpha is lowest (w 0.03-0.05
+now -> 0.19), for a DMC cost. Compare with h0133-h0162. 4x12 array 4800784 throttled to %2 to
+give this arm the slots.
+
 ### h0193-h0222: TCE-KL c=10 on the 4x12 hash (2026-11-06, array 4800784)
 
 `... fromto_dir tce_kl4 tce_kl_c10 pubmatch`, 6 tasks x 5 seeds, %4

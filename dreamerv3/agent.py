@@ -1893,7 +1893,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         metrics['fromto/weight'] = wscale
       else:
         wscale = (sg(self.mgr_actent.scale().mean()) if self.manager_actent_adapt
-                  else self.config.manager_actent) * self.mgr_fromto_c
+                  else self.config.manager_actent)
+        # Optional floor on the alpha the TCE part uses (the entropy term keeps
+        # the controller's alpha), so the push is not tied to the controller's
+        # small start-up values.
+        afloor = float(getattr(self.config.mgr_fromto, 'alpha_floor', 0.0))
+        if afloor > 0:
+          wscale = jnp.maximum(wscale, afloor)
+        wscale = wscale * self.mgr_fromto_c
         if fbonus == 'log':
           # Same units as the entropy term, which is normalised per block by
           # that block's entropy range: alpha*H_l/(hi-lo) per block. Dividing

@@ -21,7 +21,9 @@ from figs import figdir  # noqa: E402
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir'
 ARMS = [('c=1', '#999999', f'h00[7-9]?_{{t}}_{B}-tce_kl-pubmatch_s*'),
         ('c=10', '#0072B2', f'h01??_{{t}}_{B}-tce_kl-tce_kl_c10-pubmatch_s*'),
-        ('c=30', '#D55E00', f'h01??_{{t}}_{B}-tce_kl-tce_kl_c30-pubmatch_s*')]
+        ('c=30', '#D55E00', f'h01??_{{t}}_{B}-tce_kl-tce_kl_c30-pubmatch_s*'),
+        ('c=10 floor', '#CC79A7', f'h02??_{{t}}_{B}-tce_kl-tce_kl_c10-tce_kl_floor-pubmatch_s*'),
+        ('c=10 4x12', '#56B4E9', f'h0[12]??_{{t}}_{B}-tce_kl4-tce_kl_c10-pubmatch_s*')]
 LS = ['-', '--', ':', '-.', (0, (1, 1))]
 KEYS = ['train/fromto/gap', 'train/fromto/weight', 'train/mgr_actent_skill_scale_mean']
 PLOT = [('pinpad_five', 'Pin Pad Five'), ('pinpad_six', 'Pin Pad Six'), ('dmc_cheetah_run', 'Cheetah Run')]
