@@ -75,3 +75,23 @@ False` like e40006; the sim phone then cannot build its emotion heads, its
 actor dies and the job hangs to the wall limit (one wave of 16 runs lost, ~80
 min). Fixed in gen.py (True; it only sets what is sent to the phone), smoke
 e42161-e42167 for every new flag combination, then resubmitted.
+
+### Sat 11-07 ~00:30: IA2 in
+
+IA2 (e41049-e41108, n = 4, no ratio schedule; control = IA1 C): crossings a
+minute after minute 15. Figure `figs/weekend/ia2.png`.
+
+| arm | P100 17.5k | V100 26k | A5000 uncapped |
+|---|---|---|---|
+| C control | 16.9 ± 3.1 | 22.4 ± 5.6 | 26.4 ± 9.3 |
+| MS world-model dynamics shrink-perturb 0.3 / 8000 | 11.2 ± 4.7 | 21.0 ± 3.8 | 25.8 ± 4.0 |
+| ML world-model L2-to-init 0.05 | 13.1 ± 6.5 | 19.5 ± 5.9 | 38.0 ± 4.0 |
+| BS world model + actor-critic shrink-perturb | 13.3 ± 2.6 | 20.7 ± 1.8 | 24.7 ± 7.3 |
+| BL world model + actor-critic L2-to-init | 13.6 ± 3.2 | 22.2 ± 3.2 | 30.4 ± 8.6 |
+| FN critic feature normalisation | 12.7 ± 2.4 | 24.9 ± 4.5 | 32.0 ± 3.0 |
+
+No regulariser, on the world model, the actor-critic or both, removes the
+drift at V100 or A5000 speed; the L2-to-init arms also leave seeds stuck
+half-upright for 10-25 min. At every speed the drift tracks the learner's
+updates per sample, so the ratio schedule, which fixes the late ratio at 128
+on every GPU, stays the drift control (W1's base, already running).
