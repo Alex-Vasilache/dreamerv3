@@ -20,7 +20,7 @@ FLOOR = ('--env.robot.sim_schedule table --env.robot.sim_inertia 2 '
          'rstatic:5:9,scrape:0:40,stall:0.85:1.1,tilt_lag:0:0.015')
 CARPET = FLOOR.replace('--env.robot.sim_schedule table', '--env.robot.sim_surface carpet')
 PHONE = ('--online_sync_every 4 --online_publish_every 1 --env.robot.sim_phone True '
-         '--env.robot.sim_phone_delay 1.3 --env.robot.weights_emotion False')
+         '--env.robot.sim_phone_delay 1.3 --env.robot.weights_emotion True')
 LIVE_BAL = ('--env.robot.home_radius 3045 --env.robot.home_speed 1.0 '
             '--env.robot.home_ramp 1200 --env.robot.home_max_s 10 '
             '--env.robot.balance_bumper 1.0 --env.robot.wheel_penalty 0.5 '
@@ -90,6 +90,11 @@ def main():
     for seed in SEEDS4:
       for arm, flags in K1_ARMS:
         lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', 'v100', flags, seed)); n += 1
+  elif rnd == 'smoke':
+    for arm, flags in W1_ARMS:
+      if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
+        lines.append(bal_line(f'e{n}', 'v100', f'{W1_BASE} {flags}', 1, minutes=4)); n += 1
+    lines.append(cmd_line(f'e{n}', 'v100', K1_ARMS[2][1] + ' ' + K1_ARMS[3][1], 1, minutes=4)); n += 1
   elif rnd.startswith('w1'):
     base = W1_BASE
     gpu = {'w1p': 'p100', 'w1i': 'any'}[rnd]

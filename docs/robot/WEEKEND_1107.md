@@ -62,8 +62,16 @@ Decision: keep the ratio schedule (uncapped for 5 min, then 128 — the late
 phase is then the same on every GPU), and spend W1 on making the first five
 minutes faster. IA2 (world-model regularisers, critic feature norm) still runs.
 
-W1 (e42033-e42160): live recipe e40006 + ratio schedule, one factor at a time,
-4 seeds, on Saion P100s (e42033-e42096) and IAS A5000/3090s (e42097-e42160).
+W1 (e42200-e42327): live recipe e40006 + ratio schedule, one factor at a time,
+4 seeds, on Saion P100s (e42200-e42263) and IAS A5000/3090s (e42264-e42327).
 Arms: base, batch 16 / 64, batch length 32, both lrs x2, actor-critic lr x2,
 small / big model, horizon 1 s / 3 s, entropy 1e-3, fear critic, stronger
 smoothing, stronger stillness penalties, switch at 3 min, schedule + L2-to-init.
+
+K1 runs are e42168-e42199 (n = 4 per arm, Saion V100, 60 min).
+
+Lost runs: the first K1/W1 submissions (e42001-e42160) used `weights_emotion
+False` like e40006; the sim phone then cannot build its emotion heads, its
+actor dies and the job hangs to the wall limit (one wave of 16 runs lost, ~80
+min). Fixed in gen.py (True; it only sets what is sent to the phone), smoke
+e42161-e42167 for every new flag combination, then resubmitted.
