@@ -23,6 +23,8 @@ only network requirement is that **the phone can reach the learner's
 address** (your laptop on the same WiFi, or a cluster compute node that the
 WiFi can route to -- true for Saion from the OIST internal WiFi).
 
+Current plan and where each step stands: [docs/robot/PLAN.md](docs/robot/PLAN.md).
+
 Contents: [Repos](#repos) · [Install](#install) · [Train](#train) ·
 [Watch](#watch) · [Configs and reward](#configs-and-reward) ·
 [Joystick](#joystick-and-command-following) · [Saved policies](#saved-policies) ·

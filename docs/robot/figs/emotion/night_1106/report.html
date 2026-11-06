@@ -1,0 +1,200 @@
+<title>Emotion in Control</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap">
+<style>
+:root {
+  --bg: #f6f7f8;
+  --paper: #ffffff;
+  --ink: #1b2229;
+  --muted: #5b6672;
+  --rule: #d9dee3;
+  --accent: #0b68a8;
+  --accent-soft: #e4eef6;
+  --good: #1d7f5f;
+  --warn: #b3541e;
+  --code-bg: #eef1f4;
+  --font-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12171c; --paper: #182027; --ink: #e3e8ed; --muted: #9aa6b2; --rule: #2c3640;
+  --accent: #5fb0e8; --accent-soft: #1d3446; --good: #5cc79e; --warn: #ec9a66; --code-bg: #202a33; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12171c; --paper: #182027; --ink: #e3e8ed; --muted: #9aa6b2; --rule: #2c3640;
+  --accent: #5fb0e8; --accent-soft: #1d3446; --good: #5cc79e; --warn: #ec9a66; --code-bg: #202a33; color-scheme: dark }
+
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; } nav.toc { position: static !important; } }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; font-size: 13.5px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; border-left: 1px solid var(--rule); }
+nav.toc a { display: block; padding: 4px 12px; color: var(--muted); text-decoration: none; border-left: 2px solid transparent; margin-left: -1px; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); border-left-color: var(--accent); outline: none; }
+nav.toc .k { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .04em; color: var(--muted); margin-right: 6px; }
+main { min-width: 0; }
+header.top { display: grid; gap: 10px; padding-bottom: 28px; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; margin: 0; text-wrap: balance; }
+.lead { font-size: 18px; max-width: 68ch; margin: 0; }
+.meta { font-size: 13px; color: var(--muted); }
+section { padding-top: 36px; display: grid; gap: 14px; }
+section > * { margin: 0; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 27px; line-height: 1.2; text-wrap: balance; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+h2 .step { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+h2 .date { font-family: var(--font-body); font-size: 14px; font-weight: 400; color: var(--muted); }
+h3 { font-size: 15px; font-weight: 600; margin-top: 6px; }
+p, ul, ol.steps { max-width: 70ch; }
+ul, ol.steps { padding-left: 22px; display: grid; gap: 6px; }
+.answer { font-size: 17px; font-weight: 500; border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; max-width: 70ch; }
+code { font-family: var(--font-mono); font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+.formula { font-family: var(--font-mono); font-size: 14px; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 12px 14px; overflow-x: auto; white-space: pre; max-width: 100%; }
+.tbl { overflow-x: auto; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; font-size: 12.5px; color: var(--muted); background: var(--bg); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+tr.pick td { background: var(--accent-soft); }
+.note { font-size: 13px; color: var(--muted); max-width: 70ch; }
+figure { margin: 0; display: grid; gap: 8px; }
+figure img { width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 4px; background: #fff; }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 80ch; }
+.tag { font-family: var(--font-mono); font-size: 11.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.tag.good { color: var(--good); } .tag.warn { color: var(--warn); } .tag.info { color: var(--accent); }
+.def { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 12px 16px; display: grid; gap: 6px; max-width: 74ch; }
+.def b { font-weight: 600; }
+a { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Sections">
+  <ol>
+    <li><a href="#glance"><span class="k">00</span>At a glance</a></li>
+    <li><a href="#built"><span class="k">1</span>What was built</a></li>
+    <li><a href="#ea"><span class="k">2</span>Each part alone</a></li>
+    <li><a href="#signals"><span class="k">3</span>Which signal marks a moment</a></li>
+    <li><a href="#eb"><span class="k">4</span>Combined, on the live recipe</a></li>
+    <li><a href="#ec"><span class="k">5</span>Checking the pick</a></li>
+    <li><a href="#next"><span class="k">→</span>On the robot</a></li>
+  </ol>
+</nav>
+<main>
+<header class="top">
+  <div class="eyebrow">Smartphone robot · night of Nov 5 – 6 · emotion acting on behaviour and learning</div>
+  <h1>Emotion in control, not only on the face</h1>
+  <p class="lead">Of everything built tonight, one learning change and one reflex earned their place: a fear critic that learns to predict pain as its own cost, and a catch reflex that drives the wheels under the body when it hurts. Together, on your live recipe, the sim robot hits its bumpers a third to half as often and falls from a push about a third as often. The arousal-triggered weight changes, vigour and exploration did not help.</p>
+  <p class="meta">As of 2026-11-06 05:10 JST · Alex Vasilache · Sim: fitted MuJoCo robot on the table (= your lab floor), 65 Hz, the phone's own policy loop on int8 pushes, a push on the body every ~5 s (0.05–0.15 N for 0.1 s at the top) and walls 0.5 m out; 30 min per run; mean ± std over seeds, n given. Crossings = tilt crossing +6.5° or −5°; falls per push = share of pushes on an upright body followed within 1 s by a crossing.</p>
+</header>
+
+<section id="glance">
+  <h2>At a glance</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Sim, minutes 10–30</th><th class="n">Upright</th><th class="n">Crossings / min</th><th class="n">Falls per push</th></tr></thead>
+    <tbody>
+      <tr><td>e30114 live recipe, pushes + walls (n = 4)</td><td class="n">0.89 ± 0.05</td><td class="n">16.2 ± 2.5</td><td class="n">0.22 ± 0.02</td></tr>
+      <tr class="pick"><td>+ fear + catch, pushes + walls (n = 8)</td><td class="n">0.96 ± 0.01</td><td class="n">5.5 ± 1.7</td><td class="n">0.08 ± 0.03</td></tr>
+      <tr><td>e30114 live recipe, no pushes (n = 4)</td><td class="n">0.95 ± 0.01</td><td class="n">13.2 ± 4.0</td><td class="n">—</td></tr>
+      <tr class="pick"><td>+ fear + catch, no pushes (n = 4)</td><td class="n">0.97 ± 0.01</td><td class="n">5.4 ± 1.8</td><td class="n">—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">n = 8 pools seeds 741–744 (round EB) and 761–764 (round EC). Fear also replaces the bumper penalty without loss. Fear weight 0.5–2 and catch 0.5–1 all land within the seed spread. To try on the robot: the flags and three phone lines under <a href="#next">On the robot</a>.</p>
+</section>
+
+<section id="built">
+  <h2><span class="step">1</span>What was built</h2>
+  <p class="answer">Each idea from our conversation is one setting, off by default, running in the phone's own loop; the sim now runs that loop too, so what is tested here is what the phone will run.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Part</th><th>What it does</th><th>Setting</th></tr></thead>
+    <tbody>
+      <tr><td>Pain</td><td>A sensation from the body, not a prediction: 0 upright, rising to 1 over the last 2° before a bumper, plus the size of any reflex (brake, cap, limit) overriding the policy. Raises arousal; lowers the face's valence, less when the robot is in control. The face winces.</td><td><code>pain_zone</code></td></tr>
+      <tr><td>Fear</td><td>The env reports pain as a cost beside the reward. The agent learns to predict it and has a second critic for it over the same imagined rollouts; the actor maximises reward and minimises expected pain, weighted. Pain never enters the reward, so reward cannot pay for it. On the phone, the fear critic's prediction is shown as fear.</td><td><code>cost_obs</code>, <code>agent.fear.weight</code></td></tr>
+      <tr><td>Triggered weight change</td><td>The phone flags a moment that stands out (a phasic rise of its event signal over the last ~10 s). The learner then multiplies its learning rate (after Dreamer's gradient normalisation, so it is not undone) by up to 3×, decaying over 300 updates, runs a burst of extra updates, and pushes the new weights at once.</td><td><code>emotion_event</code>, <code>event_signal</code>, <code>online_arousal</code></td></tr>
+      <tr><td>Vigour</td><td>Excited (arousal × positive valence): bigger commands.</td><td><code>affect_vigour</code></td></tr>
+      <tr><td>Catch</td><td>In pain toward a bumper: drive the wheels back under the body.</td><td><code>affect_catch</code></td></tr>
+      <tr><td>Exploration</td><td>Wider sampling with arousal in a low mood, narrower with pain.</td><td><code>affect_explore</code></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Code: <code>dreamerv3/deploy/policy_runner.py</code>, <code>emotion.py</code>, <code>embodied/run/online.py</code> (ArousalBoost), <code>dreamerv3/agent.py</code> (fear), <code>embodied/envs/sim_phone.py</code>; design and settings in <code>docs/robot/EMOTION.md</code>. Commits 03d64a0, 48d2790, aad34f0.</p>
+</section>
+
+<section id="ea">
+  <h2><span class="step">2</span>Each part alone</h2>
+  <p class="answer">Fear is the clear winner: with pain learnt as a separate cost, every seed was up by minute 5–10 and then hardly ever hit a bumper, even when pushed. The same pain as a reward penalty helped half as much. The instant behaviour changes and the arousal-triggered weight changes did not help.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Arm (robot defaults, pushes, walls; n = 4)</th><th class="n">First minute &gt; 80% upright</th><th class="n">Upright, min 10–30</th><th class="n">Crossings / min</th><th class="n">Falls per push</th></tr></thead>
+    <tbody>
+      <tr><td>Control</td><td class="n">7, 10, 22, 26</td><td class="n">0.68</td><td class="n">14.1 ± 3.0</td><td class="n">0.26</td></tr>
+      <tr class="pick"><td>Fear (cost critic, weight 1)</td><td class="n">5, 6, 7, 10</td><td class="n">0.95</td><td class="n">4.0 ± 1.0</td><td class="n">0.04</td></tr>
+      <tr><td>Pain as a reward penalty (<code>balance_bumper 1</code>)</td><td class="n">3, 4, 6, 10</td><td class="n">0.93</td><td class="n">10.0 ± 4.4</td><td class="n">0.15</td></tr>
+      <tr><td>Triggered weight change (arousal events)</td><td class="n">6, 9, never, never</td><td class="n">0.46</td><td class="n">15.1 ± 9.5</td><td class="n">0.40</td></tr>
+      <tr><td>Catch 0.5</td><td class="n">5, 5, 10, 24</td><td class="n">0.78</td><td class="n">20.9 ± 2.7</td><td class="n">0.34</td></tr>
+      <tr><td>Vigour 0.5</td><td class="n">5, 6, 8, never</td><td class="n">0.71</td><td class="n">13.1 ± 6.3</td><td class="n">0.37</td></tr>
+      <tr><td>Exploration 0.5</td><td class="n">6, 6, 15, never</td><td class="n">0.62</td><td class="n">12.8 ± 6.4</td><td class="n">0.31</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Crossings and falls over minutes 10–30. Two seeds (722, 724) are hard in every arm; only fear and the bumper penalty got all four up. The triggered weight change fired ~15 events a minute: arousal was not selective, so it amounted to a raised learning rate most of the time, and it lost both hard seeds (section 3). The e30114 live recipe without pushes, also run tonight: all four up at minute 3, 16.9 ± 3.6 crossings a minute later on.</p>
+  <figure><img src="figs/ea_learn.png" alt="Upright, crossings and falls per push per minute for control, fear, bumper penalty and boost" loading="lazy"><figcaption>Learning signals, per minute, mean ± SD over 4 seeds (721–724). Fear: a separate cost critic; bumper: the same pain as a reward penalty; boost: arousal-triggered weight changes.</figcaption></figure>
+  <figure><img src="figs/ea_behave.png" alt="Upright, crossings and falls per push per minute for control, catch, vigour and exploration" loading="lazy"><figcaption>Instant behaviour changes on the phone, same seeds.</figcaption></figure>
+</section>
+
+<section id="signals">
+  <h2><span class="step">3</span>Which signal marks a moment</h2>
+  <p class="answer">Arousal as defined (novelty + unexpected surprise + reward error − empowerment) does not mark the moments that matter in the sim: it falls at bumper hits, because the model is sure of itself there. The TD error and pain do. Salience, |TD valence| + pain, now drives the events.</p>
+  <p>At a bumper hit pain rises 3 SD, the TD valence falls ahead of it, and arousal drops 1.4 SD, carried by novelty (the prior is confident near a bumper). After a push arousal dips too, while salience peaks 0.4 s later. With salience at a phasic threshold of 1.0 the phone fires 4–6 events a minute, 97% of them within 1 s of a bumper hit; with arousal at 0.2 it fired 60. The face still shows arousal as defined; whether to fold pain and |TD| into arousal itself is a choice for you.</p>
+  <figure><img src="figs/trig.png" alt="Emotion signals around pushes and bumper hits" loading="lazy" style="max-width:720px"><figcaption>z-scored signals around a push (top) and a bumper hit (bottom), control runs after they learnt to stand (n = 4 runs, ~240 pushes and 200–450 hits each).</figcaption></figure>
+</section>
+
+<section id="eb">
+  <h2><span class="step">4</span>Combined, on the live recipe</h2>
+  <p class="answer">On your e30114 recipe with pushes and walls, fear plus catch is the best combination: every seed up by minute 3, a third of the recipe's bumper hits, and a push topples it a quarter as often. Fear can replace the bumper penalty outright; the triggered weight change adds nothing on top.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Arm (e30114 recipe, pushes, walls; n = 4)</th><th class="n">First minute &gt; 80% upright</th><th class="n">Upright</th><th class="n">Crossings / min</th><th class="n">Falls per push</th><th class="n">Wobble (°/s SD)</th></tr></thead>
+    <tbody>
+      <tr><td>e30114 recipe (bumper penalty 1)</td><td class="n">3, 3, 4, 14</td><td class="n">0.89 ± 0.05</td><td class="n">16.2 ± 2.5</td><td class="n">0.22 ± 0.02</td><td class="n">18.8 ± 0.9</td></tr>
+      <tr><td>+ fear</td><td class="n">3, 3, 3, 3</td><td class="n">0.95 ± 0.01</td><td class="n">8.2 ± 1.4</td><td class="n">0.13 ± 0.03</td><td class="n">15.9 ± 0.7</td></tr>
+      <tr><td>Fear instead of the bumper penalty</td><td class="n">3, 3, 3, 3</td><td class="n">0.95 ± 0.02</td><td class="n">8.1 ± 2.3</td><td class="n">0.14 ± 0.02</td><td class="n">16.3 ± 1.0</td></tr>
+      <tr class="pick"><td>+ fear + catch 0.5</td><td class="n">3, 3, 3, 3</td><td class="n">0.96 ± 0.01</td><td class="n">4.4 ± 1.3</td><td class="n">0.06 ± 0.02</td><td class="n">13.9 ± 1.4</td></tr>
+      <tr><td>+ fear + triggered weight change (salience)</td><td class="n">3, 3, 3, 3</td><td class="n">0.94 ± 0.00</td><td class="n">9.4 ± 1.5</td><td class="n">0.13 ± 0.02</td><td class="n">15.9 ± 0.5</td></tr>
+      <tr><td>All: fear, weight change, catch 0.5, vigour 0.5</td><td class="n">3, 3, 3, 3</td><td class="n">0.95 ± 0.00</td><td class="n">7.0 ± 0.9</td><td class="n">0.10 ± 0.01</td><td class="n">16.2 ± 1.0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Minutes 10–30, seeds 741–744 (e19442–e19465). Catch alone hurt in round EA (more hits) but helps once fear has taught the policy to stay clear: it then only acts on the rare near-miss. Salience events fired 1.3 a minute; the boost neither helped nor hurt here. Wheel speed was a little higher with fear (610–670 vs 520 mm/s): it moves to stay up rather than standing stiff.</p>
+  <figure><img src="figs/eb.png" alt="Upright, crossings and falls per push per minute for the six round-EB arms" loading="lazy"><figcaption>Round EB per minute, mean ± SD over 4 seeds. The recipe alone (black) lost one seed until minute 14 and keeps hitting the bumpers about 16 times a minute; every fear arm is up by minute 3.</figcaption></figure>
+</section>
+
+<section id="ec">
+  <h2><span class="step">5</span>Checking the pick</h2>
+  <p class="answer">On four new seeds fear + catch held up, though less dramatically than in round EB (6.5 vs 4.4 crossings a minute); fear weight and catch strength barely matter. Without pushes or walls, the way you run it live, it still more than halves the bumper hits of the recipe alone and wobbles less.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Arm (n = 4, seeds 761–764)</th><th class="n">First minute &gt; 80% upright</th><th class="n">Upright</th><th class="n">Crossings / min</th><th class="n">Falls per push</th><th class="n">Wobble (°/s SD)</th></tr></thead>
+    <tbody>
+      <tr class="pick"><td>Fear 1 + catch 0.5 (repeat of EB's pick)</td><td class="n">4, 3, 3, 3</td><td class="n">0.96 ± 0.01</td><td class="n">6.5 ± 1.5</td><td class="n">0.10 ± 0.02</td><td class="n">15.3 ± 0.6</td></tr>
+      <tr><td>Fear 0.5 + catch 0.5</td><td class="n">3, 4, 3, 3</td><td class="n">0.95 ± 0.00</td><td class="n">8.4 ± 1.7</td><td class="n">0.11 ± 0.03</td><td class="n">17.0 ± 1.2</td></tr>
+      <tr><td>Fear 2 + catch 0.5</td><td class="n">3, 3, 3, 3</td><td class="n">0.96 ± 0.01</td><td class="n">6.5 ± 1.3</td><td class="n">0.09 ± 0.04</td><td class="n">16.6 ± 1.5</td></tr>
+      <tr><td>Fear 1 + catch 1.0</td><td class="n">3, 3, 4, 3</td><td class="n">0.96 ± 0.01</td><td class="n">6.1 ± 2.4</td><td class="n">0.10 ± 0.04</td><td class="n">16.4 ± 1.9</td></tr>
+      <tr><td>e30114 recipe, no pushes or walls</td><td class="n">3, 3, 3, 3</td><td class="n">0.95 ± 0.01</td><td class="n">13.2 ± 4.0</td><td class="n">—</td><td class="n">18.6 ± 2.3</td></tr>
+      <tr class="pick"><td>Fear 1 + catch 0.5, no pushes or walls</td><td class="n">3, 3, 3, 4</td><td class="n">0.97 ± 0.01</td><td class="n">5.4 ± 1.8</td><td class="n">—</td><td class="n">14.1 ± 1.6</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Minutes 10–30, e19466–e19489, all on the e30114 recipe (bumper penalty 1 kept). The sim learns to stand by minute 3–4 in every arm here, so what fear + catch buys on this floor is fewer hits and calmer balance, not a faster start; in round EA, on the harder robot defaults, it was also the start.</p>
+  <figure><img src="figs/ec_np.png" alt="Upright, crossings and wobble per minute, e30114 recipe vs fear plus catch, no pushes" loading="lazy"><figcaption>No pushes or walls, as live: the recipe alone (black) drifts back up to 15–20 hits a minute after minute 15; with fear + catch (orange) it keeps falling to ~5.</figcaption></figure>
+  <figure><img src="figs/ec.png" alt="Upright, crossings and falls per push for fear weight and catch variants" loading="lazy"><figcaption>Fear weight and catch strength, with pushes and walls: all four overlap.</figcaption></figure>
+</section>
+
+<section id="next">
+  <h2>On the robot</h2>
+  <p class="answer">Run your e30114 recipe with fear and catch on. Fear is trainer-side only; catch, the fear display and the event signal need three lines in the phone app.</p>
+  <div class="formula">--env.robot.balance_bumper 1 --env.robot.wheel_penalty 0.5 --env.robot.pos_tau 1 --env.robot.pos_penalty 1 --env.robot.pos_range 3000 --env.robot.drive_cap0 0 --env.robot.home_radius 3045 --env.robot.home_speed 0.5 --env.robot.home_ramp 3000 \
+--env.robot.weights_emotion True --env.robot.cost_obs True --agent.fear.weight 1.0 --env.robot.affect_catch 0.5</div>
+  <p>In dreamerBridge <code>main.py</code>: (1) in <code>loop_onboard</code>, after <code>obs, act = runner.act(snap, cmd)</code>, add <code>act = runner.modulate(act)</code>; (2) in <code>apply_pause(state)</code>, add <code>runner.configure(state.get('emotion'))</code>; (3) in the obs message, add <code>emotion_event=runner.event</code>. Then copy <code>dreamerv3/deploy/</code> (policy_runner, emotion, numpy_policy, export) and <code>tools/robot/face/face.html</code> to the phone. Without the app lines, fear still trains and the robot runs as before; only the reflex and the face's fear are missing.</p>
+  <p>Things to watch live: the face's fear should rise before a hit, not after; the catch should be visible as a short forward/back jab near a bumper, not a constant push. If the robot starts creeping, set <code>affect_catch 0</code> first: fear alone was most of the gain in every round. I would leave the triggered weight change off (<code>online_arousal.lr 0</code>); it is in the code with the salience signal if you want to try it.</p>
+  <p class="note">Unchanged, for comparison: e30114 alone. Real-robot pain differs from the sim's: the bumpers' contact angle on your table and the reflex overrides are what set it, so check <code>emotion.csv</code>'s pain column on the first run. Sim figures and the stats behind every table: <code>tools/robot/dev/r6/emostats.py</code>, <code>fig_emo4.py</code>; params in <code>sbatch/sim_bal_emo4.txt</code>, <code>emo5</code>, <code>emo6</code>.</p>
+</section>
+</main>
+</div>
