@@ -644,7 +644,7 @@ class SmartphoneRobot(embodied.Env):
       pos_range=12000.0, obs_pos_scale=1.67e-4, pos_jump=1000.0,
       pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0, home_radius=0.0,
       home_inner=1200.0, home_speed=0.5, home_min=0.25, home_ramp=3000.0,
-      home_max_s=30.0, home_track=1634.0, weights_emotion=False,
+      home_max_s=30.0, home_track=1634.0, home_off_steps=0, weights_emotion=False,
       fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05, travel_lo=0.0,
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
       pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
@@ -837,6 +837,12 @@ class SmartphoneRobot(embodied.Env):
     self.home_ramp = float(home_ramp)
     self.home_max_s = float(home_max_s)
     self.home_track = float(home_track)
+    # home_off_steps > 0: after this many of this process's steps the return
+    # home is off for good -- episodes no longer end past home_radius and the
+    # robot is not driven back. For letting a policy that already balances
+    # hold its ground without the trainer's help. 0: never off.
+    self.home_off_steps = int(home_off_steps)
+    self._home_off_said = False
     self._xyh = np.zeros(3)
     # Push the RSSM prior and the critic and reward heads with the policy, so
     # the phone can compute its emotion (deploy/emotion.py) for the face.
@@ -1182,6 +1188,15 @@ class SmartphoneRobot(embodied.Env):
     self._away_prev = dist
     return self._away_d
 
+  def _home_active(self):
+    if not self.home_off_steps or self._total_steps < self.home_off_steps:
+      return True
+    if not self._home_off_said:
+      self._home_off_said = True
+      print(f'[robot] return home off from step {self._total_steps} '
+            f'(home_off_steps {self.home_off_steps})', flush=True)
+    return False
+
   def _home_distance(self):
     return float(np.hypot(self._xyh[0], self._xyh[1]))
 
@@ -1334,7 +1349,7 @@ class SmartphoneRobot(embodied.Env):
       reward -= self.pos_penalty * min(
           abs(float(self._pos.mean())) / self.pos_range, 1.0)
     self._reward = reward
-    if self.home_radius and (
+    if self.home_radius and self._home_active() and (
         self._away(sensors) is not None
         and self._home_distance() > self.home_radius):
       self._go_home = True
