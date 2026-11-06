@@ -604,6 +604,9 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   driver.on_step(lambda tran, _: policy_fps.step())
   driver.on_step(shared_buffer.append)
   driver.on_step(logfn)
+  # Mean reward over the last minute, for the learner's ratio-switch gate.
+  recent = collections.deque(maxlen=3900)
+  driver.on_step(lambda tran, _: recent.append(float(np.mean(tran['reward']))))
 
   # After the envs exist, so a learner parked by _park has an actor that is
   # ready to the last process; the robot env only listens once reset.
@@ -638,7 +641,9 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
     if io_future is None or io_future.done():
       due = flush_pending >= flush_every
       flush_pending = 0 if due else flush_pending
-      io_future = io_pool.submit(_actor_io, paths, int(step), shared_buffer, due)
+      io_future = io_pool.submit(
+          _actor_io, paths, int(step), shared_buffer, due,
+          float(np.mean(recent)) if recent else None)
     if should_log(step) and (log_future is None or log_future.done()):
       with log_lock:
         logger.add(epstats.result(), prefix='epstats')
@@ -656,9 +661,12 @@ def run_actor(make_agent, make_env, make_logger, make_replay, paths, args,
   logger.close()
 
 
-def _actor_io(paths, step, shared_buffer, flush):
+def _actor_io(paths, step, shared_buffer, flush, reward=None):
   """Off-thread disk work for the actor: step marker and replay chunks."""
   _write_actor_step(paths.actor_step, step)
+  if reward is not None:
+    _atomic_write(elements.Path(paths.root) / 'reward_recent',
+                  f'{reward:.4f}'.encode('utf-8'))
   if flush:
     shared_buffer.flush()
 
@@ -723,6 +731,13 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   ratio_switch = int(getattr(args, 'online_ratio_switch', 0) or 0)
   ratio_late = float(getattr(args, 'online_ratio_late', 0) or 0)
   ratio_switched = not (ratio_switch > 0 and ratio_late > 0)
+  ratio_gate = float(getattr(args, 'online_ratio_switch_reward', -100) or -100)
+
+  def recent_reward():
+    try:
+      return float((elements.Path(paths.root) / 'reward_recent').read_text())
+    except (FileNotFoundError, ValueError):
+      return -1e9
   wm_ratio = float(getattr(args, 'online_wm_ratio', 0) or 0)
   wm_should = elements.when.Ratio(wm_ratio / batch_steps) if wm_ratio else None
   wm_budget, wm_scale, wm_done, updates = 0, None, 0, 0
@@ -815,13 +830,14 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
     if changed:
       _log_learner(logdir, f'training {"paused" if paused else "resumed"} '
                    f'step={int(step)} actor_step={actor_step}')
-    if not ratio_switched and actor_step >= ratio_switch:
+    if (not ratio_switched and actor_step >= ratio_switch and
+        (ratio_gate <= -100 or recent_reward() >= ratio_gate)):
       # A fresh Ratio starts from this step, so the debt the uncapped
       # phase built up is forgiven rather than worked off at the new rate.
       should_train = elements.when.Ratio(ratio_late / batch_steps)
       should_train(actor_step)
       ratio_switched = True
-      _log_learner(logdir, f'train ratio -> {ratio_late:g} step={int(step)} actor_step={actor_step}')
+      _log_learner(logdir, f'train ratio -> {ratio_late:g} step={int(step)} actor_step={actor_step} reward_recent={recent_reward():.3f}')
     repeats = should_train(actor_step)
     if wm_should is not None:
       wm_budget += wm_should(actor_step)

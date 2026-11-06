@@ -164,6 +164,7 @@ def main(argv=None):
       online_max_train_repeats=config.online_max_train_repeats,
       online_ratio_switch=config.online_ratio_switch,
       online_ratio_late=config.online_ratio_late,
+      online_ratio_switch_reward=config.online_ratio_switch_reward,
       online_wm_ratio=config.online_wm_ratio,
       online_learner_fps=config.online_learner_fps,
       online_sp=config.online_sp,

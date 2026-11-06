@@ -58,8 +58,39 @@ W1_ARMS = [
 ]
 
 
-def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR):
-  return (f'{exp} flat balance 65 {gpu} {floor} {PHONE} {LIVE_BAL} '
+# The recipe of rounds CR1/CR2 and IA1/IA2 (e30114's sim settings): drive home
+# at half speed with a 3 s ramp, no cap; policy published every second sync;
+# phone policy age 3 s.
+OLD_PHONE = ('--online_sync_every 4 --env.robot.sim_phone True '
+             '--env.robot.weights_emotion True')
+OLD_BAL = ('--env.robot.home_radius 3045 --env.robot.home_speed 0.5 '
+           '--env.robot.home_ramp 3000 --env.robot.balance_bumper 1.0 '
+           '--env.robot.wheel_penalty 0.5 --env.robot.pos_tau 1.0 '
+           '--env.robot.pos_penalty 1.0 --env.robot.pos_range 3000 '
+           '--env.robot.drive_cap0 0')
+GATE = '--online_ratio_switch_reward 0.4'
+HOME_LIVE = '--env.robot.home_speed 1.0 --env.robot.home_ramp 1200 --env.robot.home_max_s 10'
+
+# Round W2 (Sat 11-07): W1's base (live settings) learnt far worse than the
+# CR2 recipe (P100: two of four seeds on a bumper for 10-20 min). Which live
+# setting does it, and does gating the ratio switch on reward fix the slow GPU?
+W2_ARMS = [
+    ('old', 'old', SCHED),
+    ('live', 'live', SCHED),
+    ('old_home', 'old', f'{SCHED} {HOME_LIVE}'),
+    ('old_pub1', 'old', f'{SCHED} --online_publish_every 1'),
+    ('old_delay', 'old', f'{SCHED} --env.robot.sim_phone_delay 1.3'),
+    ('live_nosched', 'live', ''),
+    ('old_gate', 'old', f'{SCHED} {GATE}'),
+    ('live_gate', 'live', f'{SCHED} {GATE}'),
+    ('old_gate_b16', 'old', f'{SCHED} {GATE} --batch_size 16'),
+    ('live_gate_b16', 'live', f'{SCHED} {GATE} --batch_size 16'),
+]
+
+
+def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
+  phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
+  return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
           f'--run.steps {minutes * MIN} {flags} --seed {seed}').replace('  ', ' ')
 
 
@@ -116,6 +147,11 @@ def main():
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
         lines.append(bal_line(f'e{n}', 'v100', f'{W1_BASE} {flags}', 1, minutes=4)); n += 1
     lines.append(cmd_line(f'e{n}', 'v100', K1_ARMS[2][1] + ' ' + K1_ARMS[3][1], 1, minutes=4)); n += 1
+  elif rnd in ('w2p', 'w2i'):
+    gpu = {'w2p': 'p100', 'w2i': 'any'}[rnd]
+    for seed in SEEDS8:
+      for arm, base, flags in W2_ARMS:
+        lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
   elif rnd.startswith('w1'):

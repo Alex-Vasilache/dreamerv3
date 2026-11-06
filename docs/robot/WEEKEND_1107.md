@@ -76,7 +76,7 @@ actor dies and the job hangs to the wall limit (one wave of 16 runs lost, ~80
 min). Fixed in gen.py (True; it only sets what is sent to the phone), smoke
 e42161-e42167 for every new flag combination, then resubmitted.
 
-### Sat 11-07 ~00:30: IA2 in
+### Fri 11-06 ~22:30: IA2 in
 
 IA2 (e41049-e41108, n = 4, no ratio schedule; control = IA1 C): crossings a
 minute after minute 15. Figure `figs/weekend/ia2.png`.
@@ -96,7 +96,7 @@ half-upright for 10-25 min. At every speed the drift tracks the learner's
 updates per sample, so the ratio schedule, which fixes the late ratio at 128
 on every GPU, stays the drift control (W1's base, already running).
 
-### Sat 11-07 ~00:15: K1 in, K2 launched
+### Fri 11-06 ~23:30: K1 in, K2 launched
 
 K1 (e42168-e42199, command learning, V100, 60 min, n = 4). Minutes to
 tracking correlation ≥ 0.7 for three minutes running; crossings a minute after
@@ -129,3 +129,36 @@ speed (`online_learner_fps 17500`).
 New: `env.robot.command_grow_s` (sim only; the phone app would need the same
 line) scales random commands by min(1, t / grow), so the robot can learn to
 balance before it is asked to drive. Smoke e42360.
+
+### Sat 11-07 ~02:30: W1 in (base broken), W2 launched
+
+W1 (e42200-e42327; figure `figs/weekend/w1.png`). Its base, the live e40006
+settings + ratio schedule, learnt far worse than CR2's sim recipe did: on the
+P100s first upright minute 16.2 ± 9.0 with two of four seeds lying on a bumper
+for 10-20 min, and after minute 15 about 20 crossings a minute on both GPUs
+(CR2: 3.5 min, 10). So the one-factor results are measured against a broken
+base and only the large effects count:
+- **batch 16** is the one change that is fast and tight on both GPUs (P100
+  7.5 ± 4.5, IAS 3.5 ± 0.5 min; 17.7 ± 1.4 crossings on IAS, the lowest SD).
+- **wheel 1.0 + pos 2.0** never learns: all 8 seeds lie on a bumper for 30
+  min (upright 0.05). Stillness penalties that strong make the bumper the
+  optimum.
+- Fear critic: fast on IAS but triples the wheel speed (950-990 mm/s).
+- Both lrs x2, actor-critic lr x2, small/big model, horizon 1 s, entropy 1e-3
+  and an earlier switch each leave one or two seeds stuck for the whole run on
+  the A5000s; horizon 3 s and batch length 32 are neutral.
+
+Two failure modes run through all of it. (1) A seed that is not up when the
+ratio drops to 128 at minute 5 then learns slowly (P100). (2) Lying on a
+bumper pays about +0.08 a step, more than falling over and over, so a seed
+can settle there for good.
+
+New: `online_ratio_switch_reward` gates the switch on the actor's mean reward
+over the last minute (balance: ≥ 0.4 is upright ~0.9; a robot on a bumper sits
+at ~0.08), so a seed that has not learnt keeps the fast learner whatever the
+GPU.
+
+W2 (e42361-e42440 Saion P100, e42441-e42520 IAS; n = 8, seeds 811-818): CR2's
+recipe ("old") against the live settings, each live setting on the old recipe
+alone (home drive 1.0/1.2 s/10 s cap, publish every sync, policy age 1.3 s), live
+without the schedule, and the reward gate (+ batch 16) on both.
