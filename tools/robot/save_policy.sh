@@ -3,6 +3,8 @@
 #
 #   tools/robot/save_policy.sh balance_table              # the latest robot job
 #   tools/robot/save_policy.sh balance_carpet <run dir>   # a given run (on the trainer host)
+#   POLICY_PKL=<run dir>/logdir/ckpt_milestones/<step>/agent.pkl tools/robot/save_policy.sh <name> <run dir>
+#                                                         # a per-minute snapshot (--run.save_every_steps)
 #
 # Takes the newest weights the run's learner published, packs them into the
 # phone's .npz (dreamerv3/deploy/export.py, with the run's own config), writes
@@ -20,8 +22,15 @@ mkdir -p "$OUT"
 cd "$ROOT"
 tmp=$(mktemp -d)
 
-STAMP=$(trainer_sh "cat $RUN/logdir/online_shared/policy/latest")
-trainer_get "$RUN/logdir/online_shared/policy/policy_$STAMP.pkl" "$tmp/policy.pkl"
+if [ -n "${POLICY_PKL:-}" ]; then
+  # A given weights file on the trainer host, e.g. a per-minute snapshot:
+  #   POLICY_PKL=<run dir>/logdir/ckpt_milestones/000000085800/agent.pkl
+  STAMP=$(trainer_sh "stat -c %Y $(printf %q "$POLICY_PKL")")000000000
+  trainer_get "$POLICY_PKL" "$tmp/policy.pkl"
+else
+  STAMP=$(trainer_sh "cat $RUN/logdir/online_shared/policy/latest")
+  trainer_get "$RUN/logdir/online_shared/policy/policy_$STAMP.pkl" "$tmp/policy.pkl"
+fi
 trainer_get "$RUN/logdir/config.yaml" "$tmp/config.yaml"
 # The job name (e.g. e1294_robot_25hz) is the run dir's name minus its date.
 JOB=$(basename "$RUN" | sed -E 's/_[0-9]{8}_[0-9]{6}$//')
