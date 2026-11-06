@@ -161,3 +161,36 @@ app's built-in `emotion.py` lacks the new `step()` arguments). `--clear` the
 overrides after the next app build. Emotion on the face during training needs
 `--env.robot.weights_emotion True`. The face WebView keeps the page it loaded:
 swipe back to the gauges and to the face again after pushing `face.html`.
+
+## Literature
+
+Two reviews behind the design, written 2026-11-06 by the IAS session's
+research agents (DOIs checked against Crossref there; each claim marked
+[abs]/[sec]/[mem]/[unverified]):
+
+- [FACE_LIT_ROBOTS.md](FACE_LIT_ROBOTS.md): Cozmo/Vector (face rig, blinks,
+  darts, mood engine, from the Vector source), WALL-E/EVE, Reachy Mini,
+  Open Duck Mini and Disney BDX, Kismet, Baxter, Jibo, Loona, Kalegina et al.
+  2018. Recommends eyes only, no pupils, one hue, pain as the only second hue.
+- [FACE_LIT_AFFECT.md](FACE_LIT_AFFECT.md): which facial channel carries
+  valence, arousal, dominance and pain (facial EMG, pupil, gaze, posture,
+  grimace scales), and the timescales of reflexes, expressions, posture and
+  mood.
+
+## Changes 2026-11-06 evening (from live use)
+
+- Faster: small affect changes now follow with tau 0.15 s (was 0.5 s), big
+  ones at once; springs omega 16 (was 10); the body view draws every frame
+  from the raw samples. (Expressions blend in ~0.1 s on Disney's BDX and are
+  visible by ~0.3 s in facial EMG.)
+- Pain is a squint of the same eyes, not a separate `> <` shape cross-faded
+  in: upper lid down, lower lid up (orbit tightening, AU6/7), a slight
+  brow-lowering slant (AU4), flatter and wider (Vector's squash), red mixed in
+  by strength. It rises at once and eases over ~0.4 s (was 0.8 s). Pain
+  narrows the eyes, fear widens them, which keeps the two apart.
+- The phone's empowerment rollout (~100 ms of Python per call) held the
+  interpreter and dropped the 65 Hz control loop to ~47-55 Hz. It now runs
+  every 3 s (posture-like signal) one rollout step at a time with a control
+  period's sleep between steps (`emotion.empowerment_slices`). The app
+  publishes the web state at 30 Hz instead of every step (app main.py,
+  smartphone-robot-android ea7e25fe, local).

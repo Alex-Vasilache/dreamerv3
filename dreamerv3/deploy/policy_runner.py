@@ -198,7 +198,11 @@ class PolicyRunner:
     return policy.meta
 
   FEEL_EVERY = 4
-  EMPOWER_S = 0.5
+  # Empowerment drives the slow control/dominance signal (posture-like,
+  # tau ~3-10 s in docs/robot/FACE.md), so every 3 s is plenty; each rollout
+  # step is followed by a short sleep that hands the interpreter back.
+  EMPOWER_S = 3.0
+  EMPOWER_GAP_S = 0.016   # one control period at 65 Hz
 
   def _install_emotion(self, policy):
     if 'emotion' not in policy.meta:
@@ -225,7 +229,14 @@ class PolicyRunner:
       if emo is None or last is None:
         continue
       try:
-        value = emo._empowerment(last[0], last[1])
+        slices = getattr(emo, 'empowerment_slices', None)
+        if slices is None:   # an older emotion.py
+          value = emo._empowerment(last[0], last[1])
+        else:
+          # One rollout step at a time, sleeping between them, so the
+          # control loop is never held up for the whole rollout.
+          for value in slices(last[0], last[1]):
+            time.sleep(self.EMPOWER_GAP_S)
         with self._emo_lock:
           emo.empowerment = value
       except Exception as e:  # noqa: BLE001 -- the face is never worth a crash

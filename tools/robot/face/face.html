@@ -18,7 +18,7 @@
    phone elsewhere with ?robot=host:port, or a recording with ?trace=URL or
    an embedded window.FACE_TRACE (tools/robot/face/trace_from_csv.py).
    ?view=face shows the face alone (double-tap the face to bring the panel
-   back); ?grid= LED columns (44); ?fps= (30); ?dpr= (1.5); ?tau= (0.5 s). */
+   back); ?grid= LED columns (44); ?fps= (30); ?dpr= (1.5); ?tau= (0.15 s). */
 :root {
   --stage: #030507; --panel: #0f1318; --raised: #161b22; --line: #232b35;
   --ink: #dfe5ec; --dim: #8b96a3; --faint: #56616d;
@@ -270,7 +270,7 @@ canvas.inst { display: block; width: 100%; }
   // Critically damped, one per feature: a sudden signal still moves the face
   // smoothly. kick() adds velocity for phasic events (a startle, a bounce).
   const springs = {};
-  function spring(name, goal, dt, omega = 10) {
+  function spring(name, goal, dt, omega = 16) {
     const s = springs[name] || (springs[name] = { x: goal, v: 0 });
     for (let n = Math.ceil(dt / 0.008), h = dt / n; n > 0; n--) {
       s.v += (omega * omega * (goal - s.x) - 2 * omega * s.v) * h; s.x += s.v * h;
@@ -320,17 +320,6 @@ canvas.inst { display: block; width: 100%; }
     return true;
   }
 
-  // Pain's eye: squeezed shut into a chevron, its point toward the nose
-  // (> <), a stroke ~1.5 LEDs thick. Not a slanted lid: that is anger.
-  function chevron(x, y, e, s) {
-    const u = -s * (x - e.cx), dy = Math.abs(y - e.cy);
-    const vx = e.hw * 0.55, ex = -e.hw * 0.75, ey = e.ch;   // vertex (vx, 0), arm end (ex, ey)
-    const dx = ex - vx, L2 = dx * dx + ey * ey;
-    const t = clamp(((u - vx) * dx + dy * ey) / L2, 0, 1);
-    const px = vx + t * dx - u, py = t * ey - dy;
-    return px * px + py * py <= 0.75 * 0.75;
-  }
-
   let aRise = 0, startleAt = -1e9, hurtHigh = false, halfAt = -1e9, phase = 0, blinkAt = 0, blinkT = 1, sacAt = 0, gaze = [0, 0], prevA = 0.4, prevTd = 0, prevPain = 0, flash = 0;
   function drawFace(dt, ms) {
     const v = clamp(mid.valence, -1, 1), a = clamp(mid.arousal, 0, 1), d = clamp(mid.dominance, -1, 1);
@@ -376,40 +365,44 @@ canvas.inst { display: block; width: 100%; }
     // gaze: in control the eyes sit higher, wider apart, steady, lids level
     // and a touch low; helpless lower, closer, inner corners raised
     // (worried), gaze down and away, half-blinks. Pain overrides arousal on
-    // aperture: a squeeze toward > <, a shake, red.
+    // aperture: the same eyes squint (upper lid down, lower lid up: orbit
+    // tightening, AU6/7; a slight brow-lowering slant, AU4), flatten and widen
+    // (Vector's squash), shake and turn red with its strength.
     phase += dt * (0.8 + 2.2 * a);
     const vn = Math.max(0, -v), dp = Math.max(0, d);
     const scale = sp('scale', 1 + 0.08 * d + 0.1 * (a - 0.5)) * (1 + 0.06 * sp('bounce', 0, 9));
     const rise = sp('rise', -d * 1.6 + 0.8 * Math.max(0, -v), 4) + Math.sin(phase) * 0.25;
-    const shake = sp('shake', 1.0 * p + Math.max(0, a - 0.85) * 2) * Math.sin(ms * 0.06);
-    const open = sp('open', (0.62 + 0.5 * a) * (1 - 0.55 * p)) * (1 + 0.25 * clamp(sp('wide', 0, 12), -1, 2));
+    const pq = sp('pq', p, 26);   // pain's squint, fast to follow
+    const shake = sp('shake', 0.6 * p + Math.max(0, a - 0.85) * 2) * Math.sin(ms * 0.06);
+    const open = sp('open', (0.62 + 0.5 * a) * (1 - 0.6 * p)) * (1 + 0.25 * clamp(sp('wide', 0, 12), -1, 2));
     if (d < -0.3 && Math.random() < dt * 0.25 * -d) halfAt = ms;   // a half-blink, anxious
     const half = Math.max(0, 1 - (ms - halfAt) / 450);
     const top = sp('top', 0.3 * clamp((0.45 - a) / 0.45, 0, 1) + 0.1 * Math.max(0, d) + 0.15 * Math.max(0, -v)
-      + 0.25 * vn * (1 - dp) * (1 - a) + 0.3 * vn * dp * a + 0.2 * p) + 0.35 * Math.sin(Math.PI * half);
+      + 0.25 * vn * (1 - dp) * (1 - a) + 0.3 * vn * dp * a) + 0.22 * pq + 0.35 * Math.sin(Math.PI * half);
     // The slope: sad droops the outer ends; negative valence while in
     // control and aroused tips it inward instead (cross, not scared: anger
     // and fear differ mainly in dominance).
-    const tilt = sp('tilt', vn * (-0.5 * (1 - dp) * (1 - 0.4 * a) + 1.0 * dp * a) - 0.15 * Math.max(0, -d));
+    const tilt = sp('tilt', vn * (-0.5 * (1 - dp) * (1 - 0.4 * a) + 1.0 * dp * a) - 0.15 * Math.max(0, -d)) + 0.3 * pq;
     // glad: the smiling lower lid; scared: a tense one (Cozmo's fear)
-    const bot = sp('bot', 0.5 * Math.max(0, v) * (1 - p) + 0.25 * vn * a * (1 - dp) + 0.2 * p);
+    const bot = sp('bot', 0.5 * Math.max(0, v) * (1 - p) + 0.25 * vn * a * (1 - dp)) + 0.3 * pq;
     const btilt = 0;
-    const squeeze = clamp(sp('squeeze', clamp((p - 0.35) / 0.4, 0, 1), 14), 0, 1);
-    const round = sp('round', 0.5 + 0.45 * Math.max(0, v) - 0.25 * p);
+    const round = sp('round', 0.5 + 0.45 * Math.max(0, v)) - 0.2 * pq;
 
     // Colour: one hue, cyan, its saturation and brightness rising with
     // arousal (Vector: a washed-out face when bored); red is pain's alone.
     const sat = sp('sat', 30 + 60 * a), light = (0.5 + 0.5 * sp('bright', 0.3 + 0.7 * a)) * (1 + flash)
       * (1 + 0.04 * (Math.random() - 0.5) * (0.5 + a));   // a slight shimmer
     let [R, G, B] = hsl(188, sat, 60);
-    const pr = sp('pr', p);
+    // Cyan and red mix through grey, so the colour turns over quickly in
+    // the middle (mostly cyan below 0.15, mostly red above 0.5).
+    const pr = clamp((pq - 0.15) / 0.35, 0, 1);
     R = lerp(R, 255, pr * 0.85); G = lerp(G, 72, pr * 0.85); B = lerp(B, 60, pr * 0.85);
 
     // Geometry, in LED units, centred on the matrix. A blink squashes the
     // eye to a line that widens (Vector's), it is not a lid.
     const S = Math.min(cols, rows * 1.1) / 30 * scale;
     const cx0 = (cols - 1) / 2 + gx * 2.2 + shake, cy0 = (rows - 1) / 2 + rise + gy * 1.6;
-    const hw = 4.4 * S * (1 + 0.25 * blink), hh = 5.2 * S * open * (1 - 0.92 * blink);
+    const hw = 4.4 * S * (1 + 0.25 * blink) * (1 + 0.12 * pq), hh = 5.2 * S * open * (1 - 0.92 * blink);
     const gap = sp('gap', 6.6 + 0.5 * d, 4) * S;
     const eyes = [-1, 1].map(s => ({
       s, cx: cx0 + s * gap - gx * 0.35 * S * s, cy: cy0 + blink * 1.5 * S,
@@ -428,8 +421,7 @@ canvas.inst { display: block; width: 100%; }
         let n = 0;
         for (const oxs of off) for (const oys of off) {
           const x = i + oxs, y = j + oys;
-          if (squeeze < 1 && inside(x, y, e, e.s)) n += 1 - squeeze;
-          if (squeeze > 0 && chevron(x, y, e, e.s)) n += squeeze;
+          if (inside(x, y, e, e.s)) n += 1;
         }
         if (n < 0.05) continue;
         const hs = 0.8 + 0.35 * Math.exp(-((i - e.cx - (hx - cx0)) ** 2 + (j - hy) ** 2) / (12 * S * S));
@@ -644,25 +636,25 @@ canvas.inst { display: block; width: 100%; }
   }
 
   // ---- main loop ------------------------------------------------------------
-  const FPS = Math.max(5, num('fps', 30)), TAU = Math.max(0.05, num('tau', 0.5));
+  const FPS = Math.max(5, num('fps', 30)), TAU = Math.max(0.03, num('tau', 0.15));
   let t0 = performance.now(), instT = 0, lastWords = '';
   function frame(ms) {
     if (ms - t0 < 1000 / FPS - 2) { requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, (ms - t0) / 1000); t0 = ms;
-    // Affect follows slowly through small changes and fast through big ones
-    // (a bump shows within ~0.2 s, and the face does not twitch); the body
-    // follows its samples at once.
-    const kj = 1 - Math.exp(-dt / 0.05);
+    // Affect follows small changes within ~0.15 s and big ones at once
+    // (expressions blend in ~0.1 s: Disney BDX; visible by 0.3 s: facial EMG);
+    // the body shows each sample as it arrives.
+    const kj = 1 - Math.exp(-dt / 0.03);
     for (const k in target) {
       if (!(k in mid)) mid[k] = target[k];
-      if (BODY.includes(k)) { mid[k] = lerp(mid[k], target[k], kj); continue; }
+      if (BODY.includes(k)) { mid[k] = target[k]; continue; }
       const m0 = (springs['_' + k] ??= { x: target[k] });
       m0.x = lerp(m0.x, target[k], kj);
       const gap = Math.abs(m0.x - mid[k]) * (k === 'arousal' ? 2 : 1);
-      // Phasic signals attack at once; pain lingers ~1 s after; dominance is
-      // posture, slower than expression (~2 s).
-      const tau = k === 'td_valence' ? 0.08 : k === 'pain' ? (m0.x > mid[k] ? 0.06 : 0.8)
-        : k === 'dominance' ? 2.0 : lerp(TAU, 0.05, clamp((gap - 0.06) / 0.14, 0, 1));
+      // Phasic signals attack at once; pain rises at once and eases over
+      // ~0.4 s; dominance is posture, slower than expression (~1.5 s).
+      const tau = k === 'td_valence' ? 0.05 : k === 'pain' ? (m0.x > mid[k] ? 0.03 : 0.4)
+        : k === 'dominance' ? 1.5 : lerp(TAU, 0.03, clamp((gap - 0.06) / 0.14, 0, 1));
       mid[k] = lerp(mid[k], m0.x, 1 - Math.exp(-dt / tau));
     }
     if (W === 0) layoutFace();
@@ -674,8 +666,9 @@ canvas.inst { display: block; width: 100%; }
       if (hist.length > SPAN * HZ) hist.shift();
     }
     instT += dt;
-    if (!app.classList.contains('face-only') && instT >= 1 / 15) {   // instruments at 15 fps
-      instT = 0; drawMap(); drawGauges(); drawBody(); drawStrip();
+    if (!app.classList.contains('face-only')) drawBody();   // the body every frame
+    if (!app.classList.contains('face-only') && instT >= 1 / 15) {   // the rest at 15 fps
+      instT = 0; drawMap(); drawGauges(); drawStrip();
       const [w, x] = words(), s = w + '|' + x;
       if (s !== lastWords) { lastWords = s; reading.innerHTML = w + (x ? `<small>· ${x}</small>` : ''); }
       if (performance.now() - lastMsg > 3000 && src.className === 'on' && !q.get('trace') && !window.FACE_TRACE)

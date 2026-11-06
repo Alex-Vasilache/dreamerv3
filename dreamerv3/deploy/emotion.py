@@ -168,6 +168,15 @@ class Emotion:
     return y + bias.reshape(1, kernel.shape[0], -1)
 
   def _empowerment(self, deter, stoch):
+    for value in self.empowerment_slices(deter, stoch):
+      pass
+    return value
+
+  def empowerment_slices(self, deter, stoch):
+    """_empowerment one rollout step at a time: yields None after each of
+    the `horizon` steps, then the value. On the phone the whole rollout holds
+    the interpreter for ~100 ms, which starved the 65 Hz control loop to
+    ~55 Hz (2026-11-06); a caller that sleeps between slices lets it in."""
     K, unimix = len(ACTIONS), self.p.meta['unimix']
     d = np.repeat(deter[None], K, 0)
     s = np.repeat(stoch[None], K, 0)
@@ -175,8 +184,9 @@ class Emotion:
       d = self._core_batch(d, s, ACTIONS)
       p = _probs(self.prior_logit(d), unimix)            # (K, stoch, classes)
       s = np.eye(p.shape[-1], dtype=F32)[p.argmax(-1)]   # the likeliest latent
+      yield None
     mix = p.mean(0, keepdims=True)
-    return float(np.mean([_kl(p[k], mix[0]) for k in range(K)]))
+    yield float(np.mean([_kl(p[k], mix[0]) for k in range(K)]))
 
   # -- the step ---------------------------------------------------------------
 
