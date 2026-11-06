@@ -22,6 +22,11 @@ class MLPHead(nj.Module):
   bias: bool = True
   winit: str | Callable = nets.Initializer('trunc_normal')
   binit: str | Callable = nets.Initializer('zeros')
+  # Scale the last hidden features to unit length before the output layer
+  # (Hussing et al. 2024, "Dissecting deep RL with high update ratios"):
+  # bounds how far a value head can grow from features alone, against the
+  # over-optimism of critics trained many times on the same data.
+  featnorm: bool = False
 
   def __init__(self, space, output, **hkw):
     shared = dict(bias=self.bias, winit=self.winit, binit=self.binit)
@@ -37,6 +42,9 @@ class MLPHead(nj.Module):
     bshape = jax.tree.leaves(x)[0].shape[:bdims]
     x = x.reshape((*bshape, -1))
     x = self.mlp(x)
+    if self.featnorm:
+      x32 = x.astype(f32)
+      x = (x32 / (jnp.linalg.norm(x32, axis=-1, keepdims=True) + 1e-6)).astype(x.dtype)
     x = self.head(x)
     return x
 

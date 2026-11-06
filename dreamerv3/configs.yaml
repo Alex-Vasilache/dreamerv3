@@ -696,7 +696,7 @@ defaults:
       log_images: False
     manager_slowtar: False
     policy: {layers: 3, units: 1024, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
-    value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
+    value: {layers: 3, units: 1024, act: silu, norm: rms, output: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255, featnorm: False}
     policy_dist_disc: categorical
     policy_dist_cont: bounded_normal
     imag_last: 0

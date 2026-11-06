@@ -11,5 +11,5 @@ FIRST=${FIRST:-0}; LAST=${LAST:-$((n - 1))}
 LOG=${RUNS:-$HOME/robot_runs}/slurm_logs; mkdir -p "$LOG"
 cd "$LOG"
 CODE="$CODE" PARAMS="$PARAMS" sbatch --parsable -J "$(basename "${PARAMS%.txt}")" \
-  --qos="$QOS" --array="${FIRST}-${LAST}%${CONC}" --export=ALL \
+  --qos="$QOS" --array="${FIRST}-${LAST}%${CONC}" --export=ALL ${DEP:+--dependency=$DEP} \
   "$CODE/sbatch/ias/run_sim_ias.sbatch"
