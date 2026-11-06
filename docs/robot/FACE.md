@@ -43,6 +43,23 @@ slight shimmer. Kalegina et al. (HRI 2018) found no-mouth faces rated
 creepier, but on still images. Blinking softens it, and Cozmo, Vector, EVE,
 WALL-E, BDX and Loona all have no mouth.
 
+## Sound (face.html, `voice`)
+
+Off until tapped (browsers need a gesture). Three layers like the face:
+
+| Layer | What | Grounding |
+|---|---|---|
+| utterances | 1–5 babbled syllables (FM sines, a robot timbre), every ~4–16 s (more often when aroused), and a comment when the reading in words changes and holds 1.5 s (at most every 6 s); quiet while in pain | Burtt's WALL-E voice as "little phrases of music which indicated the feeling"; Vector feeds mood into its procedural audio |
+| arousal → | tempo (syllables 0.24 → 0.08 s), pitch (±0.45 octave), pitch range, loudness, brightness (FM index) | Juslin & Laukka 2003: high arousal = faster, higher, more variable pitch, louder |
+| valence → | scale and contour: major pentatonic rising, each syllable gliding up; minor falling, gliding down; sad and calm ends on a long fall | valence is carried by mode and contour, not pitch height (same review); sadness is best conveyed by sound (Löffler et al. 2018) |
+| dominance → | register: −0.4 octave in control, +0.4 helpless | Ohala's frequency code (1984, *Phonetica* 41:1–16, doi:10.1159/000261706): low = large/dominant, high = small/submissive; disputed for human speech (Grawunder & Winter), used here as an animal-call convention |
+| events | good surprise (TD+): a rising third-to-fifth "ding"; bad (TD−): a falling "wah"; startle (arousal climbing fast into its upper half): a high blip; pain onset (pain > 0.35): a falling, rough "ouch"; a whimper every ~1 s while pain > 0.5; relief when pain is gone: a soft falling sigh | fired from the same detections as the face's bounce, flinch and widen, since a matching action amplifies an utterance and a clashing one overrides it (Read & Belpaeme 2014, doi:10.1145/2559636.2559680; 2016, *Int. J. Soc. Robot.*); pain is amplitude-modulated at 70 Hz, the roughness band (30–150 Hz) of screams and alarms (Arnal et al. 2015, *Curr. Biol.*, doi:10.1016/j.cub.2015.06.043) |
+| repetition | each event has a refractory (0.5–2 s) and repeats are 0.65× quieter, recovering over ~8 s | Vector's emotion-event repetition penalty |
+| motors | band-passed noise, centre 250–1650 Hz and level with the mean \|wheel command\| | Burtt: arm, head and tread motors were part of WALL-E's expression |
+
+In 60 s of `demo_trace.json`: ~14 utterances, 5 pain sounds, 6 reliefs, 6
+startles (`window.__voice` counts them).
+
 ## What other robots do (detail in the research notes below)
 
 - **Cozmo / Vector (Anki).** A procedural face rig: 5 face parameters + 19
@@ -129,4 +146,5 @@ LOGDIR/emotion.csv OUT.json`, then `face.html?trace=OUT.json`;
 - Body as expression: a small affect bias on the balance set-point (upright
   and still when in control, a hunch when helpless) is possible, but it
   touches the controller. Not done.
-- Sound is still the old chirp.
+- Listen with people: whether the phrases read as glad / sad / scared
+  without the face, and with it (Read & Belpaeme: context dominates).

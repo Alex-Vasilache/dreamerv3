@@ -147,27 +147,124 @@ canvas.inst { display: block; width: 100%; }
     } catch (e) { src.textContent = 'no robot'; }
   })();
 
-  // ---- sound: a soft chirp, pitch with arousal, rising when glad ------------
-  let audio = null, soundOn = false, lastChirpV = 0;
+  // ---- voice -------------------------------------------------------------------
+  // Three layers, as the face (docs/robot/FACE.md, "Sound"):
+  //  * utterances: short babbled phrases, now and then, more often when
+  //    aroused, and when the feeling changes. Arousal sets tempo, pitch, pitch
+  //    range and loudness (Juslin & Laukka 2003); valence the scale and the
+  //    contour (major and rising / minor and falling); dominance the register
+  //    (Ohala's frequency code: low = in control, high = small and helpless).
+  //  * events, in step with the face's phasic events, so sound and face agree
+  //    (Read & Belpaeme: a matching action amplifies an utterance, a clashing
+  //    one overrides it): a good surprise, a bad one, a startle, pain (rough,
+  //    amplitude-modulated at 70 Hz, the scream/alarm band; Arnal et al. 2015)
+  //    and relief after it. Repeats are quieter (Vector's repetition penalty).
+  //  * the motors: a faint whine following the wheel command (Burtt's WALL-E:
+  //    the motors are part of the voice).
+  // Robot timbre: FM sines. Browsers allow audio only after a tap, so it starts off.
+  const voice = (() => {
+    let ac = null, out = null, on = false, motorG = null, motorF = null;
+    let nextAt = 0, lastWord = '', wordT = 0;
+    const refractory = { good: 0.6, bad: 0.6, startle: 0.5, pain: 0.8, relief: 2, ache: 1.2 };
+    const lastT = {}, reps = {};
+    function init() {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = ac.createDynamicsCompressor(); out = ac.createGain(); out.gain.value = 0.8;
+      out.connect(comp).connect(ac.destination);
+      const n = ac.createBuffer(1, ac.sampleRate, ac.sampleRate), d = n.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ac.createBufferSource(); src.buffer = n; src.loop = true;
+      motorF = ac.createBiquadFilter(); motorF.type = 'bandpass'; motorF.Q.value = 6; motorF.frequency.value = 300;
+      motorG = ac.createGain(); motorG.gain.value = 0;
+      src.connect(motorF).connect(motorG).connect(out); src.start();
+    }
+    // One syllable: pitch gliding f0 -> f1 over dur s; fm the brightness;
+    // rough 0..1 the 70 Hz amplitude modulation.
+    function syl(t, f0, f1, dur, amp, fm = 0.4, rough = 0) {
+      const o = ac.createOscillator(), m = ac.createOscillator(), mg = ac.createGain(), g = ac.createGain();
+      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      m.frequency.setValueAtTime(f0 * 2, t); m.frequency.exponentialRampToValueAtTime(f1 * 2, t + dur);
+      mg.gain.value = f0 * fm; m.connect(mg).connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(amp, t + 0.015);
+      g.gain.setValueAtTime(amp, t + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g);
+      if (rough > 0) {
+        const am = ac.createOscillator(), ag = ac.createGain(), rg = ac.createGain();
+        am.frequency.value = 70; ag.gain.value = rough / 2; rg.gain.value = 1 - rough / 2;
+        am.connect(ag).connect(rg.gain); g.connect(rg).connect(out); am.start(t); am.stop(t + dur + 0.05);
+      } else g.connect(out);
+      for (const x of [o, m]) { x.start(t); x.stop(t + dur + 0.05); }
+    }
+    const base = st => 330 * 2 ** (0.9 * (st.arousal - 0.5) - 0.4 * st.dominance);
+    function utter(st, n) {
+      counts.utter = (counts.utter || 0) + 1;
+      const v = st.valence, a = clamp(st.arousal, 0, 1), f = base(st);
+      const scale = v >= 0 ? [0, 2, 4, 7, 9, 12, 14] : [0, 3, 5, 7, 10, 12];
+      const dur = lerp(0.24, 0.08, a), amp = 0.05 + 0.1 * a, spread = 1 + Math.round(3 * a);
+      n = n || 1 + Math.round(1 + 3 * a * Math.random());
+      let t = ac.currentTime + 0.02, k = v >= 0 ? 1 : 3;
+      for (let i = 0; i < n; i++) {
+        // the contour: rising when glad, falling when not; wider when aroused
+        k = clamp(k + (v >= 0 ? 1 : -1) * (Math.random() < 0.7 ? 1 : -1) * (1 + Math.floor(Math.random() * spread)), 0, scale.length - 1);
+        const f0 = f * 2 ** (scale[k] / 12), last = i === n - 1;
+        const glide = v >= 0 ? 1.06 : last && a < 0.4 ? 0.8 : 0.95;   // sad ends on a long fall
+        const d = last && v < 0 && a < 0.4 ? dur * 2.5 : dur;
+        syl(t, f0, f0 * glide, d, amp, 0.2 + 0.6 * a);
+        t += d + dur * 0.35;
+      }
+    }
+    const counts = window.__voice = {};
+    function event(kind, st) {
+      if (!on) return;
+      const now = ac.currentTime;
+      if (now - (lastT[kind] ?? -9) < refractory[kind]) return;
+      reps[kind] = (reps[kind] || 0) * Math.exp(-(now - (lastT[kind] ?? -99)) / 8) + 1;
+      lastT[kind] = now; counts[kind] = (counts[kind] || 0) + 1;
+      const g = 0.65 ** (reps[kind] - 1), f = base(st), t = now + 0.01;
+      if (kind === 'good') { syl(t, f * 1.26, f * 1.26, 0.08, 0.12 * g, 0.5); syl(t + 0.09, f * 1.5, f * 1.68, 0.14, 0.12 * g, 0.5); }
+      else if (kind === 'bad') syl(t, f * 1.06, f * 0.8, 0.32, 0.1 * g, 0.3);
+      else if (kind === 'startle') syl(t, f * 1.4, f * 2.2, 0.07, 0.1 * g, 0.8);
+      else if (kind === 'pain') syl(t, f * 1.7, f * 0.9, 0.28, 0.16 * g, 0.9, 1);
+      else if (kind === 'ache') syl(t, f * 1.2, f * 1.0, 0.22, 0.07 * g, 0.6, 0.7);
+      else if (kind === 'relief') { syl(t, f * 1.1, f * 0.75, 0.5, 0.06 * g, 0.15); }
+    }
+    function tick(dt, st) {
+      if (!on) return;
+      const now = ac.currentTime, a = clamp(st.arousal, 0, 1);
+      // the motors
+      const m = has.act_l ? (Math.abs(st.act_l) + Math.abs(st.act_r)) / 2 : 0;
+      motorF.frequency.setTargetAtTime(250 + 1400 * m, now, 0.05);
+      motorG.gain.setTargetAtTime(0.05 * Math.min(1, m), now, 0.05);
+      // a comment when the feeling (in words) has changed and held for 0.8 s
+      const w = words()[0];
+      if (w === lastWord) wordT = 0;
+      else if ((wordT += dt) > 1.5) {
+        lastWord = w; wordT = 0;
+        if (now - (lastT.word ?? -9) > 6) { lastT.word = now; utter(st); nextAt = now + 4; }
+      }
+      // idle babble: every ~3-15 s, more often when aroused; quiet when in pain
+      if (now > nextAt) {
+        if (nextAt > 0 && st.pain < 0.3) utter(st);
+        nextAt = now + (4 + Math.random() * 12) * (1.4 - a);
+      }
+      if (st.pain > 0.5 && now - (lastT.pain ?? -9) > 1) event('ache', st);   // a whimper while it lasts
+    }
+    return {
+      toggle() {
+        if (!ac) { try { init(); } catch (e) { return null; } }
+        on = !on; if (ac.state === 'suspended') ac.resume();
+        if (!on) motorG.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+        else utter(mid, 3);   // hello
+        return on;
+      },
+      event, tick,
+    };
+  })();
   const btn = document.getElementById('sound');
   btn.onclick = () => {
-    if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { btn.textContent = 'No sound'; return; } }
-    soundOn = !soundOn; if (audio.state === 'suspended') audio.resume();
-    btn.textContent = soundOn ? '♪ on' : '♪ off';
-    if (soundOn) chirp(mid.valence, mid.arousal, 0);
+    const r = voice.toggle();
+    btn.textContent = r === null ? 'No sound' : r ? '♪ on' : '♪ off';
   };
-  function chirp(v, a, p) {
-    if (!audio || !soundOn) return;
-    const base = 260 + 420 * a, step = p > 0.3 ? 0.7 : v >= 0 ? 1.26 : 0.84;
-    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
-    o.type = p > 0.3 ? 'square' : v >= 0 ? 'sine' : 'triangle';
-    o.frequency.setValueAtTime(base, t);
-    o.frequency.exponentialRampToValueAtTime(base * step, t + 0.1 + 0.2 * (1 - a));
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(p > 0.3 ? 0.05 : 0.1, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-    o.connect(g).connect(audio.destination); o.start(t); o.stop(t + 0.4);
-  }
 
   // ---- springs ---------------------------------------------------------------
   // Critically damped, one per feature: a sudden signal still moves the face
@@ -234,7 +331,7 @@ canvas.inst { display: block; width: 100%; }
     return px * px + py * py <= 0.75 * 0.75;
   }
 
-  let halfAt = -1e9, phase = 0, blinkAt = 0, blinkT = 1, sacAt = 0, gaze = [0, 0], prevA = 0.4, prevTd = 0, prevPain = 0, flash = 0;
+  let aRise = 0, startleAt = -1e9, hurtHigh = false, halfAt = -1e9, phase = 0, blinkAt = 0, blinkT = 1, sacAt = 0, gaze = [0, 0], prevA = 0.4, prevTd = 0, prevPain = 0, flash = 0;
   function drawFace(dt, ms) {
     const v = clamp(mid.valence, -1, 1), a = clamp(mid.arousal, 0, 1), d = clamp(mid.dominance, -1, 1);
     const p = clamp(mid.pain, 0, 1), td = clamp(mid.td_valence || 0, -1, 1);
@@ -244,9 +341,15 @@ canvas.inst { display: block; width: 100%; }
     // a bounce and a flash for a good surprise in value, a flinch for a bad one
     // or a sudden hurt.
     const da = (a - prevA) / Math.max(dt, 1e-3); prevA = a;
-    if (da > 1.5) kick('wide', 4 * Math.min(1, da / 4));
-    if (td - prevTd > 0.35 && td > 0.3) { kick('bounce', 3); flash = Math.max(flash, 0.6); }
-    if ((prevTd - td > 0.35 && td < -0.3) || p - prevPain > 0.3) blinkT = Math.min(blinkT, 0.05);
+    // a startle: arousal climbing fast into the upper half (not its jitter)
+    aRise = da > 0 ? aRise + da * dt : Math.max(0, aRise - dt);
+    if (aRise > 0.3 && a > 0.65 && ms - startleAt > 3000) {
+      startleAt = ms; aRise = 0; kick('wide', 3); voice.event('startle', mid);
+    }
+    if (td - prevTd > 0.35 && td > 0.3) { kick('bounce', 3); flash = Math.max(flash, 0.6); voice.event('good', mid); }
+    if (prevTd - td > 0.35 && td < -0.3) { blinkT = Math.min(blinkT, 0.05); voice.event('bad', mid); }
+    if (p > 0.35 && !hurtHigh) { blinkT = Math.min(blinkT, 0.05); voice.event('pain', mid); hurtHigh = true; }
+    if (hurtHigh && p < 0.1) { hurtHigh = false; voice.event('relief', mid); }
     prevTd = td; prevPain = p;
     flash *= Math.exp(-dt / 0.25);
 
@@ -564,10 +667,7 @@ canvas.inst { display: block; width: 100%; }
     }
     if (W === 0) layoutFace();
     drawFace(dt, ms);
-    // sound: a chirp when valence turns or pain starts, now and then when aroused
-    if (Math.abs(mid.valence - lastChirpV) > 0.25 || Math.random() < dt * mid.arousal ** 2 * 0.5) {
-      chirp(mid.valence, mid.arousal, mid.pain); lastChirpV = mid.valence;
-    }
+    voice.tick(dt, mid);
     histT += dt;
     if (histT >= 1 / HZ) {
       histT = 0; hist.push({ ...mid });
