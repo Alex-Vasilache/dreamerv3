@@ -630,6 +630,7 @@ class SmartphoneRobot(embodied.Env):
       command_reward='product', command_track_weight=2.0,
       command_balance_weight=1.0, forward_sign=-1.0, command_step=0.0,
       command_zeta_steps=40000, command_bias=0.0, command_ramp=0.0,
+      command_grow_s=0.0,
       friction_comp=False, bumper_lo=-0.120, bumper_hi=0.161,
       bumper_margin=0.0175, bumper_penalty=1.0, tilt_penalty=0.0,
       track_progress=0.0, balance_bumper=0.0,
@@ -1016,7 +1017,11 @@ class SmartphoneRobot(embodied.Env):
         mode=str(command_mode), hold_min=float(command_hold_min),
         hold_max=float(command_hold_max), p_zero=float(command_p_zero),
         p_axis=float(command_p_axis),
-        step=float(command_step), ramp=float(command_ramp))
+        step=float(command_step), ramp=float(command_ramp),
+        # grow: random commands are scaled by min(1, t / grow) over the
+        # first `grow` seconds of the run, so balance comes first (0: off).
+        # The sim applies it; the phone app does not read it yet.
+        grow=float(command_grow_s))
     self._cmd = (0.0, 0.0)
     self._cmd_src = 0.0
     self.reconnect = bool(reconnect)

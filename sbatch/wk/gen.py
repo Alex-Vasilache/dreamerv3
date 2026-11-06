@@ -77,6 +77,23 @@ K1_ARMS = [
 ]
 
 
+# Round K2 (Sat 11-07): K1 winners combined on the smoothing arm (forward
+# tracking 0.7 in 11 min, 5.7 crossings/min against 15), plus a narrower
+# tracking kernel for standing still, and the full combination at P100 speed.
+SMOOTH = K1_ARMS[6][1]
+ACWD = K1_ARMS[1][1]
+K2_ARMS = [
+    ('s', SMOOTH),
+    ('s_acwd', f'{SMOOTH} {ACWD}'),
+    ('s_b16', f'{SMOOTH} --batch_size 16'),
+    ('s_acwd_b16', f'{SMOOTH} {ACWD} --batch_size 16'),
+    ('s_sig25', f'{SMOOTH} --env.robot.command_sigma 0.25'),
+    ('s_acwd_b16_sig25', f'{SMOOTH} {ACWD} --batch_size 16 --env.robot.command_sigma 0.25'),
+    ('s_acwd_b16_p100', f'{SMOOTH} {ACWD} --batch_size 16 --online_learner_fps 17500'),
+    ('s_p100', f'{SMOOTH} --online_learner_fps 17500'),
+]
+
+
 def cmd_line(exp, gpu, flags, seed, minutes=60, floor=FLOOR):
   return (f'{exp} flat command 65 {gpu} {floor} {PHONE} '
           f'--run.steps {minutes * MIN} {flags} --seed {seed}').replace('  ', ' ')
@@ -90,11 +107,17 @@ def main():
     for seed in SEEDS4:
       for arm, flags in K1_ARMS:
         lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', 'v100', flags, seed)); n += 1
+  elif rnd == 'k2':
+    for seed in SEEDS4:
+      for arm, flags in K2_ARMS:
+        lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', 'v100', flags, seed)); n += 1
   elif rnd == 'smoke':
     for arm, flags in W1_ARMS:
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
         lines.append(bal_line(f'e{n}', 'v100', f'{W1_BASE} {flags}', 1, minutes=4)); n += 1
     lines.append(cmd_line(f'e{n}', 'v100', K1_ARMS[2][1] + ' ' + K1_ARMS[3][1], 1, minutes=4)); n += 1
+  elif rnd == 'smoke2':
+    lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
   elif rnd.startswith('w1'):
     base = W1_BASE
     gpu = {'w1p': 'p100', 'w1i': 'any'}[rnd]

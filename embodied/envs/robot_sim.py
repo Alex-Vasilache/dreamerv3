@@ -177,6 +177,9 @@ class RobotSim(robot_env.SmartphoneRobot):
       else:
         r, phi = math.sqrt(rng.rand()), rng.uniform(0, 2 * math.pi)
         cmd = (r * math.cos(phi), r * math.sin(phi))
+      if s.get('grow'):
+        k = min(1.0, self._total_steps / (s['grow'] * self.hz))
+        cmd = tuple(k * c for c in cmd)
       if s['step']:
         cmd = tuple(s['step'] * round(c / s['step']) for c in cmd)
       self.cmd_target = cmd

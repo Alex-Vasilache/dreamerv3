@@ -95,3 +95,37 @@ drift at V100 or A5000 speed; the L2-to-init arms also leave seeds stuck
 half-upright for 10-25 min. At every speed the drift tracks the learner's
 updates per sample, so the ratio schedule, which fixes the late ratio at 128
 on every GPU, stays the drift control (W1's base, already running).
+
+### Sat 11-07 ~00:15: K1 in, K2 launched
+
+K1 (e42168-e42199, command learning, V100, 60 min, n = 4). Minutes to
+tracking correlation ≥ 0.7 for three minutes running; crossings a minute after
+minute 10; |wheel speed| after 2 s at a zero stick (this includes the
+balancing jiggle; balance runs sit at ~450). Figure `figs/weekend/k1.png`.
+
+| arm | forward 0.7 (min) | turn 0.7 (min) | final forward corr | crossings/min | zero-stick mm/s |
+|---|---|---|---|---|---|
+| base (robot_command) | 16.8 ± 8.8 | 8.8 ± 1.3 | 0.80 | 15.3 ± 4.4 | 392 |
+| actor-critic L2-to-init 0.1 | 11.8 ± 0.4 | 7.8 ± 1.3 | 0.80 | 15.1 ± 2.6 | 400 |
+| ratio schedule (5 min -> 128) | 21.0 ± 9.6 | 11.0 ± 3.1 | 0.78 | 37.6 ± 17.9 | 457 |
+| narrow kernel 0.15 | 27.5 ± 16.6 | 14.8 ± 9.3 | 0.71 | 19.7 ± 3.9 | 452 |
+| p_zero 0.5 | 27.0 ± 0.0 | 18.8 ± 8.9 | 0.78 | 23.9 ± 4.8 | 358 |
+| slow commands (1200/1500) | > 60 | 16.0 ± 6.0 | 0.53 | 49.4 ± 26.7 | 323 |
+| **smoothing (balance recipe's)** | **11.0 ± 2.3** | 9.0 ± 1.9 | 0.81 | **5.7 ± 0.6** | 421 |
+| batch 16 | 11.2 ± 0.4 | 8.5 ± 0.9 | 0.79 | 17.5 ± 12.2 | 350 |
+
+The balance recipe's action smoothing (`action_rate_quad 0.25`,
+`imag_loss.smooth 0.15`), which `robot_command` turns off, is the clear win:
+as fast as the best and a third of the falls. L2-to-init and batch 16 make
+forward learning reliable (SD 0.4 min against 8.8). Unlike balance, commands
+need the learner's full ratio: the schedule's 128 after minute 5 slows them
+and doubles the falls. Every arm falls 30-60 times a minute for the first 10-20
+minutes, while it learns to balance and drive at once.
+
+K2 (e42328-e42359, V100, n = 4): smoothing + {L2-to-init, batch 16, both},
++ command_sigma 0.25, + all three, and smoothing alone and with both at P100
+speed (`online_learner_fps 17500`).
+
+New: `env.robot.command_grow_s` (sim only; the phone app would need the same
+line) scales random commands by min(1, t / grow), so the robot can learn to
+balance before it is asked to drive. Smoke e42360.
