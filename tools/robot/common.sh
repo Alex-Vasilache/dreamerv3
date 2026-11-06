@@ -9,15 +9,24 @@ APP=jp.oist.abcvlib.dreamerBridge
 PHONE_FILES=/sdcard/Android/data/$APP/files
 
 # robot.env fills only what the environment has not set, so a one-off
-# `ROBOT_TRAINER=local tools/robot/train.sh` beats the file.
-if [ -f "$ROBOT_TOOLS/robot.env" ]; then
+# `ROBOT_TRAINER=local tools/robot/train.sh` beats the file. ROBOT_PROFILE=<p>
+# first loads robot.<p>.env (also gitignored), so one computer can keep
+# settings for more than one cluster: `ROBOT_PROFILE=ias tools/robot/demo.sh`.
+robot_load_env() {
+  local line key
   while IFS= read -r line || [ -n "$line" ]; do
     [[ $line =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
     key=${BASH_REMATCH[1]}
     [ -n "${!key+set}" ] && continue
     eval "export $key=${BASH_REMATCH[2]}"
-  done < "$ROBOT_TOOLS/robot.env"
+  done < "$1"
+}
+if [ -n "${ROBOT_PROFILE:-}" ]; then
+  [ -f "$ROBOT_TOOLS/robot.$ROBOT_PROFILE.env" ] \
+    || { echo "error: ROBOT_PROFILE=$ROBOT_PROFILE but tools/robot/robot.$ROBOT_PROFILE.env is missing" >&2; exit 1; }
+  robot_load_env "$ROBOT_TOOLS/robot.$ROBOT_PROFILE.env"
 fi
+[ -f "$ROBOT_TOOLS/robot.env" ] && robot_load_env "$ROBOT_TOOLS/robot.env"
 
 ROBOT_TRAINER=${ROBOT_TRAINER:-local}
 ROBOT_RUNS=${ROBOT_RUNS:-$HOME/logdir/robot}

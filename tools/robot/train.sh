@@ -143,7 +143,10 @@ if [ -n "$ROBOT_RELAY" ] && [ "$ROBOT_TRAINER" = slurm ]; then
   for i in $(seq 0 "$RELAY_STREAMS"); do
     LOCAL=$((PORT + i)); REMOTE=$PORT; [ "$i" -gt 0 ] && REMOTE=$((PORT + 1))
     [ "$i" -gt 0 ] && WPORTS+="${WPORTS:+, }$LOCAL"
+    # ControlPath=none: each its own TCP connection even when ~/.ssh/config
+    # multiplexes, so weights never queue the control link behind them.
     nohup bash -c "while :; do ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes \
+      -o ControlMaster=no -o ControlPath=none \
       -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
       -L 0.0.0.0:$LOCAL:$IP:$REMOTE $(q "$ROBOT_SSH"); sleep 3; done" >>"$RELAY_LOG" 2>&1 </dev/null &
     echo $! >>"$RELAY_PID"

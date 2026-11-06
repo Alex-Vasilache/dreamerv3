@@ -49,16 +49,22 @@ def write(sock, header, blob=b''):
 
 
 def connect(args, runner, directory):
+  # Through a relay (an ssh -L port) the connection itself always succeeds
+  # and a trainer that is not listening yet shows as a reset before the
+  # hello, so that is retried too, as the app does.
   deadline = time.time() + args.connect_timeout
   while True:
     try:
-      sock = socket.create_connection((args.host, args.port), timeout=30.0)
-      break
+      return _connect_once(args, runner, directory)
     except OSError as e:
       if time.time() > deadline:
         raise
       print(f'waiting for the trainer at {args.host}:{args.port} ({e})')
       time.sleep(1.0)
+
+
+def _connect_once(args, runner, directory):
+  sock = socket.create_connection((args.host, args.port), timeout=30.0)
   sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
   write(sock, dict(type='hello', protocol=PROTOCOL, control_hz=args.hz,
                    robot_id=1, onboard=runner.ready, policy_stamp=runner.stamp,
@@ -67,7 +73,12 @@ def connect(args, runner, directory):
   receiver = bridge_link.Receiver(
       sock, build=lambda blob, header: PolicyRunner.build_blob(
           blob, directory + '/policy.npz'))
-  hello, _ = receiver.get(timeout=60.0)
+  try:
+    hello, _ = receiver.get(timeout=60.0)
+  except OSError:
+    receiver.close()
+    sock.close()
+    raise
   assert hello['type'] == 'hello', hello
   # Weight pushes over connections of their own, as the app opens them:
   # to --wports when given (a relay's local ports), else n times to the
