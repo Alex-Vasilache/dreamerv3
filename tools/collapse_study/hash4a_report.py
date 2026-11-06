@@ -21,7 +21,7 @@ from compare_late import runs, scores, binned, cross50, OUT, TASKS  # noqa: E402
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line'
 SETS = {
     'hash4a': ('TCE, 4x12 WM hash, adaptive w', 1, 'TCE weight w (log)',
-               [('', '-', f'e191[0-3]?_{{t}}_{B}-goal_even-fromto_dir-tce_hash4a-pubmatch_s*')]),
+               [('', '-', f'e191[0-2]?_{{t}}_{B}-goal_even-fromto_dir-tce_hash4a-pubmatch_s*')]),
     'hash4e': ('TCE, 4x12 WM hash, smoothed w, floor 0.3', 2, 'lean = policy / random novelty',
                [('US-SOM', '-', f'h00[0-3]?_{{t}}_{B}-goal_even-fromto_dir-tce_hash4e-pubmatch_s*'),
                 ('plain SOM', '--', f'h00[3-7]?_{{t}}_{B}-fromto_dir-tce_hash4e-pubmatch_s*')]),
