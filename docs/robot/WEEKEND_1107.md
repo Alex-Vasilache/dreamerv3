@@ -337,3 +337,24 @@ BF (final balance round, 60 min, P100 e43101-e43156, V100 e43157-e43212, IAS
 e43213-e43268): today's live recipe (e40006: live settings + schedule), B,
 B + fear, B + fear + stillness, n = 12 each; holdouts of fear + stillness on
 carpet and with pushes + walls, n = 4 each.
+
+### Sun 11-08 ~00:15: KF (Saion half) in
+
+KF on IAS failed at start the first time (the IAS launcher took only balance
+lines); `sbatch/ias/run_sim_ias.sbatch` now runs command and still lines too
+(wall limit 85 min), resubmitted as e43065-e43096. BF on IAS: 3 of the first
+42 runs hit the old 75 min wall limit just short of 60 min (data kept).
+
+KF, 60 min, n = 8 per speed (P100 e43001-e43032, V100 e43033-e43064):
+
+| arm | fwd 0.7 (min), P100 | fwd 0.7 (min), V100 | turn 0.7 (min), V100 | crossings 10+, P100 | crossings 10+, V100 | fwd corr last 20 |
+|---|---|---|---|---|---|---|
+| `robot_command` base | 15.9 ± 7.6 | 15.0 ± 9.4 | 7.6 ± 4.4 | 37.1 ± 12.8 | 24.2 ± 12.4 | 0.81-0.83 |
+| **pick** | **9.4 ± 2.5** | **9.5 ± 2.3** | 6.4 ± 2.8 | 5.0 ± 0.7 | 4.6 ± 0.7 | 0.82 |
+| pick + margin 2.0° | 11.2 ± 1.5 | 13.4 ± 2.4 | 11.2 ± 4.3 | 4.0 ± 0.6 | 4.4 ± 0.9 | 0.82 |
+| pick + margin 2.9° | 16.8 ± 7.3 | 11.5 ± 2.9 | 12.0 ± 4.5 | 4.6 ± 1.9 | 3.3 ± 1.3 | 0.83-0.84 |
+
+The pick learns forward tracking in ~9.5 min at both speeds with 5-8x fewer
+falls than the base. A wider bumper margin slows command learning by 2-7 min
+for at most one fall per minute less: keep the default margin for commands
+(the balance pick keeps 2.9°).
