@@ -222,3 +222,38 @@ and on the live settings.
 K3 (e42577-e42604, V100): the command pick, with commands grown over 5 or 10
 min (also at P100 speed), relabel 0.9, holds of 2-4 s, and 4 more seeds of
 the pick.
+
+### Sat 11-07 ~10:00: W3 and K3 in; W4, K4 launched
+
+W3 (e42529-e42576 IAS, e42605-e42652 P100; n = 8; figure `figs/weekend/w3.png`):
+
+| arm | first ≥ 0.9, P100 | IAS | stuck > 10 min (of 16) | crossings 15+, P100 | IAS |
+|---|---|---|---|---|---|
+| margin 1.0° (old) | 4.0 ± 1.1 | 13.9 ± 12.7 | 3 | 13.5 ± 3.2 | 10.6 ± 6.5 |
+| margin 2.0° | 3.8 ± 0.8 | 3.2 ± 1.1 | 0 | 12.7 ± 4.4 | 13.9 ± 4.4 |
+| margin 2.9° | 3.6 ± 0.5 | 3.1 ± 0.9 | 0 | 11.1 ± 4.7 | 11.7 ± 3.5 |
+| 2.0° + batch 16 | **2.9 ± 0.6** | **2.8 ± 0.4** | 0 | 13.2 ± 5.1 | 15.3 ± 5.5 |
+| 2.0° + reward gate | 3.9 ± 0.6 | 3.4 ± 1.4 | 0 | 12.0 ± 3.4 | 15.2 ± 5.0 |
+| 2.0° on the live settings | 5.5 ± 1.0 | 4.0 ± 1.7 | 0 | 22.7 ± 3.3 | 18.1 ± 3.5 |
+
+The wider margin removes the bumper trap (0 of 48 seeds stuck against 3 of
+16), and with it the GPU dependence of the start: up in 3-4 min on the P100
+and the A5000 alike, 2.8-2.9 min with batch 16. With no stuck seeds the reward
+gate changes nothing. The live e40006 settings are worse than CR2's in both
+halves (crossings 18-23 against 11-14). Late crossings stay at 11-15 a minute,
+so the drift is not solved yet.
+
+K3 (e42577-e42604, figure `figs/weekend/k3.png`): growing the commands over
+5 or 10 min does not cut the early falls (minutes 0-10: 29-41 a minute
+against 28): they come from learning to balance at all in minutes 0-3.
+Relabel 0.9 is the same as 0.5; holds of 2-4 s learn turning sooner (5.0 min)
+but end with more falls and lower tracking (0.78). The pick over 8 seeds:
+forward 0.7 at 10.5 ± 2.6 and 9.8 ± 1.8 min.
+
+W4 (e42653-e42748 IAS, e42749-e42844 P100; n = 8): on the fixed base (CR2
+recipe + schedule + margin 2.9° + batch 16): fear critic, lrs x2, entropy
+1e-3, each live setting alone (home drive, publish every sync, policy age
+1.3 s), no schedule, late ratio 96 / 192, L2-to-init, batch length 32.
+K4 (e42845-e42864, V100, n = 4): the command pick for 90 min, on carpet
+(held out), with pushes and walls, with the live phone settings, and with
+margin 2.0°.

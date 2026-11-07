@@ -18,7 +18,7 @@ FLOOR = ('--env.robot.sim_schedule table --env.robot.sim_inertia 2 '
          '--env.robot.sim_scrape 20 --env.robot.sim_rand '
          'inertia:1.5:2.5,backlash:0.01:0.02,stick:0.2:0.45,gear_k:0.8:2,'
          'rstatic:5:9,scrape:0:40,stall:0.85:1.1,tilt_lag:0:0.015')
-CARPET = FLOOR.replace('--env.robot.sim_schedule table', '--env.robot.sim_surface carpet')
+CARPET = FLOOR.replace('--env.robot.sim_schedule table', '--env.robot.sim_schedule carpet')
 PHONE = ('--online_sync_every 4 --online_publish_every 1 --env.robot.sim_phone True '
          '--env.robot.sim_phone_delay 1.3 --env.robot.weights_emotion True')
 LIVE_BAL = ('--env.robot.home_radius 3045 --env.robot.home_speed 1.0 '
@@ -102,6 +102,26 @@ W3_ARMS = [
 ]
 
 
+# Round W4 (Sat 11-07): the bumper trap fixed (margin 0.05: no stuck seed in
+# 16; batch 16 fastest), re-screen on the fixed base, n = 8, P100 and IAS:
+# what still speeds learning, which live setting hurts, and the late ratio.
+WBASE = f"{SCHED} --env.robot.bumper_margin 0.05 --batch_size 16"
+W4_ARMS = [
+    ('B', 'old', WBASE),
+    ('fear', 'old', f'{WBASE} --env.robot.cost_obs True --agent.fear.weight 1.0'),
+    ('lr2', 'old', f'{WBASE} --agent.opt.lr 6e-4 --agent.ac_opt.lr 6e-4'),
+    ('ent', 'old', f'{WBASE} --agent.imag_loss.actent 1e-3'),
+    ('home', 'old', f'{WBASE} {HOME_LIVE}'),
+    ('pub1', 'old', f'{WBASE} --online_publish_every 1'),
+    ('delay', 'old', f'{WBASE} --env.robot.sim_phone_delay 1.3'),
+    ('nosched', 'old', '--env.robot.bumper_margin 0.05 --batch_size 16'),
+    ('late96', 'old', f'{WBASE} --online_ratio_late 96'),
+    ('late192', 'old', f'{WBASE} --online_ratio_late 192'),
+    ('acwd', 'old', f'{WBASE} --agent.ac_opt.wd 0.1 --agent.ac_opt.wdinit True'),
+    ('l32', 'old', f'{WBASE} --batch_length 32'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -154,6 +174,19 @@ K3_ARMS = [
 ]
 
 
+# Round K4 (Sat 11-07): K3 found no gain from a command curriculum, relabel
+# 0.9 or shorter holds; the pick holds over 8 seeds. Now its robustness: 90
+# min (late collapse?), carpet (held out), pushes + walls, the live phone
+# settings, and a wider bumper margin.
+K4_ARMS = [
+    ('pick90', KPICK, 90, 'table'),
+    ('carpet', KPICK, 60, 'carpet'),
+    ('push', f'{KPICK} --env.robot.sim_push 5:0.05:0.15 --env.robot.sim_walls 0.5', 60, 'table'),
+    ('live', f'{KPICK} --online_publish_every 1 --env.robot.sim_phone_delay 1.3', 60, 'table'),
+    ('m35', f'{KPICK} --env.robot.bumper_margin 0.035', 60, 'table'),
+]
+
+
 def cmd_line(exp, gpu, flags, seed, minutes=60, floor=FLOOR):
   return (f'{exp} flat command 65 {gpu} {floor} {PHONE} '
           f'--run.steps {minutes * MIN} {flags} --seed {seed}').replace('  ', ' ')
@@ -177,6 +210,12 @@ def main():
         lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', 'v100', flags, seed)); n += 1
     for seed in SEEDS8[4:]:
       lines.append('# pick'); lines.append(cmd_line(f'e{n}', 'v100', KPICK, seed)); n += 1
+  elif rnd == 'k4':
+    for seed in SEEDS4:
+      for arm, flags, minutes, floor in K4_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(cmd_line(f'e{n}', 'v100', flags, seed, minutes=minutes,
+                              floor=CARPET if floor == 'carpet' else FLOOR)); n += 1
   elif rnd == 'smoke':
     for arm, flags in W1_ARMS:
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
@@ -191,6 +230,11 @@ def main():
     gpu = {'w3v': 'v100', 'w3i': 'any', 'w3p': 'p100'}[rnd]
     for seed in SEEDS8:
       for arm, base, flags in W3_ARMS:
+        lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
+  elif rnd in ('w4p', 'w4i'):
+    gpu = {'w4p': 'p100', 'w4i': 'any'}[rnd]
+    for seed in SEEDS8:
+      for arm, base, flags in W4_ARMS:
         lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
