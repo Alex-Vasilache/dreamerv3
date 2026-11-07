@@ -657,6 +657,14 @@ solved early ran at w >= 0.2. CPU smoke: w = 0.192 at alpha 0.001. Expect: pin p
 reward <= 0.8M on 5/5, pin pad six >= 3/5; watch cartpole, where alpha is lowest (w 0.03-0.05
 now -> 0.19), for a DMC cost. Compare with h0133-h0162. 4x12 array 4800784 throttled to %2 to
 give this arm the slots.
+**Interim 11-08 02:30 (seeds 0-1):** the floor works as built (w 0.19-0.21 from step 0, gap
++0.47-0.50 from 0.6M on h0230) but does not bring reward earlier. Seed-matched to h0133-h0162 it
+is worse on two of three pin pad runs: pin pad six seed 0 0 (h0225) vs solved at 0.53M (h0139);
+pin pad five seed 1 first reward 2.08M (h0230) vs 0.46M. Pin pad five 0.12M on seed 0, pin pad
+four fine; cheetah 525, hopper 300, cartpole 783 (seed 0). So a weak early push is not what
+delays the first reward: across all arms the pin pad five first-reward step scatters 0.07-3.5M
+with or without TCE (US-SOM no TCE: 0.16/1.42/0.72/0.26/0.17M). Arm kept running for the full 5
+seeds; 4x12 throttle raised back to %4 so the 8 GPUs stay full once h0133-h0162 ends.
 
 ### h0193-h0222: TCE-KL c=10 on the 4x12 hash (2026-11-06, array 4800784)
 
