@@ -297,3 +297,17 @@ W5 (e42865-e42928 IAS, e42929-e42992 V100; n = 8): B, + fear, stillness
 (wheel 1.0 + pos 2.0, or wheel 0.75) now that the bumper trap is shut, fear +
 stillness, fear + entropy, and the live e40006 recipe with only the two fixes
 (margin, batch 16), as it could run today.
+
+### Sat 11-07 ~16:45: W4 (P100 half) in; KF (final, commands) launched
+
+W4 P100 (e42749-e42844, n = 8, no seed stuck) repeats the IAS half: the fear
+critic halves late crossings (B 12.1 ± 4.7 → 6.0 ± 2.8 per min after min 15;
+first ≥ 0.9 in 3.6 → 3.1 min), the live home drive hurts most (16.7), double
+lrs and batch length 32 hurt (15.8, 17.2). At P100 speed the ratio schedule
+makes no difference (no schedule 10.9), as expected: the drift is a fast-GPU
+problem.
+
+KF (final command round, 60 min, n = 8 per speed; P100 e43001-e43032, V100
+e43033-e43064, IAS e43065-e43096): `robot_command` base vs the pick
+(smoothing + L2-to-init + batch 16), the pick with bumper margin 2.0° and
+2.9° (the balance pick's margin, so both share one live flag).

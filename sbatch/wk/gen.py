@@ -204,6 +204,17 @@ K4_ARMS = [
 ]
 
 
+# Round KF (Sun 11-08, final): the command pick against the robot_command
+# base, with the bumper margin of the balance pick (2.9 deg) and 2.0 deg,
+# 60 min, n = 8, at each learner speed (P100, V100, IAS A5000/3090).
+KF_ARMS = [
+    ('base', ''),
+    ('pick', KPICK),
+    ('pick_m35', f'{KPICK} {MARGIN}'),
+    ('pick_m50', f'{KPICK} --env.robot.bumper_margin 0.05'),
+]
+
+
 def cmd_line(exp, gpu, flags, seed, minutes=60, floor=FLOOR):
   return (f'{exp} flat command 65 {gpu} {floor} {PHONE} '
           f'--run.steps {minutes * MIN} {flags} --seed {seed}').replace('  ', ' ')
@@ -233,6 +244,11 @@ def main():
         lines.append(f'# {arm}')
         lines.append(cmd_line(f'e{n}', 'v100', flags, seed, minutes=minutes,
                               floor=CARPET if floor == 'carpet' else FLOOR)); n += 1
+  elif rnd in ('kfp', 'kfv', 'kfi'):
+    gpu = {'kfp': 'p100', 'kfv': 'v100', 'kfi': 'any'}[rnd]
+    for seed in SEEDS8:
+      for arm, flags in KF_ARMS:
+        lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', gpu, flags, seed)); n += 1
   elif rnd == 'smoke':
     for arm, flags in W1_ARMS:
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
