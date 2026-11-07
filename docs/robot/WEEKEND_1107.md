@@ -173,3 +173,52 @@ Bumper trap found: a stuck seed rests on the front bumper at 8.1° tilt, just
 under the penalty zone (bumper_hi 9.2° − margin 1.0° = 8.2°), so lying there
 pays +0.08 a step instead of −1. With the balance point randomised by ±1° some
 seeds land in this hole. Next balance round: `bumper_margin` 0.035 (2°).
+
+### Sat 11-07 ~06:00: K2 and W2 (IAS half) in; W3, K3 launched
+
+K2 (e42328-e42359, commands, n = 4; figure `figs/weekend/k2.png`):
+
+| arm | forward 0.7 (min) | turn 0.7 (min) | final forward corr | crossings/min after 10 |
+|---|---|---|---|---|
+| smoothing (K1 best) | 11.0 ± 1.7 | 9.2 ± 3.9 | 0.83 | 5.4 ± 0.8 |
+| + L2-to-init | 15.5 ± 7.2 | 10.5 ± 5.0 | 0.83 | 7.5 ± 3.7 |
+| + batch 16 | 12.5 ± 4.6 | 10.0 ± 3.5 | 0.83 | 5.2 ± 0.7 |
+| **+ L2-to-init + batch 16** | **10.0 ± 3.2** | 8.8 ± 2.0 | 0.81 | **4.9 ± 0.3** |
+| + command_sigma 0.25 | 16.5 ± 7.2 | 12.8 ± 4.0 | 0.82 | 6.9 ± 0.7 |
+| + all three | 12.0 ± 3.2 | 14.0 ± 2.5 | 0.82 | 6.8 ± 0.4 |
+| L2-to-init + batch 16, P100 speed | 11.2 ± 3.3 | 8.8 ± 3.0 | 0.82 | 4.5 ± 0.6 |
+| smoothing, P100 speed | 13.2 ± 2.2 | 13.2 ± 5.2 | 0.84 | 8.4 ± 4.2 |
+
+Smoothing does most of the work; L2-to-init + batch 16 on top is the best
+cell and holds at P100 speed, but its edge over smoothing alone is within the
+seed spread. Command pick so far: `robot_command` + `action_rate_quad 0.25
+imag_loss.smooth 0.15` + `ac_opt.wd 0.1 ac_opt.wdinit True` + `batch_size 16`.
+
+W2, IAS half (e42441-e42520 + e42525-e42528, n = 7-8): first upright minute,
+seeds stuck past minute 10, crossings after 15.
+
+| arm | first ≥ 0.9 | stuck | crossings 15+ |
+|---|---|---|---|
+| old (CR2 recipe) | 4.4 ± 2.8 | 1/7 | 15.7 ± 3.1 |
+| live (e40006 settings) | 7.6 ± 9.2 | 1/7 | 20.9 ± 2.3 |
+| old + live home drive | 13.7 ± 11.5 | 3/7 | 14.5 ± 7.7 |
+| old + publish every sync | 15.6 ± 12.6 | 3/7 | 9.1 ± 4.9 |
+| old + policy age 1.3 s | 7.1 ± 9.4 | 1/7 | 14.1 ± 5.0 |
+| live, no schedule | 5.0 ± 2.0 | 0/7 | 29.2 ± 4.6 |
+| old + gate | 8.1 ± 5.4 | 4/8 | 15.3 ± 5.1 |
+| live + gate | 10.1 ± 9.5 | 2/8 | 20.3 ± 4.5 |
+| old + gate + batch 16 | 8.0 ± 5.2 | 2/8 | 16.9 ± 4.6 |
+| live + gate + batch 16 | 5.8 ± 2.1 | 0/8 | 18.6 ± 4.0 |
+
+With 8 new seeds, stuck seeds appear in almost every arm, even on the A5000:
+whether a seed falls into the bumper trap dominates the noise, so these arms
+cannot be ranked yet. Two things hold: the schedule still cuts late crossings
+(live 20.9 against 29.2 without), and the gate alone does not unstick a seed.
+The gate itself works (e42522 held the switch until its reward reached 0.40).
+
+W3 (e42529-e42576 IAS, e42605-e42652 Saion P100; n = 8): the bumper margin
+0.035 and 0.05 against 0.0175 on the old recipe, with batch 16 or the gate,
+and on the live settings.
+K3 (e42577-e42604, V100): the command pick, with commands grown over 5 or 10
+min (also at P100 speed), relabel 0.9, holds of 2-4 s, and 4 more seeds of
+the pick.

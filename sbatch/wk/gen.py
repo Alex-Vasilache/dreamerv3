@@ -88,6 +88,20 @@ W2_ARMS = [
 ]
 
 
+# Round W3 (Sat 11-07): the bumper trap. A seed resting on the front bumper
+# at 8.1 deg sits just under the penalty zone (9.2 - 1.0 deg) and earns +0.08;
+# up to half the seeds of W2's arms lay there for 10+ min. Widen the margin.
+MARGIN = '--env.robot.bumper_margin 0.035'
+W3_ARMS = [
+    ('old', 'old', SCHED),
+    ('old_m35', 'old', f'{SCHED} {MARGIN}'),
+    ('old_m50', 'old', f'{SCHED} --env.robot.bumper_margin 0.05'),
+    ('old_m35_b16', 'old', f'{SCHED} {MARGIN} --batch_size 16'),
+    ('old_m35_gate', 'old', f'{SCHED} {MARGIN} {GATE}'),
+    ('live_m35', 'live', f'{SCHED} {MARGIN}'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -125,6 +139,21 @@ K2_ARMS = [
 ]
 
 
+# Round K3 (Sat 11-07): the K2 pick (smoothing + L2-to-init + batch 16:
+# forward 0.7 in 10.0 min, 4.9 crossings/min, same at P100 speed) with a
+# command curriculum (command_grow_s) against the 30-60 falls/min of the
+# first minutes, longer relabelling, shorter holds.
+KPICK = f'{SMOOTH} {ACWD} --batch_size 16'
+K3_ARMS = [
+    ('pick', KPICK),
+    ('grow300', f'{KPICK} --env.robot.command_grow_s 300'),
+    ('grow600', f'{KPICK} --env.robot.command_grow_s 600'),
+    ('grow300_p100', f'{KPICK} --env.robot.command_grow_s 300 --online_learner_fps 17500'),
+    ('relabel9', f'{KPICK} --cmd_relabel 0.9'),
+    ('hold24', f'{KPICK} --env.robot.command_hold_min 2.0 --env.robot.command_hold_max 4.0'),
+]
+
+
 def cmd_line(exp, gpu, flags, seed, minutes=60, floor=FLOOR):
   return (f'{exp} flat command 65 {gpu} {floor} {PHONE} '
           f'--run.steps {minutes * MIN} {flags} --seed {seed}').replace('  ', ' ')
@@ -142,6 +171,12 @@ def main():
     for seed in SEEDS4:
       for arm, flags in K2_ARMS:
         lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', 'v100', flags, seed)); n += 1
+  elif rnd == 'k3':
+    for seed in SEEDS4:
+      for arm, flags in K3_ARMS:
+        lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', 'v100', flags, seed)); n += 1
+    for seed in SEEDS8[4:]:
+      lines.append('# pick'); lines.append(cmd_line(f'e{n}', 'v100', KPICK, seed)); n += 1
   elif rnd == 'smoke':
     for arm, flags in W1_ARMS:
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
@@ -151,6 +186,11 @@ def main():
     gpu = {'w2p': 'p100', 'w2i': 'any'}[rnd]
     for seed in SEEDS8:
       for arm, base, flags in W2_ARMS:
+        lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
+  elif rnd in ('w3v', 'w3i', 'w3p'):
+    gpu = {'w3v': 'v100', 'w3i': 'any', 'w3p': 'p100'}[rnd]
+    for seed in SEEDS8:
+      for arm, base, flags in W3_ARMS:
         lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
