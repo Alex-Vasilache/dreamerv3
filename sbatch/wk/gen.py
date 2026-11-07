@@ -240,6 +240,18 @@ def cmd_line(exp, gpu, flags, seed, minutes=60, floor=FLOOR):
           f'--run.steps {minutes * MIN} {flags} --seed {seed}').replace('  ', ' ')
 
 
+# Round S (Sun 11-08): the two picks under live conditions and crossed.
+# Balance pick (fear + stillness) with the live policy age (1.3 s) and with
+# the full live settings; command pick with the fear critic, on the table
+# floor and on carpet (where the pick never reached 0.7 in K4).
+S_ARMS = [
+    ('bal_fs_delay', 'balance', f'{WBASE} {FEAR} {STILL} --env.robot.sim_phone_delay 1.3', 'old', 'table'),
+    ('bal_fs_live', 'balance', f'{WBASE} {FEAR} {STILL}', 'live', 'table'),
+    ('cmd_fear', 'command', f'{KPICK} {FEAR}', None, 'table'),
+    ('cmd_fear_carpet', 'command', f'{KPICK} {FEAR}', None, 'carpet'),
+]
+
+
 def main():
   rnd, first = sys.argv[1], int(sys.argv[2])
   out = sys.argv[3] if len(sys.argv) > 3 else 'sbatch/wk'
@@ -269,6 +281,14 @@ def main():
     for seed in SEEDS8:
       for arm, flags in KF_ARMS:
         lines.append(f'# {arm}'); lines.append(cmd_line(f'e{n}', gpu, flags, seed)); n += 1
+  elif rnd in ('sp', 'sv', 'si'):
+    gpu = {'sp': 'p100', 'sv': 'v100', 'si': 'any'}[rnd]
+    for seed in SEEDS8:
+      for arm, task, flags, base, floor in S_ARMS:
+        fl = CARPET if floor == 'carpet' else FLOOR
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, floor=fl, base=base)
+                     if task == 'balance' else cmd_line(f'e{n}', gpu, flags, seed, floor=fl)); n += 1
   elif rnd == 'smoke':
     for arm, flags in W1_ARMS:
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
