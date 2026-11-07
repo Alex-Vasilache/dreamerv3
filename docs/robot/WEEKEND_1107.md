@@ -257,3 +257,43 @@ recipe + schedule + margin 2.9° + batch 16): fear critic, lrs x2, entropy
 K4 (e42845-e42864, V100, n = 4): the command pick for 90 min, on carpet
 (held out), with pushes and walls, with the live phone settings, and with
 margin 2.0°.
+
+### Sat 11-07 ~15:30: W4 (IAS half) and K4 in; W5 launched
+
+W4 IAS (e42653-e42748, n = 8, no seed stuck in any arm; figure
+`figs/weekend/w4.png`). Base B = CR2 recipe + ratio schedule + bumper margin
+2.9° (`bumper_margin 0.05`) + `batch_size 16`.
+
+| arm | first ≥ 0.9 | crossings 3-8 | crossings 15+ | wheel mm/s |
+|---|---|---|---|---|
+| **B** | 3.2 ± 1.2 | 11.2 ± 3.4 | **9.6 ± 2.4** | 470 |
+| + fear critic | 2.8 ± 0.7 | 8.6 ± 3.4 | **5.8 ± 1.7** | 588 |
+| + both lrs x2 | 3.1 ± 0.9 | 15.8 ± 5.4 | 15.3 ± 4.0 | 495 |
+| + entropy 1e-3 | 2.9 ± 0.9 | 11.1 ± 2.2 | 11.4 ± 3.1 | 471 |
+| + live home drive (1.0, 1.2 s, 10 s cap) | 4.1 ± 0.8 | 20.9 ± 7.2 | 13.8 ± 3.0 | 471 |
+| + publish every sync | 2.9 ± 0.6 | 13.7 ± 5.7 | 13.5 ± 3.8 | 447 |
+| + policy age 1.3 s | 2.8 ± 0.4 | 13.6 ± 3.8 | 12.2 ± 3.2 | 464 |
+| no ratio schedule | 3.6 ± 0.9 | 15.9 ± 5.2 | 19.1 ± 7.3 | 473 |
+| late ratio 96 | 3.2 ± 0.7 | 11.9 ± 5.3 | 11.2 ± 4.0 | 520 |
+| late ratio 192 | 3.2 ± 0.7 | 12.2 ± 4.9 | 11.0 ± 3.0 | 472 |
+| + L2-to-init | 3.6 ± 1.3 | 15.3 ± 9.2 | 13.1 ± 2.9 | 433 |
+| batch length 32 | 3.1 ± 0.8 | 14.0 ± 3.5 | 14.9 ± 4.0 | 562 |
+
+B is the best balance base so far (CR2 had 10.1 with 4 seeds on a V100). The
+schedule halves the late drift (19.1 without). Each live setting alone makes
+it worse, the full-speed home drive most. The fear critic is the one addition
+that cuts the drift further, at a quarter more wheel movement.
+
+K4 (e42845-e42864, commands, n = 4; figure `figs/weekend/k4.png`): the pick
+holds for 90 min (tracking 0.81 at 30-60 min, 0.79 at 60-90; 3.9 falls a
+minute after 30), and is unchanged with the live phone settings (forward 9.2
+min, 3.3 falls) and slightly better with margin 2.0° (8.5 min, 3.1 falls). It
+fails on carpet (forward never 0.7 in 60 min, ~40 falls a minute) and with
+pushes and walls (never 0.7, 14-19 falls): on carpet the commands are not
+learnt in an hour. The live demo floor is the table-like Germany floor, so
+this is a caveat, not a blocker.
+
+W5 (e42865-e42928 IAS, e42929-e42992 V100; n = 8): B, + fear, stillness
+(wheel 1.0 + pos 2.0, or wheel 0.75) now that the bumper trap is shut, fear +
+stillness, fear + entropy, and the live e40006 recipe with only the two fixes
+(margin, batch 16), as it could run today.

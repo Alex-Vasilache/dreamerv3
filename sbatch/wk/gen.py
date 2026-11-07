@@ -122,6 +122,23 @@ W4_ARMS = [
 ]
 
 
+# Round W5 (Sat 11-07): W4 base B (CR2 recipe + schedule + margin 2.9 deg +
+# batch 16) is the best yet; the fear critic cuts late crossings 9.6 -> 5.8
+# but moves more. Combine, and retry stillness now that the bumper trap is
+# shut; plus the live recipe with only the two fixes, as it could run today.
+FEAR = '--env.robot.cost_obs True --agent.fear.weight 1.0'
+W5_ARMS = [
+    ('B', 'old', WBASE),
+    ('fear', 'old', f'{WBASE} {FEAR}'),
+    ('still', 'old', f'{WBASE} --env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 2.0'),
+    ('w075', 'old', f'{WBASE} --env.robot.wheel_penalty 0.75'),
+    ('fear_w075', 'old', f'{WBASE} {FEAR} --env.robot.wheel_penalty 0.75'),
+    ('fear_still', 'old', f'{WBASE} {FEAR} --env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 2.0'),
+    ('fear_ent', 'old', f'{WBASE} {FEAR} --agent.imag_loss.actent 1e-3'),
+    ('live_fix', 'live', WBASE),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -235,6 +252,11 @@ def main():
     gpu = {'w4p': 'p100', 'w4i': 'any'}[rnd]
     for seed in SEEDS8:
       for arm, base, flags in W4_ARMS:
+        lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
+  elif rnd in ('w5v', 'w5i'):
+    gpu = {'w5v': 'v100', 'w5i': 'any'}[rnd]
+    for seed in SEEDS8:
+      for arm, base, flags in W5_ARMS:
         lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
