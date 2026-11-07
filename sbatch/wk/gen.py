@@ -139,6 +139,26 @@ W5_ARMS = [
 ]
 
 
+# Round BF (Sat 11-07 evening, final): W5 V100 (n = 7 of 8 in): fear critic +
+# stillness (wheel 1.0, pos 2.0) cuts late crossings to 2.6 / min (B 12.5,
+# live recipe with both fixes 17.3) at B's start (3.1 min) and less movement.
+# 60 min, n = 12, against today's live recipe (e40006: live + schedule), B and
+# B + fear; holdouts on carpet and with pushes + walls (n = 4).
+STILL = '--env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 2.0'
+SEEDS12 = SEEDS8 + [819, 820, 821, 822]
+PUSH = '--env.robot.sim_push 5:0.05:0.15 --env.robot.sim_walls 0.5'
+BF_ARMS = [
+    ('live', 'live', SCHED),
+    ('B', 'old', WBASE),
+    ('fear', 'old', f'{WBASE} {FEAR}'),
+    ('fear_still', 'old', f'{WBASE} {FEAR} {STILL}'),
+]
+BF_HOLD = [
+    ('fs_carpet', 'old', f'{WBASE} {FEAR} {STILL}', 'carpet'),
+    ('fs_push', 'old', f'{WBASE} {FEAR} {STILL} {PUSH}', 'table'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -274,6 +294,16 @@ def main():
     for seed in SEEDS8:
       for arm, base, flags in W5_ARMS:
         lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, base=base)); n += 1
+  elif rnd in ('bfp', 'bfv', 'bfi'):
+    gpu = {'bfp': 'p100', 'bfv': 'v100', 'bfi': 'any'}[rnd]
+    for seed in SEEDS12:
+      for arm, base, flags in BF_ARMS:
+        lines.append(f'# {arm}'); lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base=base)); n += 1
+    for seed in SEEDS4:
+      for arm, base, flags, floor in BF_HOLD:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base=base,
+                              floor=CARPET if floor == 'carpet' else FLOOR)); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
   elif rnd.startswith('w1'):

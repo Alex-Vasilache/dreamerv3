@@ -311,3 +311,29 @@ KF (final command round, 60 min, n = 8 per speed; P100 e43001-e43032, V100
 e43033-e43064, IAS e43065-e43096): `robot_command` base vs the pick
 (smoothing + L2-to-init + batch 16), the pick with bumper margin 2.0° and
 2.9° (the balance pick's margin, so both share one live flag).
+
+### Sat 11-07 ~19:30: W5 in; BF (final, balance) launched
+
+W5 (30 min; IAS e42865-e42928 n = 8, V100 e42929-e42992 n = 7 of 8 in; no
+seed stuck; figure `figs/weekend/w5.png`). Crossings per min after min 15:
+
+| arm | first ≥ 0.9, IAS | crossings 15+, IAS | crossings 15+, V100 | wheel mm/s, IAS |
+|---|---|---|---|---|
+| B | 2.9 ± 0.3 | 10.7 ± 4.1 | 12.5 ± 2.5 | 508 |
+| + fear | 2.5 ± 0.5 | 4.8 ± 1.3 | 7.5 ± 1.1 | 581 |
+| + stillness (wheel 1.0, pos 2.0) | 4.1 ± 0.8 | 10.6 ± 2.1 | 14.9 ± 4.1 | 300 |
+| + wheel 0.75 | 3.6 ± 1.0 | 13.1 ± 4.3 | 11.5 ± 4.8 | 416 |
+| + fear + wheel 0.75 | 2.5 ± 0.5 | 5.1 ± 1.9 | 6.4 ± 1.5 | 541 |
+| **+ fear + stillness** | **2.4 ± 0.5** | **3.2 ± 1.2** | **2.6 ± 1.3** | 433 |
+| + fear + entropy 1e-3 | 2.5 ± 0.5 | 6.4 ± 1.9 | 6.4 ± 1.0 | 549 |
+| live recipe + margin + batch 16 | 3.6 ± 1.0 | 14.6 ± 4.5 | 17.3 ± 2.4 | 433 |
+
+Fear + stillness is the pick: fastest start, a third of B's late crossings,
+and less wheel movement than B. Stillness alone slows learning (4-5 min); the
+fear critic makes it safe. The live recipe with only the two fixes stays
+worst: the live home drive and phone settings still cost.
+
+BF (final balance round, 60 min, P100 e43101-e43156, V100 e43157-e43212, IAS
+e43213-e43268): today's live recipe (e40006: live settings + schedule), B,
+B + fear, B + fear + stillness, n = 12 each; holdouts of fear + stillness on
+carpet and with pushes + walls, n = 4 each.
