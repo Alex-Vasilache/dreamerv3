@@ -673,6 +673,13 @@ seeds; 4x12 throttle raised back to %4 so the 8 GPUs stay full once h0133-h0162 
 strength was right; c=10 is it (c=1 off, c=30 over-pushes). Compare with h0133-h0162 (same, 1x16).
 Expect: same pin pad behaviour as 1x16 c=10; if 4x12 averages the bonus over 4 tables, the gap
 may be smaller early. Plan and decision rules: `docs/PLAN_TCE_THEN_VARLEN_2026-11.md`.
+**Interim 11-09 07:45 (seeds 0-3, both arms; late 3.5-4M, compare_matched):** 4x12 / floor /
+1x16 c=10 / adaptive sqrt / US-SOM / OG: pin pad four 299/308/302/317/319/270, five 250/270/216/
+260/273/210, six 76 (2/4)/51 (1/4)/118 (3/5)/127/0/70, cartpole 798/771/758/755/740/691, cheetah
+519/550/554/577/611/509, hopper 314/238/273/260/190/335. 4x12 cheetah 462/455/537/611: no DMC
+cost vs OG (p=0.83), rule not triggered. Floor: pin pad six 1/4 (h0243 no reward at 3M), pin pad
+five first reward 0.96M on seed 3, hopper 217/196 -> no gain from the floor. No arm beats the
+adaptive sqrt arm or US-SOM on pin pad five yet; seed 4 still to run on both.
 
 ### h0133-h0162 / h0163-h0192: TCE-KL with a fixed multiplier c = 10 / 30 (2026-11-06, arrays 4799105 / 4799106)
 
