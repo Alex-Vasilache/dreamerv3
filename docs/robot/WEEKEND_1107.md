@@ -358,3 +358,31 @@ The pick learns forward tracking in ~9.5 min at both speeds with 5-8x fewer
 falls than the base. A wider bumper margin slows command learning by 2-7 min
 for at most one fall per minute less: keep the default margin for commands
 (the balance pick keeps 2.9°).
+
+### Sun 11-08 ~08:30: BF and KF (IAS half) in
+
+BF (final balance, 60 min, n = 12 per speed; holdouts n = 4; figure
+`figs/weekend/bf.png`). Crossings per min after min 30; IAS B and B + fear
+runs were cut at 43-46 min by the old 75 min wall limit (scored on what ran).
+
+| arm | first ≥ 0.9 P100 / V100 / IAS (min) | crossings 30+ P100 / V100 / IAS | wheel mm/s 30+ (V100) | stuck seeds (of 36) |
+|---|---|---|---|---|
+| live e40006 (today) | 6.2 / 10.1 / 12.1 | 18.5 / 16.6 / 17.4 | 351 | 8 |
+| B | 3.4 / 3.2 / 2.8 | 7.7 / 7.3 / 5.8 | 319 | 0 |
+| B + fear | 2.8 / 2.3 / 2.5 | 4.2 / 4.0 / 4.2 | 396 | 0 |
+| **B + fear + stillness** | **3.2 / 3.0 / 2.7** | **1.8 / 2.0 / 2.3** | **295** | **0** |
+| ... on carpet (n = 4) | 2.0 / 2.0 / 3.0 | 0.0 / 0.1 / 0.0 | 21 | 0 |
+| ... pushes + walls (n = 4) | 4.0 / 4.5 / 2.8 | 4.8 / 3.7 / 3.3 | 485 | 0 |
+
+SDs: pick crossings ± 0.9-1.0, live ± 3.2-6.7, first-upright pick ± 0.4-0.7,
+live ± 2.8-14.2. The pick is up in ~3 min at every learner speed, never
+sticks, crosses a bumper ~2x/min after 30 min (8-9x fewer than today's
+recipe) with the least wheel movement, and shows no late drift to 60 min. It
+holds on carpet and under pushes.
+
+KF IAS (e43065-e43096, n = 8; figure `figs/weekend/kf.png`): base 8.8 ± 2.5
+min to forward 0.7 with 17.6 ± 7.4 falls/min; pick 9.4 ± 2.2 min, 4.3 ± 0.6
+falls/min; margins 2.0°/2.9° 15.6 / 10.8 min. The pick's time to tracking is
+the same at all three speeds (9.4-9.5 min); the base is fast only on the
+fastest GPUs and falls 4-8x more. The common dips at min 24 and 43 are the
+command sequence (same seeds in every arm), not learning.
