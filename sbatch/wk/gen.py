@@ -252,6 +252,30 @@ S_ARMS = [
 ]
 
 
+# Round C (Sun 11-08): commands never learn on CARPET (K4, S: forward corr
+# 0.0, 15-20 falls/min) and balance stands still there (21 mm/s). CARPET
+# carries FLOOR's carpet-only scrape (sim_scrape 20, drawn 0-40 per minute)
+# on top of the fitted carpet. Is the holdout too harsh, or carpet commands
+# broken? The pick on carpet without scrape, on the plain fitted carpet, and
+# the robot_command base on the plain carpet (e2234: 0.7 in ~18 min).
+CARPET_NS = CARPET.replace('--env.robot.sim_scrape 20', '--env.robot.sim_scrape 0').replace(',scrape:0:40', '')
+CARPET_PLAIN = '--env.robot.sim_schedule carpet'
+C_ARMS = [
+    ('cmd_pick_noscrape', 'command', KPICK, CARPET_NS),
+    ('cmd_pick_plain', 'command', KPICK, CARPET_PLAIN),
+    ('cmd_base_plain', 'command', '', CARPET_PLAIN),
+    ('bal_fs_noscrape', 'balance', f'{WBASE} {FEAR} {STILL}', CARPET_NS),
+]
+
+
+# Round L (Sun 11-08): late collapse beyond the 60 min of BF/KF, on the
+# fastest learner (IAS A5000/3090): both picks for 120 min, n = 8.
+L_ARMS = [
+    ('bal_fs_120', 'balance', f'{WBASE} {FEAR} {STILL}'),
+    ('cmd_pick_120', 'command', KPICK),
+]
+
+
 def main():
   rnd, first = sys.argv[1], int(sys.argv[2])
   out = sys.argv[3] if len(sys.argv) > 3 else 'sbatch/wk'
@@ -289,6 +313,20 @@ def main():
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, floor=fl, base=base)
                      if task == 'balance' else cmd_line(f'e{n}', gpu, flags, seed, floor=fl)); n += 1
+  elif rnd in ('cp', 'cv'):
+    gpu = {'cp': 'p100', 'cv': 'v100'}[rnd]
+    seeds = SEEDS4 if rnd == 'cv' else SEEDS8[4:]
+    for seed in seeds:
+      for arm, task, flags, fl in C_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, floor=fl, base='old')
+                     if task == 'balance' else cmd_line(f'e{n}', gpu, flags, seed, floor=fl)); n += 1
+  elif rnd == 'li':
+    for seed in SEEDS8:
+      for arm, task, flags in L_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', 'any', flags, seed, minutes=120, base='old')
+                     if task == 'balance' else cmd_line(f'e{n}', 'any', flags, seed, minutes=120)); n += 1
   elif rnd == 'smoke':
     for arm, flags in W1_ARMS:
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):

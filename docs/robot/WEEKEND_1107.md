@@ -386,3 +386,34 @@ falls/min; margins 2.0°/2.9° 15.6 / 10.8 min. The pick's time to tracking is
 the same at all three speeds (9.4-9.5 min); the base is fast only on the
 fastest GPUs and falls 4-8x more. The common dips at min 24 and 43 are the
 command sequence (same seeds in every arm), not learning.
+
+### Sun 11-08 ~13:00: S in; C (carpet diagnosis) and L (120 min) launched
+
+S (60 min, n = 8 per speed; P100 e43333-e43364, V100 e43301-e43332, IAS
+e43365-e43396; figure `figs/weekend/s.png`), P100 / V100 / IAS:
+
+| arm | first ≥ 0.9 (min) | crossings 30+ | wheel mm/s 30+ |
+|---|---|---|---|
+| balance pick + policy age 1.3 s | 3.1 / 2.9 / 2.9 | 1.4 / 1.8 / 2.4 | 292 / 283 / 289 |
+| balance pick + all live settings (home drive, publish, age) | 4.4 / 3.9 / 3.5 | 3.7 / 4.7 / 3.9 | 389 / 402 / 394 |
+
+| arm | fwd 0.7 (min) | falls/min 10+ | fwd corr last 20 |
+|---|---|---|---|
+| command pick + fear critic | 11.6 / 11.9 / 9.8 | 3.9 / 3.6 / 3.8 | 0.82-0.83 |
+| ... on carpet | never / never / never | 14.9 / 19.3 / 20.1 | 0.0-0.07 |
+
+The balance pick does not mind the live policy age. With all of today's live
+settings it is ~1 min slower and crosses twice as often (still 4x fewer than
+today's recipe, no stuck seed): keep the CR2 home drive (half speed, 3 s
+ramp, no cap) and publish every second sync. The fear critic gives the
+command pick ~1 fall/min less for ~2 min slower tracking on Saion: not worth
+it. Commands on CARPET fail completely.
+
+C (Saion, 60 min, n = 8; e43401-e43432): is CARPET too harsh? It carries the
+FLOOR's carpet-only scrape (sim_scrape 20, drawn 0-40) on top of the fitted
+carpet. Command pick on carpet without scrape, on the plain fitted carpet,
+the `robot_command` base on the plain carpet, and the balance pick without
+scrape.
+
+L (IAS, 120 min, n = 8; e43441-e43456): both picks for two hours on the
+fastest learner, for a late collapse after 60 min.
