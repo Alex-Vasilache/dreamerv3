@@ -417,3 +417,26 @@ scrape.
 
 L (IAS, 120 min, n = 8; e43441-e43456): both picks for two hours on the
 fastest learner, for a late collapse after 60 min.
+
+### Sun 11-08 ~15:00: C in; D launched
+
+C (60 min, n = 8, V100 seeds 811-814 + P100 seeds 815-818):
+
+| arm (carpet) | fwd 0.7 (min) | seeds reaching it | falls/min 10+ | fwd corr last 20 |
+|---|---|---|---|---|
+| command pick, CARPET without scrape | 55.0 ± 5.4 | 4/8 | 44.9 ± 7.2 | 0.4 ± 0.3 |
+| command pick, plain fitted carpet | 25.5 ± 7.2 | 8/8 | 50.6 ± 6.2 | 0.8 ± 0.1 |
+| `robot_command` base, plain fitted carpet | 23.9 ± 11.5 | 8/8 | 58.2 ± 8.4 | 0.8 ± 0.0 |
+| balance pick, CARPET without scrape | first ≥ 0.9 3.2 ± 0.7 | - | 0.4 ± 0.7 crossings | wheel 21 mm/s |
+
+The carpet holdout of K4/S was not a fitted floor: the table-fitted drive
+randomisation (stiction, rolling stiction 5-9x, gear, inertia) on top of the
+carpet breaks commands even without the scrape. On the plain fitted carpet
+commands are learnt in ~25 min (as e2234-e2263, ~18 min with 5 s holds) but
+with ~50 falls/min, and the pick is no faster there than the base. Balance on
+carpet is easy (the fitted carpet holds a lean, so the robot stands still).
+
+D (60 min, n = 8): V100 e43501-e43524, the stillness dose of the balance
+pick (fear + wheel 1.0/pos 1.0, wheel 1.5/pos 3.0, pos 2.0 alone); P100
+e43525-e43548, the command pick on the plain carpet with slower commands
+(1200/1500), horizon 3 s, bumper penalty 4.

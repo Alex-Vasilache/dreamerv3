@@ -276,6 +276,22 @@ L_ARMS = [
 ]
 
 
+# Round D (Sun 11-08): C showed CARPET (table-fitted drive randomisation on
+# carpet) is what breaks commands; on the plain fitted carpet both base and
+# pick track (~25 min) but fall ~50/min. Last screens: the stillness dose of
+# the balance pick (V100), and three changes against the carpet falls (P100).
+D_ARMS_V = [
+    ('fs_w1p1', 'balance', f'{WBASE} {FEAR} --env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 1.0', FLOOR),
+    ('fs_w15p3', 'balance', f'{WBASE} {FEAR} --env.robot.wheel_penalty 1.5 --env.robot.pos_penalty 3.0', FLOOR),
+    ('fs_p2', 'balance', f'{WBASE} {FEAR} --env.robot.pos_penalty 2.0', FLOOR),
+]
+D_ARMS_P = [
+    ('cpl_slow', 'command', f'{KPICK} --env.robot.command_speed 1200 --env.robot.command_turn 1500', CARPET_PLAIN),
+    ('cpl_h3', 'command', f'{KPICK} --env.robot.horizon_s 3.0', CARPET_PLAIN),
+    ('cpl_bp4', 'command', f'{KPICK} --env.robot.bumper_penalty 4.0', CARPET_PLAIN),
+]
+
+
 def main():
   rnd, first = sys.argv[1], int(sys.argv[2])
   out = sys.argv[3] if len(sys.argv) > 3 else 'sbatch/wk'
@@ -327,6 +343,13 @@ def main():
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', 'any', flags, seed, minutes=120, base='old')
                      if task == 'balance' else cmd_line(f'e{n}', 'any', flags, seed, minutes=120)); n += 1
+  elif rnd in ('dv', 'dp'):
+    gpu, arms = {'dv': ('v100', D_ARMS_V), 'dp': ('p100', D_ARMS_P)}[rnd]
+    for seed in SEEDS8:
+      for arm, task, flags, fl in arms:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, floor=fl, base='old')
+                     if task == 'balance' else cmd_line(f'e{n}', gpu, flags, seed, floor=fl)); n += 1
   elif rnd == 'smoke':
     for arm, flags in W1_ARMS:
       if arm in ('base', 'big', 'small', 'fear', 'b64', 'acwd'):
