@@ -699,6 +699,16 @@ whole run, pin pad six 0 at 4M (c=10: 208), pin pad four 248 (c=10: 307), and th
 at matched steps (cheetah 375, hopper 73 at 1.4M). h0163-h0168 finished or stopped; h0169
 (pin pad four seed 1) stopped at 2.1M; h0170-h0192 never ran. c=10 continues.
 
+**c=10 final, all 30 runs (2026-11-08 12:00), late 3.5-4M mean ± sd, n=5:** pin pad four 302 ± 3,
+five 216 ± 98, six 118 ± 109 (solved 3/5: first reward 0.53/1.34/1.43M; seeds 1 and 4 never),
+cartpole 758 ± 43, cheetah 554 ± 52, hopper 273 ± 49. Versus OG (270/210/70/691/509/335) better on
+pin pad four, six, cartpole; versus V + US-SOM without TCE (319/273/0/740/611/190) better only on
+pin pad six (0/5 -> 3/5) and hopper, and lower on pin pad five (one seed, h0152, found reward only
+at 3.55M: late 45) and cheetah (p=0.14). About the same as the old 1x16 sqrt bonus with adaptive w
+(317/260/127/755/577/260). Pin pad five first reward 0.07/0.46/0.58/3.55/1.74M: only 3/5 by 0.8M,
+while US-SOM without TCE gets 4/5 by 0.8M. Not settled by the plan's rule (five 5/5 by 0.8M).
+Figures: `collapse_figs/tce_kl/tcekl_matched.png`, `tcekl_mech_score_gap.png`.
+
 ### h0073-h0102 / h0103-h0132: TCE-KL, log-count bonus inside the entropy term (2026-11-05, arrays 4798833 / 4798834)
 
 **Stopped 2026-11-06 02:50 after seed 0 (h0073-h0078):** push too weak, see h0133 entry above;
