@@ -440,3 +440,84 @@ D (60 min, n = 8): V100 e43501-e43524, the stillness dose of the balance
 pick (fear + wheel 1.0/pos 1.0, wheel 1.5/pos 3.0, pos 2.0 alone); P100
 e43525-e43548, the command pick on the plain carpet with slower commands
 (1200/1500), horizon 3 s, bumper penalty 4.
+
+### Sun 11-08 ~18:30: D and L in (last rounds)
+
+D V100 (balance pick's stillness dose, 60 min, n = 8, all with fear):
+
+| wheel / pos penalty | first ≥ 0.9 (min) | crossings 30+ | wheel mm/s 30+ |
+|---|---|---|---|
+| 1.0 / 1.0 | 2.9 ± 0.3 | 4.0 ± 1.0 | 364 |
+| 0.5 / 2.0 | 3.0 ± 0.7 | 2.0 ± 0.9 | 328 |
+| **1.0 / 2.0 (pick, BF V100)** | 3.0 ± 0.7 | 2.0 ± 1.0 | 295 |
+| 1.5 / 3.0 | 3.4 ± 1.0 | 1.2 ± 0.6 | 257 |
+
+The dose is smooth: more stillness, fewer crossings and less movement, for at
+most ~0.5 min slower learning. 1.5 / 3.0 is a safe step if the live robot
+moves too much.
+
+D P100 (command pick on the plain fitted carpet, n = 8): slow commands 49.4
+min to forward 0.7 (6/8), horizon 3 s 30.2 (7/8), bumper penalty 4 27.6
+(8/8), all with 47-54 falls/min, against the pick's 25.5 in C. Carpet
+commands stay slow and fall-heavy; no cheap fix found.
+
+L (IAS, the fastest learner; 7 of 8 balance runs cut at 87-103 min by the
+2.5 h wall limit, commands to 103-119 min; figure `figs/weekend/l.png`):
+balance pick crossings 1.4 ± 0.5 (min 30-60), 0.9 ± 0.4 (60-90), 0.5 ± 0.4
+(90+), wheel speed 175 mm/s after min 90; command pick forward corr 0.8 and
+4.0 / 3.8 / 3.5 falls/min over the same windows. No late collapse in either:
+both keep improving.
+
+## Result (Mon 11-09)
+
+All in the fitted sim, Germany floor, phone loop; n per speed, three learner
+speeds (P100 ratio ~280, V100, IAS A5000/3090 ~570). Figures
+`figs/weekend/bf.png`, `kf.png`, `s.png`, `l.png`.
+
+**Balance: fear critic + stillness on the CR2 recipe.** Up in ~3 min at every
+learner speed (2.7-3.2 ± 0.4-0.7, n = 12 per speed), no seed stuck on a
+bumper (0 of 36; today's live recipe 8 of 36), ~2 bumper crossings a minute
+after 30 min (today 17-19), the least wheel movement of any arm, and still
+improving at 90-100 min. It holds with the live policy age (1.3 s), on carpet
+and under pushes. The live settings that hurt it are the full-speed home
+drive and publishing every sync (with them: 4 crossings/min, 1 min slower).
+
+Live flags (e40006's command with these changes):
+```
+drop:    --online_publish_every 1          (block default 2)
+         --env.robot.home_max_s 10
+change:  --env.robot.home_speed 0.5 --env.robot.home_ramp 3000
+         --env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 2.0
+         --env.robot.weights_emotion True
+add:     --env.robot.bumper_margin 0.05 --batch_size 16
+         --env.robot.cost_obs True --agent.fear.weight 1.0
+keep:    --online_ratio_switch 19500 --online_ratio_late 128
+```
+No app change (the fear critic and the cost signal live on the server). The
+bumper margin (2.9°) closes the trap where a policy rests on the front bumper
+at 8.1° just outside the penalty zone; on the real robot the bumper sits at
++9.2°, so check the margin against the live tilt log in the first minutes.
+
+**Commands: smoothing + L2-to-init + batch 16 on `robot_command`.** Forward
+tracking (corr ≥ 0.7 for 3 min) in 9.4-9.5 ± 2.2-2.5 min at every learner
+speed, 4.3-5.0 falls/min (base 17-37), final corr 0.82, steady to 120 min.
+```
+--configs ... robot_command
+--env.robot.action_rate_quad 0.25 --agent.imag_loss.smooth 0.15
+--agent.ac_opt.wd 0.1 --agent.ac_opt.wdinit True --batch_size 16
+```
+Keep the command block's own bumper margin (wider margins slowed learning by
+2-7 min). The fear critic is not worth it here (-1 fall/min, +2 min).
+
+**What did not help.** Shrink-perturb / L2-to-init on actor-critic or world
+model, critic feature norm (drift control is the ratio schedule); double
+learning rates, batch length 32, batch 64, bigger or smaller nets, entropy on
+its own; the reward-gated ratio switch; command curriculum
+(`command_grow_s`), longer relabelling, shorter holds, narrower tracking
+kernel. `command_grow_s` stays in the sim code but is not recommended.
+
+**Caveats.** Carpet commands: on the plain fitted carpet both recipes learn
+in ~25 min with ~50 falls/min, and none of slow commands, horizon 3 s or
+bumper penalty 4 fixed that; the carpet holdout with the table's drive
+randomisation (K4, S) fails outright and is not a fitted floor. All numbers
+are sim; the balance pick has not been on the real robot.

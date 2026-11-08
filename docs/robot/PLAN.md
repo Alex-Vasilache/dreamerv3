@@ -19,6 +19,16 @@ The full plan text is at the end.
 Goal: the robot learns to balance in a few minutes on the lab floor, and
 keeps balancing, not getting worse later.
 
+**Weekend sweeps 11-07/09 (sim, `docs/robot/WEEKEND_1107.md` "Result").**
+- Balance pick: fear critic + stillness (wheel 1.0, pos 2.0) on the CR2
+  recipe + ratio schedule + bumper margin 2.9° + batch 16. Up in ~3 min at
+  P100, V100 and A5000 speed, 0 of 36 seeds stuck, ~2 crossings/min after
+  30 min (today's e40006 recipe: 17-19, 8 of 36 stuck), no late collapse to
+  100 min. Exact live flags in the Result section; no app change.
+- Command pick: `robot_command` + smoothing + L2-to-init + batch 16: forward
+  tracking in ~9.5 min at every speed, 4-5 falls/min, steady to 120 min.
+- Next: run the balance pick live on the Germany floor.
+
 **Where it stands.**
 - The best live recipe is **e30114**. It reruns e30107 with the phone position
   bug fixed.
