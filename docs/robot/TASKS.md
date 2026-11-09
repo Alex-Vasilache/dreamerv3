@@ -19,7 +19,7 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 - [ ] V (IAS, after X): N = 2 / 4 rollouts per start
 - [ ] Step 5: winners on commands; best one live
 - [ ] Step 6: reanalysis (what worked, what did not, why), combine the parts that help, confirm n = 12 at three GPU speeds
-- [ ] Now possible (Z1/Y done): pull Alex's 2cc011e/1a68792 into the Saion checkout (pinned until then)
+- [x] Saion checkout unpinned: fast-forwarded to include Alex's 2cc011e/1a68792 (11-10)
 
 ## Next: face visualisation (after the study settles)
 
