@@ -1041,10 +1041,18 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     K_repl = K_imag
     H = self.config.imag_length
     starts = self.dyn.starts(dyn_entries, dyn_carry, K_imag)
+    # imag_repeat N (sample-efficiency study, 2026-11-09): N stochastic
+    # rollouts from every start state (tiled along the batch), losses averaged
+    # over the N copies -- more imagined experience per replayed sample.
+    N = max(1, int(self.config.get('imag_repeat', 1) or 1))
+    tile = (lambda tree: jax.tree.map(
+        lambda x: jnp.concatenate([x] * N, 0), tree)) if N > 1 else (lambda tree: tree)
+    per_start = (lambda x: x.reshape((N, B, K_imag) + x.shape[1:]).mean(0))
+    starts = tile(starts)
     policyfn = lambda feat: sample(self.pol(self.feat2tensor(feat), 1))
     _, imgfeat, imgprevact = self.dyn.imagine(starts, policyfn, H, training)
-    first = jax.tree.map(
-        lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat)
+    first = tile(jax.tree.map(
+        lambda x: x[:, -K_imag:].reshape((B * K_imag, 1, *x.shape[2:])), repfeat))
     imgfeat = concat([sg(first, skip=self.config.ac_grads), sg(imgfeat, skip=self.config.ac_grads)], 1)
     lastact = policyfn(jax.tree.map(lambda x: x[:, -1], imgfeat))
     lastact = jax.tree.map(lambda x: x[:, None], lastact)
@@ -1073,7 +1081,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         contdisc=self.config.contdisc,
         horizon=self.config.horizon,
         **imag_kw)
-    losses.update({k: v.mean(1).reshape((B, K_imag)) for k, v in los_flat.items()})
+    losses.update({k: per_start(v.mean(1)) for k, v in los_flat.items()})
     metrics.update(mets)
     if self.fear:
       # Fear: the same rollouts scored by minus the predicted cost, with
@@ -1092,7 +1100,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           lam=imag_kw.get('lam', 0.95), slowreg=imag_kw.get('slowreg', 1.0),
           actent=0.0)
       for k in ('policy', 'value'):
-        losses[f'fear_{k}'] = los_c[k].mean(1).reshape((B, K_imag))
+        losses[f'fear_{k}'] = per_start(los_c[k].mean(1))
       metrics.update({f'fear/{k}': v for k, v in mets_c.items()})
     arousal = self.config.get('arousal_imag', {}) or {}
     if float(arousal.get('weight', 0.0)):
@@ -1118,7 +1126,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     if self.config.repval_loss:
       feat = sg(repfeat, skip=self.config.repval_grad)
       last, term, rew = [obs[k] for k in ('is_last', 'is_terminal', 'reward')]
-      boot = imgloss_out['ret'][:, 0].reshape(B, K_imag)
+      boot = per_start(imgloss_out['ret'][:, 0])
       feat, last, term, rew, boot = jax.tree.map(
           lambda x: x[:, -K_repl:], (feat, last, term, rew, boot))
       inp = self.feat2tensor(feat)

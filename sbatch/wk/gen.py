@@ -194,6 +194,38 @@ Z2_ARMS = [
 SEEDS_Z = [831, 832, 833, 834, 835, 836, 837, 838]
 
 
+# Round Y (step 2, Saion V100, 60 min, n = 8, after Z1 so Z1's unc/sched arms
+# are its controls): world-model dropout (rssm.drop) at the uncapped ratio,
+# where the pick drifts late, and once with the schedule.
+DROP = '--agent.dyn.rssm.drop'
+Y_ARMS = [
+    ('unc_d05', f'{PICK_UNC} {DROP} 0.05'),
+    ('unc_d10', f'{PICK_UNC} {DROP} 0.1'),
+    ('unc_d20', f'{PICK_UNC} {DROP} 0.2'),
+    ('sched_d10', f'{PICK} {DROP} 0.1'),
+]
+# Round X (step 3, IAS, 60 min, n = 8): observational dropout (rssm.obsdrop),
+# with its own controls on IAS's GPUs.
+ODROP = '--agent.dyn.rssm.obsdrop'
+X_ARMS = [
+    ('unc', PICK_UNC),
+    ('sched', PICK),
+    ('unc_o10', f'{PICK_UNC} {ODROP} 0.1'),
+    ('unc_o30', f'{PICK_UNC} {ODROP} 0.3'),
+    ('sched_o30', f'{PICK} {ODROP} 0.3'),
+]
+
+# Round V (step 4, IAS, 60 min, n = 8, controls = X's unc/sched): N
+# imagination rollouts per start state (agent.imag_repeat).
+REP = '--agent.imag_repeat'
+V_ARMS = [
+    ('unc_r2', f'{PICK_UNC} {REP} 2'),
+    ('unc_r4', f'{PICK_UNC} {REP} 4'),
+    ('sched_r2', f'{PICK} {REP} 2'),
+    ('sched_r4', f'{PICK} {REP} 4'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -420,6 +452,15 @@ def main():
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base=base,
                               floor=CARPET if floor == 'carpet' else FLOOR)); n += 1
+  elif rnd in ('y', 'x', 'v', 'ysmoke', 'vsmoke'):
+    arms, gpu = {'y': (Y_ARMS, 'v100'), 'x': (X_ARMS, 'any'), 'v': (V_ARMS, 'any'),
+                 'ysmoke': ([Y_ARMS[2], X_ARMS[3]], 'any'),
+                 'vsmoke': ([V_ARMS[1]], 'any')}[rnd]
+    seeds, minutes = (SEEDS_Z, 60) if 'smoke' not in rnd else ([1], 5)
+    for seed in seeds:
+      for arm, flags in arms:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd in ('z1', 'z2', 'zsmoke'):
     arms, gpu, minutes = {'z1': (Z1_ARMS, 'v100', 60), 'z2': (Z2_ARMS, 'any', 30),
                           'zsmoke': (Z1_ARMS[2:] + Z2_ARMS[1:], 'any', 4)}[rnd]

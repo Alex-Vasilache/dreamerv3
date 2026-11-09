@@ -30,6 +30,17 @@ class RSSM(nj.Module):
   absolute: bool = False
   blocks: int = 8
   free_nats: float = 1.0
+  # Sample-efficiency study (2026-11-09, docs/robot/SAMPLE_EFF_STUDY.md).
+  # drop: dropout on the hidden layers of the recurrent core, the posterior
+  # and the prior, in the world-model training pass only (policy and
+  # imagination run the full network) -- DroQ's regulariser moved into the
+  # world model, against overfitting a small replay at a high replay ratio.
+  # obsdrop: observational dropout -- in the training pass, each step with
+  # this probability carries the prior's sample instead of the posterior's,
+  # so the model is trained on open-loop prediction as imagination uses it;
+  # the decoder, reward and KL losses still see every step.
+  drop: float = 0.0
+  obsdrop: float = 0.0
 
   def __init__(self, act_space, **kw):
     assert self.deter % self.blocks == 0
@@ -77,14 +88,19 @@ class RSSM(nj.Module):
         (carry['deter'], carry['stoch'], action), ~reset)
     action = nn.DictConcat(self.act_space, 1)(action)
     action = nn.mask(action, ~reset)
-    deter = self._core(deter, stoch, action)
+    deter = self._core(deter, stoch, action, training)
     tokens = tokens.reshape((*deter.shape[:-1], -1))
     x = tokens if self.absolute else jnp.concatenate([deter, tokens], -1)
     for i in range(self.obslayers):
       x = self.sub(f'obs{i}', nn.Linear, self.hidden, **self.kw)(x)
       x = nn.act(self.act)(self.sub(f'obs{i}norm', nn.Norm, self.norm)(x))
+      x = self._drop(x, training)
     logit = self._logit('obslogit', x)
     stoch = nn.cast(self._dist(logit).sample(seed=nj.seed()))
+    if self.obsdrop and training:
+      prior = nn.cast(self._dist(self._prior(deter)).sample(seed=nj.seed()))
+      blind = jax.random.bernoulli(nj.seed(), self.obsdrop, deter.shape[:1])
+      stoch = jnp.where(blind[:, None, None], sg(prior), stoch)
     carry = dict(deter=deter, stoch=stoch)
     feat = dict(deter=deter, stoch=stoch, logit=logit)
     entry = dict(deter=deter, stoch=stoch)
@@ -120,7 +136,7 @@ class RSSM(nj.Module):
   def loss(self, carry, tokens, acts, reset, training):
     metrics = {}
     carry, entries, feat = self.observe(carry, tokens, acts, reset, training)
-    prior = self._prior(feat['deter'])
+    prior = self._prior(feat['deter'], training)
     post = feat['logit']
     dyn = self._dist(sg(post)).kl(self._dist(prior))
     rep = self._dist(post).kl(self._dist(sg(prior)))
@@ -132,7 +148,12 @@ class RSSM(nj.Module):
     metrics['rep_ent'] = self._dist(post).entropy().mean()
     return carry, entries, losses, feat, metrics
 
-  def _core(self, deter, stoch, action):
+  def _drop(self, x, training):
+    if not (self.drop and training):
+      return x
+    return nn.cast(embodied.jax.nets.dropout(x, self.drop, training))
+
+  def _core(self, deter, stoch, action, training=False):
     stoch = stoch.reshape((stoch.shape[0], -1))
     action /= sg(jnp.maximum(1, jnp.abs(action)))
     g = self.blocks
@@ -144,11 +165,13 @@ class RSSM(nj.Module):
     x1 = nn.act(self.act)(self.sub('dynin1norm', nn.Norm, self.norm)(x1))
     x2 = self.sub('dynin2', nn.Linear, self.hidden, **self.kw)(action)
     x2 = nn.act(self.act)(self.sub('dynin2norm', nn.Norm, self.norm)(x2))
+    x0, x1, x2 = [self._drop(x, training) for x in (x0, x1, x2)]
     x = jnp.concatenate([x0, x1, x2], -1)[..., None, :].repeat(g, -2)
     x = group2flat(jnp.concatenate([flat2group(deter), x], -1))
     for i in range(self.dynlayers):
       x = self.sub(f'dynhid{i}', nn.BlockLinear, self.deter, g, **self.kw)(x)
       x = nn.act(self.act)(self.sub(f'dynhid{i}norm', nn.Norm, self.norm)(x))
+      x = self._drop(x, training)
     x = self.sub('dyngru', nn.BlockLinear, 3 * self.deter, g, **self.kw)(x)
     gates = jnp.split(flat2group(x), 3, -1)
     reset, cand, update = [group2flat(x) for x in gates]
@@ -158,11 +181,12 @@ class RSSM(nj.Module):
     deter = update * cand + (1 - update) * deter
     return deter
 
-  def _prior(self, feat):
+  def _prior(self, feat, training=False):
     x = feat
     for i in range(self.imglayers):
       x = self.sub(f'prior{i}', nn.Linear, self.hidden, **self.kw)(x)
       x = nn.act(self.act)(self.sub(f'prior{i}norm', nn.Norm, self.norm)(x))
+      x = self._drop(x, training)
     return self._logit('priorlogit', x)
 
   def _logit(self, name, x):
