@@ -696,6 +696,8 @@ cost vs OG (p=0.83), rule not triggered. Floor: pin pad six 1/4 (h0243 no reward
 five first reward 0.96M on seed 3, hopper 217/196 -> no gain from the floor. No arm beats the
 adaptive sqrt arm or US-SOM on pin pad five yet; seed 4 still to run on both.
 
+**Final 11-10 00:20 (5 seeds, all done):** late 3.5-4M: pin pad four 299, five 254, six 61 (1/5 solved), cartpole 785, cheetah 520, hopper 291. Four-clear-task score 68.8 vs 1x16 c=10 66.6, but pin pad six 1/5 vs 3/5 and cheetah 520 vs 554. Verdict: 4x12 is not better than 1x16; keep 1x16 (best overall remains TCE sqrt 1x16). Extra seeds (4807344) cover US-SOM, sqrt, floor only.
+
 ### h0133-h0162 / h0163-h0192: TCE-KL with a fixed multiplier c = 10 / 30 (2026-11-06, arrays 4799105 / 4799106)
 
 `... fromto_dir tce_kl {tce_kl_c10 | tce_kl_c30} pubmatch`, 1x16 hash, 6 tasks x 5 seeds, `%4` each.
