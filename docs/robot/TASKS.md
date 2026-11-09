@@ -12,7 +12,7 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 - [x] Code: component freezes, world-model dropout, observational dropout, N rollouts per start; smoke-tested
 - [~] Step 0: live runs of the weekend pick (e43457, e43606, e43607) vs e40006 -- first read done, needs repeats
 - [x] Z2 (IAS): world model is the early bottleneck (trained WM: 0.66 upright in min 1; trained AC on fresh WM: t90 10 min vs 2.9 fresh)
-- [~] Z1 (Saion V100): freeze WM / AC at min 5, uncapped -- which part drifts late
+- [x] Z1 (Saion V100): no late drift with the full pick even uncapped (2.0 vs 1.6 crossings/min); freezing either part at min 5 is much worse (22 / 61)
 - [~] U (Saion P100): DreamerV4 one rollout per context (imag_last 1 / 8, batch 64)
 - [ ] Y (Saion V100, after Z1): world-model dropout 0.05 / 0.1 / 0.2
 - [~] X (IAS, after Z2): observational dropout 0.1 / 0.3

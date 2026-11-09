@@ -14,7 +14,7 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | step | what | question | status |
 |---|---|---|---|
 | 0 | live runs e43457, e43605-e43607 (weekend balance pick) vs e40006 | does the pick hold on the robot? | analysing |
-| 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | queued (Saion jobs 4807464-95) |
+| 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | done: no late drift with the full pick on V100; freezing either part is worse (log 11-10) |
 | 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | done: world model is the early bottleneck (log 11-09 23:30) |
 | 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | Y, Saion V100, e43800-e43831 (unc d0.05/0.1/0.2, sched d0.1), queued behind Z1 |
 | 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3), array 200255 after Z2 |
@@ -91,3 +91,29 @@ model forms from the first ~2 minutes of data: the target of Y (world-model
 dropout), X (observational dropout) and V/U (more imagination per sample).
 Caveat: the actor process also loaded the trained policy for its first ~3 s
 until the first learner sync (applies to all loaded arms).
+
+### Tue 11-10: Z1, which component drifts late (step 1)
+
+Sim, Saion V100, 60 min, n = 8 per arm (e43700-e43731). Freezes at actor step
+19500 (min 5); the learner log confirms each freeze. Mean ± SD. Figure
+`figs/study/z1.png`.
+
+| arm | t90 (min) | crossings/min, min 6-15 | crossings/min, min 30-60 | upright, min 30-60 | \|speed\| mm/s, min 30-60 |
+|---|---|---|---|---|---|
+| pick, uncapped ratio (~260 on V100) | 3.3 ± 0.4 | 5.1 ± 1.8 | 2.0 ± 1.2 | 0.98 ± 0.01 | 283 ± 36 |
+| pick, ratio schedule | 3.0 ± 0.7 | 7.3 ± 2.0 | 1.6 ± 0.7 | 0.98 ± 0.01 | 286 ± 21 |
+| uncapped, world model frozen at min 5 | 2.9 ± 0.3 | 14 ± 7 | 22 ± 16 | 0.88 ± 0.07 | 911 ± 259 |
+| uncapped, actor-critic frozen at min 5 | 2.9 ± 0.3 | 46 ± 61 | 61 ± 80 | 0.53 ± 0.37 | 1256 ± 833 |
+
+Reading. (1) With the full pick (fear critic, stillness, batch 16) the uncapped
+ratio no longer drifts late on V100: 2.0 against 1.6 crossings/min with the
+schedule. The late collapse seen before the pick does not reproduce here; it
+may still appear at the faster IAS ratio (~570), which the uncapped controls
+in X and V test. (2) Freezing either part makes things much worse, so neither
+part "is" the drift: the policy depends on the world model's latent space.
+Freezing the actor-critic while the model keeps learning moves the latents
+under a fixed policy (61 crossings/min, same failure as Z2's trained
+actor-critic on a fresh model). Freezing the model at 5 min leaves the
+actor-critic training on a model that has seen only 5 min of data, and it
+exploits that model's errors (22/min, 3x faster driving). Both parts need to
+keep learning together; the speed lever stays the world model (Z2).
