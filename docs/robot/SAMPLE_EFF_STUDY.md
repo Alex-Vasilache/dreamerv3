@@ -15,7 +15,7 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 |---|---|---|---|
 | 0 | live runs e43457, e43605-e43607 (weekend balance pick) vs e40006 | does the pick hold on the robot? | analysing |
 | 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | queued (Saion jobs 4807464-95) |
-| 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | running (IAS array 200247) |
+| 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | done: world model is the early bottleneck (log 11-09 23:30) |
 | 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | Y, Saion V100, e43800-e43831 (unc d0.05/0.1/0.2, sched d0.1), queued behind Z1 |
 | 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3), array 200255 after Z2 |
 | 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), array 200256 after X |
@@ -63,3 +63,31 @@ settled to 0-1 by minute 7. n = 1 each; the sim predicted the opposite late
 (~2 against 17-19 crossings/min). Open: is the stillness penalty weaker live
 (position scale, home drive moving the robot), or is this run-to-run
 variation? Repeat runs are needed before reading more into it.
+
+### Mon 11-09 ~23:30: Z2, which component limits the first minutes (step 1)
+
+Sim, weekend pick with the ratio schedule, 30 min, n = 8 per arm (e43740-e43771,
+IAS). Trained parts come from e43159 at step 214500 (diagnostic only).
+Mean ± SD; t90 = first minute with upright ≥ 0.9. Figure `figs/study/z2.png`.
+
+| arm | t90 (min) | upright min 1 | upright min 2 | crossings/min, min 1-5 | crossings/min, min 10-30 |
+|---|---|---|---|---|---|
+| fresh (the pick) | 2.9 ± 0.3 | 0.17 ± 0.05 | 0.79 ± 0.08 | 33 ± 5 | 5.0 ± 1.1 |
+| trained world model, fresh actor-critic | 3.3 ± 1.1 | 0.66 ± 0.02 | 0.83 ± 0.07 | 22 ± 3 | 3.9 ± 1.7 |
+| trained actor-critic, fresh world model | 10.0 ± 2.4 | 0.02 ± 0.01 | 0.05 ± 0.02 | 60 ± 44 | 13 ± 7 |
+| both trained | 3.5 ± 1.4 | 0.76 ± 0.08 | 0.66 ± 0.19 | 18 ± 5 | 4.8 ± 1.2 |
+
+Reading. (1) The world model is the early bottleneck: with a trained world model
+a fresh actor-critic is already 66 % upright in minute 1, so the actor-critic
+learns in well under a minute once the model exists. (2) A trained actor-critic
+on a fresh world model is far worse than starting fresh (10 against 3 min): its
+inputs are latents of a different model, and the critic's confident values
+steer learning wrongly until the model settles. (3) Starting with both trained
+gives the best minute 1 but dips at minute 2 (0.66): early training at the high
+ratio on very little new data degrades a good policy. (4) After minute 3 none
+of the three starts differs from fresh; late crossings are ~4-5/min for all but
+the actor-critic arm. So for from-scratch speed the lever is how fast the world
+model forms from the first ~2 minutes of data: the target of Y (world-model
+dropout), X (observational dropout) and V/U (more imagination per sample).
+Caveat: the actor process also loaded the trained policy for its first ~3 s
+until the first learner sync (applies to all loaded arms).
