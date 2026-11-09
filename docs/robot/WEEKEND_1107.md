@@ -485,14 +485,16 @@ drive and publishing every sync (with them: 4 crossings/min, 1 min slower).
 Live flags (e40006's command with these changes):
 ```
 drop:    --online_publish_every 1          (block default 2)
-         --env.robot.home_max_s 10
 change:  --env.robot.home_speed 0.5 --env.robot.home_ramp 3000
          --env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 2.0
-         --env.robot.weights_emotion True
 add:     --env.robot.bumper_margin 0.05 --batch_size 16
          --env.robot.cost_obs True --agent.fear.weight 1.0
 keep:    --online_ratio_switch 19500 --online_ratio_late 128
 ```
+Keep `--env.robot.weights_emotion False` and `home_max_s 10` live (corrected
+11-09): `weights_emotion True` was only needed by the sim phone, and live it
+slowed the phone loop to 47-55 Hz (e41045); the 10 s cap stops the weak
+0.5 / 3 s home drive from sitting still for 30 s (e40003).
 No app change (the fear critic and the cost signal live on the server). The
 bumper margin (2.9°) closes the trap where a policy rests on the front bumper
 at 8.1° just outside the penalty zone; on the real robot the bumper sits at
