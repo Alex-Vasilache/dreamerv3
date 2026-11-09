@@ -381,7 +381,8 @@ class _Streams:
 
   # How long a push waits for the phone to report the new weights installed
   # before it counts as done anyway (a paused or playing phone may not say).
-  CONFIRM_S = 60.0
+  # Live pushes confirm in 1-4 s over the relay; a lost part costs this much.
+  CONFIRM_S = 15.0
 
   def __init__(self, host, port, timeout):
     self.port = port
@@ -517,10 +518,21 @@ class _Streams:
       with self._lock:
         ok = (header.get('type') == 'wstream'
               and header.get('session') == self._session)
+        stale = []
         if ok:
-          self._socks.append((int(header.get('index', 0)), sock))
+          # A stream the phone opens again replaces its old socket: that one
+          # is dead on the phone's side even when our sends still go into
+          # its buffers. Kept, each push was cut into one part too many and
+          # the part on the dead socket never arrived, so pushes waited out
+          # CONFIRM_S until a send there failed (e43457: 3 pushes, 60 s each).
+          index = int(header.get('index', 0))
+          stale = [x for x in self._socks if x[0] == index]
+          self._socks = [x for x in self._socks if x[0] != index]
+          self._socks.append((index, sock))
           self._socks.sort(key=lambda x: x[0])
           count = len(self._socks)
+      for _, old in stale:
+        _close_socket(old)
       if not ok:
         raise ValueError(f'not a weight stream of this session: {header}')
       # A send may stall on a dead link; give up on it like on a quiet phone.
