@@ -17,8 +17,8 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | done: no late drift with the full pick on V100; freezing either part is worse (log 11-10) |
 | 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | done: world model is the early bottleneck (log 11-09 23:30) |
 | 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | done: no early speed-up, slightly calmer late; candidate for step 6 (log 11-10) |
-| 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3), array 200255 after Z2 |
-| 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), array 200256 after X |
+| 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3); 33 of 40 lost to the time limit, rerun as array 202005 |
+| 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), resubmitted as array 202006 |
 | 4b | DreamerV4's one rollout per context: imag_last 1 (b16, b64), imag_last 8, vs every step | do fewer, more diverse starts learn as fast for less compute? | done: not better (fewer starts = more restless policy); not adopted (log 11-10) |
 | 5 | winners on commands; best to live | fastest from-scratch recipe | |
 | 6 | reanalysis: what worked, what did not, why; combine the parts that help together (factorial on the 2-3 best), confirm n = 12 at three GPU speeds | most improvement | |
@@ -162,3 +162,13 @@ against 2.0; schedule 1.2 against 1.6 crossings/min), smallest at 0.05; the
 differences are within one SD at n = 8. Cheap (no speed cost) and harmless, a
 small late-stability gain: a candidate for the combination round (step 6), not
 a speed-up on its own.
+
+### Tue 11-10: X lost to the IAS time limit
+
+The IAS launcher still had the 1 h 25 min limit sized for 30-min runs; 33 of
+the 40 one-hour X runs timed out (one more hit the 5 GB memory cap) and the
+final copy back from the node's /tmp did not finish before the kill, so their
+data is gone. Fixed in `sbatch/ias/run_sim_ias.sbatch`: 2 h 30 min, 7 GB
+(the largest finished run peaked at 4.0 GB), and the logdir is copied back
+every 5 min. The 33 lost X runs (array 202005) and all of V (202006, V's two
+started runs cancelled) were resubmitted, 4 concurrent each.

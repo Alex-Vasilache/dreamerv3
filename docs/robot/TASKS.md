@@ -15,8 +15,8 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 - [x] Z1 (Saion V100): no late drift with the full pick even uncapped (2.0 vs 1.6 crossings/min); freezing either part at min 5 is much worse (22 / 61)
 - [x] U (Saion P100): one rollout per context is not better (t90 3.6 vs 3.0 min; late 4.8 vs 2.2 crossings/min); not adopted
 - [x] Y (Saion V100): world-model dropout does not speed up the start; slightly calmer late (1.1-1.7 vs 2.0 crossings/min, within SD); candidate for step 6
-- [~] X (IAS, after Z2): observational dropout 0.1 / 0.3
-- [ ] V (IAS, after X): N = 2 / 4 rollouts per start
+- [~] X (IAS): observational dropout 0.1 / 0.3 -- 33/40 lost to the time limit, rerun (202005)
+- [~] V (IAS): N = 2 / 4 rollouts per start (202006)
 - [ ] Step 5: winners on commands; best one live
 - [ ] Step 6: reanalysis (what worked, what did not, why), combine the parts that help, confirm n = 12 at three GPU speeds
 - [x] Saion checkout unpinned: fast-forwarded to include Alex's 2cc011e/1a68792 (11-10)
