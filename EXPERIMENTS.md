@@ -679,6 +679,7 @@ four fine; cheetah 525, hopper 300, cartpole 783 (seed 0). So a weak early push 
 delays the first reward: across all arms the pin pad five first-reward step scatters 0.07-3.5M
 with or without TCE (US-SOM no TCE: 0.16/1.42/0.72/0.26/0.17M). Arm kept running for the full 5
 seeds; 4x12 throttle raised back to %4 so the 8 GPUs stay full once h0133-h0162 ends.
+**Final 11-09 23:20 (5 seeds, all done):** late 3.5-4M: pin pad four 311, five 264, six 68 (solved 2/5), cartpole 767, cheetah 546, hopper 251. Score on the four clear tasks (pin pad four/five, cartpole, cheetah; % of max) 70.8 vs US-SOM 72.8, TCE sqrt 71.3, c=10 66.6, 4x12 68.8, OG 61.3. Not clearly worse than US-SOM/sqrt, so the floor arm stays in the extra-seed array 4807344 (user rule 11-09: drop only if clearly worse on the clear tasks).
 
 ### h0193-h0222: TCE-KL c=10 on the 4x12 hash (2026-11-06, array 4800784)
 

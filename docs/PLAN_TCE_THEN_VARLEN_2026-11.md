@@ -16,7 +16,7 @@ decided). Until then the GPUs run TCE-KL arms, and this document is where we pic
 | c=10, 1x16 hash | `tce_kl tce_kl_c10` | h0133-h0162 | 4799105 | **finished 11-08**: pin pad six 3/5, five 3/5 by 0.8M (one seed late 45), DMC ~ US-SOM |
 | c=30, 1x16 hash | `tce_kl tce_kl_c30` | h0163-h0192 | 4799106 | **cancelled 11-06 19:10** after seed 0 + part of seed 1: over-pushes |
 | c=10, 4x12 hash | `tce_kl4 tce_kl_c10` | h0193-h0222 | 4800784 | running, 6 x 5; %2 on 11-06 21:30, back to %4 on 11-08 |
-| c=10 + alpha floor 0.04, 1x16 | `tce_kl tce_kl_c10 tce_kl_floor` | h0223-h0252 | 4800914 | running since 11-06 21:30; interim 11-08: floor holds w ~0.2 but no earlier reward (worse than matched c=10 seeds on 2 of 3 pin pad runs) |
+| c=10 + alpha floor 0.04, 1x16 | `tce_kl tce_kl_c10 tce_kl_floor` | h0223-h0252 | 4800914 | **finished 11-09**: floor holds w ~0.2 but no earlier reward; pin pad six 2/5; four-clear-task score 70.8 vs US-SOM 72.8 / sqrt 71.3, kept for the extra seeds (4807344) |
 
 Figures and tables: `collapse_figs/tce_kl/` (see `collapse_figs/INDEX.md`); scripts
 `tools/collapse_study/tcekl_report.py` (per seed: score, gap, weight, alpha) and
