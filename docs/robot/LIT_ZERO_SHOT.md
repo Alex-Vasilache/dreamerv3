@@ -21,23 +21,23 @@ remove the task-specific *learning* when the task changes, for example a new
 command or reward. C removes the *gradient steps*, but not the data that
 adaptation needs.
 
-Verification: arXiv IDs below were checked against the arXiv abstract pages or
-search results on 2026-11-09. Numbers marked "(unverified)" come from secondary
-summaries or from memory and were not confirmed in the paper.
+Verification: every arXiv ID below was checked against the arXiv record
+(title, authors, date) on 2026-11-09, and the numbers against the abstract or
+paper text. Anything still marked "(unverified)" was not found in the paper.
 
 ## 1. Zero-shot sim-to-real (sense A)
 
 | work | setup | what transfers | real samples / time | needs |
 |---|---|---|---|---|
 | Domain / dynamics randomisation (Tobin et al. 2017, arXiv 1703.06907; Peng et al. 2018, arXiv 1710.06537) | train in sim with randomised visuals or dynamics | the policy, unchanged | 0 | a randomisation range that covers the real system; costs some nominal performance |
-| System ID + actuator net (Hwangbo et al. 2019, arXiv 1901.08652) | fit a neural actuator model from real logs, then RL in sim | the policy | 0 for the task; minutes of logs for the actuator model (unverified) | a measured model of the part the rigid-body sim gets wrong |
+| System ID + actuator net (Hwangbo et al. 2019, arXiv 1901.08652) | fit a neural actuator model from real logs, then RL in sim | the policy | 0 for the task; under 4 min of real actuator data (>1M samples at 400 Hz, 12 actuators in parallel) | a measured model of the part the rigid-body sim gets wrong |
 | Learning to Walk in Minutes (Rudin et al., CoRL 2021, arXiv 2109.11978) | PPO on thousands of parallel Isaac Gym robots | the policy, to ANYmal | 0 real; under 4 min of training for flat terrain, about 20 min for rough, on one GPU | a fast, massively parallel sim |
-| RMA (Kumar et al., RSS 2021, arXiv 2107.04034) | base policy plus an adaptation module that infers "extrinsics" (mass, friction, terrain) from recent state-action history; both trained in sim | both modules; adaptation happens online, without gradients | 0; walks on sand, mud, grass and trails with no calibration and no real fine-tuning | broad randomisation of the parameters the module must infer |
-| Real-world humanoid with a transformer (Radosavovic et al. 2023, arXiv 2303.03381) | causal transformer over proprio-action history, large-scale RL in randomised sims | the policy; it adapts in-context to terrain | 0; Digit walks outdoors on unseen terrain | thousands of randomised environments; longer context helped |
+| RMA (Kumar et al., RSS 2021, arXiv 2107.04034) | base policy plus an adaptation module that infers "extrinsics" (mass, friction, terrain) from recent state-action history; both trained in sim | both modules; adaptation happens online, without gradients | 0; deployed on A1 without fine-tuning over rocky, slippery and deformable ground, grass, sand, pebbles and stairs; adapts in fractions of a second | broad randomisation of the parameters the module must infer |
+| Real-world humanoid with a transformer (Radosavovic et al. 2023, arXiv 2303.03381) | causal transformer over proprio-action history, large-scale RL in randomised sims | the policy; it adapts in-context to terrain | 0; Digit walks outdoors on unseen terrain | thousands of randomised environments; a longer context helped (their context-length ablation) |
 | DayDreamer (Wu et al., CoRL 2022, arXiv 2206.14176) | DreamerV2 trained only on the real robot (not sim-to-real) | nothing; the baseline for real-only learning | A1 walks after about 1 h | none of the above |
 | A Walk in the Park (Smith et al. 2022, arXiv 2208.07860) | DroQ, high update-to-data ratio, real only | nothing | A1 walks in about 20 min | careful MDP design |
-| SimDist (Levy et al., RSS 2026, arXiv 2603.15759) | pretrain a latent world model in sim; on the robot keep encoder, reward and value, fine-tune only the latent dynamics | encoder, reward, value | the abstract claims rapid improvement where prior fine-tuning methods stall or degrade; no numbers in the abstract | sim close enough that the latent space and value are reusable |
-| Imitation-pretrained WM recipe (arXiv 2510.02538) | world model pretrained in sim (~1M reward-free interactions), then offline then online real fine-tuning, manipulation | world model and reward model | not checked | state-based input; a pose estimator for the real robot |
+| SimDist (Levy et al., RSS 2026, arXiv 2603.15759) | pretrain a latent world model in sim, plan with it; on the robot keep encoder, reward and value, fine-tune only the latent dynamics (manipulation and quadruped locomotion) | encoder, reward, value | the abstract claims rapid improvement where prior fine-tuning methods stall or degrade; no numbers in the abstract | sim close enough that the latent space and value are reusable |
+| Online imitation-pretrained WM recipe (Wang et al. 2025, arXiv 2510.02538) | imitation learning: world model pretrained with online imitation in sim, then offline fine-tuning on limited real expert data; manipulation | the world model | success +23.3% sim-to-real (+31.7% sim-to-sim) over offline imitation baselines | real expert demonstrations |
 
 What the field agrees on: zero-shot transfer of a *policy* works when the
 gap is covered by randomisation or inferred online (RMA, the Digit
@@ -69,10 +69,10 @@ planning and no further RL.
 | work | method | test-time spec | reported result | needs |
 |---|---|---|---|---|
 | Forward-backward (FB) (Touati & Ollivier, NeurIPS 2021, arXiv 2103.07945) | learn F(s,a,z) and B(s') such that F·B approximates the successor measure; policy π_z for each z | z = E[B(s) r(s)] over labelled states, or B(goal) | near-optimal for rewards given after training; mazes, pixel Ms. Pacman, a simulated arm | a reward-free dataset that covers the states the rewards care about |
-| Does zero-shot RL exist? (Touati, Rapin, Ollivier, ICLR 2023, arXiv 2209.14935) | systematic study: FB versus successor features (SF) with many base features, offline on URLB/ExORL buffers | as above | FB about 85% of supervised offline RL, consistent across tasks. SF only good with Laplacian features; AE, inverse-dynamics, contrastive and APS features inconsistent | a good exploration buffer (ExORL buffers are millions of transitions, unverified) |
+| Does zero-shot RL exist? (Touati, Rapin, Ollivier, ICLR 2023, arXiv 2209.14935) | systematic study: FB versus successor features (SF) with many base features, offline on URLB/ExORL buffers | as above | FB reaches 81% of supervised offline TD3 averaged over tasks and buffers, 85% on the best (RND) buffer, consistently. SF only good with Laplacian features; AE, inverse-dynamics, transition-model, contrastive and APS features inconsistent | a good exploration buffer (5M transitions per ExORL buffer, 10M for the maze) |
 | HILP (Park, Kreiman, Levine, ICML 2024, arXiv 2402.15567) | Hilbert-space state embedding where distance is temporal distance; latent-conditioned policy | goal, or linear reward via the embedding | zero-shot goal-reaching and reward tasks on simulated locomotion/manipulation, often beating specialised methods | offline unlabelled data |
-| Meta Motivo / FB-CPR (Tirinzoni et al., ICLR 2025, arXiv 2504.11054) | FB regularised to imitate unlabelled mocap trajectories | tracking, goal pose, or reward | one model does all three zero-shot on a simulated humanoid, competitive with task-specific methods | mocap dataset (AMASS, per secondary sources) plus large online sim training (scale unverified) |
-| BFM-Zero (arXiv 2511.04131, ICLR 2026) | FB-based behaviour foundation model with domain randomisation and asymmetric history-dependent training | as Motivo; few-shot optimisation adaptation | real Unitree G1: pose reaching, reward optimisation, adaptation; no numbers in the abstract | a sim-to-real stack as in section 1 |
+| Meta Motivo / FB-CPR (Tirinzoni et al., ICLR 2025, arXiv 2504.11054) | FB regularised to imitate unlabelled mocap trajectories | tracking, goal pose, or reward | one model does all three zero-shot on a simulated humanoid, competitive with task-specific methods | a subset of AMASS mocap (8,902 training motions, ~29 h) plus 30M online interaction steps in MuJoCo (SMPL humanoid) |
+| BFM-Zero (Li et al., ICLR 2026, arXiv 2511.04131) | FB-based behaviour foundation model with reward shaping, domain randomisation and asymmetric history-dependent training | as Motivo; few-shot optimisation adaptation | real Unitree G1: pose reaching, reward optimisation, adaptation; no numbers in the abstract | a sim-to-real stack as in section 1 |
 | FB-MEBE (Hu et al., 2026, arXiv 2603.25464) | online FB with maximum-entropy *behaviour* exploration plus a naturalness critic, no external dataset | reward at test time | zero-shot deployment of recovered policies to a real quadruped without fine-tuning; no numbers in the abstract | a sim; exploration is the bottleneck it addresses |
 
 What transfers: one network for a whole *family* of rewards. The failure mode
@@ -86,11 +86,11 @@ model-free actor-critic over latent z.
 
 | work | setup | what is zero-shot | scale |
 |---|---|---|---|
-| Genie (Bruce et al., ICML 2024, arXiv 2402.15391) | 11B video world model with a latent-action interface learned without action labels | playable environments from one image | over 200k h of internet game video |
-| Dreamer 4 (Hafner, Yan, Lillicrap 2025, arXiv 2509.24527) | shortcut-forcing transformer world model; RL entirely in imagination | first agent to get Minecraft diamonds from offline data only; real-time inference on one GPU | mostly unlabelled video plus a small action-labelled set (amounts not stated in the abstract); no robotics experiments |
+| Genie (Bruce et al., ICML 2024, arXiv 2402.15391) | 11B video world model with a latent-action interface learned without action labels | playable environments from one image | 30k h of 2D-platformer video, filtered from over 200k h of internet game video |
+| Dreamer 4 (Hafner, Yan, Lillicrap 2025, arXiv 2509.24527) | shortcut-forcing transformer world model; RL entirely in imagination | first agent to get Minecraft diamonds from offline data only; real-time inference on one GPU | 2,541 h of Minecraft contractor video (VPT); action conditioning learnt from a small action-labelled subset; trained on 256-1024 TPU-v5p; no robotics experiments |
 | RL² (Duan et al. 2016, arXiv 1611.02779) | an RNN whose hidden state carries the "fast" learning algorithm, trained by "slow" RL over a task distribution | adaptation to a new MDP with no gradient steps | bandits, small MDPs, vision navigation |
 | Algorithm Distillation (Laskin et al., ICLR 2023, arXiv 2210.14215) | transformer trained on whole learning histories of a source RL algorithm | improves in-context, without weight updates, more data-efficiently than the source | many learning histories per task family |
-| Model-based meta-RL on a real millirobot (Nagabandi et al., ICLR 2019, arXiv 1803.11347) | dynamics model meta-trained to adapt from recent experience (recurrent ReBAL or gradient GrBAL), then MPC | online adaptation to a lost leg, new terrain, slopes, calibration error | about 1.5-3 h of real meta-training data |
+| Model-based meta-RL on a real millirobot (Nagabandi et al., ICLR 2019, arXiv 1803.11347) | dynamics model meta-trained to adapt from recent experience (recurrent ReBAL or gradient GrBAL), then MPC | online adaptation to a lost leg, new terrain, slopes, calibration error | about 30 min of real data per training terrain, three terrains (1.5-3 h equivalent in the sim tasks) |
 | RMA and the Digit transformer (section 1) | in-context system identification from proprio history | floor or terrain changes at run time | sim randomisation |
 
 Dreamer's RSSM is already an in-context learner of this kind. Its recurrent
@@ -105,7 +105,7 @@ dynamics are small and already modelled.
 
 | work | setup | zero-shot claim | needs |
 |---|---|---|---|
-| Plan2Explore (Sekar et al., ICML 2020, arXiv 2005.05960) | Dreamer world model; the explorer maximises ensemble disagreement (expected information gain) in imagination | after reward-free exploration, new tasks are solved in imagination with no extra environment samples, close to an oracle with reward access (DMC from pixels; task count unverified) | a reward-free phase in the *target* environment; a reward head trained from labels at test time |
+| Plan2Explore (Sekar et al., ICML 2020, arXiv 2005.05960) | Dreamer world model; the explorer maximises ensemble disagreement (expected information gain) in imagination | after reward-free exploration, new tasks are solved in imagination with no extra environment samples, close to an oracle with reward access (20 DMC tasks from pixels) | a reward-free phase in the *target* environment; a reward head trained from labels at test time |
 | LEXA (Mendonca et al., NeurIPS 2021, arXiv 2110.09514) | world model plus an explorer and an "achiever" (goal-conditioned) trained in imagination | reaches user-given goal images zero-shot; 40-task benchmark | goals expressible as observations |
 | Choreographer (Mazzaglia et al., ICLR 2023, arXiv 2211.13350) | skills discovered in the world model's latent space; a meta-controller picks and chains skills in imagination | adapts to downstream URLB tasks, beating earlier pixel and state methods | a reward-free phase, then a short adaptation |
 
@@ -151,8 +151,8 @@ z = E[B(s)·r_cmd(s)] at run time. Then deploy with the section-1
 randomisation (BFM-Zero shows this on a humanoid). Cost: high, 2-4 weeks. FB
 is a separate model-free learner, not a Dreamer config, and coverage of the
 upright manifold needs deliberate exploration. Risk: medium-high. In the
-2023 study zero-shot quality was about 85% of supervised. Our balance
-margin is thin, so 85% may mean falling. A cheaper version inside Dreamer:
+2023 study zero-shot quality was 81% of supervised on average (85% on the
+best buffer). Our balance margin is thin, so 80-85% may mean falling. A cheaper version inside Dreamer:
 train a command-conditioned policy over randomly sampled commands in sim
 (already done for `robot_command`). That is zero-shot over the command
 family we choose, with no FB.
@@ -166,17 +166,19 @@ for the robot (not checked). Risk: medium. It speeds up *later* tasks more
 than it speeds up the first balance, and it does nothing for sim-to-real.
 
 **5. Foundation world models or algorithm distillation (sense C at scale).**
-Not recommended now. These methods need far more data than we have (hours of
-real meta-training even in the millirobot case; internet-scale data for
+Not recommended now. These methods need far more data than we have (about 1.5 h of
+real meta-training data even in the millirobot case; internet-scale data for
 Genie and Dreamer 4), and they target perception, which our proprio task
 does not need. Revisit only if the camera and charger-finding work (step 7)
 becomes the priority.
 
-**Could not verify:** the exact DMC task count and scores for Plan2Explore.
-Also unverified: Meta Motivo's training scale and dataset (AMASS per
-secondary sources), and real-data amounts for SimDist, BFM-Zero and FB-MEBE
-(abstracts give none). The same goes for the Dreamer 4 data split, the
-ExORL buffer sizes, and Hwangbo et al.'s actuator-data amount. The original
-Tobin (1703.06907), Peng (1710.06537) and Hwangbo (1901.08652) pages were not
-fetched; those IDs are from memory, with secondary confirmation of the
-content.
+**Could not verify:** real-data amounts for SimDist, BFM-Zero and FB-MEBE
+(the abstracts give none and the papers were not read in full).
+
+Checked 2026-11-09: 24 citations verified (plus the SIM_COMMAND.md §9 and
+PLAN.md CR1/CR2 references), 5 corrected: zero-shot RL "85%" -> 81% average,
+85% on the best buffer; Genie 200k h -> 30k h used (filtered from 200k);
+RMA terrains (now as listed in the abstract); millirobot 1.5-3 h -> ~30 min per
+terrain; arXiv 2510.02538 is online imitation pretraining, not reward-free.
+Five "unverified" flags resolved from the papers (Meta Motivo data, ExORL
+size, Hwangbo actuator data, Plan2Explore 20 tasks, Dreamer 4 data).

@@ -9,17 +9,19 @@ the phone robot at 65 Hz from a low-dim proprio vector; balance in ~3 min.
 Companion to `SAMPLE_EFFICIENCY_SURVEY.md` (2026-10-06), which covers replay
 ratio, DroQ/BBF, MDP design.
 
-Verification: arXiv IDs below were checked by web search on 2026-11-09 unless
-marked **[unverified]**. DreamerV4 details were read from the arXiv HTML.
+Verification: every arXiv ID below was checked against the arXiv record
+(title, authors, date) on 2026-11-09, numbers against the abstract or paper
+text. DreamerV4 details were read from the arXiv HTML.
 
 ## 0. Headline findings
 
 1. **DreamerV4 does not start several rollouts per replay entry. It does the
-   opposite.** Section 3.3 states "we start only one rollout from each context,
-   prioritizing data diversity and reducing memory consumption", explicitly
-   as a departure from earlier Dreamers. DreamerV3 already starts one rollout
-   from every replayed timestep (B·T starts; ours: 16x64 = 1024 starts per
-   update, see `rssm.py:starts`, capped by `agent.imag_last`). So "more starts
+   opposite.** Section 3.3: "Unlike previous generations of Dreamer, we start only one
+   rollout from each context, prioritizing data diversity and reducing memory
+   consumption." DreamerV3 already starts one rollout from every replayed
+   timestep (B·T starts; the `robot` block: 32x64 = 2048 starts per update,
+   see `rssm.py:starts`; `agent.imag_last` keeps only the last K per sequence,
+   default 0 = all). So "more starts
    per sample" is something we already have at B·T scale; the untested axis is
    **N > 1 rollouts per start** (repeated stochastic rollouts), which neither
    paper ablates.
@@ -46,22 +48,22 @@ activations or latents, so the same code works for image or proprio input.
 | method | what is perturbed | loss | reported gain | modality-agnostic? |
 |---|---|---|---|---|
 | Dropout (Srivastava 2014, JMLR) / DropConnect (Wan 2013, ICML, no arXiv) | hidden units / weights | unchanged task loss | regulariser; no RL sample-efficiency claim by itself | yes |
-| DroQ (Hiraoka 2021, arXiv 2110.02034) | dropout + LayerNorm in Q-nets | TD loss | matches REDQ sample efficiency at UTD 20 with a small ensemble; used in "Walk in the Park" (A1 walks in 20 min) | yes |
+| DroQ (Hiraoka 2021, arXiv 2110.02034) | dropout + LayerNorm in Q-nets | TD loss | matches REDQ sample efficiency (UTD 20) with a small ensemble, near SAC compute (ICLR 2022); used in "Walk in the Park" (A1 walks in 20 min) | yes |
 | DropBlock (Ghiasi 2018, arXiv 1810.12890) | contiguous regions of conv feature maps | task loss | ImageNet/detection; for us it reduces to dropping groups of units | conv-specific; group dropout is agnostic |
 | Zoneout (Krueger 2016, arXiv 1606.01305) | RNN hidden units randomly keep previous value | task loss | supervised RNN regulariser; maps directly onto the GRU deter state | yes |
 | Observational dropout (Freeman, Metz, Ha 2019, arXiv 1910.13038) | whole observation replaced by model's own prediction with prob p | RL reward only | world model emerges without a forward-prediction loss; not a sample-efficiency result | yes |
-| HRSSM (Sun et al. 2024, arXiv 2405.06263) | masked encoder features inside an RSSM + bisimulation | latent reconstruction of masked parts | robustness to distractors when added to DreamerV3 (visual) | mostly; tested on images |
-| MLR (Yu et al. 2022, arXiv 2201.12096) | random spatio-temporal cube masks on pixel sequences | predict EMA-target latents of the unmasked sequence (cosine) | beats CURL/DrQ/SPR-type baselines on DMC-100k and Atari-100k | input masking is pixel-shaped; the latent-target loss is generic |
+| HRSSM (Sun et al., ICML 2024, arXiv 2405.06263) | spatio-temporal masking + bisimulation in a hybrid RSSM | latent reconstruction of masked parts | gains on visual control with exogenous distractors (ManiSkill with Matterport backgrounds) | mostly; tested on images |
+| MLR (Yu et al. 2022, arXiv 2201.12096) | random spatio-temporal cube masks on pixel sequences | predict EMA-target latents of the unmasked sequence (cosine) | beats prior sample-efficient pixel methods on continuous (DMC) and discrete (Atari) benchmarks (NeurIPS 2022) | input masking is pixel-shaped; the latent-target loss is generic |
 | M-CURL (Zhu et al. 2020, arXiv 2010.07470) | frame features masked, transformer reconstructs from context | contrastive (InfoNCE) | beats CURL on 14/16 DMC and 21/26 Atari tasks | yes at the feature level |
-| MWM (Seo et al. 2022, arXiv 2206.14244) | conv features masked (MAE) + early-conv; reward prediction aux | MAE recon + DreamerV2 WM loss | outperforms DreamerV2 on Meta-World / RLBench visual manipulation | no, visual |
+| MWM (Seo et al. 2022, arXiv 2206.14244) | conv features masked (MAE) + early-conv; reward prediction aux | MAE recon + DreamerV2 WM loss | Meta-World 50 tasks: 81.7% success against 67.9% for DreamerV2; also RLBench (CoRL 2022) | no, visual |
 | MTM (Wu et al. 2023, arXiv 2305.02968) | random subsets of state/action tokens in trajectories | reconstruct full trajectory | one net acts as forward/inverse model and offline agent; representations speed up RL | **yes, tested on proprio states** (offline) |
-| SPR (Schwarzer et al. 2020, arXiv 2007.05929) | augmented input; latent model rolled K=5 steps | cosine between predicted and EMA-target future latents | Atari-100k median HNS 0.415 (from ~0.16 for prior SOTA) | loss yes; their augmentation is image-based (ablation: loss helps even without aug) |
-| EfficientZero (Ye et al. 2021, arXiv 2111.00210) | none at input beyond image aug | SimSiam consistency between predicted and encoded next latent | Atari-100k mean 190% / median 116% HNS; consistency loss is the largest ablation term | loss yes |
+| SPR (Schwarzer et al. 2020, arXiv 2007.05929) | augmented input; latent model rolled K=5 steps | cosine between predicted and EMA-target future latents | Atari-100k median HNS 0.415, a 55% relative gain over the prior SOTA | loss yes; their augmentation is image-based (ablation: loss helps even without aug) |
+| EfficientZero (Ye et al. 2021, arXiv 2111.00210) | none at input beyond image aug | SimSiam consistency between predicted and encoded next latent | Atari-100k mean 194.3% / median 109.0% HNS (arXiv v2 abstract; v1 gave 190.4/116.0); consistency is the largest term in their ablation (Table 3) | loss yes |
 | TD-MPC2 (Hansen et al. 2023, arXiv 2310.16828) | none (state tasks); latent dynamics rolled H steps | MSE latent consistency to stop-grad encoded future + reward + TD; no decoder | strong on 104 state/pixel tasks; consistency loss is the representation signal | yes |
-| TCRL (Zhao et al. 2023, arXiv 2306.09466) | none | temporal-consistency latent loss only (cosine > MSE) | 2.4x faster training on DMC Humanoid/Dog than ensembles at matched sample efficiency | yes, state-based |
+| TCRL (Zhao et al. 2023, arXiv 2306.09466) | none | temporal-consistency latent loss only (cosine > MSE) | model-free on DMC Humanoid/Dog: matches model-based sample efficiency while training 2.4x faster; with planning, 4.1x faster than ensemble methods | yes, state-based |
 | Denoising AE (Vincent 2008, ICML) / denoising VAE (Im et al. 2015, arXiv 1511.06406) | input corrupted (noise or masking) | reconstruct clean input | better representations / tighter bound; no RL claim | yes |
-| mixup (Zhang 2017, arXiv 1710.09412), manifold mixup (Verma 2018, arXiv 1806.05236), MixReg (Wang 2020, arXiv 2010.10814 **[ID unverified]**) | convex mixes of inputs or hidden layers (and targets) | mixed targets | MixReg: Procgen generalisation, not sample efficiency | yes in principle; mixing dynamic states has no clean target for a world model |
-| RAD state-based (Laskin et al. 2020, arXiv 2004.14990) | proprio vector: Gaussian noise, random amplitude scaling | unchanged RL loss | mixed on OpenAI Gym state tasks (helps some, hurts others) **[details from memory]** | yes |
+| mixup (Zhang 2017, arXiv 1710.09412), manifold mixup (Verma 2018, arXiv 1806.05236), MixReg (Wang 2020, NeurIPS, arXiv 2010.10814) | convex mixes of inputs or hidden layers (and targets) | mixed targets | MixReg: Procgen generalisation, not sample efficiency | yes in principle; mixing dynamic states has no clean target for a world model |
+| RAD state-based (Laskin et al. 2020, arXiv 2004.14990) | proprio vector: Gaussian noise, random amplitude scaling | unchanged RL loss | random amplitude scaling (one scalar) improved SAC on all 6 OpenAI Gym state tasks (SOTA on 4/6); Gaussian noise did worse | yes |
 | DrQ / DrQ-v2 (Kostrikov 2020, arXiv 2004.13649; Yarats 2021, arXiv 2107.09645) | image shifts; Q-target averaged over augs | TD | large pixel-DMC gains; no state-input version | no |
 | S4RL (Sinha et al. 2021, arXiv 2103.06326) | states: Gaussian/uniform noise, adversarial, mixup over 7 schemes | CQL with smoothed Q over augmented states | gains on D4RL, MetaWorld, RoboSuite (offline) | yes, proprio |
 | NoisyNets / parameter noise (Fortunato 2017, arXiv 1706.10295; Plappert 2017, arXiv 1706.01905) | weights of policy/Q | RL loss | exploration, not representation | yes |
@@ -81,7 +83,8 @@ Reading of the evidence for our setting:
 - **Dropout is the most proven "neuron-level" tool for high replay ratios**
   (DroQ, and BRO/SR-SPR in the companion survey). Its role there is to stop
   overfitting of value/Q nets when each sample is reused many times, which is
-  exactly our regime (train_ratio 32-512).
+  exactly our regime (the robot learner is uncapped at ~280-560 replayed
+  steps per robot step, `PLAN.md` CR1).
 - **Gaps:** no study of dropout/zoneout/noise on RSSM deter or stoch state for
   sample efficiency; no masked-reconstruction study on a real robot trained
   from scratch.
@@ -110,9 +113,10 @@ mask means each position is a next-step prediction task. Treating "how
 corrupted is this latent" as an input is the modality-agnostic idea most worth
 borrowing: it is masking/noise on latents with a known corruption level.
 
-What DreamerV4 does **not** provide: no ablation numbers in the arXiv text we
-could read (the paper says an ablation study exists; figures not parsed), no
-online/real-robot result, no evidence about rollouts per start. PMPO is from
+What DreamerV4 does **not** provide: its agent ablation (Fig. 4) compares
+against BC baselines and other representations (Gemma 3, from scratch), and
+it reports a world-model ablation, but nothing on rollouts per start; no
+online/real-robot result. Training used 256-1024 TPU-v5p. PMPO is from
 Abdolmaleki et al., arXiv 2410.04166 (ICLR 2025).
 
 ### 2.1 Multi-rollout imagination: what the evidence says
@@ -129,7 +133,7 @@ Abdolmaleki et al., arXiv 2410.04166 (ICLR 2025).
 Bottom line: there is good evidence that *spending more compute per real
 sample* helps (replay ratio, reanalysis, MBPO model rollouts), but none that
 N>1 rollouts from the same RSSM start beats spending that compute on more B·T
-starts or more gradient steps. With 1024 highly correlated starts per batch
+starts or more gradient steps. With 2048 highly correlated starts per batch
 (65 Hz neighbours are nearly identical), extra rollouts per start may add
 little diversity. It is cheap to test because it does not touch the world
 model update.
@@ -140,11 +144,12 @@ model update.
   overfits the nets; periodic resets of the last layers (or all of the
   actor-critic) recover learning and allow higher replay ratios.
 - D'Oro et al., "Sample-Efficient RL by Breaking the Replay Ratio Barrier",
-  ICLR 2023 oral (OpenReview OpC-9aBBVJe, no arXiv ID found): with full or
+  ICLR 2023 oral (D'Oro, Schwarzer, Nikishin, Bacon, Bellemare, Courville;
+  OpenReview OpC-9aBBVJe, no arXiv ID found): with full or
   partial resets, SAC and SPR scale to an order of magnitude more updates per
   sample (SR-SAC, SR-SPR) on DMC and Atari-100k.
-- BBF (Schwarzer et al. 2023, arXiv 2305.19452): SPR + larger nets + resets +
-  annealed n-step/discount; human-level Atari-100k.
+- BBF (Schwarzer et al., ICML 2023, arXiv 2305.19452): SPR + larger nets + resets +
+  annealed n-step/discount; super-human Atari-100k.
 - Shrink-and-perturb (Ash & Adams 2019, arXiv 1910.08475) is the soft version
   of a reset.
 
@@ -195,8 +200,8 @@ time-to-balance and late-window score over ≥3 seeds), then one live run.
    Gaussian noise (σ ≈ 0.1 of per-dim running std) and zero random dims
    (p 0.1) — decoder still targets the clean obs. Expected: robustness to
    sensor glitches on the phone and a mild regulariser. Risk: lowest upside;
-   noise on tilt rate can hide the signal balance relies on; RAD reports mixed
-   results for state noise.
+   noise on tilt rate can hide the signal balance relies on. In RAD, random
+   amplitude scaling beat Gaussian noise on state input, so try that first.
 6. **Learner-side resets at high replay ratio.** Every M updates, reset the
    actor-critic heads (or shrink-and-perturb, α=0.8) of the learner copy only;
    push to the robot after imagined return recovers. Pair with item 2 and
@@ -208,3 +213,14 @@ Not recommended now: pixel-style augmentation (DrQ/RAD shifts, DropBlock),
 latent mixup (no clean dynamic target), or a DreamerV4-style transformer
 tokenizer / shortcut dynamics (large rewrite; its gains were shown offline on
 video at TPU-pod scale, not for low-dim online control).
+
+Checked 2026-11-09: 32 citations verified (31 arXiv + D'Oro; Dropout, DropConnect
+and Vincent 2008 not fetched; plus `rssm.py:starts`,
+`agent.py` lines 1043/1521, `imag_last`), 6 corrected: our starts per update
+16x64=1024 -> 32x64=2048 (`robot` block); our replay ratio "32-512" -> ~280-560;
+SPR prior SOTA "~0.16" -> 55% relative gain; EfficientZero 190/116% ->
+194.3/109.0% (v2 abstract); TCRL 2.4x was against model-based, not ensembles;
+RAD state augmentation was not "mixed" (amplitude scaling helped on all 6).
+HRSSM no longer says "added to DreamerV3" (not in the abstract). MixReg ID,
+DreamerV4 Section 3.3 quote, tokenizer mask rate U(0, 0.9), shortcut forcing,
+PMPO α=0.5 + reverse KL to the BC prior β=0.3 all confirmed.
