@@ -19,6 +19,7 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | Y, Saion V100, e43800-e43831 (unc d0.05/0.1/0.2, sched d0.1), queued behind Z1 |
 | 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3), array 200255 after Z2 |
 | 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), array 200256 after X |
+| 4b | DreamerV4's one rollout per context: imag_last 1 (b16, b64), imag_last 8, vs every step | do fewer, more diverse starts learn as fast for less compute? | U, Saion P100, e43920-e43951, running |
 | 5 | winners on commands; best to live | fastest from-scratch recipe | |
 | 6 | reanalysis: what worked, what did not, why; combine the parts that help together (factorial on the 2-3 best), confirm n = 12 at three GPU speeds | most improvement | |
 

@@ -225,6 +225,19 @@ V_ARMS = [
     ('sched_r4', f'{PICK} {REP} 4'),
 ]
 
+# Round U (Mon 11-09, Saion P100, 60 min, n = 8): DreamerV4's "one rollout
+# per context" (arXiv 2509.24527 §3.3): imagination starts only from the last
+# state of each replayed sequence (agent.imag_last 1) instead of every step
+# (16 x 64 = 1024 starts), alone (16 starts, far cheaper updates), with 4x the
+# sequences (batch 64), and imag_last 8 in between; on the pick (schedule on).
+LAST = '--agent.imag_last'
+U_ARMS = [
+    ('sched', PICK),
+    ('k1', f'{PICK} {LAST} 1'),
+    ('k1_b64', f'{PICK} {LAST} 1 --batch_size 64'),
+    ('k8', f'{PICK} {LAST} 8'),
+]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -452,8 +465,9 @@ def main():
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base=base,
                               floor=CARPET if floor == 'carpet' else FLOOR)); n += 1
-  elif rnd in ('y', 'x', 'v', 'ysmoke', 'vsmoke'):
+  elif rnd in ('y', 'x', 'v', 'u', 'ysmoke', 'vsmoke'):
     arms, gpu = {'y': (Y_ARMS, 'v100'), 'x': (X_ARMS, 'any'), 'v': (V_ARMS, 'any'),
+                 'u': (U_ARMS, 'p100'),
                  'ysmoke': ([Y_ARMS[2], X_ARMS[3]], 'any'),
                  'vsmoke': ([V_ARMS[1]], 'any')}[rnd]
     seeds, minutes = (SEEDS_Z, 60) if 'smoke' not in rnd else ([1], 5)
