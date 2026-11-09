@@ -1,0 +1,60 @@
+director pinpad_six 5 h0253 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 5 h0254 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 5 h0255 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 6 h0256 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 6 h0257 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 6 h0258 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 7 h0259 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 7 h0260 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 7 h0261 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 8 h0262 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 8 h0263 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 8 h0264 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 9 h0265 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 9 h0266 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 9 h0267 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 10 h0268 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 10 h0269 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 10 h0270 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 11 h0271 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 11 h0272 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 11 h0273 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 12 h0274 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 12 h0275 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 12 h0276 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 13 h0277 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 13 h0278 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 13 h0279 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director pinpad_six 14 h0280 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director pinpad_six 14 h0281 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director pinpad_six 14 h0282 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_hopper_hop 5 h0283 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 5 h0284 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_hopper_hop 5 h0285 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_cheetah_run 5 h0286 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 5 h0287 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_cheetah_run 5 h0288 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_hopper_hop 6 h0289 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 6 h0290 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_hopper_hop 6 h0291 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_cheetah_run 6 h0292 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 6 h0293 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_cheetah_run 6 h0294 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_hopper_hop 7 h0295 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 7 h0296 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_hopper_hop 7 h0297 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_cheetah_run 7 h0298 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 7 h0299 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_cheetah_run 7 h0300 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_hopper_hop 8 h0301 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 8 h0302 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_hopper_hop 8 h0303 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_cheetah_run 8 h0304 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 8 h0305 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_cheetah_run 8 h0306 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_hopper_hop 9 h0307 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_hopper_hop 9 h0308 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_hopper_hop 9 h0309 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch
+director dmc_cheetah_run 9 h0310 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even pubmatch
+director dmc_cheetah_run 9 h0311 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_hash pubmatch
+director dmc_cheetah_run 9 h0312 director_og wkr_ent_fixed wkr_v3 goal_som_line goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch

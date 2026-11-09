@@ -644,6 +644,20 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0253-h0312: extra seeds for US-SOM / TCE sqrt 1x16 / TCE-KL c=10 + floor (2026-11-09, array 4807344)
+
+`sbatch/pubseeds_params.txt`, A100 `%8`, `RUN_ENVS=4 DMC_PROPRIO=False`. Arms (same configs as
+e2008.., e9500.., h0223..; configs.yaml rebuilds the archived configs exactly, code changes since are
+flag-gated): US-SOM `goal_even pubmatch`, sqrt `goal_even fromto_dir tce_hash pubmatch`, floor
+`goal_even fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch`. Pin pad six seeds 5-14 (h0253-h0282,
+first), hopper + cheetah seeds 5-9 (h0283-h0312). Why: with 5 seeds the only tasks that decide the
+ranking are not separable (pin pad six 0/5 vs 3/5 vs 2/5, p ~0.17; hopper 19/26/26%; cheetah
+61/58/54%). On the four clear tasks (pin pad 4/5, cartpole, cheetah): US-SOM 72.6%, sqrt 71.1%,
+floor 70.8%, TCE-KL c=10 66.6%, SOM 68.8%, OG 61.3%. Expect: pin pad six at n=15 resolves
+US-SOM vs TCE (p ~0.03 if the 0/5 vs 3/5 rates hold). Floor rows = array indices
+2,5,...,59 (every third); drop them if the floor arm's finished 5-seed panel is clearly below the
+others on the four clear tasks.
+
 ### h0223-h0252: TCE-KL c=10 with an alpha floor, 1x16 hash (2026-11-06 21:30, array 4800914)
 
 `... fromto_dir tce_kl tce_kl_c10 tce_kl_floor pubmatch`, 6 tasks x 5 seeds, %4

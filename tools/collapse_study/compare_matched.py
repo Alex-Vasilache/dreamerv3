@@ -166,15 +166,11 @@ SETS = {
          'e20[0-5]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*'),
         ('hash', 'TCE sqrt bonus, adaptive w (1x16)', '#009E73',
          'e95[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
-        ('kl1', 'TCE-KL c=1', '#999999',
-         'h00[7-9]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl-pubmatch_s*'),
         ('kl10', 'TCE-KL c=10', '#0072B2',
          'h01??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl-tce_kl_c10-pubmatch_s*'),
-        ('kl30', 'TCE-KL c=30', '#D55E00',
-         'h01??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl-tce_kl_c30-pubmatch_s*'),
         ('kl10x4', 'TCE-KL c=10, 4x12 hash', '#56B4E9',
          'h0[12]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl4-tce_kl_c10-pubmatch_s*'),
-        ('kl10f', 'TCE-KL c=10, alpha floor 0.04', '#CC79A7',
+        ('kl10f', 'TCE-KL c=10, alpha floor 0.04', '#D55E00',
          'h02??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl-tce_kl_c10-tce_kl_floor-pubmatch_s*'),
     ],
     'someven': [
@@ -195,7 +191,7 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): (0, (1, 1)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
+STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
 LATE = {'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
@@ -260,12 +256,16 @@ def main(which):
     labels.append(f'{label}\n{100 * a:.0f}%' if key == 'og' else
                   f'{label}\n{100 * a:.0f}% ({100 * (a - b) / b:+.0f}% vs OG{ntask})')
   order = [l.index(lab) for _, lab, *_ in arms if lab in l]
-  fig.legend([h[i] for i in order], labels, loc='lower center', ncol=3, fontsize=12.5,
-             frameon=False, bbox_to_anchor=(0.5, 0.0))
-  fig.text(0.5, 0.165, 'environment steps (M)' + (
+  leg = fig.legend([h[i] for i in order], labels, loc='lower center', ncol=3, fontsize=12.5,
+                   frameon=False, bbox_to_anchor=(0.5, 0.0))
+  # Reserve exactly the legend's height (it grows with the number of arms), then the x label above it.
+  fig.set_size_inches(13, 6.6 + 0.5 * -(-len(labels) // 3) * 2)
+  fig.canvas.draw()
+  lh = leg.get_window_extent().height / fig.bbox.height
+  fig.text(0.5, lh + 0.012, 'environment steps (M)' + (
       '   (shaded: scoring window, ending where the least-advanced live arm is)' if which not in LATE else
       '   (scores: mean over 3-4M, % of max achievable)'), ha='center', fontsize=14)
-  fig.tight_layout(rect=(0, 0.19, 1, 1), h_pad=2.0)
+  fig.tight_layout(rect=(0, lh + 0.045, 1, 1), h_pad=2.0)
   out = f'{figdir(which)}/{which}_matched'
   fig.savefig(out + '.png', dpi=200, facecolor='white'); fig.savefig(out + '.pdf')
   head = '| task | window | ' + ' | '.join(label for _, label, *_ in arms) + ' |'

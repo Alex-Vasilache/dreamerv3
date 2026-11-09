@@ -19,10 +19,8 @@ from compare_late import runs, scores, binned, OUT, TASKS  # noqa: E402
 from figs import figdir  # noqa: E402
 
 B = 'director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir'
-ARMS = [('c=1', '#999999', f'h00[7-9]?_{{t}}_{B}-tce_kl-pubmatch_s*'),
-        ('c=10', '#0072B2', f'h01??_{{t}}_{B}-tce_kl-tce_kl_c10-pubmatch_s*'),
-        ('c=30', '#D55E00', f'h01??_{{t}}_{B}-tce_kl-tce_kl_c30-pubmatch_s*'),
-        ('c=10 floor', '#CC79A7', f'h02??_{{t}}_{B}-tce_kl-tce_kl_c10-tce_kl_floor-pubmatch_s*'),
+ARMS = [('c=10', '#0072B2', f'h01??_{{t}}_{B}-tce_kl-tce_kl_c10-pubmatch_s*'),
+        ('c=10 floor', '#D55E00', f'h02??_{{t}}_{B}-tce_kl-tce_kl_c10-tce_kl_floor-pubmatch_s*'),
         ('c=10 4x12', '#56B4E9', f'h0[12]??_{{t}}_{B}-tce_kl4-tce_kl_c10-pubmatch_s*')]
 LS = ['-', '--', ':', '-.', (0, (1, 1))]
 KEYS = ['train/fromto/gap', 'train/fromto/weight', 'train/mgr_actent_skill_scale_mean']
@@ -109,9 +107,17 @@ for fig, axes, ylab, name in ((f1, ax1, ('episode score', 'gap (policy - uniform
   else:
     for a in axes.flat:
       a.set_yscale('log')
-  axes[0, 2].legend(fontsize=11, frameon=False, ncol=2) if name.endswith('gap') else axes[0, 2].legend(fontsize=12, frameon=False, ncol=2)
+  h, l = [], []
+  for a in axes[0]:
+    for hh, ll in zip(*a.get_legend_handles_labels()):
+      if ll not in l:
+        h.append(hh); l.append(ll)
+  fig.set_size_inches(18, 11.5)
+  leg = fig.legend(h, l, loc='lower center', ncol=6, fontsize=12, frameon=False)
+  fig.canvas.draw()
+  lh = leg.get_window_extent().height / fig.bbox.height
   fig.suptitle('TCE-KL per seed (smoothed over 9 log points)', fontsize=17)
-  fig.tight_layout()
+  fig.tight_layout(rect=(0, lh + 0.01, 1, 1))
   for ext in ('png', 'pdf'):
     fig.savefig(f'{figdir("tcekl")}/{name}.{ext}', dpi=200)
   print(f'{figdir("tcekl")}/{name}.png')
