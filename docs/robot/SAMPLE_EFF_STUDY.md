@@ -19,7 +19,7 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | Y, Saion V100, e43800-e43831 (unc d0.05/0.1/0.2, sched d0.1), queued behind Z1 |
 | 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3), array 200255 after Z2 |
 | 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), array 200256 after X |
-| 4b | DreamerV4's one rollout per context: imag_last 1 (b16, b64), imag_last 8, vs every step | do fewer, more diverse starts learn as fast for less compute? | U, Saion P100, e43920-e43951, running |
+| 4b | DreamerV4's one rollout per context: imag_last 1 (b16, b64), imag_last 8, vs every step | do fewer, more diverse starts learn as fast for less compute? | done: not better (fewer starts = more restless policy); not adopted (log 11-10) |
 | 5 | winners on commands; best to live | fastest from-scratch recipe | |
 | 6 | reanalysis: what worked, what did not, why; combine the parts that help together (factorial on the 2-3 best), confirm n = 12 at three GPU speeds | most improvement | |
 
@@ -117,3 +117,25 @@ actor-critic on a fresh model). Freezing the model at 5 min leaves the
 actor-critic training on a model that has seen only 5 min of data, and it
 exploits that model's errors (22/min, 3x faster driving). Both parts need to
 keep learning together; the speed lever stays the world model (Z2).
+
+### Tue 11-10: U, DreamerV4 one rollout per context (step 4b)
+
+Sim, Saion P100, pick with the ratio schedule, 60 min, n = 8 per arm
+(e43920-e43951; three jobs were requeued once, the data-holding attempt is
+used). `agent.imag_last k` starts imagination from the last k steps of each
+replayed sequence only (the pick starts from all 16 x 64 = 1024). Mean ± SD.
+Figure `figs/study/u.png`.
+
+| arm | starts per update | t90 (min) | upright min 1 | crossings/min, min 6-15 | crossings/min, min 30-60 | \|speed\| mm/s, min 30-60 |
+|---|---|---|---|---|---|---|
+| pick | 1024 | 3.0 ± 0.0 | 0.18 ± 0.03 | 5.4 ± 1.5 | 2.2 ± 0.8 | 296 ± 15 |
+| one per sequence (DreamerV4) | 16 | 3.6 ± 1.3 | 0.32 ± 0.08 | 11 ± 2 | 4.8 ± 1.0 | 523 ± 69 |
+| one per sequence, batch 64 | 64 | 3.4 ± 1.2 | 0.25 ± 0.04 | 13 ± 6 | 7.0 ± 4.3 | 632 ± 89 |
+| last 8 per sequence | 128 | 2.9 ± 0.8 | 0.25 ± 0.02 | 8.9 ± 2.4 | 3.2 ± 1.5 | 379 ± 34 |
+
+Reading. Fewer starts give a slightly better first minute (0.25-0.32 against
+0.18 upright) but no faster t90, and the policy ends up roughly twice as
+restless (crossings and speed). Updates per minute barely change (~7-8k
+train fps in all arms), so in our setting the starts cost little and buy a
+lower-variance actor-critic update; DreamerV4's one-start design pays off
+where imagination is the expensive part. Not adopted.
