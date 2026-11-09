@@ -41,6 +41,11 @@ defaults:
   # stuck on a bumper ~0.08. A seed that has not learnt yet keeps the fast
   # learner, whatever the GPU. -100: no gate.
   online_ratio_switch_reward: -100.0
+  # Freeze the world model (dyn/enc/dec/rew/con, + cost head) or the
+  # actor-critic (pol/val, + fear critic) once the actor has taken this many
+  # steps: that group's lr_scale goes to 0 for the rest of the run. 0: off.
+  online_freeze_model_at: 0
+  online_freeze_ac_at: 0
   # Decoupled ratios: the world model trains at most `online_wm_ratio`
   # replayed steps per robot step (model group lr x 0 on the other updates),
   # while the actor-critic takes every update the GPU can do. 0: off.

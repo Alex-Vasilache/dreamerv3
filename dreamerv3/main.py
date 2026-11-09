@@ -166,6 +166,8 @@ def main(argv=None):
       online_ratio_late=config.online_ratio_late,
       online_ratio_switch_reward=config.online_ratio_switch_reward,
       online_wm_ratio=config.online_wm_ratio,
+      online_freeze_model_at=config.online_freeze_model_at,
+      online_freeze_ac_at=config.online_freeze_ac_at,
       online_learner_fps=config.online_learner_fps,
       online_sp=config.online_sp,
       online_arousal=config.online_arousal,
@@ -299,7 +301,8 @@ def make_agent(config):
       replicas=config.replicas,
       # A learning-rate multiplier the learner can set (online_arousal).
       lr_scale_var=bool(config.online_arousal.lr) or bool(
-          getattr(config, 'online_wm_ratio', 0)),
+          getattr(config, 'online_wm_ratio', 0)) or bool(
+          config.online_freeze_model_at) or bool(config.online_freeze_ac_at),
   ))
 
 

@@ -6,6 +6,7 @@ Writes one line per run in the submit_sim_robot.sh format
 (<exp> flat <task> 65 <gpu> flags...); the IAS launcher reads the same lines.
 Each round is a list of (arm, flags) crossed with seeds.
 """
+import os
 import sys
 
 # The Germany lab floor in the fitted sim (sim table schedule plus per-minute
@@ -157,6 +158,40 @@ BF_HOLD = [
     ('fs_carpet', 'old', f'{WBASE} {FEAR} {STILL}', 'carpet'),
     ('fs_push', 'old', f'{WBASE} {FEAR} {STILL} {PUSH}', 'table'),
 ]
+
+
+# Round Z (Mon 11-09, sample-efficiency study, docs/robot/PLAN.md): which
+# component makes learning slow and drift late -- the world model or the
+# actor-critic? Balance pick (BF fear_still).
+# Z1 (late drift, Saion V100, 60 min): the pick without the ratio schedule
+# (uncapped learner, drifts), with it, and uncapped with the world model or
+# the actor-critic frozen from minute 5 (actor step 19500).
+# Z2 (slow start, IAS, 30 min): the pick from scratch, and started from the
+# final weights of a BF pick run (e43159, V100, min 55) for the world model
+# only, the actor-critic only, or both.
+PICK = f'{WBASE} {FEAR} {STILL}'
+PICK_UNC = f'{PICK.replace(SCHED, "")} '.strip()
+Z1_ARMS = [
+    ('unc', PICK_UNC),
+    ('sched', PICK),
+    ('unc_fwm', f'{PICK_UNC} --online_freeze_model_at 19500'),
+    ('unc_fac', f'{PICK_UNC} --online_freeze_ac_at 19500'),
+]
+# Absolute path of the source checkpoint on the cluster that runs Z2 (Z_SRC).
+SRC = os.environ.get('Z_SRC', 'ckpt_src/e43159_214500')
+# No quotes: the launchers expand the flags unquoted, so quotes would stay in
+# the regex. These contain no spaces or glob characters.
+WM_RE = '^(dyn|enc|dec|rew|con|cst)/'
+AC_RE = '^(pol|val|slowval|cval|slowcval|retnorm|cretnorm)(/|_count)'
+ALL_RE = '^(dyn|enc|dec|rew|con|cst|pol|val|slowval|cval|slowcval|retnorm|cretnorm)(/|_count)'
+LOAD = f'--run.from_checkpoint {SRC} --run.from_checkpoint_regex'
+Z2_ARMS = [
+    ('fresh', PICK),
+    ('wm', f'{PICK} {LOAD} {WM_RE}'),
+    ('ac', f'{PICK} {LOAD} {AC_RE}'),
+    ('both', f'{PICK} {LOAD} {ALL_RE}'),
+]
+SEEDS_Z = [831, 832, 833, 834, 835, 836, 837, 838]
 
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
@@ -385,6 +420,14 @@ def main():
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base=base,
                               floor=CARPET if floor == 'carpet' else FLOOR)); n += 1
+  elif rnd in ('z1', 'z2', 'zsmoke'):
+    arms, gpu, minutes = {'z1': (Z1_ARMS, 'v100', 60), 'z2': (Z2_ARMS, 'any', 30),
+                          'zsmoke': (Z1_ARMS[2:] + Z2_ARMS[1:], 'any', 4)}[rnd]
+    seeds = SEEDS_Z if rnd != 'zsmoke' else [1]
+    for seed in seeds:
+      for arm, flags in arms:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
   elif rnd.startswith('w1'):

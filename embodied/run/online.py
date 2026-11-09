@@ -757,6 +757,22 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
         old = agent.params[key]
         agent.params[key] = jax.device_put(
             np.asarray(value, np.float32), old.sharding)
+  # Component freezes (sample-efficiency study, 2026-11-09): once the actor has
+  # taken `online_freeze_<group>_at` steps, that optimizer group's lr_scale is
+  # set to 0 for good, so its parameters stop moving (gradient step and weight
+  # decay both scale with it) while the other group keeps training.
+  freeze_at = {g: int(getattr(args, f'online_freeze_{g}_at', 0) or 0)
+               for g in ('model', 'ac')}
+  frozen = {g: False for g in freeze_at}
+
+  def set_scale(group, value):
+    import jax
+    for key in agent.params:
+      if f'lr_scale_{group}' in key:
+        old = agent.params[key]
+        agent.params[key] = jax.device_put(
+            np.asarray(value, np.float32), old.sharding)
+
   boost = ArousalBoost(
       os.path.dirname(str(paths.pause)),
       **dict(getattr(args, 'online_arousal', None) or {}))
@@ -838,6 +854,11 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       should_train(actor_step)
       ratio_switched = True
       _log_learner(logdir, f'train ratio -> {ratio_late:g} step={int(step)} actor_step={actor_step} reward_recent={recent_reward():.3f}')
+    for g, at in freeze_at.items():
+      if at > 0 and not frozen[g] and actor_step >= at:
+        set_scale(g, 0.0)
+        frozen[g] = True
+        _log_learner(logdir, f'froze {g} step={int(step)} actor_step={actor_step}')
     repeats = should_train(actor_step)
     if wm_should is not None:
       wm_budget += wm_should(actor_step)
@@ -871,7 +892,7 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       with elements.timer.section('stream_next'):
         batch = next(stream_train)
       boost.apply(agent)
-      if wm_should is not None:
+      if wm_should is not None and not frozen['model']:
         want = 1.0 if wm_budget > 0 else 0.0
         if want != wm_scale:
           set_wm_scale(want)
