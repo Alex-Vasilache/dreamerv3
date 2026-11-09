@@ -645,7 +645,7 @@ class SmartphoneRobot(embodied.Env):
       pos_range=12000.0, obs_pos_scale=1.67e-4, pos_jump=1000.0,
       pos_fence=0.0, drive_cap0=0.0, drive_cap_s=300.0, home_radius=0.0,
       home_inner=1200.0, home_speed=0.5, home_min=0.25, home_ramp=3000.0,
-      home_max_s=30.0, home_track=1634.0, home_off_steps=0, weights_emotion=False,
+      home_max_s=30.0, home_stall_s=1.0, home_track=1634.0, home_off_steps=0, weights_emotion=False,
       fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05, travel_lo=0.0,
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
       pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
@@ -837,6 +837,12 @@ class SmartphoneRobot(embodied.Env):
     self.home_min = float(home_min)
     self.home_ramp = float(home_ramp)
     self.home_max_s = float(home_max_s)
+    # The drive home also stops once it has gained less than home_stall_mm on
+    # home over the last home_stall_s (0: off): lying on a bumper the weak
+    # home command often cannot turn the wheels, and the odometer drifts, so
+    # it would otherwise sit still until home_max_s.
+    self.home_stall_s = float(home_stall_s)
+    self.home_stall_mm = 120.0
     self.home_track = float(home_track)
     # home_off_steps > 0: after this many of this process's steps the return
     # home is off for good -- episodes no longer end past home_radius and the
@@ -1211,10 +1217,19 @@ class SmartphoneRobot(embodied.Env):
     self._go_home = False
     print('[robot] %.2f m from the start; driving back' % (
         self._home_distance() / 12178.0), flush=True)
+    start, why = time.time(), 'timed out'
+    window = max(1, int(self.home_stall_s * self.hz))
+    trail = []
     for _ in range(int(self.home_max_s * self.hz)):
       self._away(sensors)
       dist = self._home_distance()
       if dist < self.home_inner:
+        why = 'arrived'
+        break
+      trail.append(dist)
+      if (self.home_stall_s and len(trail) > window
+          and trail[-window - 1] - dist < self.home_stall_mm):
+        why = 'stalled'
         break
       x, y, h = self._xyh
       # Bearing of home from the heading (the direction of positive wheel
@@ -1234,6 +1249,8 @@ class SmartphoneRobot(embodied.Env):
       right = float(np.clip(-(sign * speed + turn), -1.0, 1.0))
       self._send_drive(left, right)
       sensors, latency = self._recv()
+    print('[robot] drive home %s after %.1f s, %.2f m from the start' % (
+        why, time.time() - start, self._home_distance() / 12178.0), flush=True)
     self._send(0.0, 0.0, reset=True)
     return self._recv()
 

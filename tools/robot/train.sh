@@ -7,6 +7,7 @@
 #   RUN_DIR=<previous run dir> tools/robot/train.sh resume   # continue a run
 #   NO_BASE=1 HZ=100 tools/robot/train.sh linktest           # phone alone, no wheels
 #   DEMO=1 tools/robot/train.sh demo   # restartable from the dashboard (demo.sh)
+#   BASE_LATER=1 tools/robot/train.sh  # start the learner now, seat the base after
 #   PAUSED=1 tools/robot/train.sh      # robot and training paused until started
 #                                       # from the dashboard (/dash)
 #   GPU=p100 tools/robot/train.sh                 # Slurm: use ROBOT_SLURM_FLAGS_p100
@@ -69,7 +70,7 @@ fi
 
 command -v adb >/dev/null || robot_die "adb not found (Android platform-tools)"
 adb get-state >/dev/null 2>&1 || robot_die "no phone on adb: run tools/robot/phone_connect.sh"
-if [ -z "$NO_BASE" ]; then
+if [ -z "$NO_BASE" ] && [ -z "${BASE_LATER:-}" ]; then
   # dumpsys usb can throw while dumping its connection records and never print
   # host_connected, so a device node besides the root hubs (00N/001) also counts.
   { adb shell dumpsys usb 2>&1 | grep 'host_connected=true' >/dev/null \

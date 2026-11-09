@@ -47,7 +47,7 @@ relay_stop() {
   local pid
   while read -r pid; do
     [ -n "$pid" ] || continue
-    pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null
+    pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null || true
   done <"$RELAY_PID"
   rm -f "$RELAY_PID"
 }
