@@ -14,11 +14,11 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | step | what | question | status |
 |---|---|---|---|
 | 0 | live runs e43457, e43605-e43607 (weekend balance pick) vs e40006 | does the pick hold on the robot? | analysing |
-| 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | submitting |
-| 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | submitting |
-| 2 | world-model dropout 0.05 / 0.1 / 0.2, uncapped and 2x ratio | does it stop the drift and let data be reused harder? | code |
-| 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | code |
-| 4 | N rollouts per start (2, 4) with a per-start baseline | does spare GPU buy speed? | code |
+| 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | queued (Saion jobs 4807464-95) |
+| 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | running (IAS array 200247) |
+| 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | Y, Saion V100, e43800-e43831 (unc d0.05/0.1/0.2, sched d0.1), queued behind Z1 |
+| 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3), array 200255 after Z2 |
+| 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), array 200256 after X |
 | 5 | winners on commands; best to live | fastest from-scratch recipe | |
 | 6 | reanalysis: what worked, what did not, why; combine the parts that help together (factorial on the 2-3 best), confirm n = 12 at three GPU speeds | most improvement | |
 
@@ -28,6 +28,12 @@ dropout moves to the critic (DroQ-style).
 Experiment numbers: the live tool on IAS takes max+1 of IAS `robot_runs`;
 sims stay in blocks well above the live numbers (smoke e43600-e43606 share
 e43605/e43606 with two live runs; different suffixes).
+
+Code pinning: Saion sims run from the working tree at job start, so it stays
+at 49e142f until every Z1/Y job has started (Alex's 2cc011e changes the drive
+home, which the sim uses too; mixing it into a round would confound it). IAS
+rounds run from snapshots (`~/robot_runs/code_z`, `code_s` = 49e142f). Rounds
+after Z/Y/X/V use the current branch, drive-home stall stop included.
 
 ## Log
 
