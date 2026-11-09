@@ -16,7 +16,7 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | 0 | live runs e43457, e43605-e43607 (weekend balance pick) vs e40006 | does the pick hold on the robot? | analysing |
 | 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | done: no late drift with the full pick on V100; freezing either part is worse (log 11-10) |
 | 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | done: world model is the early bottleneck (log 11-09 23:30) |
-| 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | Y, Saion V100, e43800-e43831 (unc d0.05/0.1/0.2, sched d0.1), queued behind Z1 |
+| 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | done: no early speed-up, slightly calmer late; candidate for step 6 (log 11-10) |
 | 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3), array 200255 after Z2 |
 | 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), array 200256 after X |
 | 4b | DreamerV4's one rollout per context: imag_last 1 (b16, b64), imag_last 8, vs every step | do fewer, more diverse starts learn as fast for less compute? | done: not better (fewer starts = more restless policy); not adopted (log 11-10) |
@@ -139,3 +139,26 @@ restless (crossings and speed). Updates per minute barely change (~7-8k
 train fps in all arms), so in our setting the starts cost little and buy a
 lower-variance actor-critic update; DreamerV4's one-start design pays off
 where imagination is the expensive part. Not adopted.
+
+### Tue 11-10: Y, world-model dropout (step 2)
+
+Sim, Saion V100, 60 min, n = 8 per arm (e43800-e43831); the no-dropout
+controls are Z1's uncapped and schedule arms (same GPU type and seeds).
+`agent.dyn.rssm.drop p` = dropout on the hidden layers of the RSSM core,
+posterior and prior, during training only. Mean ± SD. Figure `figs/study/y.png`.
+
+| arm | t90 (min) | upright min 2 | crossings/min, min 6-15 | crossings/min, min 30-60 | \|speed\| mm/s, min 30-60 |
+|---|---|---|---|---|---|
+| uncapped, no dropout (Z1) | 3.3 ± 0.4 | 0.78 ± 0.07 | 5.1 ± 1.8 | 2.0 ± 1.2 | 283 ± 36 |
+| uncapped, dropout 0.05 | 3.0 ± 0.7 | 0.80 ± 0.10 | 4.7 ± 1.8 | 1.1 ± 0.6 | 256 ± 22 |
+| uncapped, dropout 0.1 | 3.1 ± 0.3 | 0.78 ± 0.08 | 7.1 ± 2.5 | 1.4 ± 0.9 | 262 ± 22 |
+| uncapped, dropout 0.2 | 3.1 ± 1.2 | 0.82 ± 0.07 | 5.2 ± 2.1 | 1.7 ± 0.7 | 292 ± 16 |
+| schedule, no dropout (Z1) | 3.0 ± 0.7 | 0.86 ± 0.04 | 7.3 ± 2.0 | 1.6 ± 0.7 | 286 ± 21 |
+| schedule, dropout 0.1 | 3.1 ± 0.3 | 0.82 ± 0.06 | 5.4 ± 1.6 | 1.2 ± 0.6 | 281 ± 20 |
+
+Reading. Dropout does not speed up the first minutes (t90 3.0-3.3 in every
+arm). Late, every dropout arm sits slightly below its control (uncapped 1.1-1.7
+against 2.0; schedule 1.2 against 1.6 crossings/min), smallest at 0.05; the
+differences are within one SD at n = 8. Cheap (no speed cost) and harmless, a
+small late-stability gain: a candidate for the combination round (step 6), not
+a speed-up on its own.
