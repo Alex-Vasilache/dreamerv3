@@ -657,6 +657,8 @@ floor 70.8%, TCE-KL c=10 66.6%, SOM 68.8%, OG 61.3%. Expect: pin pad six at n=15
 US-SOM vs TCE (p ~0.03 if the 0/5 vs 3/5 rates hold). Floor rows = array indices
 2,5,...,59 (every third); drop them if the floor arm's finished 5-seed panel is clearly below the
 others on the four clear tasks.
+**11-11 00:15: hopper + cheetah extra seeds (h0283-h0312, array tasks 30-59) cancelled before any
+started (user).** The array now finishes pin pad six seeds 5-14 only; DMC stays at 5 seeds.
 
 ### h0223-h0252: TCE-KL c=10 with an alpha floor, 1x16 hash (2026-11-06 21:30, array 4800914)
 
