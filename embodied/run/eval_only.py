@@ -34,7 +34,9 @@ def eval_only(make_agent, make_env, make_logger, args):
       isimage = (value.dtype == np.uint8) and (value.ndim == 3)
       if isimage and worker == 0:
         episode.add(f'policy_{key}', value, agg='stack')
-      elif key.startswith('log/'):
+      elif key.startswith('log/fromto_'):
+        continue   # per-step codes for the training-time counter, not scalars
+      elif key.startswith('log/') and np.ndim(value) == 0:
         assert value.ndim == 0, (key, value.shape, value.dtype)
         episode.add(key + '/avg', value, agg='avg')
         episode.add(key + '/max', value, agg='max')

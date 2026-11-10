@@ -654,6 +654,23 @@ once vs R and none was tested alone; R vs V on 3 seeds is not significant either
 to V (clear tasks 70.7, all six 54.1, 5 seeds). Expected: within noise of V unless the slower
 worker is what recovered DMC.
 
+### h0314-h0343: TCE as a reward with its own critic, on V (2026-11-11 02:50, array 4809330)
+
+`director director_og wkr_ent_fixed wkr_v3 fromto_dir tce_hash tce_critic pubmatch`, 6 tasks x 5
+seeds, seed-major (`sbatch/tcecritic_params.txt`), A100 `%8`, `RUN_ENVS=4 DMC_PROPRIO=False`.
+`tce_critic`: from-to counts in the real env, FROM = 16-bit world-model hash cell of the state at
+the last real manager decision, TO = low 8 bits of the same hash of the state reached (65,536 x 256
+table), one count per real step (decision-aligned), proposals not counted, half-life 0.5M. Each
+imagined step earns 1/sqrt(n+1) of its (FROM, TO) pair, pooled over the hold like Director's
+exploration reward, learned by its own critic (mgr_novel slot) at mgr_expl_weight 0.1; the direct
+-w E_pi[b] term and lean controller are off. No SOM (Director's goal VAE; nothing reads codes).
+Why: a critic values states with novel transitions ahead (deeper than the one-decision direct
+term), and reward arrival shrinks novelty's share instead of the lean controller fighting it.
+Checks: train/fromto/imag_bonus vs train/fromto/real_bonus (a lasting gap = imagined-only
+novelty), mgr_novel_adv share after first reward. Compare to V (clear 70.7, all six 54.1, pin pad
+six 13.6% of max) and OG. CPU debug smoke 11-11 02:45 ok (novel critic trains, both bonuses
+logged). The wkr_lr1e4 array 4809246 was requeue-held to give this arm the A100s (user).
+
 ### Reserved: h0313 greedy/sampled eval of 4M checkpoints (sbatch/run_eval_final.sbatch,
 `agent.eval_greedy`), h0314-h0343 TCE as a reward with its own critic on V (`tce_critic`:
 hash -> hash from-to counts, decision-aligned, outcome-only; smoke jobs pending 11-11).
@@ -673,6 +690,10 @@ US-SOM vs TCE (p ~0.03 if the 0/5 vs 3/5 rates hold). Floor rows = array indices
 others on the four clear tasks.
 **11-11 00:15: hopper + cheetah extra seeds (h0283-h0312, array tasks 30-59) cancelled before any
 started (user).** The array now finishes pin pad six seeds 5-14 only; DMC stays at 5 seeds.
+**11-11 02:35: rest of the array cancelled (user: the US-SOM/TCE sqrt/floor arms are not continued; next base is V).**
+Finished pin pad six: seeds 5-9 all three arms, 10-11 partly (h0265-h0273, h0274 done); h0269, h0271, h0275-h0281
+stopped at 1.5-3.8M and archived as partial; h0282 never started. Pooled results as in the meeting page
+(TCE sqrt 4/11 vs US-SOM 2/11 solved, p ~0.6).
 
 ### h0223-h0252: TCE-KL c=10 with an alpha floor, 1x16 hash (2026-11-06 21:30, array 4800914)
 

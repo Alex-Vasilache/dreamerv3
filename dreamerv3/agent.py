@@ -2078,7 +2078,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       else:
         repl_rew_full = f32(obs['reward'])
       repl_expl_full = self._mgr_expl_reward(feat)
-      repl_novel_full = self._mgr_novel_reward(feat) if self.mgr_novel else None
+      repl_novel_full = ((self._fromto_step_reward(feat) if getattr(self, 'fromto_as_reward', False)
+                          else self._mgr_novel_reward(feat)) if self.mgr_novel else None)
 
       if self.variable_goal_length:
         # Block-pooled manager credit on the realized switch boundaries, mirroring
