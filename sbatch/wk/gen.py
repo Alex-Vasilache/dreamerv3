@@ -239,6 +239,18 @@ U_ARMS = [
 ]
 
 
+# Round M (step 6, 11-10): combine the parts that helped. Nothing tested
+# shortened the first minutes; three gave a calmer late phase: the ratio
+# schedule (in the pick), world-model dropout 0.05 (Y) and 2 rollouts per
+# start (V). 2 x 2 factorial on top of the pick, n = 12, at three GPU speeds.
+M_ARMS = [
+    ('pick', PICK),
+    ('d05', f'{PICK} {DROP} 0.05'),
+    ('r2', f'{PICK} {REP} 2'),
+    ('d05_r2', f'{PICK} {DROP} 0.05 {REP} 2'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -475,6 +487,12 @@ def main():
       for arm, flags in arms:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd in ('mv', 'mp', 'mi'):
+    gpu = {'mv': 'v100', 'mp': 'p100', 'mi': 'any'}[rnd]
+    for seed in SEEDS12:
+      for arm, flags in M_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
   elif rnd in ('z1', 'z2', 'zsmoke'):
     arms, gpu, minutes = {'z1': (Z1_ARMS, 'v100', 60), 'z2': (Z2_ARMS, 'any', 30),
                           'zsmoke': (Z1_ARMS[2:] + Z2_ARMS[1:], 'any', 4)}[rnd]
