@@ -21,7 +21,7 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4); done: N = 4 slower, N = 2 within noise; weak candidate (log 11-10) |
 | 4b | DreamerV4's one rollout per context: imag_last 1 (b16, b64), imag_last 8, vs every step | do fewer, more diverse starts learn as fast for less compute? | done: not better (fewer starts = more restless policy); not adopted (log 11-10) |
 | 5 | winners on commands; best to live | fastest from-scratch recipe | |
-| 6 | reanalysis: what worked, what did not, why; combine the parts that help together (factorial on the 2-3 best), confirm n = 12 at three GPU speeds | most improvement | |
+| 6 | reanalysis: what worked, what did not, why; combine the parts that help together (factorial on the 2-3 best), confirm n = 12 at three GPU speeds | most improvement | reanalysis logged 11-10; round M (dropout 0.05 x 2 rollouts, n = 12, V100/P100/IAS) running |
 
 If Z1 shows the actor-critic drifts rather than the world model, step 2's
 dropout moves to the critic (DroQ-style).
@@ -215,3 +215,30 @@ Reading. N = 4 slows the start (fewer world-model updates, which Z2 says is
 the bottleneck). N = 2 is within noise early (2.4 against 2.8 min with the
 schedule, 2.8 against 2.6 uncapped) and calmer late when uncapped (1.7
 against 2.4), i.e. it acts like a milder ratio schedule. Weak candidate.
+
+### Tue 11-10 evening: reanalysis so far (step 6, first part)
+
+What worked: the weekend pick itself (fear critic, stillness, batch 16, ratio
+schedule) is up in ~3 min in every round and settles to ~1-2 crossings/min.
+The schedule matters on fast GPUs (IAS: 1.3 against 2.4 late), not on V100.
+
+What did not: nothing tested shortened the first minutes. Z2 says why: the
+world model is the bottleneck, and a fresh actor-critic learns in under a
+minute once a model exists. Dropout in the world model (Y), open-loop steps
+(X), fewer imagination starts (U) and more rollouts per start (V) all leave
+t90 at 2.4-3.3 min; the ones that cost world-model updates (X 0.3, V N = 4)
+make it slower. Freezing parts (Z1) breaks the coupling between latents and
+policy and is much worse.
+
+Small late gains: world-model dropout 0.05 (Y) and 2 rollouts per start (V),
+each within one SD at n = 8. Round M tests them together on the pick, 2 x 2,
+n = 12, at three GPU speeds: Saion V100 (e44000-e44047), P100 (e44050-e44097),
+IAS (e44100-e44147, array 204440, snapshot `code_m` = 4023756). Saion runs use
+the current tree, which includes Alex's drive-home stall stop (2cc011e), so
+compare M arms only with M's own `pick` arm.
+
+Open for after M: if the factorial shows nothing beyond noise, the pick stays
+as is, and the next lever is the world model's data efficiency in the first
+2 min directly (e.g. extra world-model-only updates early, which `wm_ratio`
+already allows, or a smaller/faster-fitting model). Step 5 (commands, live)
+then uses whatever M picks.

@@ -17,8 +17,9 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 - [x] Y (Saion V100): world-model dropout does not speed up the start; slightly calmer late (1.1-1.7 vs 2.0 crossings/min, within SD); candidate for step 6
 - [x] X (IAS): observational dropout 0.1 neutral, 0.3 slower (+1 min) and restless; not adopted. Schedule helps late on IAS (1.3 vs 2.4)
 - [x] V (IAS): N = 4 slower start; N = 2 within noise early, calmer late uncapped; weak candidate
-- [ ] Step 5: winners on commands; best one live
-- [ ] Step 6: reanalysis (what worked, what did not, why), combine the parts that help, confirm n = 12 at three GPU speeds
+- [~] Step 6a: reanalysis logged; round M = dropout 0.05 x 2 rollouts on the pick, n = 12, V100 e44000-47 / P100 e44050-97 / IAS e44100-47 (204440)
+- [ ] Step 5 (after M): M's pick on commands; best one live
+- [ ] Step 6b: analyse M; final recipe; if nothing beyond noise, next lever = world-model data efficiency in the first 2 min (wm_ratio)
 - [x] Saion checkout unpinned: fast-forwarded to include Alex's 2cc011e/1a68792 (11-10)
 
 ## Next: face visualisation (after the study settles)
