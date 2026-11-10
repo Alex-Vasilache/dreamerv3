@@ -242,3 +242,44 @@ as is, and the next lever is the world model's data efficiency in the first
 2 min directly (e.g. extra world-model-only updates early, which `wm_ratio`
 already allows, or a smaller/faster-fitting model). Step 5 (commands, live)
 then uses whatever M picks.
+
+### Tue 11-10 night: M, dropout x rollouts on the pick (step 6)
+
+Sim, 60 min, n = 12 per arm at each of Saion V100 (e44000-e44047), P100
+(e44050-e44097) and IAS (e44100-e44147), all with the ratio schedule (figure
+`figs/study/m.png`). Late = crossings/min over minutes 30-60.
+
+| arm | t90 V100 / P100 / IAS (min) | late V100 / P100 / IAS | t90, all (n = 36) | late, all (n = 36) |
+|---|---|---|---|---|
+| pick | 2.9 / 3.1 / 2.8 | 2.0 / 2.0 / 1.9 | 2.9 ± 0.5 | 2.0 ± 1.0 |
+| + world-model dropout 0.05 | 2.8 / 3.1 / 2.8 | 1.7 / 1.5 / 1.4 | 2.9 ± 0.5 | 1.6 ± 0.6 |
+| + 2 rollouts per start | 3.2 / 3.9 / 2.9 | 2.1 / 1.4 / 2.1 | 3.4 ± 0.6 | 1.9 ± 0.9 |
+| + both | 3.5 / 3.7 / 2.5 | 2.1 / 1.6 / 1.4 | 3.2 ± 0.8 | 1.7 ± 0.8 |
+
+Reading. Dropout 0.05 is the only consistent change: calmer late at all
+three GPU speeds (about 20 % fewer crossings, and less spread) at no cost in
+speed. Two rollouts per start costs half a minute to a minute on the slower
+GPUs and adds nothing late, alone or with dropout. Step 6b recipe: the pick
+plus `--agent.dyn.rssm.drop 0.05`. All M arms keep the hand-set ratio
+schedule; whether the drift can be controlled without it is round N and the
+learning-progress control below.
+
+### Tue 11-10 night: N, the late drift without the ratio schedule
+
+Alex (11-10): the ratio schedule is handcrafted (a switch at a fixed minute
+to a fixed ratio); the recipe has to work without it. Two routes, run in
+parallel:
+
+1. Regularise instead of throttle (round N, IAS, the fastest learner where
+   the drift shows; e44200-e44231, array 204855, snapshot `code_n` = 04a47da,
+   n = 8, 60 min): uncapped, scheduled, and uncapped with dropout 0.05 plus 2
+   or 4 rollouts per start (V: N = 4 was the calmest uncapped arm, 1.4).
+2. Let the learner set its own ratio from learning progress
+   (`online_progress`, new). Every 20 s it scores the world model on a batch
+   of held-out recent experience (10 % of chunks, kept out of training for
+   2 min, then released, `replay.holdout`), trains on, and scores the same
+   batch again with the same seed. If the held-out loss fell, the ratio grows
+   x1.25, otherwise it shrinks x0.8, within [32, the GPU's pace]. No switch
+   time and no target ratio: the learner trains as long as training still
+   improves prediction of experience it has not seen, so the ratio follows
+   the data rather than the GPU. Smoke e44232 (V100, 8 min).
