@@ -43,7 +43,7 @@ seedrows = ['| task | arm | seed | run | steps (M) | sustained-50 at (M) | late 
 fig, ax = plt.subplots(2, 3, figsize=(18, 10))
 for j, (t, title) in enumerate(TASKS):
   ref = None
-  for lab, col, ls, pats in ARMS:
+  for ai, (lab, col, ls, pats) in enumerate(ARMS):
     got = collect(pats, t)
     if not got:
       continue
@@ -68,7 +68,7 @@ for j, (t, title) in enumerate(TASKS):
       xs = np.arange(0, 4.01e6, 5e4)
       frac = [np.mean([cr[k] is not None and cr[k] <= x for k in got]) for x in xs]
       ax[1, 0].plot(xs / 1e6, frac, color=col, ls=ls, lw=2.4)
-      ax[1, 0].text(3.95, frac[-1] + 0.015, f'n={len(got)}', color=col, fontsize=12, ha='right')
+      ax[1, 0].text(0.08, 0.95 - 0.07 * ai, f'n={len(got)} seeds', color=col, fontsize=12, ha='left', va='top')
   ax[0, j].set_title(title, fontsize=17)
   ax[0, j].set_ylabel('episode score (mean over seeds)' if j == 0 else '', fontsize=15)
 ax[1, 0].set_ylabel('fraction of seeds solved\n(sustained 50)', fontsize=15)
