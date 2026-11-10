@@ -171,7 +171,7 @@ SETS = {
         ('kl10x4', 'TCE-KL c=10, 4x12 hash', '#56B4E9',
          'h0[12]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl4-tce_kl_c10-pubmatch_s*'),
         ('kl10f', 'TCE-KL c=10, alpha floor 0.04', '#D55E00',
-         'h02??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl-tce_kl_c10-tce_kl_floor-pubmatch_s*'),
+         'h02??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_kl-tce_kl_c10-tce_kl_floor-pubmatch_s[0-4]_*'),
     ],
     'someven': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
