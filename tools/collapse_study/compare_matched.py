@@ -219,7 +219,12 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('ogustce_all', 'og'): ':', ('ogustce_all', 'even'): '-.', ('ogustce_all', 'hash'): '--', ('ogustce', 'og'): ':', ('ogustce', 'even'): '-.', ('ogustce', 'hash'): '--', ('family', 'og'): ':', ('family', 'V'): '-', ('family', 'even'): '-.', ('family', 'ft'): (0, (8, 3)), ('family', 'hash'): '--', ('family', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('ogdv3v', 'og'): ':', ('ogdv3v', 'V'): '--', ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
+STYLE = {('family', 'og'): ':', ('family', 'V'): '-', ('family', 'even'): '-.', ('family', 'ft'): (0, (8, 3)), ('family', 'hash'): '--', ('family', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
+# Colour-blind check per figure (deuteranopia, OKLab x100): OG/US-SOM/TCE and OG/DV3/V
+# min pair 19.7 -> solid lines + markers; 'family' (6 arms, min 11.0) keeps dash patterns.
+MARKERS = {('ogustce_all', 'og'): 'o', ('ogustce_all', 'even'): 's', ('ogustce_all', 'hash'): '^',
+           ('ogustce', 'og'): 'o', ('ogustce', 'even'): 's', ('ogustce', 'hash'): '^',
+           ('ogdv3v', 'og'): 'o', ('ogdv3v', 'dv3'): 's', ('ogdv3v', 'V'): '^'}
 FINISHED_ONLY = {'ogustce_all'}
 LATE = {'ogustce_all': 1e6, 'ogustce': 1e6, 'family': 1e6, 'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
@@ -257,7 +262,9 @@ def main(which):
           sd = np.where(n_ok >= 2, np.nanstd(st, 0, ddof=1), np.nan)
         ax.fill_between(x, m - sd, m + sd, color=color, lw=0, alpha=0.13)
         ls = STYLE.get((which, key), '-')
-        ax.plot(x, m, color=color, lw=2.4, ls=ls, label=label)
+        mk = MARKERS.get((which, key))
+        ax.plot(x, m, color=color, lw=2.4, ls=ls, label=label,
+                **({} if mk is None else dict(marker=mk, markevery=5, ms=7, mec='white', mew=0.8)))
       w = [window_mean(a, lo, hi) for a in seeds] if key in counted else []
       w = [v for v in w if not np.isnan(v)]
       if w:
