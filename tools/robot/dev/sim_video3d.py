@@ -155,7 +155,10 @@ def main():
     if 'qpos' in run:
       lo, hi = float(run['bumper_lo']), float(run['bumper_hi'])
       model = mujoco.MjModel.from_xml_string(robot_mujoco.model_xml(
-          bumper_back=hi, bumper_front=-lo, visual=rgb, meshdir=args.meshes))
+          bumper_back=hi, bumper_front=-lo, visual=rgb, meshdir=args.meshes,
+          # A body with gear play has a rotor joint per motor (2 more qpos);
+          # its size does not matter for a replay of recorded positions.
+          backlash=0.015 if run['qpos'].shape[-1] > 9 else 0.0))
     else:
       model = mujoco.MjModel.from_xml_string(xml(rgb))
     data = mujoco.MjData(model)
@@ -210,7 +213,7 @@ def main():
       win = slice(max(0, i - int(hz)), i + 1)
       lines = [f'tilt    {math.degrees(theta):+5.1f} deg',
                f'reward  {np.mean(run["reward"][win]):+5.2f} /step']
-      if task == 'command':
+      if str(run['task']) == 'command':
         fwd = -0.5 * (run['v_l'][i] + run['v_r'][i]) / float(run['command_speed'])
         turn = 0.5 * (run['v_l'][i] - run['v_r'][i]) / float(run['command_turn'])
         lines += [f'command fwd {run["cmd_f"][i]:+.2f}  turn {run["cmd_t"][i]:+.2f}',

@@ -64,7 +64,10 @@ def main():
 
   logdir = pathlib.Path(args.run) / 'logdir'
   raw = yaml.YAML(typ='safe').load((logdir / 'config.yaml').read_text())
-  config = elements.Config(raw)
+  # On top of today's defaults, so runs from before newer keys still load.
+  defaults = yaml.YAML(typ='safe').load(
+      (ROOT / 'dreamerv3' / 'configs.yaml').read_text())['defaults']
+  config = elements.Config(defaults).update(raw)
   import tempfile
   config = elements.Flags(config).parse([
       '--env.realtime_hz', '0', '--logdir', tempfile.mkdtemp(),
@@ -72,7 +75,11 @@ def main():
       '--env.robot.length', '1000000', '--seed', str(args.seed)] + (
       ['--env.robot.sim_schedule', '']
       if 'sim_schedule' in raw['env']['robot'] else []) + (
-      ['--env.robot.sim_surface', args.surface] if args.surface else []))
+      ['--env.robot.sim_surface', args.surface] if args.surface else []) + (
+      # The agent acts here directly; the sim phone (sim_phone True) would
+      # need the trainer's shared dir and pushed weights.
+      ['--env.robot.sim_phone', 'False']
+      if raw['env']['robot'].get('sim_phone') else []))
   agent = dmain.make_agent(config)
   cp = elements.Checkpoint()
   cp.agent = agent
