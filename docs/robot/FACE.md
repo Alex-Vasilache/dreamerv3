@@ -13,8 +13,8 @@ what other robots do, what biology says, and what we chose.
   Cozmo/Vector: a rounded rectangle, an upper lid (height, slope), a lower lid
   (height, upward bend), position, size. A gaze hotspot, a brighter patch where
   the eyes look, stands in for pupils.
-- **One hue, cyan.** Arousal sets saturation and brightness. Red is reserved
-  for pain. Valence is carried by shape, not by colour.
+- **One hue, cyan.** Arousal sets saturation and brightness. Valence and
+  pain are carried by shape, not by colour (pain's red was dropped 11-10).
 - **The face is separate from the instruments.** The face sits on its own
   black stage with no text. The panel ("Behind the face") holds the numbers.
   `?view=face` or the *Face only* button hides the panel; double-tap the face
@@ -195,3 +195,20 @@ research agents (DOIs checked against Crossref there; each claim marked
   period's sleep between steps (`emotion.empowerment_slices`). The app
   publishes the web state at 30 Hz instead of every step (app main.py,
   smartphone-robot-android ea7e25fe, local).
+
+## Changes 2026-11-10 (Alex's notes: snappier, pain without colour, effort)
+
+Maths of the whole chain, with the before/after constants:
+[FACE_MATHS.md](FACE_MATHS.md). In short: the phone refreshes pain (and its
+share of arousal and valence) every control step instead of every 4th; the
+page runs at 60 fps, pain rises unfiltered and squints with a faster spring
+(a pain step reaches 90 % in ~95 ms on the page, was ~200 ms); blinks and
+darts are faster and more frequent. Pain keeps the squint, stays cyan and
+gets a rounded top (the upper lid bends down toward both ends). Effort, the
+mean |applied wheel command|, lowers a flat upper lid and narrows and
+brightens the eyes, with a fine tremor near full drive. Before/after sheet:
+`figs/face/face_1110.png`.
+
+To the phone: `tools/robot/dev/push_python.sh dreamerv3/deploy/policy_runner.py
+dreamerv3/deploy/emotion.py` and `adb push tools/robot/face/face.html
+/sdcard/Android/data/jp.oist.abcvlib.dreamerBridge/files/face.html`.

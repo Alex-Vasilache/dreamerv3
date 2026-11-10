@@ -69,6 +69,30 @@ def test_explore_scale():
   assert _runner(dict(arousal=1.0, mood=-1.0, valence=0.0)).explore_scale() == 1.0
 
 
+def test_pain_reaches_the_face_every_step():
+  # Between the 16 Hz feel steps, applied() refreshes pain, its share of
+  # arousal and valence, and the body, so a bumper hit shows at once.
+  st = dict(valence=0.2, arousal=0.4, mood=0.3, pain=0.0, hurt=0.0,
+            drive=-0.8, control=0.5, base_valence=0.2)
+  r = _runner(dict(st))
+  r._theta, r._chosen = 0.161, [0.3, 0.3]   # on the front bumper
+  r.applied([0.3, 0.3])
+  out = r.emotion_state
+  assert out is not st and out['pain'] == 1.0
+  assert abs(out['hurt'] - 0.75) < 1e-6                   # 1 x (1 - 0.5 x 0.5)
+  assert abs(out['valence'] - (0.2 - 0.75)) < 1e-6
+  assert abs(out['arousal'] - 1 / (1 + np.exp(-(-0.8 + 3.0) / 2))) < 1e-6
+  assert out['tilt'] == 0.161 and out['act_l'] == 0.3
+  r._theta = 0.0                                           # back upright
+  r.applied([0.3, 0.3])
+  assert r.emotion_state['pain'] == 0.0 and r.emotion_state['valence'] == 0.2
+  # An older emotion.py (no drive) leaves the state alone.
+  old = _runner(dict(valence=0.1, arousal=0.4))
+  old._theta, old._chosen = 0.161, [0.0, 0.0]
+  old.applied([0.0, 0.0])
+  assert old.emotion_state == dict(valence=0.1, arousal=0.4)
+
+
 def test_arousal_boost(tmp_path):
   boost = ArousalBoost(tmp_path, lr=2.0, updates=4, burst=8, publish=True)
   assert boost.poll() is None   # no file yet

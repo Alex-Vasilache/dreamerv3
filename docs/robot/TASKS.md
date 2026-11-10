@@ -24,11 +24,11 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 
 ## Next: face visualisation (after the study settles)
 
-- [ ] Write-up: concise maths of how emotions and pain are computed and how they drive the face
-- [ ] Faster reactions: higher eye-animation rate; remove the lag between a bumper hit and the face
-- [ ] Pain: normal colour (drop the red), keep the shape change, more curved top of the eyes
-- [ ] Effort in the eyes from action intensity
-- [ ] Test each on the sim phone and live
+- [x] Write-up: `FACE_MATHS.md` (signals, pain, axes, delivery, eye mapping, latency budget)
+- [x] Faster reactions: pain every control step on the phone; page 60 fps, pain step to 90 % in ~95 ms (was ~200 ms); faster blinks and darts
+- [x] Pain: cyan, same squint, rounded top (upper-lid bend)
+- [x] Effort from mean |applied wheel command|: flat lowered upper lid, narrower, brighter, tremor near full drive
+- [~] Tested in headless Chromium + unit test (branch face-rework); merge after round M's Saion jobs have started (sim_phone imports policy_runner); then push to the phone and check live
 
 ## Later (`PLAN.md`)
 

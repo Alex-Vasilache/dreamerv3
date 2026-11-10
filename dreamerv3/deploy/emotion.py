@@ -247,6 +247,10 @@ class Emotion:
         pain=float(pain), hurt=hurt, fear=float(fear),
         helpless=float(helpless),
         arousal=float(sigmoid(np.float32(drive / 2.0))),
+        # Without pain, so the phone can refresh pain's share every control
+        # step (PolicyRunner._fast_affect) between these 16 Hz updates.
+        drive=float(drive - self.pain_w * 3.0 * pain), control=control,
+        base_valence=float(0.7 * mood + 0.3 * valence),
         dominance=float(np.tanh(z['empowerment'])),
         td=td, value=value, reward_hat=r_hat, surprise=surprise,
         novelty=novelty, unexpected=unexpected, reward_err=reward_err,
