@@ -128,18 +128,23 @@ wheels. The new constants are in the table; section 4's path becomes:
 | blink | 0.2 s, every 2.5-9 s | 0.14 s, every 1.8-6 s |
 | darts | spring ω 28, every 0.2-3.4 s | ω 45, every 0.15-2 s |
 | pain colour | cyan → red | cyan only |
-| pain shape | lids squeeze, straight upper lid | squint morphing into chevrons `> <` from pain 0.15 to 0.6 |
+| pain shape | lids squeeze, straight upper lid | squint (to 0.35), then a smooth split into chevrons `> <` (full at 0.6) |
 
-**Pain's chevrons (> <).** (Alex, 11-10: the rounded squint read as happy.)
-From pain 0.15 the eye morphs into a chevron pointing at the nose: with
-c = clip((p − 0.15)/0.45, 0, 1), u the distance toward the nose and the apex
-at u_a = 0.75 w, an LED is lit if
+**Pain's chevrons (> <).** (Alex, 11-10: a rounded squint read as happy.)
+One continuous change of the same eye, so rising and easing are smooth.
+First the eye squints, aperture x (1 − 0.8 s_q) with s_q = clip(p/0.35, 0, 1);
+then the slit splits into two strokes pointing at the nose. The split is a
+warp of the eye: with u the distance toward the nose, each half is pushed
+away from the middle line by
 
-  \| \|y\| − H (u_a − u)/(u_a + w) \| < t,   −w ≤ u ≤ u_a + t,
+  cl(u) = H clip((w − u) / 2w, 0, 1),   H = 3.4 S clip((p − 0.15)/0.45, 0, 1),
 
-with arm half-height H = 3.4 S c and half-thickness t = (1 − c) h_open + 0.85 c
-(h_open the squint's half-height): a flat slit at c = 0, a thin `> <` by
-p = 0.6. Shake and the flinch-blink stay; the colour stays cyan.
+i.e. the LED at (u, y) is lit if the eye contains (u, y − sign(y) cl(u)).
+At H = 0 that is the eye itself; as H grows the outer ends open into `> <`
+while the strokes keep the slit's thickness. Shake and the flinch-blink
+stay; the colour stays cyan. Sequence (steady levels, then the real-time
+release from pain 1 to 0): `figs/face/pain_sequence_1110.png`; the face is
+back to neutral ~0.6 s after pain ends.
 
 **Effort.** From the wheel commands the robot actually applied,
 
