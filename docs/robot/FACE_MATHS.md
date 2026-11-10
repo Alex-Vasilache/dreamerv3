@@ -128,15 +128,18 @@ wheels. The new constants are in the table; section 4's path becomes:
 | blink | 0.2 s, every 2.5-9 s | 0.14 s, every 1.8-6 s |
 | darts | spring ω 28, every 0.2-3.4 s | ω 45, every 0.15-2 s |
 | pain colour | cyan → red | cyan only |
-| pain shape | lids squeeze, straight upper lid | lids squeeze, upper lid curved (rounded top) |
+| pain shape | lids squeeze, straight upper lid | squint morphing into chevrons `> <` from pain 0.15 to 0.6 |
 
-**Pain's rounder top.** The upper lid gains a bend: it cuts deeper at the
-outer ends than in the middle,
+**Pain's chevrons (> <).** (Alex, 11-10: the rounded squint read as happy.)
+From pain 0.15 the eye morphs into a chevron pointing at the nose: with
+c = clip((p − 0.15)/0.45, 0, 1), u the distance toward the nose and the apex
+at u_a = 0.75 w, an LED is lit if
 
-  lid_y(k) = −h + 2h top + tilt u + 2h b_top k²,   k = u / w ∈ [−1, 1],
+  \| \|y\| − H (u_a − u)/(u_a + w) \| < t,   −w ≤ u ≤ u_a + t,
 
-with b_top = 0.35 p, so in pain the top of each eye becomes a dome over the
-squeezed lower lid.
+with arm half-height H = 3.4 S c and half-thickness t = (1 − c) h_open + 0.85 c
+(h_open the squint's half-height): a flat slit at c = 0, a thin `> <` by
+p = 0.6. Shake and the flinch-blink stay; the colour stays cyan.
 
 **Effort.** From the wheel commands the robot actually applied,
 
@@ -149,7 +152,7 @@ the lower lid rises a little (bot += 0.15 E (1 − p); in pain the squeeze
 wins, so the two never close the eye together), the eyes narrow slightly
 (width x (1 − 0.06 E)) and brighten (x (1 + 0.15 E)), with a fine strain
 tremor at high effort (0.15 max(0, E − 0.6) sin(90 t)). Pain keeps what
-effort lacks: the curved top, the shake and the stronger squeeze, so the two
+effort lacks: the chevrons and the shake, so the two
 stay apart (as on Disney's BDX, whose eyes narrow with effort).
 
 Check (2026-11-10): `face.html` rendered in headless Chromium (Playwright)

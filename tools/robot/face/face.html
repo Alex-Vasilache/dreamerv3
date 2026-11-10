@@ -311,13 +311,22 @@ canvas.inst { display: block; width: 100%; }
   // distance toward the nose.
   function inside(x, y, e, s) {
     const dx0 = x - e.cx, dy = y - e.cy, u = -s * dx0;
+    // Pain: the eye morphs into a chevron pointing at the nose (> <): a band
+    // of half-thickness th around two arms that meet at the apex. At chev 0
+    // the band is a flat slit (the squint); by chev 1 the arms open to
+    // +-H and thin to a stroke.
+    if (e.chev > 0) {
+      const apex = 0.75 * e.hw;
+      if (u < -e.hw || u > apex + e.th) return false;
+      const cl = e.H * Math.max(0, (apex - u) / (apex + e.hw));
+      return Math.abs(Math.abs(dy) - cl) < e.th;
+    }
     const ax = Math.abs(dx0) - (e.hw - e.r), ay = Math.abs(dy) - (e.hh - e.r);
     if (ax > e.r || ay > e.r) return false;
     if (ax > 0 && ay > 0 && ax * ax + ay * ay > e.r * e.r) return false;
     const k = u / e.hw;
-    // The upper lid: a line at `top`, tilted by `tilt`, bent by `tbend` (cuts
-    // deeper toward both ends: a rounded top, pain's squeezed dome).
-    if (dy < -e.hh + e.top * 2 * e.hh + e.tilt * u + e.tbend * 2 * e.hh * k * k) return false;
+    // The upper lid: a line at `top`, tilted by `tilt`.
+    if (dy < -e.hh + e.top * 2 * e.hh + e.tilt * u) return false;
     if (dy > e.hh - e.bot * 2 * e.hh * Math.max(0, 1 - k * k) - e.btilt * u) return false;
     return true;
   }
@@ -397,7 +406,9 @@ canvas.inst { display: block; width: 100%; }
     // glad: the smiling lower lid; scared: a tense one (Cozmo's fear)
     const bot = sp('bot', 0.5 * Math.max(0, v) * (1 - p) + 0.25 * vn * a * (1 - dp)) + 0.3 * pq + 0.15 * efl;
     const btilt = 0;
-    const tbend = 0.35 * pq;   // pain: a rounded top over the squeeze
+    // Pain's chevron (> <): from pain 0.15 the squint turns into arms pointing
+    // at the nose, fully by 0.6 (Alex 11-10: the rounded squint read happy).
+    const chev = clamp((pq - 0.15) / 0.45, 0, 1);
     const round = sp('round', 0.5 + 0.45 * Math.max(0, v)) - 0.2 * pq;
 
     // Colour: one hue, cyan, its saturation and brightness rising with
@@ -416,7 +427,8 @@ canvas.inst { display: block; width: 100%; }
     const eyes = [-1, 1].map(s => ({
       s, cx: cx0 + s * gap - gx * 0.35 * S * s, cy: cy0 + blink * 1.5 * S,
       hw: hw * (1 - 0.06 * gx * s) * (1 - 0.05 * gy), hh: Math.max(0.35, hh), r: Math.min(hw, Math.max(0.35, hh)) * round,
-      top, tilt, bot, btilt, tbend, ch: 3.2 * S }));
+      top, tilt, bot, btilt, chev, H: chev * 3.4 * S,
+      th: lerp(Math.max(0.6, hh * (1 - top - bot)), 0.85, chev) }));
     // The gaze hotspot: brighter where the eyes look (no pupils, as Cozmo).
     const hx = cx0 + gx * 2.5, hy = cy0 + gy * 2.5 - 1.5 * S;
 

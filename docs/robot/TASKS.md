@@ -26,7 +26,7 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 
 - [x] Write-up: `FACE_MATHS.md` (signals, pain, axes, delivery, eye mapping, latency budget)
 - [x] Faster reactions: pain every control step on the phone; page 60 fps, pain step to 90 % in ~95 ms (was ~200 ms); faster blinks and darts
-- [x] Pain: cyan, same squint, rounded top (upper-lid bend)
+- [x] Pain: cyan; squint morphs into chevrons `> <` (rounded top read happy, replaced 11-10)
 - [x] Effort from mean |applied wheel command|: flat lowered upper lid, narrower, brighter, tremor near full drive
 - [~] Tested in headless Chromium + unit test (branch face-rework); merge after round M's Saion jobs have started (sim_phone imports policy_runner); then push to the phone and check live
 

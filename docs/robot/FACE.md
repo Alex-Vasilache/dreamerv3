@@ -203,8 +203,9 @@ Maths of the whole chain, with the before/after constants:
 share of arousal and valence) every control step instead of every 4th; the
 page runs at 60 fps, pain rises unfiltered and squints with a faster spring
 (a pain step reaches 90 % in ~95 ms on the page, was ~200 ms); blinks and
-darts are faster and more frequent. Pain keeps the squint, stays cyan and
-gets a rounded top (the upper lid bends down toward both ends). Effort, the
+darts are faster and more frequent. Pain stays cyan; the squint
+morphs into chevrons `> <` pointing at the nose from pain 0.15 to 0.6 (a
+rounded squint, tried first, read as happy). Effort, the
 mean |applied wheel command|, lowers a flat upper lid and narrows and
 brightens the eyes, with a fine tremor near full drive. Before/after sheet:
 `figs/face/face_1110.png`.
