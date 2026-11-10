@@ -17,8 +17,8 @@ multi-rollout imagination) and `LIT_ZERO_SHOT.md`, both fact-checked 11-09.
 | 1 | Z1, Saion V100, 60 min, n = 8 (e43700-e43731): pick uncapped / with schedule / uncapped + world model frozen at min 5 / uncapped + actor-critic frozen at min 5 | which component drifts late? | done: no late drift with the full pick on V100; freezing either part is worse (log 11-10) |
 | 1 | Z2, IAS, 30 min, n = 8 (e43740-e43771): pick fresh / start with trained world model / actor-critic / both (diagnostic) | which component limits the first minutes? | done: world model is the early bottleneck (log 11-09 23:30) |
 | 2 | world-model dropout 0.05 / 0.1 / 0.2 (uncapped), 0.1 with the schedule | does it stop the drift and let data be reused harder? | done: no early speed-up, slightly calmer late; candidate for step 6 (log 11-10) |
-| 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3); 33 of 40 lost to the time limit, rerun as array 202005 |
-| 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4), resubmitted as array 202006 |
+| 3 | observational dropout 10 / 30 % (open-loop steps in training) | better imagination from the same data? | X, IAS, e43840-e43879 (unc, sched, unc o0.1/0.3, sched o0.3); done: 0.1 neutral, 0.3 worse; not adopted (log 11-10) |
+| 4 | N rollouts per start (2, 4) | does spare GPU buy speed? | V, IAS, e43880-e43911 (unc/sched x N 2/4); done: N = 4 slower, N = 2 within noise; weak candidate (log 11-10) |
 | 4b | DreamerV4's one rollout per context: imag_last 1 (b16, b64), imag_last 8, vs every step | do fewer, more diverse starts learn as fast for less compute? | done: not better (fewer starts = more restless policy); not adopted (log 11-10) |
 | 5 | winners on commands; best to live | fastest from-scratch recipe | |
 | 6 | reanalysis: what worked, what did not, why; combine the parts that help together (factorial on the 2-3 best), confirm n = 12 at three GPU speeds | most improvement | |
@@ -172,3 +172,46 @@ data is gone. Fixed in `sbatch/ias/run_sim_ias.sbatch`: 2 h 30 min, 7 GB
 (the largest finished run peaked at 4.0 GB), and the logdir is copied back
 every 5 min. The 33 lost X runs (array 202005) and all of V (202006, V's two
 started runs cancelled) were resubmitted, 4 concurrent each.
+
+### Tue 11-10 evening: X, observational dropout (step 3)
+
+Sim, IAS (RTX 3090 / A5000, uncapped ratio ~330), 60 min, n = 8 per arm
+(e43840-e43879; 33 reruns, see above; one control run has 39 min).
+`agent.dyn.rssm.obsdrop p` = in training, a fraction p of steps take the
+prior instead of the posterior (the model predicts open-loop there).
+Mean ± SD. Figure `figs/study/x.png`.
+
+| arm | t90 (min) | upright min 2 | crossings/min, min 6-15 | crossings/min, min 30-60 | \|speed\| mm/s, min 30-60 |
+|---|---|---|---|---|---|
+| uncapped | 2.6 ± 0.5 | 0.86 ± 0.12 | 6.4 ± 1.9 | 2.4 ± 1.1 | 344 ± 53 |
+| uncapped, obs. dropout 0.1 | 3.0 ± 0.5 | 0.82 ± 0.07 | 4.3 ± 1.3 | 2.3 ± 1.2 | 331 ± 24 |
+| uncapped, obs. dropout 0.3 | 4.0 ± 1.0 | 0.68 ± 0.10 | 12 ± 3 | 4.8 ± 1.1 | 472 ± 49 |
+| schedule | 2.8 ± 0.4 | 0.82 ± 0.10 | 7.2 ± 2.8 | 1.3 ± 0.6 | 272 ± 17 |
+| schedule, obs. dropout 0.3 | 3.8 ± 0.8 | 0.64 ± 0.11 | 12 ± 3 | 2.5 ± 1.2 | 414 ± 49 |
+
+Reading. 0.1 is neutral; 0.3 slows learning by ~1 min and leaves a restless
+policy. Not adopted. On IAS's faster GPUs the schedule does help late (1.3
+against 2.4 crossings/min uncapped), unlike on V100 (Z1): the late drift
+grows with the replay ratio, and the schedule stays in the pick.
+
+### Tue 11-10 evening: V, N imagination rollouts per start (step 4)
+
+Same setting, n = 8 per arm (e43880-e43911), controls = X's uncapped and
+schedule arms. `agent.imag_repeat N` imagines N rollouts (different sampled
+actions) from each start and averages the actor-critic losses over them. It
+costs updates: 77 % (N = 2) and 56 % (N = 4) of the control's learner steps.
+Figure `figs/study/v.png`.
+
+| arm | t90 (min) | upright min 2 | crossings/min, min 1-5 | crossings/min, min 30-60 | \|speed\| mm/s, min 30-60 |
+|---|---|---|---|---|---|
+| uncapped, N = 1 | 2.6 ± 0.5 | 0.86 ± 0.12 | 33 ± 7 | 2.4 ± 1.1 | 344 ± 53 |
+| uncapped, N = 2 | 2.8 ± 0.4 | 0.81 ± 0.08 | 36 ± 3 | 1.7 ± 0.6 | 267 ± 29 |
+| uncapped, N = 4 | 3.5 ± 0.5 | 0.66 ± 0.08 | 47 ± 6 | 1.4 ± 0.9 | 258 ± 27 |
+| schedule, N = 1 | 2.8 ± 0.4 | 0.82 ± 0.10 | 34 ± 5 | 1.3 ± 0.6 | 272 ± 17 |
+| schedule, N = 2 | 2.4 ± 0.5 | 0.88 ± 0.07 | 35 ± 2 | 1.7 ± 0.7 | 286 ± 24 |
+| schedule, N = 4 | 3.0 ± 0.0 | 0.76 ± 0.04 | 41 ± 6 | 1.7 ± 0.6 | 288 ± 25 |
+
+Reading. N = 4 slows the start (fewer world-model updates, which Z2 says is
+the bottleneck). N = 2 is within noise early (2.4 against 2.8 min with the
+schedule, 2.8 against 2.6 uncapped) and calmer late when uncapped (1.7
+against 2.4), i.e. it acts like a milder ratio schedule. Weak candidate.
