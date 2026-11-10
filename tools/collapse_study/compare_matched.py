@@ -60,6 +60,12 @@ SETS = {
         ('V', 'V = OG + fixed ent. + worker v3', '#009E73',
          'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
     ],
+    'ogdv3v': [   # meeting 11-10: Director vs flat DreamerV3 vs the V base
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('dv3', 'DreamerV3 (flat)', '#000000', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
+        ('V', 'V = OG + fixed worker ent. + worker v3', '#009E73',
+         'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
+    ],
     'ucbkde': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('V', 'V (OG + fixed ent. + worker v3)', '#000000',
@@ -191,8 +197,8 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
-LATE = {'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
+STYLE = {('ogdv3v', 'og'): ':', ('ogdv3v', 'V'): '--', ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
+LATE = {'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
 def main(which):
@@ -257,7 +263,7 @@ def main(which):
                   f'{label}\n{100 * a:.0f}% ({100 * (a - b) / b:+.0f}% vs OG{ntask})')
   order = [l.index(lab) for _, lab, *_ in arms if lab in l]
   leg = fig.legend([h[i] for i in order], labels, loc='lower center', ncol=3, fontsize=12.5,
-                   frameon=False, bbox_to_anchor=(0.5, 0.0))
+                   frameon=False, bbox_to_anchor=(0.5, 0.0), handlelength=3.5)
   # Reserve exactly the legend's height (it grows with the number of arms), then the x label above it.
   fig.set_size_inches(13, 6.6 + 0.5 * -(-len(labels) // 3) * 2)
   fig.canvas.draw()
