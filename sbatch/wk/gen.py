@@ -250,6 +250,18 @@ M_ARMS = [
     ('d05_r2', f'{PICK} {DROP} 0.05 {REP} 2'),
 ]
 
+# Round N (11-10 evening): the late drift without the hand-set ratio
+# schedule. Alex: the schedule is handcrafted, it has to work without it.
+# The two regularisers that calmed the uncapped late phase (world-model
+# dropout 0.05, Y; N rollouts per start, V) together and uncapped, at the
+# fastest learner (IAS), against uncapped and scheduled controls; n = 8.
+N_ARMS = [
+    ('unc', PICK_UNC),
+    ('sched', PICK),
+    ('unc_d05_r2', f'{PICK_UNC} {DROP} 0.05 {REP} 2'),
+    ('unc_d05_r4', f'{PICK_UNC} {DROP} 0.05 {REP} 4'),
+]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -487,6 +499,11 @@ def main():
       for arm, flags in arms:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd == 'ni':
+    for seed in SEEDS8:
+      for arm, flags in N_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', 'any', flags, seed, minutes=60, base='old')); n += 1
   elif rnd in ('mv', 'mp', 'mi'):
     gpu = {'mv': 'v100', 'mp': 'p100', 'mi': 'any'}[rnd]
     for seed in SEEDS12:
