@@ -267,6 +267,9 @@ class PolicyRunner:
           novelty=sig['novelty'], empowerment=sig['empowerment'],
           mood=sig['mood'], pain=sig['pain'], hurt=sig['hurt'],
           td_valence=sig['valence'], fear=sig['fear'],
+          # For _fast_affect: the 16 Hz parts without pain.
+          drive=sig.get('drive'), control=sig.get('control'),
+          base_valence=sig.get('base_valence'),
           # For the face page's instruments: the body behind the feeling.
           reward=acc[4] / acc[1], **self._body_state())
       # 'salience': how much this moment stood out in value or hurt, |TD
@@ -430,6 +433,25 @@ class PolicyRunner:
       self._pre = None
     if self.body is not None and self._theta is not None:
       self.pain = pain_signal(self._theta, self.body, act, self._chosen)
+    self._fast_affect()
+
+  def _fast_affect(self):
+    """Refresh the fast parts of emotion_state every control step: pain,
+    its share of arousal and valence, and the body. The world-model signals
+    update every FEEL_EVERY steps; pain is a sensation and reaches the face
+    at once (a bumper hit used to wait up to FEEL_EVERY steps; FACE_MATHS.md
+    section 6). A new dict each time: the web thread reads it unlocked."""
+    st = self.emotion_state
+    if not st or st.get('drive') is None:
+      return
+    pain = min(float(self.pain[0]), 1.0)
+    hurt = pain * (1.0 - 0.5 * st['control'])
+    pw = self.emotion.pain_w if self.emotion is not None else 1.0
+    st = dict(st, pain=pain, hurt=hurt,
+              valence=float(min(1.0, max(-1.0, st['base_valence'] - hurt))),
+              arousal=float(1.0 / (1.0 + np.exp(-(st['drive'] + pw * 3.0 * pain) / 2.0))),
+              **self._body_state())
+    self.emotion_state = st
 
   def prepare(self):
     """Run the observation-independent half of the next step now.
