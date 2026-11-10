@@ -84,8 +84,9 @@ SETS = {
     ],
     'ogustce_all': [   # same as ogustce, plus every FINISHED extra seed (array 4807344, h-series)
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('V', 'V = OG + fixed wkr ent. + wkr v3', '#56B4E9', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
         ('even', 'V + US-SOM', '#000000', '[eh]????_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-pubmatch_s*'),
-        ('hash', 'V + US-SOM + TCE sqrt (1x16 hash)', '#009E73',
+        ('hash', 'V + US-SOM + TCE sqrt', '#009E73',
          '[eh]????_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
     ],
     'ucbkde': [
@@ -222,7 +223,7 @@ def window_mean(a, lo, hi):
 STYLE = {('family', 'og'): ':', ('family', 'V'): '-', ('family', 'even'): '-.', ('family', 'ft'): (0, (8, 3)), ('family', 'hash'): '--', ('family', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
 # Colour-blind check per figure (deuteranopia, OKLab x100): OG/US-SOM/TCE and OG/DV3/V
 # min pair 19.7 -> solid lines + markers; 'family' (6 arms, min 11.0) keeps dash patterns.
-MARKERS = {('ogustce_all', 'og'): 'o', ('ogustce_all', 'even'): 's', ('ogustce_all', 'hash'): '^',
+MARKERS = {('ogustce_all', 'V'): 'D', ('ogustce_all', 'og'): 'o', ('ogustce_all', 'even'): 's', ('ogustce_all', 'hash'): '^',
            ('ogustce', 'og'): 'o', ('ogustce', 'even'): 's', ('ogustce', 'hash'): '^',
            ('ogdv3v', 'og'): 'o', ('ogdv3v', 'dv3'): 's', ('ogdv3v', 'V'): '^'}
 FINISHED_ONLY = {'ogustce_all'}
