@@ -1,4 +1,6 @@
 import threading
+import time
+import zlib
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial as bind
@@ -15,7 +17,8 @@ class Replay:
 
   def __init__(
       self, length, capacity=None, directory=None, chunksize=1024,
-      online=False, selector=None, save_wait=False, name='unnamed', seed=0):
+      online=False, selector=None, save_wait=False, name='unnamed', seed=0,
+      holdout=0.0, holdout_age=0):
 
     self.length = length
     self.capacity = capacity
@@ -49,6 +52,18 @@ class Replay:
     else:
       self.directory = None
     self.save_wait = save_wait
+
+    # Held-out recent experience (learning-progress probe, 2026-11-10): items
+    # whose chunk hashes into the `holdout` fraction are kept out of the
+    # sampler until they are `holdout_age` items old, then released for
+    # training. Whole chunks are held out so that held-out and training
+    # sequences barely overlap. sample_heldout() draws from the held items.
+    self.holdout = float(holdout or 0.0)
+    self.holdout_age = int(holdout_age or 0)
+    self.held = deque()
+    self.held_set = set()
+    self.held_lock = threading.Lock()
+    self.held_rng = np.random.default_rng(seed + 1)
 
     self.metrics = {'samples': 0, 'inserts': 0, 'updates': 0}
     self._loaded_items = {}
@@ -175,13 +190,73 @@ class Replay:
     itemid = self.itemid
     self.itemid += 1
     self.items[itemid] = (chunkid, index)
-    stepids = self._getseq(chunkid, index, ['stepid'])['stepid']
-    self.sampler[itemid] = stepids
     self.fifo.append(itemid)
+    if self.holdout and self._is_held(chunkid):
+      with self.held_lock:
+        self.held.append(itemid)
+        self.held_set.add(itemid)
+    else:
+      stepids = self._getseq(chunkid, index, ['stepid'])['stepid']
+      self.sampler[itemid] = stepids
+    if self.holdout:
+      self._release_held()
+
+  def _is_held(self, chunkid):
+    h = zlib.crc32(bytes(chunkid)) / 2 ** 32
+    return h < self.holdout
+
+  def _release_held(self):
+    while True:
+      with self.held_lock:
+        if not self.held or self.held[0] > self.itemid - 1 - self.holdout_age:
+          return
+        itemid = self.held.popleft()
+        if itemid not in self.held_set:
+          continue
+        self.held_set.discard(itemid)
+      if itemid in self.items:
+        chunkid, index = self.items[itemid]
+        try:
+          stepids = self._getseq(chunkid, index, ['stepid'])['stepid']
+        except KeyError:
+          continue
+        self.sampler[itemid] = stepids
+
+  def num_heldout(self):
+    return len(self.held_set)
+
+  def sample_heldout(self, batch, mode='report'):
+    """A batch of sequences from the held-out recent items (never trained on)."""
+    limiters.wait(lambda: len(self.held_set) > 0, 'No held-out items yet')
+    seqs = []
+    while len(seqs) < batch:
+      with self.held_lock:
+        ids = list(self.held_set)
+      if not ids:
+        time.sleep(0.05)
+        continue
+      itemid = ids[self.held_rng.integers(0, len(ids))]
+      try:
+        chunkid, index = self.items[itemid]
+        seqs.append(self._getseq(chunkid, index, concat=False))
+      except KeyError:
+        continue
+    data = self._assemble_batch(seqs, 0, self.length)
+    return self._annotate_batch(data, [False] * batch, True)
 
   def _remove(self):
     itemid = self.fifo.popleft()
-    del self.sampler[itemid]
+    held = False
+    if self.holdout:
+      with self.held_lock:
+        held = itemid in self.held_set
+        self.held_set.discard(itemid)
+    if not held:
+      try:
+        del self.sampler[itemid]
+      except KeyError:
+        if not self.holdout:
+          raise
     chunkid, index = self.items.pop(itemid)
     with self.refs_lock:
       if chunkid not in self.refs:

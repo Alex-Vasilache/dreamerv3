@@ -697,6 +697,104 @@ def _mark_parked(logdir, role):
     _atomic_write(elements.Path(logdir) / f'parked_{role}', b'1')
 
 
+class LearningProgress:
+  """Sets the train ratio from the world model's learning progress.
+
+  Every ``every`` seconds: score the world model on a held-out batch of recent
+  experience (``replay.sample_heldout``, never trained on), keep training, and
+  score the same batch again with the same seed. The mean relative drop of the
+  world-model loss terms is the progress made on unseen data in that window.
+  Progress above ``tol`` grows the ratio by ``up``, none shrinks it by
+  ``down``, within [``min``, run.train_ratio]. Starts from the ratio reached
+  so far, so an out-of-reach train_ratio becomes the GPU's own pace.
+  """
+
+  SKIP = ('dyn', 'rep', 'policy', 'value', 'repval')
+
+  def __init__(self, agent, replay, make_stream, args, logdir, every=0,
+               up=1.25, down=0.8, tol=0.0, min=32, batches=4, smooth=0.3):
+    self.on = bool(every) and hasattr(replay, 'sample_heldout') and getattr(
+        replay, 'holdout', 0) > 0
+    if bool(every) and not self.on:
+      _log_learner(logdir, 'online_progress needs replay.holdout > 0; off')
+    self.agent, self.replay, self.logdir = agent, replay, logdir
+    self.every, self.up, self.down, self.tol = float(every), up, down, tol
+    self.min, self.max = float(min), float(args.train_ratio)
+    self.batch = args.batch_size
+    self.ratio = None
+    self.pending = None
+    self.last = time.time()
+    self.prog = np.nan
+    self.raw = np.nan
+    self.batches, self.smooth = int(batches), float(smooth)
+    self.n = 0
+    if self.on:
+      view = _HeldoutView(replay)
+      self.stream = iter(agent.stream(make_stream(view, 'report')))
+
+  def _score(self, batches):
+    out = collections.defaultdict(float)
+    for batch in batches:
+      carry = self.agent.init_report(self.batch)
+      _, mets = self.agent.report(carry, dict(batch))
+      for key, value in mets.items():
+        if not key.startswith('loss/'):
+          continue
+        name = key[5:]
+        if name in self.SKIP or name.startswith(('fear_', 'goal', 'mgr', 'wkr')):
+          continue
+        out[name] += float(np.asarray(value)) / len(batches)
+    return dict(out)
+
+  def __call__(self, actor_step, replayed):
+    if time.time() - self.last < self.every or actor_step <= 0:
+      return None
+    if self.replay.num_heldout() < self.batch:
+      return None
+    self.last = time.time()
+    new = None
+    if self.pending is not None:
+      batch, before = self.pending
+      after = self._score(batch)
+      keys = [k for k in before if k in after and abs(before[k]) > 1e-8]
+      if keys:
+        self.raw = float(np.mean(
+            [(before[k] - after[k]) / abs(before[k]) for k in keys]))
+        self.prog = self.raw if np.isnan(self.prog) else (
+            (1 - self.smooth) * self.prog + self.smooth * self.raw)
+        if self.ratio is None:
+          # The GPU's own pace so far is the ceiling: a ratio above it
+          # changes nothing, so growing past it would only delay a cut.
+          self.max = float(np.clip(replayed / actor_step, self.min, self.max))
+          self.ratio = self.max
+        factor = self.up if self.prog > self.tol else self.down
+        self.ratio = float(np.clip(self.ratio * factor, self.min, self.max))
+        new = self.ratio
+        self.n += 1
+        _log_learner(self.logdir, (
+            f'progress {self.raw:+.4f} ema {self.prog:+.4f} ratio {self.ratio:.0f} '
+            f'actor_step={actor_step} reached={replayed / actor_step:.0f}'))
+    batches = [next(self.stream) for _ in range(self.batches)]
+    self.pending = (batches, self._score(batches))
+    return new
+
+  def metrics(self):
+    return {'progress/value': np.float32(self.prog),
+            'progress/raw': np.float32(self.raw),
+            'progress/ratio': np.float32(self.ratio or np.nan),
+            'progress/heldout': np.float32(self.replay.num_heldout())}
+
+
+class _HeldoutView:
+  """Lets make_stream draw held-out batches like ordinary replay samples."""
+
+  def __init__(self, replay):
+    self.replay = replay
+
+  def sample(self, batch, mode='report'):
+    return self.replay.sample_heldout(batch, mode)
+
+
 def _log_learner(logdir, message):
   path = elements.Path(logdir) / 'online_learner.log'
   path.parent.mkdir(parents=True, exist_ok=True)
@@ -830,6 +928,9 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
   stream_train = iter(agent.stream(make_stream(replay, 'train')))
   stream_report = iter(agent.stream(make_stream(replay, 'report')))
   carry_report = agent.init_report(args.batch_size)
+  progress = LearningProgress(
+      agent, replay, make_stream, args, logdir,
+      **dict(getattr(args, 'online_progress', None) or {}))
   trained = False
   training_pause = TrainingPause(paths.pause)
   while not _actor_finished(paths, args, coordination):
@@ -854,6 +955,12 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
       should_train(actor_step)
       ratio_switched = True
       _log_learner(logdir, f'train ratio -> {ratio_late:g} step={int(step)} actor_step={actor_step} reward_recent={recent_reward():.3f}')
+    if progress.on:
+      ratio = progress(actor_step, updates * batch_steps)
+      if ratio is not None:
+        # As for the schedule: a fresh Ratio, so no debt carries over.
+        should_train = elements.when.Ratio(ratio / batch_steps)
+        should_train(actor_step)
     for g, at in freeze_at.items():
       if at > 0 and not frozen[g] and actor_step >= at:
         set_scale(g, 0.0)
@@ -921,6 +1028,8 @@ def run_learner(make_agent, make_logger, make_replay, make_stream, paths, args,
         sp_next += sp_every
         _log_learner(logdir, f'shrink-perturb {sp_count} alpha={sp["alpha"]} '
                      f'params={len(keys)} updates={updates} actor_step={actor_step}')
+      if progress.on:
+        mets = dict(mets, **progress.metrics())
       if boost.on:
         mets = dict(mets, arousal_lr=np.float32(boost.current),
                     arousal_events=np.float32(boost.events))

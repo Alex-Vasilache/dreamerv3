@@ -41,6 +41,16 @@ defaults:
   # stuck on a bumper ~0.08. A seed that has not learnt yet keeps the fast
   # learner, whatever the GPU. -100: no gate.
   online_ratio_switch_reward: -100.0
+  # Learning-progress ratio control (2026-11-10, replaces the hand-set ratio
+  # schedule). Every `every` seconds the learner scores the world model on a
+  # batch of held-out recent experience (replay.holdout > 0 required), trains
+  # on, and scores the same batch again with the same seed. If the held-out
+  # loss fell (mean relative drop over the world-model terms > tol) the train
+  # ratio grows by `up`, else it shrinks by `down`, within [min, run.train_ratio];
+  # it starts from (and is capped at) the ratio the learner reached so far,
+  # i.e. the GPU's own pace. Progress is scored on `batches` held-out batches
+  # and smoothed (EMA, `smooth`) before the decision. 0: off.
+  online_progress: {every: 0, up: 1.25, down: 0.8, tol: 0.0, min: 32, batches: 4, smooth: 0.3}
   # Freeze the world model (dyn/enc/dec/rew/con, + cost head) or the
   # actor-critic (pol/val, + fear critic) once the actor has taken this many
   # steps: that group's lr_scale goes to 0 for the rest of the run. 0: off.
@@ -143,6 +153,11 @@ defaults:
     priosignal: model
     recexp: 1.0
     chunksize: 1024
+    # Hold this fraction of the online experience (whole chunks) out of
+    # training until it is holdout_age items (~steps) old; the learning-
+    # progress ratio control (online_progress) probes the world model on it.
+    holdout: 0.0
+    holdout_age: 7800
 
   run:
     steps: 1e10

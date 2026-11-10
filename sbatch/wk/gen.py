@@ -262,6 +262,19 @@ N_ARMS = [
     ('unc_d05_r4', f'{PICK_UNC} {DROP} 0.05 {REP} 4'),
 ]
 
+# Round P (11-10 night): the learner sets its own train ratio from learning
+# progress on held-out recent experience (online_progress, replay.holdout),
+# no switch time, no target ratio. Against uncapped and the hand-set
+# schedule, and with world-model dropout 0.05 (M's step 6b pick); n = 8 at
+# V100, P100 and IAS.
+PROG = '--replay.holdout 0.1 --online_progress.every 20'
+P_ARMS = [
+    ('unc', PICK_UNC),
+    ('sched', PICK),
+    ('prog', f'{PICK_UNC} {PROG}'),
+    ('prog_d05', f'{PICK_UNC} {PROG} {DROP} 0.05'),
+]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -499,6 +512,12 @@ def main():
       for arm, flags in arms:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd in ('pv', 'pp', 'pi'):
+    gpu = {'pv': 'v100', 'pp': 'p100', 'pi': 'any'}[rnd]
+    for seed in SEEDS8:
+      for arm, flags in P_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
   elif rnd == 'ni':
     for seed in SEEDS8:
       for arm, flags in N_ARMS:

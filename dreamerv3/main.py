@@ -171,6 +171,7 @@ def main(argv=None):
       online_learner_fps=config.online_learner_fps,
       online_sp=config.online_sp,
       online_arousal=config.online_arousal,
+      online_progress=config.online_progress,
   )
 
   if config.script == 'train':
@@ -421,6 +422,9 @@ def make_replay(config, folder, mode='train'):
       chunksize=config.replay.chunksize, directory=directory)
   if folder == 'replay' and config.online_learning:
     kwargs['save_wait'] = True
+    if mode == 'train' and config.replay.get('holdout', 0.0):
+      kwargs['holdout'] = config.replay.holdout
+      kwargs['holdout_age'] = int(config.replay.get('holdout_age', 7800))
 
   if config.replay.fracs.uniform < 1 and mode == 'train':
     assert config.jax.compute_dtype in ('bfloat16', 'float32'), (
