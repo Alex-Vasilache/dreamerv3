@@ -644,6 +644,20 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0344-h0373: worker learning rate on V (2026-11-11, array 4809246)
+
+`director director_og wkr_ent_fixed wkr_v3 wkr_lr1e4 pubmatch`, 6 tasks x 5 seeds, seed-major
+(`sbatch/wkrlr_params.txt`), A100 `%8`, `--nice=100`, `RUN_ENVS=4 DMC_PROPRIO=False` (same as the V
+runs e1910-e1969). Single change vs V: the worker's own optimizer at lr 1e-4 (OG's) instead of
+v3's 4e-5, weight decay stays 0. Why: V changed advantage norm, target critic and optimizer at
+once vs R and none was tested alone; R vs V on 3 seeds is not significant either way. Compare
+to V (clear tasks 70.7, all six 54.1, 5 seeds). Expected: within noise of V unless the slower
+worker is what recovered DMC.
+
+### Reserved: h0313 greedy/sampled eval of 4M checkpoints (sbatch/run_eval_final.sbatch,
+`agent.eval_greedy`), h0314-h0343 TCE as a reward with its own critic on V (`tce_critic`:
+hash -> hash from-to counts, decision-aligned, outcome-only; smoke jobs pending 11-11).
+
 ### h0253-h0312: extra seeds for US-SOM / TCE sqrt 1x16 / TCE-KL c=10 + floor (2026-11-09, array 4807344)
 
 `sbatch/pubseeds_params.txt`, A100 `%8`, `RUN_ENVS=4 DMC_PROPRIO=False`. Arms (same configs as

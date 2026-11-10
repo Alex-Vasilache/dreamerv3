@@ -108,7 +108,7 @@ class ReportMixin:
     metrics.update(mets)
     if self.use_hrl and bool(getattr(self.config, 'report_code_diag', False)):
       metrics.update(self._code_diag(outs['repfeat']))
-    if self.use_hrl and self.mgr_novel:
+    if self.use_hrl and self.mgr_novel and getattr(self, '_use_code_counts', False):
       # Coverage pictures of the two count tables. Built here, in report, and
       # never in the train step: report runs on ``report_every``, so this costs
       # nothing per gradient step. The flat cell index is lexicographic over

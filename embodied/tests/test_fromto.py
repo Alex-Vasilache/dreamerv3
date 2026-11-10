@@ -244,3 +244,52 @@ def test_log_bonus_matches_brute_force():
       g = int((np.array(cell) * GB ** np.arange(L - 1, -1, -1)).sum())
       want += np.prod([pb[l, cell[l]] for l in range(L)]) * -np.log(tab[row * GB ** L + g] + 1)
     assert float(e[n]) == pytest.approx(want, rel=1e-5)
+
+
+def test_counter_to_hash_bits_counts_reached_hash():
+  """to_hash_bits: TO = low bits of the reached state's own hash row (tce_critic)."""
+  import numpy as np
+  from dreamerv3.hrl.fromto import FromToCounter
+  c = FromToCounter(start_bins=4, goal_bins=2, classes=8, blocks=8, k_min=1, k_max=2,
+                    half_life=0.0, h=0.0, prop_weight=0.0, start_rows=2 ** 16, to_hash_bits=8)
+  code = np.zeros(8, np.int64)
+  rows = [0x1234, 0xABCD, 0x00FF]
+  for i, r in enumerate(rows):
+    c.add(code, i == 0, 0, start=r)
+  tab = c.tab.reshape(2 ** 16, 256)
+  # step 1: (0x1234 -> 0xCD); step 2: (0xABCD -> 0xFF) and (0x1234 -> 0xFF)
+  assert tab[0x1234, 0xCD] == 1 and tab[0xABCD, 0xFF] == 1 and tab[0x1234, 0xFF] == 1
+  assert tab.sum() == 3
+
+
+def test_counter_aligned_counts_from_decision_state():
+  """aligned: one count per real step, always from the state at the last manager decision."""
+  import numpy as np
+  from dreamerv3.hrl.fromto import FromToCounter
+  c = FromToCounter(start_bins=4, goal_bins=2, classes=8, blocks=8, k_min=1, k_max=8,
+                    half_life=0.0, h=0.0, prop_weight=0.0, start_rows=2 ** 16,
+                    to_hash_bits=8, aligned=True)
+  code = np.zeros(8, np.int64)
+  rows = [0x0100 + i for i in range(12)]   # low byte = i
+  for i, r in enumerate(rows):
+    c.add(code, i == 0, 0, start=r, switch=(i % 8 == 0))
+  tab = c.tab.reshape(2 ** 16, 256)
+  assert tab.sum() == 11                     # one per step after the first
+  for i in range(1, 9):                      # hold 1: from rows[0]
+    assert tab[rows[0], i] == 1
+  for i in range(9, 12):                     # hold 2: from rows[8]
+    assert tab[rows[8], i] == 1
+
+
+def test_counter_aligned_real_bonus():
+  """pop_real_bonus: mean 1/sqrt(n+1) of the real pairs, taken before each count."""
+  import numpy as np
+  from dreamerv3.hrl.fromto import FromToCounter
+  c = FromToCounter(start_bins=4, goal_bins=2, classes=8, blocks=8, k_min=1, k_max=8,
+                    half_life=0.0, h=0.0, prop_weight=0.0, start_rows=2 ** 16,
+                    to_hash_bits=8, aligned=True)
+  code = np.zeros(8, np.int64)
+  for i in range(3):   # same pair twice: bonuses 1 then 1/sqrt(2)
+    c.add(code, i == 0, 0, start=0x0105, switch=(i == 0))
+  assert np.isclose(c.pop_real_bonus(), (1.0 + 2 ** -0.5) / 2)
+  assert c.pop_real_bonus() is None

@@ -326,7 +326,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # both gives a reward-shaped arm with an extra selection tilt.
       self.mgr_ucb_c = float(getattr(config, 'mgr_ucb_c', 0.0))
       self.mgr_ucb_candidates = int(getattr(config, 'mgr_ucb_candidates', 8))
-      self._use_code_counts = self.mgr_novel or self.mgr_ucb_c > 0.0
+      # TCE as a reward (mgr_fromto.as_reward): the mgr_novel critic carries the
+      # from-to bonus instead of state-code counts, so no code-count table.
+      self.fromto_as_reward = bool(getattr(getattr(config, 'mgr_fromto', None) or {}, 'as_reward', False)
+                                   ) if hasattr(config, 'mgr_fromto') else False
+      self._use_code_counts = ((self.mgr_novel and not self.fromto_as_reward)
+                               or self.mgr_ucb_c > 0.0)
       if self._use_code_counts:
         # Decay and insertion weight are DERIVED, never hardcoded, so they stay
         # correct if replay.size or the batch shape changes.
@@ -435,7 +440,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             prop_weight=float(getattr(_fcfg, 'prop_weight', 1.0)),
             half_life_frac=float(getattr(_fcfg, 'half_life_frac', 0.0)),
             half_life_min=float(getattr(_fcfg, 'half_life_min', 2.5e4)),
-            start_rows=hash_rows)
+            start_rows=hash_rows,
+            to_hash_bits=int(getattr(_fcfg, 'to_hash_bits', 0)),
+            aligned=bool(getattr(_fcfg, 'aligned', False)))
+        self.fromto_to_bits = int(getattr(_fcfg, 'to_hash_bits', 0))
         # Own adaptive weight (lean_target > 0): hold the policy's expected
         # novelty at lean_target x a uniform policy's, like the entropy
         # controller holds entropy. Borrowing the entropy controller's weight
@@ -925,6 +933,32 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     return (enc, dyn, dec, prevact, mgr_skill, mgr_step)
 
 
+  def _fromto_step_reward(self, feat):
+    """TCE bonus as a dense per-step reward (mgr_fromto.as_reward), (M, T).
+
+    Step t of an imagined rollout is the transition (start cell of the state at
+    the manager decision in force, TO label of the state reached at t: goal
+    region of its code, or with to_hash_bits the low bits of its own hash), the
+    same pair the real-environment counter records (k = 1..K back); its reward
+    is 1/sqrt(n + 1) from the REAL-experience table. Pooled over each hold like
+    Director's exploration reward and learned by its own critic (mgr_novel_val).
+    """
+    K = max(1, int(self.manager_sample_freq))
+    rows = self._start_hash(feat)                                   # (M, T)
+    T = rows.shape[1]
+    dec = jnp.maximum((jnp.arange(T) - 1) // K, 0) * K              # decision in force
+    start = rows[:, dec]
+    ft = self.fromto
+    if getattr(self, 'fromto_to_bits', 0):
+      # TO side from the same hash: low to_hash_bits bits of the reached state's row.
+      region = rows.astype(i32) & ((1 << self.fromto_to_bits) - 1)
+    else:
+      code = self._code_ids(feat)                                   # (M, T, L)
+      q = jnp.minimum(code.astype(i32) * ft.goal_bins // ft.classes, ft.goal_bins - 1)
+      region = (q * (ft.goal_bins ** jnp.arange(ft.blocks - 1, -1, -1))).sum(-1)
+    tab = jax.lax.stop_gradient(ft.tab.read())
+    return 1.0 / jnp.sqrt(tab[start.astype(i32) * ft.cols + region] + 1.0)
+
   def _start_hash(self, feat):
     """TCE start row from the world-model state: sign bits of a fixed random
     projection. 'deter' raw deter; 'deter_norm' deter standardised per state;
@@ -982,8 +1016,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         mgr_diag_out = mgr_as_dict(self.manager_pol(mgr_diag_inp, 1))
         mgr_diag_probs = jax.nn.softmax(
             f32(_head_inner(mgr_diag_out['skill']).dist.logits), -1)  # (B, L, C)
+      greedy = (mode == 'eval') and bool(getattr(self.config, 'eval_greedy', False))
       mgr_skill, goal, mgr_step, goal_refresh = self._manager_skill_step(
-          feat, mgr_skill, mgr_step, reset)
+          feat, mgr_skill, mgr_step, reset, deterministic=greedy)
       # Countdown for THIS step from the post-step counter: var-K decrements
       # (returned mgr_step = countdown - 1); fixed-K counts up (returned
       # mgr_step = position + 1).
@@ -997,7 +1032,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           countdown=self._countdown_norm(act_cd)), bdims=1)
     else:
       policy = self.pol(self.feat2tensor(feat), bdims=1)
-    act = sample(policy)
+    # Greedy eval (agent.eval_greedy, mode='eval' only): the action distribution's mode.
+    act = (globals()['mode'](policy) if (mode == 'eval' and bool(getattr(self.config, 'eval_greedy', False)))
+           else sample(policy))
     out = {}
     # The reduce is done in float rather than as a boolean `.all()`: Apple's
     # Metal backend cannot lower a multi-axis boolean `mhlo.reduce` and fails
@@ -1674,7 +1711,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # Queried on imagined states, but never USED to update the memory -- see
     # ``_mgr_novel_update``. sg for the same reason as expl_step: a reward is
     # not a differentiable path into the goal encoder.
-    novel_step = sg(self._mgr_novel_reward(imgfeat)) if self.mgr_novel else None
+    if self.mgr_novel and getattr(self, 'fromto_as_reward', False):
+      novel_step = sg(self._fromto_step_reward(imgfeat))
+      # Novelty the manager is paid for in imagination; compare with
+      # train/fromto/real_bonus (same pairs, real transitions; run loop). A large,
+      # lasting gap = imagined states the real worker never reaches.
+      metrics['fromto/imag_bonus'] = novel_step[:, 1:].mean()
+    else:
+      novel_step = sg(self._mgr_novel_reward(imgfeat)) if self.mgr_novel else None
     if self.variable_goal_length:
       # Block-pooled manager credit (Director ``abstract_traj`` on adaptive
       # boundaries): pool rewards/continuation over each realized duration segment
@@ -1855,7 +1899,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         mgr_smooth_topology=self._mgr_smooth_topology,
         trunc_policy=self.goal_duration_truncated_policy,
         **kwargs_mgr)
-    if getattr(self, 'mgr_fromto_c', 0.0) > 0.0 and not self.variable_goal_length:
+    if (getattr(self, 'mgr_fromto_c', 0.0) > 0.0 and not self.variable_goal_length
+        and not getattr(self, 'fromto_as_reward', False)):
       # Directed entropy (hrl/fromto.py): + c * E_pi[from-to bonus], weighted
       # by the manager entropy controller's own (stop-gradient) scale.
       dec_deter = sg(self.feat2deter(imgfeat_eff))                    # (M, n, D)

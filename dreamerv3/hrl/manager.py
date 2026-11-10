@@ -255,7 +255,7 @@ class ManagerMixin:
       return jnp.full(jnp.shape(idx), self.goal_duration_fixed, i32)
     return (self.goal_duration_min + idx).astype(i32)
 
-  def _manager_skill_step(self, feat, mgr_skill, mgr_step, reset):
+  def _manager_skill_step(self, feat, mgr_skill, mgr_step, reset, deterministic=False):
     """Resample the skill at each manager decision (Director carry switch).
 
     Fixed K: every ``manager_sample_freq`` steps. Variable goal length: when the
@@ -288,7 +288,8 @@ class ManagerMixin:
     mgr_inp = (self._mgr_input(feat, mgr_skill) if self.mgr_cond_goalcode
                else self.feat2tensor(feat))
     emit = self._emit_manager(
-        mgr_inp, 1, prev_mgr_skill=mgr_skill, explore=True)
+        mgr_inp, 1, prev_mgr_skill=mgr_skill, explore=not deterministic,
+        deterministic=deterministic)
     mgr_skill = skill_switch(update, emit, mgr_skill)
     # Hold the decoded deter across non-switch steps (Z is already held in carry).
     goal = self._held_goal_deter(

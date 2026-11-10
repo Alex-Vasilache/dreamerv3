@@ -108,10 +108,25 @@ class FromToCounter:
   def __init__(self, start_bins=2, goal_bins=4, classes=8, blocks=8,
                k_min=1, k_max=8, half_life=5e5, h=0.5, export_every=10000,
                pair_weight=1.0, prop_weight=1.0, half_life_frac=0.0, half_life_min=2.5e4,
-               start_rows=0):
+               start_rows=0, to_hash_bits=0, aligned=False):
     self.sb, self.gb, self.C, self.L = start_bins, goal_bins, classes, blocks
     # start_rows > 0: ``add`` gets the start cell as a hashed row id.
     self.start_rows = int(start_rows)
+    # to_hash_bits > 0 (hashed start only): the TO side is the low to_hash_bits
+    # bits of the SAME world-model hash of the state reached, instead of the goal
+    # region of its code -- both ends of a transition from one source.
+    self.to_bits = int(to_hash_bits)
+    # aligned: count only (state at the last REAL manager decision -> state k
+    # steps later), k = 1..k_max, one count per real step -- the pairs the manager's
+    # holds actually make, and exactly the pairs the imagined reward scores
+    # (tce_critic). The default sliding window counts every (s_{t-k} -> s_t).
+    self.aligned = bool(aligned)
+    self.dec = {}   # worker -> (start rows at the decision, steps since it)
+    # Bonus 1/sqrt(n+1) of each REAL pair just before it is counted, averaged per
+    # log interval (pop_real_bonus): the novelty of the transitions actually made.
+    self.real_sum, self.real_n = 0.0, 0
+    assert not self.to_bits or (self.start_rows > 0 and 2 ** self.to_bits == self.gb ** self.L), (
+        to_hash_bits, start_rows, goal_bins, blocks)
     self.ks = list(range(int(k_min), int(k_max) + 1))
     # Each experienced (from, to) pair is a full look at that combination: if a
     # reward were there it would have shown, so every pair counts 1 (a real
@@ -139,7 +154,7 @@ class FromToCounter:
     self._gstr = self.gb ** np.arange(self.L - 1, -1, -1)
     self._smear = jax.jit(self._smear_fn)
 
-  def add(self, code, is_first, worker, proposal=None, start=None):
+  def add(self, code, is_first, worker, proposal=None, start=None, switch=False):
     """One real step of one env: ``code`` (L,) class ids of the current state;
     ``proposal`` (L,) the goal the manager proposed at this step, if it made a
     decision here; ``start`` the current state's hashed row (hashed mode)."""
@@ -147,7 +162,10 @@ class FromToCounter:
     if is_first:
       hist.clear()
     code = np.asarray(code, np.int64)
-    g = int((bin_ids(code, self.gb, self.C) * self._gstr).sum())
+    if self.to_bits:
+      g = int(np.atleast_1d(np.asarray(start, np.int64))[0]) & ((1 << self.to_bits) - 1)
+    else:
+      g = int((bin_ids(code, self.gb, self.C) * self._gstr).sum())
     # Hashed: one row per hash table (K >= 1); codebook: one binned row.
     s_now = (np.atleast_1d(np.asarray(start, np.int64)) if self.start_rows > 0 else
              np.array([int((bin_ids(code, self.sb, self.C) * self._sstr).sum())]))
@@ -155,9 +173,24 @@ class FromToCounter:
     if proposal is not None and self.prop_w > 0:
       gp = int((bin_ids(np.asarray(proposal, np.int64), self.gb, self.C) * self._gstr).sum())
       self.tab[s_now * self.cols + gp] += self.prop_w * inflate
-    for k in self.ks:
-      if len(hist) >= k:
-        self.tab[hist[-k] * self.cols + g] += self.w * inflate
+    if self.aligned:
+      if is_first:
+        self.dec.pop(worker, None)
+      d = self.dec.get(worker)
+      if d is not None:
+        rows0, k = d[0], d[1] + 1
+        if self.ks[0] <= k <= self.ks[-1]:
+          idx = rows0 * self.cols + g
+          self.real_sum += float(np.mean(1.0 / np.sqrt(self.tab[idx] / inflate + 1.0)))
+          self.real_n += 1
+          self.tab[idx] += self.w * inflate
+        self.dec[worker] = (rows0, k)
+      if switch or is_first:   # a decision here: the next steps count from this state
+        self.dec[worker] = (s_now, 0)
+    else:
+      for k in self.ks:
+        if len(hist) >= k:
+          self.tab[hist[-k] * self.cols + g] += self.w * inflate
     hist.append(s_now)
     self.steps += 1
 
@@ -173,6 +206,14 @@ class FromToCounter:
         return 2.0 ** (self.steps / self.hl_min)
       return 2.0 ** ((1.0 + np.log(self.steps / t0)) / self.hl_frac)
     return 1.0 if self.half_life <= 0 else 2.0 ** (self.steps / self.half_life)
+
+  def pop_real_bonus(self):
+    """Mean bonus of the real (aligned) pairs counted since the last call, or None."""
+    if not self.real_n:
+      return None
+    v = self.real_sum / self.real_n
+    self.real_sum, self.real_n = 0.0, 0
+    return v
 
   def due(self):
     return self.steps > 0 and self.steps % self.export_every == 0
