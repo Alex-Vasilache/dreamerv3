@@ -89,6 +89,17 @@ SETS = {
         ('hash', 'V + US-SOM + TCE sqrt', '#009E73',
          '[eh]????_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
     ],
+    'ogdv3': [   # meeting 11-10: the starting point
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('dv3', 'DreamerV3 (flat)', '#000000', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
+    ],
+    'wkrstory': [   # meeting 11-10: OG -> fixed worker entropy -> R -> V, flat DreamerV3 for reference
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('ent', 'OG + fixed worker entropy', '#0072B2', 'e1[89][089]?_{t}_director-director_og-wkr_ent_fixed-pubmatch_s*'),
+        ('R', '+ v3 return norm (R)', '#009E73', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3_retnorm-pubmatch_s*'),
+        ('V', '+ all worker v3 settings (V)', '#56B4E9', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
+        ('dv3', 'DreamerV3 (flat)', '#000000', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
+    ],
     'ucbkde': [
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('V', 'V (OG + fixed ent. + worker v3)', '#000000',
@@ -220,14 +231,15 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('family', 'og'): ':', ('family', 'V'): '-', ('family', 'even'): '-.', ('family', 'ft'): (0, (8, 3)), ('family', 'hash'): '--', ('family', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
+STYLE = {('wkrstory', 'dv3'): '--', ('wkrstory', 'R'): '-.', ('family', 'og'): ':', ('family', 'V'): '-', ('family', 'even'): '-.', ('family', 'ft'): (0, (8, 3)), ('family', 'hash'): '--', ('family', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
 # Colour-blind check per figure (deuteranopia, OKLab x100): OG/US-SOM/TCE and OG/DV3/V
 # min pair 19.7 -> solid lines + markers; 'family' (6 arms, min 11.0) keeps dash patterns.
-MARKERS = {('ogustce_all', 'V'): 'D', ('ogustce_all', 'og'): 'o', ('ogustce_all', 'even'): 's', ('ogustce_all', 'hash'): '^',
+MARKERS = {('ogdv3', 'og'): 'o', ('ogdv3', 'dv3'): 's', ('wkrstory', 'og'): 'o', ('wkrstory', 'ent'): 's', ('wkrstory', 'R'): '^', ('wkrstory', 'V'): 'D',
+           ('ogustce_all', 'V'): 'D', ('ogustce_all', 'og'): 'o', ('ogustce_all', 'even'): 's', ('ogustce_all', 'hash'): '^',
            ('ogustce', 'og'): 'o', ('ogustce', 'even'): 's', ('ogustce', 'hash'): '^',
            ('ogdv3v', 'og'): 'o', ('ogdv3v', 'dv3'): 's', ('ogdv3v', 'V'): '^'}
 FINISHED_ONLY = {'ogustce_all'}
-LATE = {'ogustce_all': 1e6, 'ogustce': 1e6, 'family': 1e6, 'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
+LATE = {'ogdv3': 1e6, 'wkrstory': 1e6, 'ogustce_all': 1e6, 'ogustce': 1e6, 'family': 1e6, 'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
 def main(which):
