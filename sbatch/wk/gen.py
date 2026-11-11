@@ -275,6 +275,13 @@ P_ARMS = [
     ('prog_d05', f'{PICK_UNC} {PROG} {DROP} 0.05'),
 ]
 
+# Round Q (11-11 morning): IAS P put uncapped, scheduled and progress-controlled
+# at the same late level (2.2-2.3), unlike N (2.6 vs 1.7). Confirm N's
+# uncapped dropout 0.05 + 2 rollouts against both controls on fresh seeds,
+# IAS, n = 8.
+SEEDS_Q = [821, 822, 823, 824, 825, 826, 827, 828]
+Q_ARMS = [N_ARMS[0], N_ARMS[1], N_ARMS[2]]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -518,6 +525,11 @@ def main():
       for arm, flags in P_ARMS:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
+  elif rnd == 'qi':
+    for seed in SEEDS_Q:
+      for arm, flags in Q_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', 'any', flags, seed, minutes=60, base='old')); n += 1
   elif rnd == 'ni':
     for seed in SEEDS8:
       for arm, flags in N_ARMS:
