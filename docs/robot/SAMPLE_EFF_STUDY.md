@@ -326,6 +326,24 @@ Reading.
   signal for how much the actor-critic should train, so this route is parked.
 - Recipe without a hand-set ratio (sim): the pick, uncapped, plus
   `--agent.dyn.rssm.drop 0.05 --agent.imag_repeat 2` (`sbatch/wk/gen.py`
-  N_ARMS `unc_d05_r2`). IAS round P (array 204901, same four P
-  arms, n = 8) repeats the comparison on the fast learner; results below if
-  in before noon.
+  N_ARMS `unc_d05_r2`). IAS round P below weakens the case for
+  any ratio control at all.
+
+IAS round P (e44380-e44411, array 204901, n = 8; achieved ratio early / late):
+
+| arm | t90 (min) | late | ratio |
+|---|---|---|---|
+| uncapped | 3.0 ± 0.5 | 2.3 ± 1.1 | 290 / 290 |
+| hand-set schedule | 2.9 ± 0.4 | 2.2 ± 0.7 | 191 / 111 |
+| learning-progress control | 2.5 ± 0.5 | 2.3 ± 0.9 | 153 / 44 |
+| learning-progress + dropout 0.05 | 2.6 ± 0.5 | 3.0 ± 0.6 | 235 / 37 |
+
+Reading. On the same GPU as N, a late ratio of 290, 111 or 44 gives the same
+late level (2.2-2.3). The uncapped-vs-schedule gap seen in N (2.6 vs 1.7) is
+not reproduced; pooled over N and P on IAS (n = 16) it is 2.5 vs 2.0, within
+one SD. The late "drift" in sim is therefore small, noisy, and only loosely
+tied to the ratio, so the hand-set schedule buys little. Progress control is
+not worse on IAS (and learns fastest, t90 2.5), but it is worse on Saion and
+adds a mechanism for no late gain, so it stays parked. Round Q (IAS,
+e44420-e44443, array 205138, fresh seeds 821-828, n = 8) repeats uncapped vs
+schedule vs uncapped + dropout 0.05 + 2 rollouts to check N's 1.6.
