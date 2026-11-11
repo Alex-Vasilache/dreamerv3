@@ -286,6 +286,12 @@ Q_ARMS = [N_ARMS[0], N_ARMS[1], N_ARMS[2]]
 # Saion GPUs, same seeds as P's uncapped and scheduled arms there, n = 8.
 R_ARMS = [N_ARMS[2]]
 
+# Round S2 (11-11): uncapped world-model dropout 0.05 alone. R showed the
+# second rollout costs speed on slow GPUs (P100 t90 3.8 vs 3.1); M had dropout
+# free of speed cost (with the schedule). imag_repeat 1 explicit: the robot
+# default is 2 since 11-11. Seeds 811-818 pair with P/R (Saion) and N (IAS).
+S2_ARMS = [('unc_d05', f'{PICK_UNC} {DROP} 0.05 {REP} 1')]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -533,6 +539,12 @@ def main():
     gpu = {'rv': 'v100', 'rp': 'p100'}[rnd]
     for seed in SEEDS8:
       for arm, flags in R_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
+  elif rnd in ('sv2', 'sp2', 'si2'):
+    gpu = {'sv2': 'v100', 'sp2': 'p100', 'si2': 'any'}[rnd]
+    for seed in SEEDS8:
+      for arm, flags in S2_ARMS:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
   elif rnd == 'qi':
