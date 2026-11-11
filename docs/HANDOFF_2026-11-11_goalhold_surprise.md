@@ -93,7 +93,7 @@ Offline only: logged metrics, a numpy simulation of pin pad, and checkpoint roll
 - No per-episode memory (NGU-style), because it would be task-specific.
 - The exploration signal is **surprise**. For now it is used **only as a manager reward for goals that lead to surprising real states**. Do not yet do surprise-weighted goal-AE replay (Skew-Fit-like).
 - Impact (RIDE) is noted as a possible relevance filter later. It is not used now.
-- TCE is paused.
+- TCE is paused. The surprise reward takes TCE's place; Director's reconstruction reward is kept at 0.1 (it expands the goal space; surprise picks relevant goals).
 - Base = V with worker lr 1e-4 (see section 0).
 
 ## 4. Plan: step by step
@@ -141,9 +141,14 @@ Watch hopper: earlier variable-length runs hurt it badly, though those used a le
 The KL exists only on real steps; imagination has no posterior. So, as with Director's reward head:
 
 - Train a small **surprise head** on replay: regress the per-step real KL(post‖prior), with stop-gradient on the target, from the world-model feat. The real KL is already computed in `rssm.RSSM.loss` (`dyn`).
-- In imagination, the manager's exploration reward is the head's prediction on the imagined states, with its own critic. It **replaces** Director's reconstruction reward (and TCE) so the total exploration pull stays at one weight (0.1).
-- Normalise so the pull can fade. A fixed scale or a slow EMA, not per-channel meanstd, which keeps the share constant forever (the TCE critic problem).
-- Offline check first: does the head's prediction rank pad entries high on the saved checkpoints?
+- In imagination, the manager gets the head's prediction on the imagined states as a reward, with its own critic (the `mgr_novel` slot that TCE used).
+- **It replaces TCE only (user, 11-11). Director's reconstruction reward stays**, because it was shown to be necessary. The two have separate jobs: reconstruction error expands the goal space; surprise steers the manager to relevant goals. Weights: reconstruction 0.1, surprise 0.1.
+- **Make the surprise pull actually decay:**
+  - Raw per-step KL never reaches 0. There is a floor of ~0.4-0.8 nats on ordinary steps, and `free_nats: 1.0` gives no gradient to per-step KL below 1 nat, so the world model stops shrinking it there.
+  - So reward the excess: r = max(0, KL − running baseline), where the baseline is a slow EMA of KL, or simply free_nats.
+  - Normalise that channel so small values stay small. Use v3-style percentile retnorm with a floor (`perc`, `limit: 1.0`) or a fixed scale. Do **not** use the per-channel meanstd that `director_og`'s `mgr_retnorm` uses, which rescales any channel to unit spread. That is why the TCE critic kept pulling on cartpole when its real bonus was 0.03.
+  - With that, the total exploration pull is about 0.2 early and falls back towards Director's 0.1 as surprises are learned.
+- Offline check first, on the saved checkpoints: does the head rank pad entries high, and does max(0, KL − baseline) stay near 0 on ordinary steps?
 
 Not now (user): surprise-weighted goal-AE replay; impact filter; per-episode memory.
 
