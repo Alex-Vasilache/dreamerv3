@@ -1760,7 +1760,8 @@ robot:
   # at 1000-3500 mm/s (real e2061, e2078; sim e2088), as the fitted sim does
   # too; 1.5 keeps the median wheel speed at ~60 mm/s, for ~1 min longer to
   # balance (sim e2102-e2148, 6.3 vs 5.2 min; carpet 2.4 vs 1.8).
-  env.robot.wheel_penalty: 1.5
+  # 1.0 since 11-11 with the stillness pick below (pos_penalty 2.0).
+  env.robot.wheel_penalty: 1.0
   # Turning in place costs no more wheel effort than driving straight, and
   # real e2079 (1.5, 11 min) still turned at a median ~250 mm/s. A gyro
   # yaw-rate cost of 0.1 per rad/s made the sim table robot still (median
@@ -1829,7 +1830,8 @@ robot:
   # P100; and a train_ratio out of reach so the learner never waits.
   agent.opt.lr: 3e-4
   agent.ac_opt.lr: 3e-4
-  batch_size: 32
+  # 16 since 11-11 (weekend pick, WEEKEND_1107.md): more updates per second.
+  batch_size: 16
   batch_length: 64
   report_length: 32
   online_learning: True
@@ -1857,6 +1859,21 @@ robot:
   # configured platform onto whatever this machine has.
   jax: {compute_dtype: float32, prealloc: False}
   logger: {outputs: [jsonl, scope, tensorboard]}
+  # Balance pick, default since 2026-11-11 (docs/robot/SAMPLE_EFF_STUDY.md,
+  # rounds M-R). Fear critic on a cost signal, stillness, a wider bumper
+  # margin, and no hand-set ratio schedule: the learner trains at the GPU's
+  # pace, and two regularisers keep that from drifting late.
+  # - rssm.drop 0.05: dropout in the world-model training pass only.
+  # - imag_repeat 2: two imagined rollouts per start, losses averaged.
+  # In sim (IAS, n = 14-15) this learns as fast as uncapped (t90 2.6 min)
+  # and is as calm late as the old ratio-128 schedule (1.5 vs 1.7 bumper
+  # crossings/min; uncapped 2.5). pos_penalty only acts with pos_tau > 0.
+  env.robot.bumper_margin: 0.05
+  env.robot.cost_obs: True
+  agent.fear.weight: 1.0
+  env.robot.pos_penalty: 2.0
+  agent.dyn.rssm.drop: 0.05
+  agent.imag_repeat: 2
 
 dmc_proprio:
   <<: *size1m
@@ -1973,6 +1990,16 @@ robot_command:
   env.robot.horizon_s: 2.0
   env.robot.command_reward: bumper_track
   env.robot.bumper_margin: 0.0262
+  # The 11-11 balance pick in `robot` is not tested on commands: keep the
+  # command recipe as it was (WEEKEND_1107.md KF pick, which passes
+  # --batch_size 16 itself).
+  env.robot.wheel_penalty: 1.5
+  env.robot.cost_obs: False
+  agent.fear.weight: 0.0
+  env.robot.pos_penalty: 0.0
+  agent.dyn.rssm.drop: 0.0
+  agent.imag_repeat: 1
+  batch_size: 32
   env.robot.bumper_penalty: 2.0
   env.robot.command_bias: 0.0
   env.robot.command_ramp: 0.5
