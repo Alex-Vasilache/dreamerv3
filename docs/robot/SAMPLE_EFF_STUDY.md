@@ -347,3 +347,21 @@ not worse on IAS (and learns fastest, t90 2.5), but it is worse on Saion and
 adds a mechanism for no late gain, so it stays parked. Round Q (IAS,
 e44420-e44443, array 205138, fresh seeds 821-828, n = 8) repeats uncapped vs
 schedule vs uncapped + dropout 0.05 + 2 rollouts to check N's 1.6.
+
+### Wed 11-11: Q, the confirmation (IAS, fresh seeds 821-828)
+
+20 of 24 runs done (4 held by unavailable IAS nodes); figure `figs/study/npq.png`.
+
+| arm | n | t90 (min) | late |
+|---|---|---|---|
+| A uncapped | 7 | 2.7 ± 0.5 | 2.3 ± 0.8 |
+| B hand-set schedule | 7 | 3.1 ± 0.7 | 1.8 ± 0.6 |
+| C uncapped + dropout 0.05 + 2 rollouts | 6 | 2.5 ± 0.5 | 1.4 ± 0.7 |
+
+Pooled with N (n = 14-15 per arm): A t90 2.7 ± 0.6, late 2.5 ± 0.8; B 3.0 ±
+0.5, 1.7 ± 0.6; C 2.6 ± 0.5, 1.5 ± 0.8. Mann-Whitney: C vs A late p = 0.007;
+C vs B late p = 0.20 (same), t90 p = 0.04 (C faster); B vs A late p = 0.018.
+
+Reading. Q reproduces N. C is as calm late as the hand-set schedule, learns
+faster than it, and sets nothing by hand. It is the recipe for live testing:
+the pick, uncapped, plus `--agent.dyn.rssm.drop 0.05 --agent.imag_repeat 2`.
