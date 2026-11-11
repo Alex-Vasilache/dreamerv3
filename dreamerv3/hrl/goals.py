@@ -20,6 +20,32 @@ sg = lambda xs, skip=False: xs if skip else jax.lax.stop_gradient(xs)
 sample = lambda xs: jax.tree.map(lambda x: x.sample(nj.seed()), xs)
 
 
+class ReachCeil(nj.Module):
+  """Running ceiling for the goal-reached test (``goal_reach_frac``).
+
+  Holds an EMA of ``cos_max(decode(encode(state)), state)`` on replay states:
+  the best match the goal autoencoder can express for the state the agent is
+  actually in. ``reached`` compares the goal/state match against a fraction of
+  this, so the threshold follows the run's own goal-code quality instead of
+  being a per-task constant. A module (not a bare Variable) so the value has a
+  ``goal_reach/`` name prefix and travels to the actor with the policy params.
+  """
+
+  def __init__(self, rate=0.01):
+    self.rate = float(rate)
+    self.ceil = nj.Variable(lambda: jnp.ones((), f32), name='ceil')
+
+  def read(self):
+    return sg(self.ceil.read())
+
+  def update(self, self_cos, training=True):
+    prev = self.ceil.read()
+    new = prev + self.rate * (sg(f32(self_cos)).mean() - prev)
+    if training:
+      self.ceil.write(new)
+    return new
+
+
 class GoalCodeMixin:
   """Goal-code helpers mixed into ``dreamerv3.agent.Agent``."""
 
@@ -96,6 +122,20 @@ class GoalCodeMixin:
       feat = feat * goal_mask.expand_groups(keep, feat.shape[-1]).astype(feat.dtype)
     cos = goal_reward_cosine_max(goal, feat)
     return imag_reward_pad(cos[:, 1:])
+
+  def _goal_reach_tau(self):
+    """Reached threshold on cos_max: ``goal_reach_frac`` x the running ceiling."""
+    return self.goal_reach_frac * self.goal_reach_ceil.read()
+
+  def _goal_reached(self, goal, feat):
+    """Has the state reached the held goal? ``cos_max(goal, deter) >= tau``.
+
+    The same quantity the worker is rewarded for (``_wkr_goal_reward``), so
+    "reached" and the worker's objective cannot drift apart. ``goal`` is the
+    decoded goal ``(..., D)`` in force BEFORE this step's manager decision;
+    returns a bool array of the leading shape."""
+    cos = goal_reward_cosine_max(sg(f32(goal)), sg(f32(self.feat2deter(feat))))
+    return cos >= self._goal_reach_tau()
 
   def _mgr_expl_reward(self, imgfeat):
     """Manager exploration reward: ``elbo_reward`` with ``adver_impl=squared``.

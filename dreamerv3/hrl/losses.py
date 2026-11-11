@@ -49,6 +49,8 @@ def imag_loss_wkr(
     skill_window=0,
     wkr_actent_adapter=None,
     wkr_actent_perdim=True,
+    boot_value=None,
+    boot_slowvalue=None,
 ):
   """Worker actor-critic losses on imagined trajectories.
 
@@ -86,8 +88,17 @@ def imag_loss_wkr(
     last = jnp.zeros_like(con)
   term = 1 - con
 
+  # Bootstrap values. Default: the critic at each state under the goal in
+  # force there. ``boot_value``/``boot_slowvalue`` (reached-or-cap holding)
+  # evaluate the state under the goal that was in force coming INTO it, so a
+  # hold that ends at a switch bootstraps from the OLD goal's value (Director
+  # ``split_traj``). The two agree everywhere except at switch states.
+  wkr_goal_boot = wkr_goal_tarval
+  if boot_value is not None:
+    boot_head = boot_slowvalue if slowtar else boot_value
+    wkr_goal_boot = sg(boot_head.pred() * wkr_goal_vscale + wkr_goal_voffset)
   wkr_goal_ret = lambda_return(
-      last, term, wkr_goal_rew, wkr_goal_tarval, wkr_goal_tarval, disc, lam)
+      last, term, wkr_goal_rew, wkr_goal_tarval, wkr_goal_boot, disc, lam)
 
   wkr_goal_roffset, wkr_goal_rscale = wkr_goal_retnorm(wkr_goal_ret, update)
 
@@ -780,6 +791,7 @@ def repl_loss(
     horizon=333,
     lam=0.95,
     value_head='mgr_extr',
+    reset=None,
 ):
   """Value loss on real replay tail; ``boot`` is return from imagination at slice boundary.
 
@@ -798,7 +810,12 @@ def repl_loss(
   tarval = slowval if slowtar else val
   disc = 1 - 1 / horizon
   weight = f32(~last)  # Zero loss on steps after episode end (``last``).
-  ret = lambda_return(last, term, rew, tarval, boot, disc, lam)
+  # ``reset`` (B, T): extra return boundaries (goal switches under
+  # reached-or-cap holding). The return stops there and takes ``boot`` in
+  # full, like at an episode end, but the loss weight is untouched: a switch
+  # state is still a state the critic should be trained on.
+  last_ret = last if reset is None else jnp.logical_or(last, reset > 0.5)
+  ret = lambda_return(last_ret, term, rew, tarval, boot, disc, lam)
 
   voffset, vscale = valnorm(ret, update)
   ret_normed = (ret - voffset) / vscale

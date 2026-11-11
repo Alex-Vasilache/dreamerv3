@@ -280,6 +280,10 @@ class ManagerMixin:
       # ``mgr_step`` holds the steps remaining on the current goal; switch when it
       # runs out (and always on the first step after a reset, where it is 0).
       update = mgr_step <= 0
+      if self.goal_reach and cached_goal is not None:
+        # Reached-or-cap: also re-decide as soon as the held goal is reached.
+        # ``cached_goal`` is the decoded goal the worker has been following.
+        update = jnp.logical_or(update, self._goal_reached(cached_goal, feat))
     else:
       update = jnp.equal(mgr_step % K, 0)
     # Optionally condition the manager on the PREVIOUS emitted skill (held in
@@ -413,8 +417,16 @@ class ManagerMixin:
     def body(carry, _):
       dyn_carry, mgr_skill, step_i, remaining = carry
       feat = dict(deter=dyn_carry['deter'], stoch=dyn_carry['stoch'])
+      reached = jnp.zeros((B,), bool)
       if self.variable_goal_length:
         update = remaining <= 0
+        if self.goal_reach:
+          # Same rule as the real env (``_manager_skill_step``): the goal held
+          # coming INTO this state counts as reached if this state matches it.
+          # Step 0 holds the zero dummy skill, which is not a goal.
+          held = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
+          reached = jnp.logical_and(self._goal_reached(held, feat), step_i > 0)
+          update = jnp.logical_or(update, reached)
       else:
         update = jnp.equal(step_i % K, 0)
       # The carry's goal_code is the PRE-edit running Z for this step.
@@ -448,7 +460,7 @@ class ManagerMixin:
       switch = jnp.broadcast_to(f32(update), (B,))
       return ((dyn_carry, mgr_skill, step_i + 1, remaining),
               (feat_next, act_out, mgr_skill, switch, i32(cd_steps),
-               (i32(state_ids), ucb_diag)))
+               (i32(state_ids), ucb_diag, f32(reached))))
 
     if H < 1:
       raise ValueError(f'imagination length must be >= 1, got {H}')
@@ -458,7 +470,7 @@ class ManagerMixin:
     init_remaining = jnp.zeros((B,), i32)
     ((last_dyn, last_mgr_skill, _, last_remaining),
      (imgfeat, imgact, img_skills, img_switch, img_cd,
-      (ucb_state_ids, ucb_diag))) = nj.scan(
+      (ucb_state_ids, ucb_diag, img_reached))) = nj.scan(
         body, (starts, mgr_skill, jnp.int32(0), init_remaining), (), H,
         unroll=unroll, axis=1)
 
@@ -485,10 +497,20 @@ class ManagerMixin:
     # imgfeat is [s1...sH]. imgact is [a0...aH-1]. img_skills is [skill0...skillH-1].
     # We need to sample one more skill at last_dyn (sH) to align with imgfeat prefix starts (s0).
     feat_last = dict(deter=last_dyn['deter'], stoch=last_dyn['stoch'])
+    reached_last = jnp.zeros((B,), bool)
     if self.variable_goal_length:
       update_last = last_remaining <= 0
+      if self.goal_reach:
+        held_last = sg(self._goal_from_skill(
+            jax.tree.map(sg, last_mgr_skill), bdims=1))
+        reached_last = self._goal_reached(held_last, feat_last)
+        update_last = jnp.logical_or(update_last, reached_last)
     else:
       update_last = jnp.equal(H % K, 0)
+    # (B, H+1) flags aligned with ``switch_mask``: 1 where the switch at that
+    # state was triggered by reaching the goal (it may coincide with the cap).
+    self._imag_reached = jnp.concatenate(
+        [img_reached, f32(reached_last)[:, None]], 1)
     emit_last = self._emit_manager(
         self._mgr_input(feat_last, last_mgr_skill), 1,
         prev_mgr_skill=last_mgr_skill,
@@ -551,6 +573,12 @@ class ManagerMixin:
       feat = jax.tree.map(lambda x: x[:, t], repfeat)
       if self.variable_goal_length:
         update = remaining <= 0
+        if self.goal_reach:
+          # Reached-or-cap on replay states: same rule as the env and
+          # imagination. t = 0 always switches (remaining starts at 0).
+          held = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
+          update = jnp.logical_or(
+              update, jnp.logical_and(self._goal_reached(held, feat), t > 0))
       else:
         update = jnp.equal(t % K, 0)
       emit = self._emit_manager(
@@ -565,7 +593,12 @@ class ManagerMixin:
         cd_steps = jnp.broadcast_to(K - (t % K), remaining.shape)
       # ``countdown`` is output-only (steps left incl. current); it must never
       # enter the carry skill dict, which other code tree-maps over.
-      return (mgr_skill, remaining), {**mgr_skill, 'countdown': i32(cd_steps)}
+      out = {**mgr_skill, 'countdown': i32(cd_steps)}
+      if self.goal_reach:
+        # Output-only, like ``countdown``: with reach-based switches the mask
+        # cannot be rebuilt from durations (``_switch_mask_from_skills``).
+        out['switch'] = jnp.broadcast_to(f32(update), remaining.shape)
+      return (mgr_skill, remaining), out
 
     if T <= 1:
       _, skill = body((mgr_skill, init_remaining), 0)
@@ -592,6 +625,9 @@ class ManagerMixin:
     """Decision mask ``(B, T)`` consistent with a ``_manager_skills_on_sequence`` trace."""
     T = skills['skill'].shape[1]
     B = skills['skill'].shape[0]
+    if 'switch' in skills:
+      # Reached-or-cap: the scan recorded its own decisions.
+      return f32(skills['switch'])
     if self.variable_goal_length:
       p = self._duration_steps(skills)  # (B, T); honors goal_duration_fixed
 

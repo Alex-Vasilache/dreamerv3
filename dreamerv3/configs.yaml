@@ -458,6 +458,17 @@ defaults:
     # bypassing the duration head sample. >0 enables; used as a control (variable
     # training graph at a fixed K, no duration prior). 0 = use the emitted duration.
     goal_duration_fixed: 0
+    # Reached-or-cap goal holding (2026-11-12, block `goal_hold_reach`). > 0:
+    # the manager also re-decides as soon as the held goal is REACHED, i.e.
+    # cos_max(goal, deter) >= goal_reach_frac * ceiling, where the ceiling is a
+    # running mean of cos_max(decode(encode(state)), state) on replay states --
+    # the best match the goal autoencoder can express for the state we are in.
+    # The threshold is relative to that ceiling so it is not tuned per task
+    # (offline: ceiling 0.93 on solved pin pad seeds, 0.82 on failed, 0.97 on
+    # cartpole). Needs variable_goal_length with goal_duration_fixed = the cap.
+    # No minimum hold. 0 = off.
+    goal_reach_frac: 0.0
+    goal_reach_rate: 0.01
     # Causal-intervention freezes (pinpad collapse study, 2026-09-30). Each is an
     # optimizer-UPDATE count (not env steps; director_og at ratio 64 does ~0.5
     # updates per env step) after which that module group's parameters are held
@@ -1673,6 +1684,22 @@ wkr_lr1e4:
 wkr_lr4e5:
   agent:
     wkr_opt: {lr: 4e-5}
+
+# Hold each goal until it is reached or 32 steps pass (2026-11-12; layer on V).
+# Reached = cos_max(goal, deter) >= 0.8 x the running reconstruction ceiling
+# (see defaults.agent.goal_reach_frac). No minimum hold. The manager return is
+# an SMDP return: rewards summed over the hold, discount gamma^hold in both
+# imagination and replay. The worker's return for a goal ends at the switch
+# and bootstraps from the value under the OLD goal (Director's split_traj
+# convention, on irregular boundaries). imag_length 32 so a full hold fits.
+goal_hold_reach:
+  agent:
+    variable_goal_length: True
+    goal_duration_fixed: 32
+    goal_reach_frac: 0.8
+    mgr_reward_agg: sum
+    imag_length: 32
+    worker_timed_goals: False
 
 tce_critic:
   agent:

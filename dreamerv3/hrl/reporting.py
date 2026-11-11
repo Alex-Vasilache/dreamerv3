@@ -189,6 +189,7 @@ class ReportMixin:
     if need_mgr:
       mgr_skills = self._manager_skills_on_sequence(rep)
       mgr_skills.pop('countdown', None)
+      mgr_skills.pop('switch', None)
       mgr_goals = sg(self._goals_from_skills(mgr_skills, bdims=2))
       mgr_goal_feat = self._feat_from_goal(mgr_goals)
       _, _, recons_mgr = self.dec(dec_carry, mgr_goal_feat, reset_s, training=False)

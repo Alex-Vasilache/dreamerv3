@@ -45,6 +45,7 @@ from .hrl import explore as explore_mod
 from .hrl import fromto as fromto_mod
 from .hrl import goal_ae
 from .hrl import goal_mask
+from .hrl import goals as goals_mod
 
 
 def _g(cfg, key, default):
@@ -161,6 +162,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         'keep', 'drop_duration', 'drop_decision'), (
             self.goal_duration_truncated_policy)
     self.goal_duration_fixed = int(getattr(config, 'goal_duration_fixed', 0))
+    # Reached-or-cap goal holding: re-decide when the held goal is reached
+    # (cos_max >= goal_reach_frac x running ceiling) or the cap
+    # (goal_duration_fixed) runs out. See configs.yaml ``goal_reach_frac``.
+    self.goal_reach_frac = float(getattr(config, 'goal_reach_frac', 0.0))
+    # != 0 rather than > 0: a negative fraction makes every state count as
+    # reached, which the tests use to drive the switch-every-step extreme.
+    self.goal_reach = self.goal_reach_frac != 0.0
+    if self.goal_reach:
+      assert self.variable_goal_length and self.goal_duration_fixed > 0, (
+          'goal_reach_frac needs variable_goal_length with goal_duration_fixed '
+          '(the cap) > 0')
     # Resolve the pinned-hold flag first so the duration controllers can be
     # switched off when the head is bypassed: a pinned hold makes every duration
     # regularizer causally inert (see ``imag_loss_mgr``), and keeping the
@@ -205,6 +217,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     if self.use_hrl:
       self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
       self.goal_ae_impl = str(getattr(config, 'goal_ae_impl', 'director'))
+      if self.goal_reach:
+        assert self.goal_ae_impl == 'director', (
+            'goal_reach_frac is implemented for the Director goal autoencoder')
+        self.goal_reach_ceil = goals_mod.ReachCeil(
+            rate=float(getattr(config, 'goal_reach_rate', 0.01)),
+            name='goal_reach')
       if self.goal_ae_impl == 'vq':
         self._build_goal_vq(config, skill_shape_t, skill_classes)
       elif self.goal_ae_impl == 'director':
@@ -828,6 +846,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           or float(getattr(self, 'mgr_fromto_c', 0.0)) > 0.0):
         # From-to counting also encodes the current real state in the policy.
         groups.append('goal_enc')
+      if self.goal_reach:
+        # The actor tests "goal reached" against the running ceiling.
+        groups.append('goal_reach')
       if self.goal_mask_groups:
         # The actor decodes the held goal, and with masking that includes
         # the keep pattern.
@@ -1392,6 +1413,20 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         raise NotImplementedError(goal_rec_agg)
       goal_base_loss = goal_rec_loss
     goal_dist = _head_inner(encoded_goal)
+    if self.goal_reach:
+      # Running ceiling for the reached test: how well a state matches its own
+      # encode -> decode goal (mode code, as the offline calibration used).
+      # Feeds a Variable and metrics only; no gradient reaches the autoencoder.
+      assert not groups, 'goal_reach_frac does not support goal masking'
+      self_code = jax.nn.one_hot(
+          jnp.argmax(sg(goal_dist.dist.logits), -1),
+          goal_dist.dist.logits.shape[-1], dtype=f32)
+      self_goal = sg(self.goal_dec(self_code, 2).pred())
+      self_cos = goal_reward_cosine_max(f32(self_goal), sg(f32(deter_feat)))
+      ceil = self.goal_reach_ceil.update(self_cos, training)
+      metrics['goal/reach_self_cos'] = self_cos.mean()
+      metrics['goal/reach_ceil'] = ceil
+      metrics['goal/reach_tau'] = self.goal_reach_frac * ceil
     skill_prior = outs.OneHot(
         jnp.zeros_like(goal_dist.dist.logits), self._skill_prior_unimix)
     inner_kl = goal_dist.kl(skill_prior)
@@ -1789,6 +1824,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         in_bin = f32((dur > lo) & (dur <= hi))
         metrics[f'goal/mgr_duration_hist_p{lab}'] = (in_bin * sw).sum() / wsum
       metrics['goal/mgr_switch_rate'] = switch_mask.mean()
+      if self.goal_reach:
+        # Position 0 is the forced first decision of every rollout; leave it
+        # out of the reach share. Hold length is censored by the horizon.
+        sw_in = sw[:, 1:]
+        metrics['goal/hold_reach_frac'] = (
+            (f32(self._imag_reached)[:, 1:] * sw_in).sum()
+            / jnp.maximum(sw_in.sum(), 1.0))
+        metrics['goal/hold_len_imag'] = (
+            sw.shape[1] / jnp.maximum(sw.sum(1), 1.0)).mean()
+        metrics['goal/hold_len1_frac'] = (
+            (sw[:, 1:] * sw[:, :-1]).sum() / jnp.maximum(sw[:, :-1].sum(), 1.0))
     else:
       # Fixed K: downsample the rollout to one entry per K-step manager window and
       # pool rewards/continuation over each window (Director ``abstract_traj``).
@@ -1981,7 +2027,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         wkr_actent_perdim=self.worker_actent_perdim)
     K_split = worker_split_window(
         self.config.worker_split_traj, self.variable_goal_length,
-        self.goal_duration_fixed, self.manager_sample_freq, H)
+        # Reach-based switches are irregular: the K-window grid does not apply.
+        0 if self.goal_reach else self.goal_duration_fixed,
+        self.manager_sample_freq, H)
     if K_split:
       # Reshape the rollout into overlapping windows of length K+1. Each window uses
       # the goal decoded at its *start* state for all K+1 steps (incl. the shared
@@ -2035,6 +2083,24 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       wkr_goal_rew = self._wkr_goal_reward(goals, imgfeat)
       kwargs_wkr.update(
           skill_window=(switch_mask if self.variable_goal_length else K))
+      if self.goal_reach:
+        # Director's split_traj convention on irregular boundaries: the state
+        # a hold ENDS in belongs to the OLD goal. The reward for the transition
+        # into state t is the match to the goal in force when the action was
+        # taken (goals[t-1]), and the return bootstraps there from the value
+        # under that old goal. Off a switch goals[t-1] == goals[t], so nothing
+        # else changes. Without this the arrival reward -- the one that says
+        # "you reached it" -- would be scored against the NEXT goal.
+        prev = lambda x: jnp.concatenate([x[:, :1], x[:, :-1]], 1)
+        goals_prev = prev(goals)
+        skills_prev = jax.tree.map(prev, mgr_skills)
+        wkr_goal_rew = self._wkr_goal_reward(goals_prev, imgfeat)
+        feat_goal_prev = self._feat_goal2tensor(
+            imgfeat, self._wkr_goal_in(goals_prev, skills_prev),
+            countdown=self._countdown_norm(img_countdowns))
+        kwargs_wkr.update(
+            boot_value=self.wkr_goal_val(feat_goal_prev, 2),
+            boot_slowvalue=self.wkr_goal_slowval(feat_goal_prev, 2))
       los_wkr, imgloss_wkr_out, mets_wkr = imag_loss_wkr(
           imgact, wkr_goal_rew, con,
           self.pol(feat_goal, 2),
@@ -2091,6 +2157,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             feat, deterministic=True)
         repl_skills_full.pop('countdown', None)
         repl_switch = self._switch_mask_from_skills(repl_skills_full)
+        repl_skills_full.pop('switch', None)
+        if self.goal_reach:
+          metrics['goal/hold_len_repl'] = (
+              repl_switch.shape[1] / jnp.maximum(repl_switch.sum(1), 1.0)).mean()
         feat_down = downsample_at_switch_mask(feat, repl_switch)
         # Patch the stale forward-filled trailing slot to the window's TRUE
         # final state (fixed 2026-07-27 -- see patch_trailing_replay_state's
@@ -2163,12 +2233,31 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           lambda x: x[:, -K_repl:],
           self._manager_skills_on_sequence(feat, deterministic=True))
       repl_cd = repl_skills.pop('countdown')
+      repl_wkr_switch = repl_skills.pop('switch', None)
       # Detach manager goals in replay value path.
       repl_goals = sg(self._goals_from_skills(jax.tree.map(sg, repl_skills), bdims=2))
       feat_goal_wkr = self._feat_goal2tensor(
           feat_wkr, self._wkr_goal_in(repl_goals, repl_skills),
           countdown=self._countdown_norm(repl_cd))
       repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals, feat_wkr)
+      repl_wkr_reset, repl_wkr_boot = None, jnp.broadcast_to(
+          boot_goal_wkr[:, -1:], repl_wkr_goal_rew.shape)
+      if self.goal_reach:
+        # Same boundary convention as the imagination path above: arrival
+        # reward and bootstrap under the OLD goal, and the return for a goal
+        # ends at its switch instead of running on into the next goal.
+        prev = lambda x: jnp.concatenate([x[:, :1], x[:, :-1]], 1)
+        repl_goals_prev = prev(repl_goals)
+        repl_wkr_goal_rew = self._wkr_goal_reward(repl_goals_prev, feat_wkr)
+        feat_goal_prev = self._feat_goal2tensor(
+            feat_wkr, self._wkr_goal_in(
+                repl_goals_prev, jax.tree.map(prev, repl_skills)),
+            countdown=self._countdown_norm(repl_cd))
+        voff_w, vscale_w = self.wkr_goal_valnorm.stats()
+        tar_prev = sg(self.wkr_goal_slowval(feat_goal_prev, 2).pred()
+                      * vscale_w + voff_w)
+        repl_wkr_reset = f32(repl_wkr_switch).at[:, 0].set(0.0)
+        repl_wkr_boot = jnp.where(repl_wkr_reset > 0.5, tar_prev, repl_wkr_boot)
 
       # --- 3. Compute Value Losses ---
       # Manager Replay Value Loss (predicts combined return)
@@ -2191,6 +2280,15 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         weight_down = weight_down * valid_mgr * decision_mean_rescale(
             valid_mgr[:, :-1])
       disc = 1 - 1 / self.config.horizon
+      if self.goal_reach:
+        # SMDP discount: one factor per ENV step of the hold. The pooled
+        # continuation is the product of the con head over the hold, and the
+        # con head already carries gamma per step (contdisc), exactly as in
+        # imagination. The flat ``disc`` below it would charge 0.99 per
+        # DECISION whatever the hold length (0.99 vs 0.99^32 at the cap).
+        assert self.config.contdisc, 'goal_reach_frac assumes contdisc'
+        term_down = 1.0 - sg(f32(repl_mgr_cont))
+        disc = 1.0
       lam = 0.95 # matches repl_loss default
       boot_extr_down = jnp.broadcast_to(boot_extr[:, -1:], repl_mgr_extr_rew.shape)
       boot_expl_down = jnp.broadcast_to(boot_expl[:, -1:], repl_mgr_expl_rew.shape)
@@ -2254,12 +2352,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       kwargs_repwkr_goal.update(
           update=training,
           horizon=self.config.horizon,
+          reset=repl_wkr_reset,
           value_head='wkr_goal')
       los, reploss_out, mets = repl_loss(
           last_wkr,
           term_wkr,
           repl_wkr_goal_rew,
-          jnp.broadcast_to(boot_goal_wkr[:, -1:], repl_wkr_goal_rew.shape),
+          repl_wkr_boot,
           self.wkr_goal_val(feat_goal_wkr, 2),
           self.wkr_goal_slowval(feat_goal_wkr, 2),
           self.wkr_goal_valnorm,

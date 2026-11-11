@@ -644,6 +644,40 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0374-h0403: V + goal hold until reached or 32 steps (2026-11-12 00:35, array 4812978)
+
+`director director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch`, 6 tasks x 5 seeds, seed-major
+(`sbatch/goalhold_params.txt`), A100 `%8`, `--nice=100`, `RUN_ENVS=4 DMC_PROPRIO=False`. Worker lr
+is the new default 1e-4. No separate V-base arm (user): compare with the old V runs (lr 4e-5),
+so a difference can come from the hold rule or from the learning rate.
+
+What changes vs V (block `goal_hold_reach`):
+- The manager re-decides when the held goal is **reached** or after **32 steps** (no minimum hold).
+  Reached = cos_max(goal, deter) >= 0.8 x ceiling; the ceiling is a running mean of
+  cos_max(decode(encode(state)), state) on replay states (`goal/reach_ceil`), so the threshold is
+  not tuned per task. Same rule in the env step, imagination and replay.
+- Manager return: rewards summed over the hold (`mgr_reward_agg: sum`), discount gamma^hold in
+  imagination and now also in replay (replay used a flat 0.99 per decision before).
+- Worker: the return for a goal ends at the switch and bootstraps from the value under the old
+  goal; the arrival reward is scored against the goal that was in force. `imag_length` 32.
+
+Offline calibration (V and OG checkpoints, pin pad six + cartpole,
+`/work/DoyaU/vasilache/work/meetings/tce_investigation/reach/analysis_*.txt`): ceiling 0.92-0.94
+on solved pin pad seeds, 0.81 on failed, 0.97 on cartpole. At 0.8 x ceiling on V pin pad six:
+fires on 34-38% of steps on the goal cell, 6-7% one cell away, 0.2-1.5% two or more cells away;
+with a hand-fixed pad goal it fires in 53-65% of the trials that reach the pad, mostly after
+arrival. On V cartpole 15% of goals already count as reached when chosen. cos_max, plain cosine
+and MSE separate reached from not reached equally well (AUC 0.93-0.98), so cos_max stays.
+
+Hypothesis: the fixed 8-step hold makes the manager abandon far pad goals (failed pin pad six
+seeds reach 5-15% of their pad goals in play but 46-100% with the goal held), and caps the score
+of solved seeds. Expected: more pin pad six seeds solved than V's 1/5 and a higher late mean on
+solved seeds; hopper is the risk (earlier variable-length runs hurt it).
+Watch: `goal/hold_len_imag`, `goal/hold_len_repl`, `goal/hold_reach_frac`, `goal/hold_len1_frac`,
+`goal/reach_ceil`. Tests: `embodied/tests/test_goal_hold_reach.py` (7 pass).
+Known: 12 older tests in test_variable_goals / test_block_pooled_* / test_hrl_package fail on the
+unmodified tree too (a metrics line on stub norms, and `fromto` missing from a module list).
+
 ### h0344-h0373: worker learning rate on V (2026-11-11, array 4809246)
 
 `director director_og wkr_ent_fixed wkr_v3 wkr_lr1e4 pubmatch`, 6 tasks x 5 seeds, seed-major
