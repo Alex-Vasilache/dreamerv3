@@ -19,18 +19,17 @@ All sim; no robot or phone actions were taken.
 - **P on IAS also weakens the case for any ratio control.** Late ratios of
   290, 111 and 44 gave the same late level (2.2-2.3). Pooled IAS uncapped vs
   schedule is 2.5 vs 2.0, within one SD.
-- **Q** (IAS array 205138, e44420-e44443, fresh seeds, n = 8) is running and
-  finishes around noon. It compares uncapped, schedule, and uncapped plus
-  dropout 0.05 and 2 rollouts. Analyse with `scan3.py`, arms in that order
-  per seed.
+- **Q** (IAS array 205138, fresh seeds, 20/24 done) confirms N. Pooled N + Q
+  (n = 14-15): uncapped + dropout 0.05 + 2 rollouts has late 1.5 vs 1.7
+  with the schedule (p = 0.20) and 2.5 uncapped (p = 0.007), and is faster
+  than the schedule (t90 2.6 vs 3.0, p = 0.04).
 
-## Recommended recipe (sim), pending Q
+## Recommended recipe (sim, confirmed)
 
 This is the pick without the ratio schedule, plus
 `--agent.dyn.rssm.drop 0.05 --agent.imag_repeat 2`.
 
-If Q does not reproduce N, use the pick uncapped plus dropout 0.05 alone. In
-that case the schedule is not worth keeping either.
+Next: try it live.
 
 ## To do by hand
 
