@@ -1,0 +1,104 @@
+
+== crit_s0_4M: score 390 over 2 ep
+goals: 66% on a pad; pad goal counts {'1': 55, '2': 42, '3': 104, '4': 21, '5': 63, '6': 43}; goal position entropy 5.64 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 4/255
+worker: reaches goal within the hold 25%; median end distance 3; steps standing on goal 5%
+presses: 456 (114 per 1000 steps); accidental (not the goal pad) 52%
+progress: max prefix reached 6; time at prefix>=k: 1:78.5% 2:54.4% 3:38.0% 4:31.6% 5:14.6% 6:8.3%; distinct pad windows seen 92
+goal bar (sequence drawn in the goal image): length dist {0: 7, 1: 7, 2: 2, 3: 6, 4: 8, 5: 30, 6: 440}; goal bar == current bar 0%; goal bar extends current by one pad 28%
+hash: 1549 cells visited; H(pos)=6.84 H(pos|cell)=0.53; H(last pad)=2.65 H(last|cell)=0.16 H(last|pos)=1.07; H(prefix)=2.64 H(prefix|cell)=0.18; H(window2|cell)=0.23 vs H(window2)=3.42
+hash cell -> last pad: ep1 accuracy 91% on the 66% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 69% on the 66% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 99% (majority 24%)
+linear probe deter->prefix: test acc 100% (majority 24%)
+linear probe deter->window length: test acc 97% (majority 71%)
+
+== crit_s1_2M: score 0 over 2 ep
+goals: 10% on a pad; pad goal counts {'1': 12, '2': 14, '3': 16, '4': 1, '5': 9}; goal position entropy 5.30 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 3/255
+worker: reaches goal within the hold 53%; median end distance 1; steps standing on goal 13%
+presses: 22 (6 per 1000 steps); accidental (not the goal pad) 68%
+progress: max prefix reached 0; time at prefix>=k: 1:0.0% 2:0.0% 3:0.0% 4:0.0% 5:0.0% 6:0.0%; distinct pad windows seen 21
+goal bar (sequence drawn in the goal image): length dist {0: 76, 1: 14, 2: 66, 3: 32, 4: 49, 5: 16, 6: 247}; goal bar == current bar 1%; goal bar extends current by one pad 0%
+hash: 1535 cells visited; H(pos)=5.54 H(pos|cell)=0.48; H(last pad)=1.81 H(last|cell)=0.15 H(last|pos)=1.38; H(prefix)=-0.00 H(prefix|cell)=0.00; H(window2|cell)=0.20 vs H(window2)=2.46
+hash cell -> last pad: ep1 accuracy 52% on the 12% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 48% on the 12% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 36% (majority 46%)
+linear probe deter->prefix: test acc 100% (majority 100%)
+linear probe deter->window length: test acc 60% (majority 68%)
+
+== ent_s0_4M: score 440 over 2 ep
+goals: 67% on a pad; pad goal counts {'1': 34, '2': 87, '3': 116, '4': 10, '5': 71, '6': 18}; goal position entropy 5.22 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 1/255
+worker: reaches goal within the hold 23%; median end distance 3; steps standing on goal 7%
+presses: 425 (106 per 1000 steps); accidental (not the goal pad) 55%
+progress: max prefix reached 6; time at prefix>=k: 1:85.2% 2:61.2% 3:41.6% 4:34.9% 5:15.8% 6:10.0%; distinct pad windows seen 49
+goal bar (sequence drawn in the goal image): length dist {0: 42, 1: 33, 2: 32, 3: 40, 4: 32, 5: 42, 6: 279}; goal bar == current bar 1%; goal bar extends current by one pad 17%
+hash: 1284 cells visited; H(pos)=6.60 H(pos|cell)=0.60; H(last pad)=2.66 H(last|cell)=0.23 H(last|pos)=0.94; H(prefix)=2.65 H(prefix|cell)=0.22; H(window2|cell)=0.26 vs H(window2)=3.11
+hash cell -> last pad: ep1 accuracy 89% on the 75% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 70% on the 75% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 100% (majority 24%)
+linear probe deter->prefix: test acc 100% (majority 24%)
+linear probe deter->window length: test acc 100% (majority 53%)
+
+== ent_s1_2M: score 0 over 2 ep
+goals: 60% on a pad; pad goal counts {'1': 46, '2': 24, '3': 152, '4': 32, '5': 28, '6': 17}; goal position entropy 5.66 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 77/255
+worker: reaches goal within the hold 16%; median end distance 5; steps standing on goal 7%
+presses: 198 (50 per 1000 steps); accidental (not the goal pad) 80%
+progress: max prefix reached 2; time at prefix>=k: 1:12.6% 2:1.8% 3:0.0% 4:0.0% 5:0.0% 6:0.0%; distinct pad windows seen 182
+goal bar (sequence drawn in the goal image): length dist {0: 51, 1: 101, 2: 59, 3: 59, 4: 14, 5: 25, 6: 191}; goal bar == current bar 0%; goal bar extends current by one pad 0%
+hash: 2133 cells visited; H(pos)=6.76 H(pos|cell)=0.58; H(last pad)=2.42 H(last|cell)=0.40 H(last|pos)=1.66; H(prefix)=0.62 H(prefix|cell)=0.12; H(window2|cell)=0.60 vs H(window2)=4.22
+hash cell -> last pad: ep1 accuracy 48% on the 35% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 38% on the 35% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 99% (majority 35%)
+linear probe deter->prefix: test acc 97% (majority 82%)
+linear probe deter->window length: test acc 99% (majority 86%)
+
+== sqrt_s0_2M: score 0 over 2 ep
+goals: 31% on a pad; pad goal counts {'1': 71, '2': 10, '3': 45, '4': 12, '5': 16, '6': 2}; goal position entropy 5.36 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 44/255
+worker: reaches goal within the hold 49%; median end distance 1; steps standing on goal 17%
+presses: 82 (20 per 1000 steps); accidental (not the goal pad) 74%
+progress: max prefix reached 2; time at prefix>=k: 1:10.3% 2:0.1% 3:0.0% 4:0.0% 5:0.0% 6:0.0%; distinct pad windows seen 66
+goal bar (sequence drawn in the goal image): length dist {0: 17, 1: 7, 2: 15, 3: 26, 4: 43, 5: 124, 6: 268}; goal bar == current bar 0%; goal bar extends current by one pad 0%
+hash: 1233 cells visited; H(pos)=5.40 H(pos|cell)=0.87; H(last pad)=1.77 H(last|cell)=0.13 H(last|pos)=0.96; H(prefix)=0.49 H(prefix|cell)=0.06; H(window2|cell)=0.15 vs H(window2)=2.34
+hash cell -> last pad: ep1 accuracy 91% on the 59% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 58% on the 59% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 95% (majority 61%)
+linear probe deter->prefix: test acc 100% (majority 88%)
+linear probe deter->window length: test acc 91% (majority 80%)
+
+== sqrt_s0_4M: score 440 over 2 ep
+goals: 61% on a pad; pad goal counts {'1': 19, '2': 116, '3': 113, '4': 29, '5': 21, '6': 6}; goal position entropy 5.62 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 5/255
+worker: reaches goal within the hold 18%; median end distance 4; steps standing on goal 3%
+presses: 542 (136 per 1000 steps); accidental (not the goal pad) 70%
+progress: max prefix reached 6; time at prefix>=k: 1:81.2% 2:55.3% 3:38.7% 4:31.9% 5:13.0% 6:8.6%; distinct pad windows seen 44
+goal bar (sequence drawn in the goal image): length dist {0: 8, 1: 2, 2: 50, 3: 11, 4: 31, 5: 12, 6: 386}; goal bar == current bar 0%; goal bar extends current by one pad 1%
+hash: 1138 cells visited; H(pos)=6.53 H(pos|cell)=0.47; H(last pad)=2.64 H(last|cell)=0.11 H(last|pos)=1.01; H(prefix)=2.61 H(prefix|cell)=0.10; H(window2|cell)=0.14 vs H(window2)=3.20
+hash cell -> last pad: ep1 accuracy 95% on the 78% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 78% on the 78% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 100% (majority 26%)
+linear probe deter->prefix: test acc 100% (majority 26%)
+linear probe deter->window length: test acc 99% (majority 74%)
+
+== sqrt_s1_2M: score 0 over 2 ep
+goals: 24% on a pad; pad goal counts {'1': 12, '2': 9, '3': 63, '4': 5, '5': 15, '6': 14}; goal position entropy 5.85 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 26/255
+worker: reaches goal within the hold 51%; median end distance 1; steps standing on goal 17%
+presses: 60 (15 per 1000 steps); accidental (not the goal pad) 85%
+progress: max prefix reached 2; time at prefix>=k: 1:5.9% 2:0.1% 3:0.0% 4:0.0% 5:0.0% 6:0.0%; distinct pad windows seen 61
+goal bar (sequence drawn in the goal image): length dist {0: 66, 1: 13, 2: 51, 3: 128, 4: 128, 5: 30, 6: 84}; goal bar == current bar 0%; goal bar extends current by one pad 0%
+hash: 1130 cells visited; H(pos)=6.10 H(pos|cell)=0.70; H(last pad)=2.14 H(last|cell)=0.28 H(last|pos)=1.25; H(prefix)=0.33 H(prefix|cell)=0.05; H(window2|cell)=0.32 vs H(window2)=2.87
+hash cell -> last pad: ep1 accuracy 39% on the 26% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 45% on the 26% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 100% (majority 68%)
+linear probe deter->prefix: test acc 100% (majority 100%)
+linear probe deter->window length: test acc 99% (majority 93%)
+
+== sqrt_s2_2M: score 0 over 2 ep
+goals: 3% on a pad; pad goal counts {'1': 11, '2': 2, '3': 1, '4': 3}; goal position entropy 3.35 bits (uniform over 168 cells = 7.39); goal image clarity (darkest cell mean) 54/255
+worker: reaches goal within the hold 46%; median end distance 1; steps standing on goal 16%
+presses: 10 (2 per 1000 steps); accidental (not the goal pad) 90%
+progress: max prefix reached 1; time at prefix>=k: 1:0.1% 2:0.0% 3:0.0% 4:0.0% 5:0.0% 6:0.0%; distinct pad windows seen 11
+goal bar (sequence drawn in the goal image): length dist {0: 3, 1: 3, 2: 56, 3: 92, 4: 274, 5: 59, 6: 13}; goal bar == current bar 0%; goal bar extends current by one pad 0%
+hash: 362 cells visited; H(pos)=2.71 H(pos|cell)=0.58; H(last pad)=1.46 H(last|cell)=0.20 H(last|pos)=1.19; H(prefix)=0.01 H(prefix|cell)=0.00; H(window2|cell)=0.38 vs H(window2)=1.96
+hash cell -> last pad: ep1 accuracy 31% on the 65% of ep1 steps whose cell was seen in ep0
+hash cell -> pos: ep1 accuracy 63% on the 65% of ep1 steps whose cell was seen in ep0
+linear probe deter->last pad: test acc 35% (majority 63%)
+linear probe deter->prefix: test acc 100% (majority 100%)
+linear probe deter->window length: test acc 96% (majority 63%)

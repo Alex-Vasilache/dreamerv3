@@ -692,7 +692,8 @@ defaults:
     wkr_own_advnorm: False
     wkr_advnorm: {impl: none, rate: 0.01, limit: 1e-8}
     wkr_own_opt: False
-    wkr_opt: {lr: 4e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
+    # lr 1e-4 (Director's/OG's) since 2026-11-11; runs before that used 4e-5 (block wkr_lr4e5).
+    wkr_opt: {lr: 1e-4, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, momentum: True, wd: 0.0, schedule: const, warmup: 1000, anneal: 0}
     # Manager and worker actor-critics both use these DreamerV3 defaults: the
     # ``perc`` retnorm scales the advantage by the 5-95 percentile return range,
     # ``valnorm: none`` trains the symexp_twohot critic on RAW returns (the head's
@@ -1579,7 +1580,8 @@ wkr_ent_fixed:
 #     the fixed 3e-4 entropy was calibrated against this scale.
 #   wkr_v3: every worker-side v3 setting: + no advantage normalization, EMA
 #     target critic (0.02 every step, slow-reg 1.0, no slow targets), LaProp
-#     lr 4e-5 without weight decay.
+#     without weight decay, lr 1e-4 (OG's) since 2026-11-11 -- every V run before
+#     that (e19xx, e20xx, e95xx, h0001-h0343) used v3's 4e-5: add wkr_lr4e5 to reproduce.
 wkr_v3_retnorm:
   agent:
     retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
@@ -1667,6 +1669,10 @@ tce_hash:
 wkr_lr1e4:
   agent:
     wkr_opt: {lr: 1e-4}
+# Restores the pre-2026-11-11 worker lr (v3's 4e-5) for reproducing old V runs.
+wkr_lr4e5:
+  agent:
+    wkr_opt: {lr: 4e-5}
 
 tce_critic:
   agent:

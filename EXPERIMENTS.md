@@ -653,6 +653,10 @@ v3's 4e-5, weight decay stays 0. Why: V changed advantage norm, target critic an
 once vs R and none was tested alone; R vs V on 3 seeds is not significant either way. Compare
 to V (clear tasks 70.7, all six 54.1, 5 seeds). Expected: within noise of V unless the slower
 worker is what recovered DMC.
+**Cancelled 2026-11-11 (user) before any run reached 1M** (tasks 0-7 had started, then were
+requeue-held for the TCE critic; partial dirs archived). Instead the user made worker lr 1e-4
+the DEFAULT (`defaults.agent.wkr_opt.lr`; `wkr_lr4e5` restores the old value) as the minimal
+change from pure Director. Untested: the new V base needs its own baseline runs.
 
 ### h0314-h0343: TCE as a reward with its own critic, on V (2026-11-11 02:50, array 4809330)
 
@@ -670,10 +674,19 @@ Checks: train/fromto/imag_bonus vs train/fromto/real_bonus (a lasting gap = imag
 novelty), mgr_novel_adv share after first reward. Compare to V (clear 70.7, all six 54.1, pin pad
 six 13.6% of max) and OG. CPU debug smoke 11-11 02:45 ok (novel critic trains, both bonuses
 logged). The wkr_lr1e4 array 4809246 was requeue-held to give this arm the A100s (user).
+**Stopped 2026-11-11 23:00 (user), 16/30 finished** (seeds 0-2 all tasks except s2 DMC partial;
+the rest cancelled, all archived). Late 3.5-4M vs V / TCE sqrt: pin pad four 293 (311/317), five
+259 (278/260), six 135, 2/3 solved (40/127), cartpole 686 (743/755), cheetah 537 (536/577), hopper
+283 n=2 (293/260). Mechanism ran as designed (imag_bonus > real_bonus on every run) but gave no
+gain beyond V except pin pad six (p=0.16). Note: it ADDS to Director's expl reward (mgr_novel_weight
+-1 = same as mgr_expl_weight) and per-channel retnorm keeps its share constant even when the real
+bonus is ~0.03 (cartpole) -> likely the cartpole cost. Diagnosis of why TCE does not help, and the
+next plan (goal holding until reached + surprise reward): docs/HANDOFF_2026-11-11_goalhold_surprise.md.
 
-### Reserved: h0313 greedy/sampled eval of 4M checkpoints (sbatch/run_eval_final.sbatch,
-`agent.eval_greedy`), h0314-h0343 TCE as a reward with its own critic on V (`tce_critic`:
-hash -> hash from-to counts, decision-aligned, outcome-only; smoke jobs pending 11-11).
+### h0313: greedy vs sampled eval of 4M checkpoints (sbatch/run_eval_final.sbatch, `agent.eval_greedy`)
+240 jobs (OG, V, US-SOM, TCE sqrt x 6 tasks x 5 seeds x {greedy, sampled}; `sbatch/h0313_eval_params.txt`),
+array 4812471 on short-a100. Never started (priority) and cancelled 2026-11-11 (user). The CPU smoke
+reached step 3390 then died silently at 03:19 without an episode score -- re-smoke before reuse.
 
 ### h0253-h0312: extra seeds for US-SOM / TCE sqrt 1x16 / TCE-KL c=10 + floor (2026-11-09, array 4807344)
 
