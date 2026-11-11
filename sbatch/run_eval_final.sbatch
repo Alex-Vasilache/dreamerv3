@@ -35,8 +35,8 @@ ENV_FLAGS=()
 case "$TASK" in
   dmc_*) ENV_FLAGS=(--env.dmc.image True --env.dmc.proprio False --env.dmc.size 64 64) ;;
 esac
-# Pin pad episodes are 2000 steps, DMC 1000: 10 episodes per env x 4 envs.
-STEPS=${STEPS:-$([ "${TASK%%_*}" = pinpad ] && echo 80000 || echo 40000)}
+# Pin pad episodes are 2000 steps, DMC 1000: 3 episodes per env x 4 envs = 12 episodes.
+STEPS=${STEPS:-$([ "${TASK%%_*}" = pinpad ] && echo 24000 || echo 12000)}
 source /apps/unit/DoyaU/vasilache/apps/source_dreamerv3_env.sh
 export MUJOCO_GL=egl
 [ "${KEEP_REF_CONV:-0}" = 1 ] || unset DREAMERV3_CONV_IMPL   # V100: keep the reference conv (native needs Route A)

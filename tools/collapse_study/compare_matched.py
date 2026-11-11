@@ -89,6 +89,14 @@ SETS = {
         ('hash', 'V + US-SOM + TCE sqrt', '#009E73',
          '[eh]????_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
     ],
+    'tcecrit': [   # 11-11: TCE as reward + own critic on V (h0314-h0343) vs V, OG, and TCE sqrt (direct, on US-SOM)
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('V', 'V', '#56B4E9', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
+        ('hash', 'V + US-SOM + TCE sqrt (direct)', '#009E73',
+         'e95[0-2]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-fromto_dir-tce_hash-pubmatch_s*'),
+        ('crit', 'V + TCE critic', '#0072B2',
+         'h0[3][1-4]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-fromto_dir-tce_hash-tce_critic-pubmatch_s*'),
+    ],
     'ogdv3': [   # meeting 11-10: the starting point
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('dv3', 'DreamerV3 (flat)', '#000000', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
@@ -237,6 +245,7 @@ STYLE = {('wkrstory', 'dv3'): '--', ('wkrstory', 'R'): '-.', ('family', 'og'): '
 MARKERS = {('ogdv3', 'og'): 'o', ('ogdv3', 'dv3'): 's', ('wkrstory', 'og'): 'o', ('wkrstory', 'ent'): 's', ('wkrstory', 'R'): '^', ('wkrstory', 'V'): 'D',
            ('ogustce_all', 'V'): 'D', ('ogustce_all', 'og'): 'o', ('ogustce_all', 'even'): 's', ('ogustce_all', 'hash'): '^',
            ('ogustce', 'og'): 'o', ('ogustce', 'even'): 's', ('ogustce', 'hash'): '^',
+           ('tcecrit', 'og'): 'o', ('tcecrit', 'V'): 'D', ('tcecrit', 'hash'): '^', ('tcecrit', 'crit'): 's',
            ('ogdv3v', 'og'): 'o', ('ogdv3v', 'dv3'): 's', ('ogdv3v', 'V'): '^'}
 FINISHED_ONLY = {'ogustce_all'}
 LATE = {'ogdv3': 1e6, 'wkrstory': 1e6, 'ogustce_all': 1e6, 'ogustce': 1e6, 'family': 1e6, 'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
