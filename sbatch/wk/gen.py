@@ -282,6 +282,10 @@ P_ARMS = [
 SEEDS_Q = [821, 822, 823, 824, 825, 826, 827, 828]
 Q_ARMS = [N_ARMS[0], N_ARMS[1], N_ARMS[2]]
 
+# Round R (11-11): C (uncapped + dropout 0.05 + 2 rollouts) on the slower
+# Saion GPUs, same seeds as P's uncapped and scheduled arms there, n = 8.
+R_ARMS = [N_ARMS[2]]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -523,6 +527,12 @@ def main():
     gpu = {'pv': 'v100', 'pp': 'p100', 'pi': 'any'}[rnd]
     for seed in SEEDS8:
       for arm, flags in P_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
+  elif rnd in ('rv', 'rp'):
+    gpu = {'rv': 'v100', 'rp': 'p100'}[rnd]
+    for seed in SEEDS8:
+      for arm, flags in R_ARMS:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
   elif rnd == 'qi':
