@@ -283,3 +283,49 @@ parallel:
    time and no target ratio: the learner trains as long as training still
    improves prediction of experience it has not seen, so the ratio follows
    the data rather than the GPU. Smoke e44232 (V100, 8 min).
+
+### Wed 11-11 morning: N and P results
+
+Figure `figs/study/np.png`. Late = crossings/min over minutes 30-60, mean ±
+SD. Achieved ratio = `fps/train` / 65 Hz over the second half of the run.
+
+Round N (IAS A5000, n = 8 per arm):
+
+| arm | t90 (min) | late | achieved ratio |
+|---|---|---|---|
+| uncapped | 2.8 ± 0.7 | 2.6 ± 0.9 | 287 |
+| hand-set schedule | 2.9 ± 0.4 | 1.7 ± 0.7 | 114 |
+| uncapped + dropout 0.05 + 2 rollouts | 2.6 ± 0.5 | 1.6 ± 0.9 | 248 |
+| uncapped + dropout 0.05 + 4 rollouts | 3.8 ± 1.0 | 1.2 ± 0.8 | 167 |
+
+Round P (Saion, e44300-e44371, V100 and P100 n = 8 each, pooled n = 16):
+
+| arm | t90 V100 / P100 | late V100 / P100 | t90, pooled | late, pooled |
+|---|---|---|---|---|
+| uncapped | 3.0 / 3.1 | 1.8 / 1.7 | 3.1 ± 0.4 | 1.8 ± 0.5 |
+| hand-set schedule | 2.8 / 3.1 | 1.7 / 2.0 | 2.9 ± 0.6 | 1.8 ± 0.8 |
+| learning-progress control | 3.1 / 3.1 | 3.4 / 3.7 | 3.1 ± 0.6 | 3.6 ± 1.5 |
+| learning-progress + dropout 0.05 | 3.2 / 3.1 | 2.8 / 3.5 | 3.2 ± 0.4 | 3.2 ± 1.3 |
+
+Reading.
+
+- The drift needs a fast learner. At Saion's pace (uncapped ratio about
+  250-280) uncapped and scheduled are the same late (1.8 vs 1.8); on IAS
+  (about 290 late, up to 570 early) uncapped drifts (2.6 vs 1.7).
+- Dropout 0.05 plus 2 rollouts removes the IAS drift without any ratio limit:
+  1.6 late, t90 2.6, at a ratio of about 250. Rollouts also cost compute per
+  update, so part of this is a lower achieved ratio (287 to 248), but not
+  most: the schedule needed 114 for the same late value. Four rollouts is
+  calmer still (1.2) but costs a minute to t90, through a ratio of 167.
+- Learning-progress control as built is worse than both baselines (3.6 late,
+  twice uncapped). Held-out world-model loss stops improving after about
+  15-20 min, so the controller drives the ratio to its floor of 32-40 and
+  holds it there (lower left of the figure); a policy trained that rarely
+  drifts more, not less. The probe also costs pace (start ratio 239 / 177 vs
+  about 253 / 280 uncapped on V100 / P100). World-model progress is the wrong
+  signal for how much the actor-critic should train, so this route is parked.
+- Recipe without a hand-set ratio (sim): the pick, uncapped, plus
+  `--agent.dyn.rssm.drop 0.05 --agent.imag_repeat 2` (`sbatch/wk/gen.py`
+  N_ARMS `unc_d05_r2`). IAS round P (array 204901, same four P
+  arms, n = 8) repeats the comparison on the fast learner; results below if
+  in before noon.
