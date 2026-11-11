@@ -365,3 +365,30 @@ C vs B late p = 0.20 (same), t90 p = 0.04 (C faster); B vs A late p = 0.018.
 Reading. Q reproduces N. C is as calm late as the hand-set schedule, learns
 faster than it, and sets nothing by hand. It is the recipe for live testing:
 the pick, uncapped, plus `--agent.dyn.rssm.drop 0.05 --agent.imag_repeat 2`.
+
+### Wed 11-11: R, the best option on Saion GPUs (per-GPU comparison)
+
+C (uncapped + dropout 0.05 + 2 rollouts) on V100 (e44450-e44457) and P100
+(e44460-e44467), seeds 811-818 as P's A and B there. Figure
+`figs/study/gpu_abc.png`. Ratio = achieved, second half of the run.
+Correction: the uncapped P100 ratio is 174, not ~280 as written above.
+
+| GPU | setting | n | ratio | t90 (min) | late |
+|---|---|---|---|---|---|
+| V100 | A uncapped | 8 | 245 | 3.0 ± 0.5 | 1.8 ± 0.6 |
+| V100 | B capped (128 after 5 min) | 8 | 123 | 2.8 ± 0.5 | 1.7 ± 0.9 |
+| V100 | C uncapped + dropout + 2 rollouts | 8 | 167 | 3.1 ± 0.4 | 1.6 ± 0.7 |
+| P100 | A | 8 | 174 | 3.1 ± 0.4 | 1.7 ± 0.5 |
+| P100 | B | 8 | 122 | 3.1 ± 0.6 | 2.0 ± 0.6 |
+| P100 | C | 8 | 115 | 3.8 ± 0.5 | 2.0 ± 1.1 |
+| IAS | A | 15 | 285 | 2.7 ± 0.6 | 2.5 ± 0.8 |
+| IAS | B | 15 | 113 | 3.0 ± 0.5 | 1.7 ± 0.6 |
+| IAS | C | 14 | 250 | 2.6 ± 0.5 | 1.5 ± 0.8 |
+
+Reading. The benefit of C is specific to the fast GPU. On Saion there is no
+late drift to remove (A = B = C late, p > 0.5), and the second rollout costs
+compute: the ratio falls to 167 (V100) and 115 (P100). On P100 that makes C
+slower to balance (3.8 vs 3.1 min; C vs A p = 0.02, C vs B p = 0.05). So C
+fixes the drift where the learner is fast, and costs speed where it is slow.
+Dropout alone had no speed cost at any GPU in M (with the schedule); uncapped
+dropout alone is the untested candidate that might keep both.
