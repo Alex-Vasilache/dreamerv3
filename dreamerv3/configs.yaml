@@ -1803,7 +1803,11 @@ robot:
   # in e30103; 1 m keeps the episodes longer. Since e30108 (2026-11-05) 0.2 m,
   # as the live demo uses, driven back at full wheel speed until ~10 cm out
   # (home_ramp) so the wait between episodes stays short.
-  env.robot.home_radius: 2436
+  # Live default since 2026-11-11 (user, 11-09; e43793): no drive home --
+  # the stand-still wait was too annoying -- and no 20 s episode resets.
+  # robot_sim puts both back so sim sweeps stay comparable.
+  env.robot.home_radius: 0.0
+  env.robot.episode_s: 1000000
   env.robot.home_speed: 1.0
   env.robot.home_ramp: 1200
   # No terminations: the body cannot self-right under proportional drive, and
@@ -2181,6 +2185,10 @@ pubmatch:
 #   --configs robot [robot_command] robot_sim [--env.robot.hz 25]
 robot_sim:
   env.robot.sim: True
+  # Sim keeps episodes and the drive home (0.2 m) that the sweeps used; live
+  # `robot` turns both off.
+  env.robot.home_radius: 2436
+  env.robot.episode_s: 20.0
   env.robot.use_logdir: False
   run.steps: 1e7
   # A snapshot of the agent every 5 min of real time at 65 Hz, for videos of
