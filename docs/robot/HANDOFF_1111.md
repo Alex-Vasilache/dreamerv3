@@ -34,7 +34,7 @@ that case the schedule is not worth keeping either.
 
 ## To do by hand
 
-- `git push` from the robot checkout. About 22 local commits, including the
+- `git push` from the robot checkout. About 21 local commits, including the
   face-rework merge, rounds M/N/P/Q and progress control.
 - Face: push to the phone (`push_python.sh` + `adb push face.html`).
 - IAS: the runs of rounds M, N, P and Q are still in `robot_runs`. They are
