@@ -1,0 +1,30 @@
+V_six_s0_4M_solved: ceiling 0.92 | AUC play cell vs 2+: 0.96, hand pad vs 2+: 0.81
+  100% (tau 0.92): play: on cell 13%, 1 cell 0%, 2+ cells 0.0% | hand: on pad 0%, 1 cell 0%, 2+ cells 0.0% | fires at hold start 0%, any time in 8 steps 4%
+  90% (tau 0.83): play: on cell 28%, 1 cell 3%, 2+ cells 0.1% | hand: on pad 7%, 1 cell 3%, 2+ cells 0.1% | fires at hold start 0%, any time in 8 steps 9%
+  80% (tau 0.74): play: on cell 34%, 1 cell 7%, 2+ cells 0.2% | hand: on pad 40%, 1 cell 29%, 2+ cells 8.8% | fires at hold start 0%, any time in 8 steps 12%
+  70% (tau 0.65): play: on cell 42%, 1 cell 12%, 2+ cells 0.7% | hand: on pad 56%, 1 cell 75%, 2+ cells 29.0% | fires at hold start 0%, any time in 8 steps 18%
+OG_six_s4_4M_solved: ceiling 0.92 | AUC play cell vs 2+: 0.98, hand pad vs 2+: 0.94
+  100% (tau 0.92): play: on cell 24%, 1 cell 1%, 2+ cells 0.0% | hand: on pad 0%, 1 cell 0%, 2+ cells 0.0% | fires at hold start 0%, any time in 8 steps 5%
+  90% (tau 0.83): play: on cell 51%, 1 cell 8%, 2+ cells 0.1% | hand: on pad 5%, 1 cell 1%, 2+ cells 0.0% | fires at hold start 0%, any time in 8 steps 13%
+  80% (tau 0.74): play: on cell 57%, 1 cell 25%, 2+ cells 0.6% | hand: on pad 20%, 1 cell 7%, 2+ cells 0.1% | fires at hold start 0%, any time in 8 steps 17%
+  70% (tau 0.65): play: on cell 62%, 1 cell 36%, 2+ cells 1.5% | hand: on pad 41%, 1 cell 18%, 2+ cells 1.1% | fires at hold start 0%, any time in 8 steps 22%
+V_six_s1_2M_failed: ceiling 0.81 | AUC play cell vs 2+: 0.93, hand pad vs 2+: 0.81
+  100% (tau 0.81): play: on cell 0%, 1 cell 0%, 2+ cells 0.0% | hand: on pad 3%, 1 cell 1%, 2+ cells 0.0% | fires at hold start 0%, any time in 8 steps 0%
+  90% (tau 0.73): play: on cell 11%, 1 cell 0%, 2+ cells 0.0% | hand: on pad 22%, 1 cell 8%, 2+ cells 2.6% | fires at hold start 1%, any time in 8 steps 9%
+  80% (tau 0.65): play: on cell 38%, 1 cell 6%, 2+ cells 1.5% | hand: on pad 41%, 1 cell 25%, 2+ cells 9.0% | fires at hold start 4%, any time in 8 steps 34%
+  70% (tau 0.57): play: on cell 71%, 1 cell 33%, 2+ cells 8.8% | hand: on pad 66%, 1 cell 36%, 2+ cells 22.0% | fires at hold start 16%, any time in 8 steps 65%
+OG_six_s0_2M_failed: ceiling 0.81 | AUC play cell vs 2+: 0.97, hand pad vs 2+: 0.93
+  100% (tau 0.81): play: on cell 0%, 1 cell 0%, 2+ cells 0.0% | hand: on pad 13%, 1 cell 3%, 2+ cells 1.5% | fires at hold start 0%, any time in 8 steps 0%
+  90% (tau 0.73): play: on cell 15%, 1 cell 2%, 2+ cells 0.0% | hand: on pad 36%, 1 cell 16%, 2+ cells 4.8% | fires at hold start 2%, any time in 8 steps 9%
+  80% (tau 0.65): play: on cell 65%, 1 cell 24%, 2+ cells 1.0% | hand: on pad 69%, 1 cell 36%, 2+ cells 8.5% | fires at hold start 13%, any time in 8 steps 40%
+  70% (tau 0.57): play: on cell 92%, 1 cell 67%, 2+ cells 9.8% | hand: on pad 90%, 1 cell 55%, 2+ cells 14.5% | fires at hold start 29%, any time in 8 steps 62%
+V_cart_s0_4M: ceiling 0.97
+  100% (tau 0.97): fires at hold start 0%, any time in 8 steps 1%
+  90% (tau 0.87): fires at hold start 9%, any time in 8 steps 11%
+  80% (tau 0.77): fires at hold start 15%, any time in 8 steps 18%
+  70% (tau 0.68): fires at hold start 21%, any time in 8 steps 24%
+OG_cart_s0_4M: ceiling 0.97
+  100% (tau 0.97): fires at hold start 21%, any time in 8 steps 27%
+  90% (tau 0.87): fires at hold start 51%, any time in 8 steps 53%
+  80% (tau 0.78): fires at hold start 59%, any time in 8 steps 62%
+  70% (tau 0.68): fires at hold start 63%, any time in 8 steps 66%
