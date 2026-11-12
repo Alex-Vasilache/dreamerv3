@@ -313,6 +313,33 @@ PF_ARMS = [
 ]
 
 
+# Round RF (11-12, catch reflex): PF c's threat critic falls from ~0.15 to
+# ~0.001 (median) within 10 min, so the absolute catch_tmax 0.2 fires on
+# 20-30% of steps in minutes 2-3 and never after minute 7; and T(a) held 16
+# steps predicts a crossing worse than 4 steps (offline AUC 0.62-0.65 vs
+# 0.76). On PF c's setup: a limit relative to the run (mean + 3 SD of log
+# T(a) over 10 s: the linear z of the first smokes was blown up for minutes
+# by the untrained critic's spikes), and a small search over the drive
+# (a + 0, +-0.25, +-0.5, +-1)
+# at 4, 8 and 16 steps (evaluated every 1, 2, 4 steps: ~4 ms each), against
+# the original slope step capped at 0.5. The CSV keeps every 16th row plus
+# every push, contact and correction (sim_phone_log_every 16). The phone
+# loop's BLAS is capped at one thread (sim_phone_threads 1): with the default
+# the RF smokes (e44600-e44603) ran the loop at 25-50 Hz instead of 65, so b
+# and c are rerun here with the same cap.
+RF_LOG = '--env.robot.sim_phone_log_every 16 --env.robot.sim_phone_threads 1'
+RF_COMMON = (f'{PF_BASE} {PF_IMPACT} {RF_LOG} --env.robot.catch_reflex True '
+             '--env.robot.catch_z 3 --env.robot.catch_zlog True')
+RF_ARMS = [
+    ('b', f'{PF_BASE} {PF_IMPACT} {RF_LOG}'),
+    ('c', f'{PF_BASE} {PF_IMPACT} {RF_LOG} {PF_REFLEX}'),
+    ('g4z', f'{RF_COMMON} --env.robot.catch_mode slope --env.robot.catch_dmax 0.5'),
+    ('s4z', f'{RF_COMMON} --env.robot.catch_mode search'),
+    ('s8z', f'{RF_COMMON} --env.robot.catch_mode search --env.robot.catch_steps 8 --env.robot.catch_every 2'),
+    ('s16z', f'{RF_COMMON} --env.robot.catch_mode search --env.robot.catch_steps 16 --env.robot.catch_every 4'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -600,6 +627,16 @@ def main():
     seeds, minutes = {'pfsmoke': ([1], 4), 'pfsmoke2': ([1], 4), 'pfv': (SEEDS4, 60),
                       'pfi': (SEEDS8[4:], 60)}[rnd]
     arms = PF_ARMS[2:] if rnd == 'pfsmoke2' else PF_ARMS
+    for seed in seeds:
+      for arm, flags in arms:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd in ('rfsmoke', 'rfsmoke2', 'rfv', 'rfi'):
+    # As PF: seeds 811-814 Saion V100, 815-818 IAS (pairs with PF b and c).
+    gpu = {'rfsmoke': 'p100', 'rfsmoke2': 'p100', 'rfv': 'v100', 'rfi': 'any'}[rnd]
+    seeds, minutes = {'rfsmoke': ([1], 8), 'rfsmoke2': ([1], 8), 'rfv': (SEEDS4, 60),
+                      'rfi': (SEEDS8[4:], 60)}[rnd]
+    arms = RF_ARMS[2:] if rnd == 'rfsmoke' else RF_ARMS
     for seed in seeds:
       for arm, flags in arms:
         lines.append(f'# {arm}')

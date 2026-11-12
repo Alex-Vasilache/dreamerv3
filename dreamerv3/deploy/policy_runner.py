@@ -193,8 +193,19 @@ class PolicyRunner:
     self._eff_next = None    # efference deter for the next step, if overridden
     self._eff_deter = None   # ... paired with the current last_post
     # The catch reflex (reflex()), off unless the trainer turns it on.
-    self.reflex_cfg = dict(on=False, tmax=0.5, eps=0.1, steps=4)
+    # Options (all off by default = the first version, 11-12): mode 'slope'
+    # or 'search', dmax, offsets, z, window, rising; see reflex().
+    self.reflex_cfg = dict(on=False, tmax=0.5, eps=0.1, steps=4, mode='slope',
+                           dmax=0.0, offsets='0.25,0.5,1', z=0.0,
+                           window=650, zlog=False, rising=False, every=1)
     self.reflex_last = 0.0
+    self.reflex_threat = 0.0   # T(a) of the intended command, last step
+    self.reflex_thr = 0.0      # the limit it was held against
+    self.reflex_ms = 0.0       # the reflex's time, last step
+    self._rstat = None         # running (n, mean, var) of T(a) for 'z'
+    self._rprev = None         # last step's T(a), for 'rising'
+    self._rcount = 0           # steps seen, for 'every'
+    self._rdelta = 0.0         # the last evaluation's drive change
     self._chosen = None
     self._applied = None
     self._theta = None
@@ -674,34 +685,126 @@ class PolicyRunner:
 
   def reflex(self, act):
     """The catch reflex (reflex_cfg 'on'; settings env.robot.catch_*): roll
-    the intended command `steps` steps through the world model, read the
-    threat critic's T(a), and with k(a) = T(a) - tmax > 0 step the drive
-    (both wheels together) back along k's slope, a' = a - k(a) / g with
-    g = (k(a + eps) - k(a - eps)) / 2 eps; skipped when |g| is tiny. Needs
-    emotion weights with the threat critic (cval). A learned safety filter
-    after ATACOM (Liu et al. 2025), with the world model for the physics:
-    it fires on a prediction and is only as good as the model."""
+    the intended command a for `steps` steps through the world model, read
+    the threat critic's T(a), and when T(a) is over the limit move the drive
+    (both wheels together) to lower it. Needs emotion weights with the
+    threat critic (cval). A learned safety filter after ATACOM (Liu et al.
+    2025), with the world model for the physics: it fires on a prediction
+    and is only as good as the model.
+
+    The limit: `tmax` (absolute), or with z > 0 relative to this run,
+    mean + z SD of T(a) (of log T(a) with `zlog`) over a running window of
+    `window` steps (an exponential average; silent for the first `window`
+    steps; see _reflex_limit). `rising`
+    fires only while T(a) is above its value one step before.
+
+    mode 'slope' (the first version): k(a) = T(a) - limit, step back along
+    its slope, a' = a - k(a) / g with g = (k(a + eps) - k(a - eps)) / 2 eps;
+    skipped when |g| is tiny; |a' - a| capped at dmax if dmax > 0.
+    mode 'search': try a + d for d in 0, +-offsets (both wheels, clipped)
+    in one batch, send the one closest to a whose T is under the limit,
+    else the one with the lowest T. Robust to a flat T along the drive.
+
+    every > 1: evaluate every `every` steps and in between add the last
+    evaluation's drive change to the new command (a held correction; the
+    rollout holds the command `steps` steps anyway), to bound the cost."""
     self.reflex_last = 0.0
+    self.reflex_ms = 0.0
     cfg, emo = self.reflex_cfg, self.emotion
     if (not cfg.get('on') or emo is None or not getattr(emo, 'has_threat', False)
         or getattr(self.policy, 'last_post', None) is None):
       return act
-    eps, tmax = float(cfg.get('eps', 0.1)), float(cfg.get('tmax', 0.5))
-    deter, stoch, _ = self.policy.last_post
-    a = np.asarray(act, np.float32)
-    cands = np.stack([a, a + eps, a - eps]).astype(np.float32)
+    every = max(1, int(cfg.get('every', 1) or 1))
+    self._rcount += 1
+    if (self._rcount - 1) % every:
+      if not self._rdelta:
+        return act
+      out = [float(min(1.0, max(-1.0, x + self._rdelta))) for x in act]
+      self.reflex_last = float(np.mean(np.subtract(out, act)))
+      return out
+    t0 = time.monotonic()
+    self._rdelta = 0.0
     try:
-      k = emo.threat_after(deter, stoch, cands, int(cfg.get('steps', 4))) - tmax
+      out = self._reflex(act, cfg, emo)
     except Exception as e:  # noqa: BLE001 -- never let the reflex stop the robot
       print('dreamerBridge: reflex failed: %s' % e)
+      out = act
+    self.reflex_ms = (time.monotonic() - t0) * 1e3
+    return out
+
+  def _reflex_limit(self, t, cfg):
+    """The limit for this step's T(a) = t, updating the running stats:
+    an exponential mean and variance over ~`window` steps, of log T with
+    'zlog' (T floored at 1e-4: scale-free, as the critic's level falls by
+    100x while the policy learns). After the warm-up each sample enters
+    capped at mean + 2 SD, so the spikes the reflex is for barely widen
+    the limit (a 20-step spike: ~5%); a lasting rise still moves it."""
+    z = float(cfg.get('z', 0.0) or 0.0)
+    if z <= 0:
+      return float(cfg.get('tmax', 0.5))
+    log = bool(cfg.get('zlog'))
+    x = float(np.log(max(t, 1e-4))) if log else t
+    window = max(2, int(cfg.get('window', 650)))
+    if self._rstat is None:
+      self._rstat = (0, x, 0.0)
+    n, mu, var = self._rstat
+    if n >= window:
+      limit = mu + z * np.sqrt(var)
+      x = min(x, mu + 2 * np.sqrt(var))
+    else:
+      limit = float('inf')
+    alpha = max(1.0 / window, 1.0 / (n + 1))
+    d = x - mu
+    mu += alpha * d
+    var = (1 - alpha) * (var + alpha * d * d)
+    self._rstat = (n + 1, mu, var)
+    return float(np.exp(limit)) if log and np.isfinite(limit) else float(limit)
+
+  def _reflex(self, act, cfg, emo):
+    mode = str(cfg.get('mode', 'slope') or 'slope')
+    steps = int(cfg.get('steps', 4))
+    deter, stoch, _ = self.policy.last_post
+    a = np.asarray(act, np.float32)
+    if mode == 'search':
+      offs = [float(x) for x in str(cfg.get('offsets', '0.25,0.5,1')).split(',')
+              if x.strip()]
+      deltas = np.array([0.0] + [s * o for o in sorted(offs) for s in (-1, 1)],
+                        np.float32)
+      cands = np.clip(a[None] + deltas[:, None], -1.0, 1.0).astype(np.float32)
+    elif mode == 'slope':
+      eps = float(cfg.get('eps', 0.1))
+      cands = np.stack([a, a + eps, a - eps]).astype(np.float32)
+    else:
+      raise ValueError('reflex mode %r' % mode)
+    T = np.asarray(emo.threat_after(deter, stoch, cands, steps), np.float64)
+    t0 = float(T[0])
+    limit = self._reflex_limit(t0, cfg)
+    prev, self._rprev = self._rprev, t0
+    self.reflex_threat, self.reflex_thr = t0, limit
+    if t0 <= limit or (cfg.get('rising') and prev is not None and t0 <= prev):
       return act
-    if k[0] <= 0:
-      return act
-    g = (k[1] - k[2]) / (2 * eps)
-    if abs(g) < 1e-6:
-      return act
-    delta = float(-k[0] / g)
-    out = [float(min(1.0, max(-1.0, x + delta))) for x in act]
+    if mode == 'search':
+      ok = np.flatnonzero(T <= limit)
+      if len(ok):   # the nearest safe one (after the clip), then the safest
+        dist = np.abs(cands[ok] - a[None]).mean(1)
+        best = int(ok[np.lexsort((T[ok], np.round(dist, 6)))[0]])
+      else:
+        best = int(np.argmin(T))
+      if best == 0:
+        return act
+      self._rdelta = float(deltas[best])
+      out = [float(min(1.0, max(-1.0, x + self._rdelta))) for x in act]
+    else:
+      k = T - limit
+      g = (k[1] - k[2]) / (2 * eps)
+      if abs(g) < 1e-6:
+        return act
+      delta = float(-k[0] / g)
+      dmax = float(cfg.get('dmax', 0.0) or 0.0)
+      if dmax > 0:
+        delta = float(np.clip(delta, -dmax, dmax))
+      self._rdelta = delta
+      out = [float(min(1.0, max(-1.0, x + delta))) for x in act]
     self.reflex_last = float(np.mean(np.subtract(out, act)))
     return out
 

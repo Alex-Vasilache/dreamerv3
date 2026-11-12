@@ -510,7 +510,7 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_rand='', sim_rand_every=0.0, sim_tilt_lag=0.0, sim_scrape=0.0,
       sim_scrape_from=0.07, sim_enc_q=0.0, sim_slope=0.0, sim_slope_ramp=0.0,
       sim_phone=False, sim_phone_dtype='int8', sim_phone_delay=3.0,
-      sim_phone_feel_every=4,
+      sim_phone_feel_every=4, sim_phone_log_every=0, sim_phone_threads=0,
       sim_push='', sim_walls=0.0, seed=0, **kwargs):
     # sim_phone: the phone's own onboard loop picks the actions (sim_phone.py)
     # from the learner's published weights, as on the robot.
@@ -518,7 +518,9 @@ class RobotMujoco(robot_sim.RobotSim):
     self._phone_args = dict(config=kwargs.get('config'),
                             shared=kwargs.get('policy_dir'),
                             dtype=sim_phone_dtype, delay=float(sim_phone_delay),
-                            feel_every=int(sim_phone_feel_every))
+                            feel_every=int(sim_phone_feel_every),
+                            log_every=int(sim_phone_log_every),
+                            threads=int(sim_phone_threads))
     self._phone = None
     self._seed = seed
     # sim_push 'every:lo:hi': a push on the body's top every ~`every` s (an
@@ -858,7 +860,8 @@ class RobotMujoco(robot_sim.RobotSim):
       self._phone = sim_phone.SimPhone(
           a['config'], a['shared'], dtype=a['dtype'], delay=a['delay'],
           settings=self._emotion_settings(), seed=self._seed,
-          feel_every=a['feel_every'],
+          feel_every=a['feel_every'], log_every=a['log_every'],
+          threads=a['threads'],
           log=str(a['shared']) + '/../emotion.csv')
     act = self._phone.decide(
         sensors, reward, is_first,

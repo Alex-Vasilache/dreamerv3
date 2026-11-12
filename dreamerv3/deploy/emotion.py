@@ -164,7 +164,9 @@ class Emotion:
   @staticmethod
   def _block(x, kernel, bias):
     # x (B, g, in) with kernel (g, in, out): each block its own weights.
-    y = np.einsum('bgi,gio->bgo', x, kernel)
+    # A batched matmul over the blocks, not einsum ('bgi,gio->bgo' took a
+    # non-BLAS loop: 57% of a 16-step rollout's time, 11-12).
+    y = np.matmul(x.transpose(1, 0, 2), kernel).transpose(1, 0, 2)
     return y + bias.reshape(1, kernel.shape[0], -1)
 
   def _empowerment(self, deter, stoch):

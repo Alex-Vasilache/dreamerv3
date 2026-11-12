@@ -19,7 +19,10 @@ so it can be tested there before it runs on the robot:
 * events: PolicyRunner's (arousal rising `event` above its own ~10 s
   average) are written to <shared>/emotion_event for the learner
   (embodied/run/online.py), as the trainer does with the phone's;
-* a CSV of the signals every FEEL_EVERY steps, for the analysis.
+* a CSV of the signals every FEEL_EVERY steps, for the analysis; or with
+  `log_every` (env.robot.sim_phone_log_every) > 0 every log_every steps
+  plus every step with a push, an event, bumper contact or a reflex
+  correction (smaller files, the same counts for those).
 """
 
 import os
@@ -53,14 +56,17 @@ FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
           # empowerment end-point terms at each recorded rollout length.
           'faded', 'o_reward', 'o_pain', 'change', 'outlook', 'value',
           'emp16_state', 'emp16_value', 'emp16_threat',
-          'emp32_state', 'emp32_value', 'emp32_threat')
+          'emp32_state', 'emp32_value', 'emp32_threat',
+          # Since round RF (11-12): the reflex's predicted threat T(a) of the
+          # intended command, its limit, and its time (ms).
+          'reflex_threat', 'reflex_thr', 'reflex_ms')
 
 
 class SimPhone:
 
   def __init__(self, config, shared, dtype='int8', delay=3.0, poll=1.0,
                affect=None, body=None, event=0.0, event_signal='arousal', log=None,
-               seed=0, settings=None, feel_every=4):
+               seed=0, settings=None, feel_every=4, log_every=0, threads=0):
     self.config = config
     self.shared = str(shared)
     self.dtype = dtype
@@ -70,6 +76,18 @@ class SimPhone:
     # The phone feels every 4 control steps; the sim can feel (and log)
     # every step (env.robot.sim_phone_feel_every 1) for the analysis.
     self.runner.FEEL_EVERY = max(1, int(feel_every))
+    self.log_every = int(log_every)
+    # threads > 0: cap BLAS threads in this (the actor's) process. The
+    # phone's matrices are small; OpenBLAS's default of one thread per core
+    # of the node, in a 3-CPU job beside the learner, made a 16-step reflex
+    # rollout 4x slower and the loop fall to ~30 Hz (round RF smokes, 11-12).
+    self._threads = None
+    if int(threads) > 0:
+      try:
+        from threadpoolctl import threadpool_limits
+        self._threads = threadpool_limits(limits=int(threads), user_api='blas')
+      except Exception as e:  # noqa: BLE001
+        print(f'[sim phone] could not cap BLAS threads: {e}', flush=True)
     self.force = 0.0      # set by the env: the true bumper contact force
     # `settings`: what the trainer sends the phone (robot.py
     # _emotion_settings); the separate arguments are the older form.
@@ -174,13 +192,20 @@ class SimPhone:
       event = r.event['intensity']
       from embodied.envs.robot import write_event
       write_event(self.shared, r.event)
-    if self._log and st and (self.steps % r.FEEL_EVERY == 0 or event or self.push):
+    if self.log_every > 0:
+      due = (self.steps % self.log_every == 0 or bool(event) or bool(self.push)
+             or self.force > 0 or r.reflex_last != 0)
+    else:
+      due = self.steps % r.FEEL_EVERY == 0 or event or self.push
+    if self._log and st and due:
       row = {k: st[k] for k in FIELDS if k in st}
       row.update(t=time.time(), step=step, stamp=r.stamp, event=event,
                  push=self.push, theta=r._theta, act0=act[0],
                  chosen0=(r._chosen or [0.0])[0], explore=r.policy.explore,
                  impact=r.impact, reflex=r.reflex_last, force=self.force,
-                 intended0=(r._intended or [0.0])[0])
+                 intended0=(r._intended or [0.0])[0],
+                 reflex_threat=r.reflex_threat, reflex_thr=r.reflex_thr,
+                 reflex_ms=r.reflex_ms)
       self._log.write(','.join(
           (f'{row[k]:.3f}' if k == 't' else f'{row[k]:.5g}'
            if isinstance(row.get(k), float) else str(row.get(k, '')))

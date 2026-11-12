@@ -680,7 +680,10 @@ class SmartphoneRobot(embodied.Env):
       cost_obs=False, pain_mode='bumper', pain_iota0=1.0, pain_iota1=3.0,
       emotion_model='v2', arousal_mode='kl', arousal_efference=False,
       empower_steps=16, empower_extra='',
-      catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4):
+      catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4,
+      catch_mode='slope', catch_dmax=0.0, catch_offsets='0.25,0.5,1',
+      catch_z=0.0, catch_window=650, catch_zlog=False, catch_rising=False,
+      catch_every=1):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -1050,9 +1053,22 @@ class SmartphoneRobot(embodied.Env):
     # command, roll it catch_steps steps through the world model, read the
     # threat critic's prediction, and if that exceeds catch_tmax step the
     # drive back along its slope (central difference, catch_eps). Off by
-    # default; meant to replace the runaway brake once tested.
+    # default; meant to replace the runaway brake once tested. Options
+    # (round RF, 11-12; PolicyRunner.reflex): catch_mode 'search' tries
+    # the command shifted by +-catch_offsets and sends the nearest one under
+    # the limit; catch_dmax caps the slope step; catch_z > 0 sets the limit
+    # at mean + z SD of the run's own predicted threat (catch_window steps;
+    # of its log with catch_zlog);
+    # catch_rising fires only while the predicted threat rises; catch_every
+    # N evaluates every N steps and holds the correction in between.
+    assert catch_mode in ('slope', 'search'), catch_mode
     self.reflex = dict(on=bool(catch_reflex), tmax=float(catch_tmax),
-                       eps=float(catch_eps), steps=int(catch_steps))
+                       eps=float(catch_eps), steps=int(catch_steps),
+                       mode=str(catch_mode), dmax=float(catch_dmax),
+                       offsets=str(catch_offsets), z=float(catch_z),
+                       window=int(catch_window), zlog=bool(catch_zlog),
+                       rising=bool(catch_rising),
+                       every=int(catch_every))
     self._chosen_act = None
     self._cost_pair = (None, None)   # (applied, chosen) of the last step
     self._event_n = None

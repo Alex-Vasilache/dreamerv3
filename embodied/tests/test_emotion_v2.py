@@ -220,6 +220,192 @@ def test_reflex_steps_back_along_the_slope():
   assert all(-1 <= x <= 1 for x in out)
 
 
+def test_reflex_slope_step_is_capped_by_dmax():
+  r = _runner_v2(on=True, tmax=0.0, eps=0.1, dmax=0.2)
+  # A nearly flat threat: the uncapped step would go to the clip.
+  r.emotion.threat_after = lambda d, s, acts, steps: 1.0 + 0.01 * np.asarray(acts).mean(-1)
+  out = r.reflex([0.3, 0.1])
+  assert out == pytest.approx([0.1, -0.1], abs=1e-6)
+  assert r.reflex_last == pytest.approx(-0.2, abs=1e-6)
+  assert r.reflex_threat == pytest.approx(1.002) and r.reflex_thr == 0.0
+  uncapped = _runner_v2(on=True, tmax=0.0, eps=0.1)
+  uncapped.emotion.threat_after = r.emotion.threat_after
+  assert uncapped.reflex([0.3, 0.1]) == [-1.0, -1.0]
+
+
+def test_reflex_search_takes_the_nearest_safe_command():
+  r = _runner_v2(on=True, tmax=0.5, mode='search', offsets='0.25,0.5,1', steps=16)
+  seen = {}
+
+  def threat(d, s, acts, steps):
+    seen['acts'], seen['steps'] = np.asarray(acts), steps
+    return np.abs(np.asarray(acts).mean(-1) - 0.6)   # safe within 0.5 of 0.6
+
+  r.emotion.threat_after = threat
+  out = r.reflex([-0.2, -0.2])          # T = 0.8: +0.25 gives 0.55, +0.5 gives 0.3
+  assert out == pytest.approx([0.3, 0.3])
+  assert r.reflex_last == pytest.approx(0.5)
+  assert seen['steps'] == 16 and len(seen['acts']) == 7   # a, +-0.25, +-0.5, +-1
+  assert r.reflex([0.5, 0.5]) == [0.5, 0.5]                # T = 0.1: untouched
+  assert r.reflex_last == 0.0
+  # Nothing safe: the lowest-threat candidate; the clip keeps it in range.
+  r.emotion.threat_after = lambda d, s, acts, steps: 2.0 - np.asarray(acts).mean(-1)
+  out = r.reflex([0.8, 0.6])
+  assert out == [1.0, 1.0]
+  # A flat threat: every candidate as bad, so the command stays (the first).
+  r.emotion.threat_after = lambda d, s, acts, steps: np.full(len(acts), 9.0)
+  assert r.reflex([0.4, 0.4]) == pytest.approx([0.4, 0.4])
+  assert r.reflex_last == 0.0
+
+
+def test_reflex_relative_limit_learns_the_run():
+  r = _runner_v2(on=True, mode='search', z=3.0, window=50, tmax=-1e9)
+  level = {'t': 0.1}
+  rng = np.random.default_rng(0)
+  r.emotion.threat_after = lambda d, s, acts, steps: (
+      np.full(len(acts), level['t']) + 0.01 * rng.normal())
+  # Warm-up: silent for the first `window` steps, whatever tmax says.
+  for _ in range(50):
+    assert r.reflex([0.2, 0.2]) == [0.2, 0.2]
+  assert np.isinf(r.reflex_thr)
+  # Then the usual level (~0.1 +- 0.01) passes ...
+  for _ in range(100):
+    r.reflex([0.2, 0.2])
+  assert r.reflex_thr == pytest.approx(0.13, abs=0.02)
+  assert r.reflex_last == 0.0
+  # ... and a jump to 0.3 fires (here every candidate is as bad: the
+  # lowest-threat one, a candidate other than a only if lower).
+  level['t'] = 0.3
+  r.emotion.threat_after = lambda d, s, acts, steps: 0.3 - 0.2 * (np.asarray(acts).mean(-1) < 0)
+  out = r.reflex([0.2, 0.2])
+  assert out == pytest.approx([-0.05, -0.05])
+  # The limit tracks a slow drift: 1000 steps at 0.3 make 0.3 usual.
+  r.emotion.threat_after = lambda d, s, acts, steps: np.full(len(acts), 0.3) + 0.01 * rng.normal()
+  for _ in range(1000):
+    r.reflex([0.2, 0.2])
+  assert r.reflex_thr == pytest.approx(0.33, abs=0.02)
+  assert r.reflex([0.2, 0.2]) == [0.2, 0.2]
+
+
+def test_reflex_relative_limit_ignores_spikes_and_scales_in_log():
+  rng = np.random.default_rng(1)
+  for zlog in (False, True):
+    r = _runner_v2(on=True, mode='search', z=3.0, window=100, zlog=zlog)
+    level = {'t': 0.1}
+    r.emotion.threat_after = lambda d, s, acts, steps: np.full(
+        len(acts), level['t'] * (1 + 0.1 * rng.normal()))
+    for _ in range(300):
+      r.reflex([0.0, 0.0])
+    before = r.reflex_thr
+    # Spikes, as around a hit, enter capped: the limit barely moves.
+    level['t'] = 10.0
+    for _ in range(20):
+      r.reflex([0.0, 0.0])
+    level['t'] = 0.1
+    r.reflex([0.0, 0.0])
+    assert r.reflex_thr < 1.5 * before
+  # In log space the limit is a multiple of the level: the critic's level
+  # falling 100x moves the limit down 100x.
+  r = _runner_v2(on=True, mode='search', z=3.0, window=100, zlog=True)
+  level = {'t': 0.1}
+  r.emotion.threat_after = lambda d, s, acts, steps: np.full(
+      len(acts), level['t'] * np.exp(0.1 * rng.normal()))
+  for _ in range(400):
+    r.reflex([0.0, 0.0])
+  hi = r.reflex_thr
+  level['t'] = 0.001
+  for _ in range(3000):
+    r.reflex([0.0, 0.0])
+  assert r.reflex_thr == pytest.approx(hi / 100, rel=0.3)
+  assert hi == pytest.approx(0.1 * np.exp(0.3), rel=0.2)
+
+
+def test_reflex_rising_fires_only_while_threat_climbs():
+  r = _runner_v2(on=True, tmax=0.5, mode='search', offsets='1', rising=True)
+  level = {'t': 1.0}
+  r.emotion.threat_after = lambda d, s, acts, steps: level['t'] - 0.6 * np.asarray(acts).mean(-1)
+  assert r.reflex([0.0, 0.0]) == [1.0, 1.0]   # first step: nothing to compare, fires
+  assert r.reflex([0.0, 0.0]) == [0.0, 0.0]   # same T: not rising, holds
+  level['t'] = 1.1
+  assert r.reflex([0.0, 0.0]) == [1.0, 1.0]   # rising again: fires
+
+
+def test_reflex_settings_from_the_env_reach_the_runner():
+  env_reflex = dict(on=True, tmax=0.2, eps=0.1, steps=16, mode='search',
+                    dmax=0.0, offsets='0.25,0.5', z=2.5, window=650, zlog=True,
+                    rising=False, every=4)
+  r = _runner_v2(**env_reflex)
+  assert r.reflex_cfg == env_reflex
+  # The defaults are the first version: slope, 4 steps, absolute limit.
+  d = policy_runner.PolicyRunner().reflex_cfg
+  assert (d['on'], d['mode'], d['steps'], d['z'], d['dmax'], d['rising'],
+          d['every']) == (False, 'slope', 4, 0.0, 0.0, False, 1)
+  # And the env sends the phone the same keys from its catch_* settings.
+  pytest.importorskip('mujoco')
+  from embodied.envs import robot_mujoco
+  env = robot_mujoco.RobotMujoco(
+      'balance', hz=65.0, discrete=False, symmetric=False, sim_noise=0.0,
+      catch_reflex=True, catch_tmax=0.2, catch_steps=16, catch_mode='search',
+      catch_offsets='0.25,0.5', catch_z=2.5, catch_zlog=True, catch_every=4,
+      sim_phone_log_every=16, sim_phone_threads=1)
+  assert env._emotion_settings()['reflex'] == env_reflex
+  assert env._phone_args['log_every'] == 16 and env._phone_args['threads'] == 1
+  with pytest.raises(AssertionError):
+    robot_mujoco.RobotMujoco('balance', hz=65.0, catch_mode='brake')
+
+
+def test_reflex_every_holds_the_correction_between_evaluations():
+  r = _runner_v2(on=True, tmax=0.5, mode='search', offsets='0.5', every=3)
+  calls = []
+
+  def threat(d, s, acts, steps):
+    calls.append(1)
+    return 1.0 - np.asarray(acts).mean(-1)   # over the limit below a = 0.5
+
+  r.emotion.threat_after = threat
+  assert r.reflex([0.2, 0.2]) == pytest.approx([0.7, 0.7])   # evaluates: +0.5
+  assert r.reflex([0.0, 0.1]) == pytest.approx([0.5, 0.6])   # held, no rollout
+  assert r.reflex([0.9, 0.9]) == pytest.approx([1.0, 1.0])   # held, clipped
+  assert r.reflex_last == pytest.approx(0.1) and r.reflex_ms == 0.0
+  assert len(calls) == 1
+  assert r.reflex([0.8, 0.8]) == [0.8, 0.8]                  # evaluates: safe
+  assert r.reflex([0.0, 0.0]) == [0.0, 0.0]                  # nothing to hold
+  assert len(calls) == 2
+
+
+def test_reflex_times_itself_on_the_toy_model():
+  r = _runner_v2(on=True, tmax=-1e9, mode='search', steps=16)
+  out = r.modulate([0.2, 0.2])
+  assert all(-1 <= x <= 1 for x in out)
+  assert r.reflex_ms > 0 and np.isfinite(r.reflex_threat)
+
+
+def test_sim_phone_log_every_keeps_the_rare_rows(tmp_path):
+  from embodied.envs import sim_phone
+  ph = sim_phone.SimPhone.__new__(sim_phone.SimPhone)
+  log = tmp_path / 'emotion.csv'
+  ph._log = open(log, 'w', buffering=1)
+  ph._log.write(','.join(sim_phone.FIELDS) + '\n')
+  ph.runner = _runner_v2(on=True, tmax=1e9)
+  ph.runner._fast_affect = lambda: None
+  ph.runner.emotion_state = dict(arousal=0.0, valence=0.0, mood=0.0, pain=0.0)
+  ph.runner.event = None
+  ph.runner.policy.explore = 1.0
+  ph.steps, ph._event_n, ph.push, ph.force, ph.log_every = 0, None, 0.0, 0.0, 16
+  kept = []
+  for i in range(64):
+    ph.force = 2.0 if i == 5 else 0.0
+    ph.push = 0.1 if i == 9 else 0.0
+    ph.runner.reflex_last = -0.3 if i == 20 else 0.0
+    ph.applied([0.0, 0.0], i)
+  ph._log.close()
+  import csv
+  steps = [int(r['step']) for r in csv.DictReader(open(log))]
+  assert steps == [5, 9, 15, 20, 31, 47, 63]   # every 16th (steps 16, 32, ...) plus rare
+  row = list(csv.DictReader(open(log)))[3]
+  assert float(row['reflex']) == -0.3 and 'reflex_ms' in row
+
+
 def test_threat_after_rolls_the_toy_model():
   emo = emotion.EmotionV2(ToyPolicy())
   d, s, _ = emo.p.last_post
