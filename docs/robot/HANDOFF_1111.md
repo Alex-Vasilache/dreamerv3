@@ -24,18 +24,16 @@ All sim; no robot or phone actions were taken.
   with the schedule (p = 0.20) and 2.5 uncapped (p = 0.007), and is faster
   than the schedule (t90 2.6 vs 3.0, p = 0.04).
 
-## Recommended recipe (sim, confirmed)
+## Recommended recipe (sim, confirmed; updated Thu 11-12)
 
-This is the pick without the ratio schedule, plus
-`--agent.dyn.rssm.drop 0.05 --agent.imag_repeat 2`.
+This is the pick without the ratio schedule, plus `--agent.dyn.rssm.drop 0.05`.
+Round S2 showed the second rollout is not needed: dropout alone is calmer
+late on IAS (0.9 vs 1.5) and does not slow P100. Now the robot default.
 
 Next: try it live.
 
 ## To do by hand
 
-- `git push` from the robot checkout. About 21 local commits, including the
-  face-rework merge, rounds M/N/P/Q and progress control.
+- Live command: drop `--online_ratio_switch 19500 --online_ratio_late 128`
+  (WEEKEND_1107.md) on the next live run; the default no longer needs them.
 - Face: push to the phone (`push_python.sh` + `adb push face.html`).
-- IAS: the runs of rounds M, N, P and Q are still in `robot_runs`. They are
-  not archived and not deleted. Saion runs of M and P are archived to the
-  bucket.

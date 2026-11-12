@@ -1864,20 +1864,20 @@ robot:
   jax: {compute_dtype: float32, prealloc: False}
   logger: {outputs: [jsonl, scope, tensorboard]}
   # Balance pick, default since 2026-11-11 (docs/robot/SAMPLE_EFF_STUDY.md,
-  # rounds M-R). Fear critic on a cost signal, stillness, a wider bumper
+  # rounds M-S2). Fear critic on a cost signal, stillness, a wider bumper
   # margin, and no hand-set ratio schedule: the learner trains at the GPU's
-  # pace, and two regularisers keep that from drifting late.
+  # pace, and world-model dropout keeps that from drifting late.
   # - rssm.drop 0.05: dropout in the world-model training pass only.
-  # - imag_repeat 2: two imagined rollouts per start, losses averaged.
-  # In sim (IAS, n = 14-15) this learns as fast as uncapped (t90 2.6 min)
-  # and is as calm late as the old ratio-128 schedule (1.5 vs 1.7 bumper
-  # crossings/min; uncapped 2.5). pos_penalty only acts with pos_tau > 0.
+  # Round S2 (2026-11-12): dropout alone beats dropout + 2 rollouts. IAS,
+  # n = 8: late bumper crossings/min 0.9 vs 2.5 uncapped and 1.7 with the
+  # old ratio-128 schedule, t90 2.8 min; on P100 it keeps uncapped speed
+  # (t90 3.1 vs 3.8 with 2 rollouts). imag_repeat stays at 1.
+  # pos_penalty only acts with pos_tau > 0.
   env.robot.bumper_margin: 0.05
   env.robot.cost_obs: True
   agent.fear.weight: 1.0
   env.robot.pos_penalty: 2.0
   agent.dyn.rssm.drop: 0.05
-  agent.imag_repeat: 2
 
 dmc_proprio:
   <<: *size1m

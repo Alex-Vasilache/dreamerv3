@@ -392,3 +392,34 @@ slower to balance (3.8 vs 3.1 min; C vs A p = 0.02, C vs B p = 0.05). So C
 fixes the drift where the learner is fast, and costs speed where it is slow.
 Dropout alone had no speed cost at any GPU in M (with the schedule); uncapped
 dropout alone is the untested candidate that might keep both.
+
+### Thu 11-12: S2, dropout alone (no second rollout)
+
+D = uncapped + `--agent.dyn.rssm.drop 0.05`, `imag_repeat 1`. V100
+e44470-e44477, P100 e44480-e44487, IAS e44490-e44497 (array 205330), seeds
+paired with R. Figure `figs/study/gpu_abc.png` (arm D added).
+
+| GPU | setting | n | ratio | t90 (min) | late |
+|---|---|---|---|---|---|
+| V100 | A uncapped | 8 | 245 | 3.0 ± 0.5 | 1.8 ± 0.6 |
+| V100 | B capped | 8 | 123 | 2.8 ± 0.5 | 1.7 ± 0.9 |
+| V100 | C dropout + 2 rollouts | 8 | 167 | 3.1 ± 0.4 | 1.6 ± 0.7 |
+| V100 | D dropout only | 8 | 233 | 3.1 ± 0.4 | 1.6 ± 0.6 |
+| P100 | A | 8 | 174 | 3.1 ± 0.4 | 1.7 ± 0.5 |
+| P100 | B | 8 | 122 | 3.1 ± 0.6 | 2.0 ± 0.6 |
+| P100 | C | 8 | 115 | 3.8 ± 0.5 | 2.0 ± 1.1 |
+| P100 | D | 8 | 170 | 3.1 ± 0.4 | 1.4 ± 0.5 |
+| IAS | A | 15 | 285 | 2.7 ± 0.6 | 2.5 ± 0.8 |
+| IAS | B | 15 | 113 | 3.0 ± 0.5 | 1.7 ± 0.6 |
+| IAS | C | 14 | 250 | 2.6 ± 0.5 | 1.5 ± 0.8 |
+| IAS | D | 8 | 287 | 2.8 ± 0.5 | 0.9 ± 0.5 |
+
+Mann-Whitney, D vs others. IAS late: vs A p < 0.001, vs B p = 0.004, vs C
+p = 0.12. P100 t90: D vs C p = 0.017 (D keeps uncapped speed). V100: all
+ties.
+
+Reading. Dropout alone keeps the GPU's full ratio (287 on IAS) and is the
+calmest arm late, without the P100 slowdown that the second rollout caused.
+So the regulariser, not the lower ratio, removes the late drift. Default
+changed: `agent.imag_repeat 2` removed from the robot block; dropout 0.05
+stays. Caveats: D on IAS has n = 8 against 14-15 for A-C; all sim.
