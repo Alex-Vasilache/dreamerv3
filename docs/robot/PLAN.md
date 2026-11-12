@@ -82,6 +82,8 @@ keeps balancing, not getting worse later.
   Figure: `figs/collapse/cr_arms.png`.
 - **Live pick:** the e30114 flags plus `--online_ratio_switch 19500
   --online_ratio_late 128` (5 min at 65 Hz). It needs no app change.
+  Superseded 11-12: the `robot` default uses world-model dropout 0.05 with no
+  ratio schedule (SAMPLE_EFF_STUDY.md round S2); drop these two flags live.
 - Caveat: the sim's after-15-min drift is milder than live. The live fall-back
   is at min 7-10, so the 5 min switch comes before it.
 

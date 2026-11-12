@@ -489,8 +489,12 @@ change:  --env.robot.home_speed 0.5 --env.robot.home_ramp 3000
          --env.robot.wheel_penalty 1.0 --env.robot.pos_penalty 2.0
 add:     --env.robot.bumper_margin 0.05 --batch_size 16
          --env.robot.cost_obs True --agent.fear.weight 1.0
-keep:    --online_ratio_switch 19500 --online_ratio_late 128
 ```
+Update 11-12: the `robot` block now carries this pick as its default (fear,
+stillness, margin 0.05, batch 16) plus world-model dropout 0.05 and no ratio
+schedule (SAMPLE_EFF_STUDY.md, rounds N-S2). Live, drop
+`--online_ratio_switch 19500 --online_ratio_late 128` and the flags above that
+the default already sets.
 Keep `--env.robot.weights_emotion False` and `home_max_s 10` live (corrected
 11-09): `weights_emotion True` was only needed by the sim phone, and live it
 slowed the phone loop to 47-55 Hz (e41045); the 10 s cap stops the weak
