@@ -1,135 +1,136 @@
-# Emotion: valence, arousal, dominance and pain from the world model
+# Emotion: pleasure, arousal and dominance from the internal model
 
-Started 2026-11-04 (Alex). The robot's affect is computed from quantities the
-DreamerV3 agent already has, shown on a face, and used to steer learning,
-both in imagination and on the real robot. Literature, with verified
-citations: [EMOTION_LITERATURE.md](EMOTION_LITERATURE.md).
+The target model since 2026-11-12. It replaces the 11-04 to 11-10 model
+(kept in [history/EMOTION_2026-11-06.md](history/EMOTION_2026-11-06.md)).
+The face mapping is in [FACE_MATHS.md](FACE_MATHS.md); the literature in
+[EMOTION_LITERATURE.md](EMOTION_LITERATURE.md). Status of each part is in
+the table at the end: parts are being built behind switches, the old model
+stays selectable until the sim round has run.
 
-## Signals (dreamerv3/deploy/emotion.py)
+## Rules
 
-Per control step, with q_t the posterior the observation gave and p_t the
-prior the world model predicted (32 categorical latents x 4 classes here):
+1. Every axis is one quantity the DreamerV3 agent's world model and critics
+   already predict or evaluate. No event tables, task rules or mixing weights.
+2. The only innate inputs come from the task: reward (including intrinsic
+   rewards) and pain (impact). Everything else is learned, including where
+   danger is.
+3. No hand-coded protection: the runaway brake is replaced by a reflex that
+   foresees hits with the world model (after the sim test).
 
-| signal | definition | reading |
+## Notation
+
+| symbol | meaning |
+|---|---|
+| x̄ | running average of x over ~10 s |
+| x̃ | fading average, x̃_t = λ x̃_{t-1} + (1 − λ) x_t, λ = exp(−1/(0.5 s × 65 Hz)) ≈ 0.97 |
+| z(x) | z-score, (x − x̄) / running SD of x |
+| r, c | reward and pain at this step |
+| s | the world model's latent state (32 categorical variables) |
+| V, T | value = expected future reward; threat = expected future pain (the `agent.fear` critic; "fear" is kept for the emotion, LeDoux 2014) |
+| S̄_V, S̄_T | the two critics' running return scales, as the actor uses them |
+| w | the actor's pain weight (`agent.fear.weight`, 1.0) |
+
+## Pleasure: what just happened, and how the outlook moved
+
+    o_t = r_t / S̄_V − w c_t / S̄_T          outcome now
+    O_t = V_t / S̄_V − w T_t / S̄_T          outlook
+    δ_t = o_t + γ O_{t+1} − O_t              TD error over reward and pain
+    E_t = (1 − γ) O_{t+1}                    expectation per step
+    p_t = δ_t + E_t = o_t + O_{t+1} − O_t    (γ cancels)
+    pleasure_t = tanh z(p̃_t)
+
+The outlook sums about 1/(1 − γ) = 130 future steps, so (1 − γ)O is its value
+per step, in the units of o. Adding it to the TD error cancels the discount:
+pleasure is the outcome now plus how much the outlook just changed, faded
+over ~0.5 s. Recent outcomes, expectations and prediction errors that fade
+also model human momentary well-being (Rutledge et al. 2014, with fitted
+weights). With nothing learned, pleasure is reward minus pain; entering danger
+lowers the outlook before contact. A steady dangerous state reads only through
+its reward and pain; controllability shows in dominance. Fading is needed
+because O_{t+1} − O_t over one 15 ms step is critic jitter and a hit lasts one
+or two steps (unfaded TD error: AUC 0.74 for hits; faded: 0.89).
+
+## Arousal: how badly this moment was predicted
+
+    e_t = (1/32)[−log p̂(s_t)] − log p̂(r_t) − log p̂(c_t)        prediction error
+    ê_t = (1/32) H(p̂_s) + H(p̂_r) + H(p̂_c)                      expected error
+    arousal_t = σ(z(e_t))   or   σ(z(e_t − ê_t))
+
+p̂ is the prediction made before the sensor reading (the prior; reward and
+pain heads read on the prior state). Dividing the state term by 32 makes the
+32 state variables count as much as one reward or pain variable; all terms
+are in nats. Being tested: with novelty (total error, noradrenaline plus
+acetylcholine in Yu & Dayan's terms) or without (unexpected error,
+noradrenaline only).
+
+## Dominance: can my actions make the end state different?
+
+    m_s = (1/32) Σ_k s_k,  m_V = (1/32) Σ_k V_k,  m_T = (1/32) Σ_k T_k     average end point
+    d_k = (1/32) KL(s_k ‖ m_s) + KL(V_k ‖ m_V) + KL(T_k ‖ m_T)            how far command k lands from it
+    C_t = (1/32) Σ_k d_k                                                  empowerment
+    dominance_t = tanh z(C_t)
+
+s_k, V_k, T_k: predicted latent state, value and threat after holding wheel
+command k for H steps in the world model; k: 32 commands drawn uniformly
+each time; H = 16 or 32 (0.25 or 0.5 s), being tested. Recomputed every 3 s in
+slices on the phone. On the recorded sessions 32 random commands at 16 steps
+picked out hits best per session (AUC 0.74 ± 0.07, 87 ms per evaluation);
+deviations around the policy and the old 9-command grid did worse
+(SAMPLE_EFF_STUDY.md, empowerment comparison).
+
+Named emotions are regions of the PAD space, not extra signals: fear is low
+pleasure, high arousal, low dominance; helplessness is a bad situation with
+low dominance.
+
+## Pain, threat and the catch reflex
+
+    ι_t = |θ̇_t − θ̇_{t−1}|                         impact
+    c_t = clip((ι_t − ι0) / (ι1 − ι0), 0, 1)       pain
+
+ι0 is the tolerance (no pain below), ι1 the impact of full pain (from data,
+`env.robot.pain_mode impact`). The impact signal picks out bumper hits without
+knowing where the bumpers are (AUC 0.81 on the recorded sessions).
+
+Threat is a second critic trained on pain; the actor trades the two
+advantages, so reward cannot buy a hard hit:
+
+    L_actor = −E[(A^V / S̄_V − w A^T / S̄_T) log π(a|s)] − η H[π]
+
+In sim (pushes and walls, n = 4) this critic cut bumper crossings from
+14.1 ± 3.0 to 4.0 ± 1.0 a minute when trained on bumper-angle pain; impact
+pain is untested.
+
+The catch reflex replaces the runaway brake: a learned constraint-manifold
+safety filter (after ATACOM, Liu et al. 2025), with the world model in place
+of a physics model and threat in place of a hand-written limit. Each step:
+
+    k(a) = T̂(a) − T_max                           how far over the limit
+    g    = (k(a + ε) − k(a − ε)) / 2ε              slope along the drive
+    a'   = a − max(0, k(a)) / g                    command sent
+
+T̂(a) is the threat predicted after rolling a a few steps ahead. It fires on a
+prediction, like catching yourself when you start to slip; it cannot protect
+while the model is still poor and carries no guarantee.
+
+## Brain counterparts (closest, with how firm)
+
+| quantity | counterpart | source |
 |---|---|---|
-| valence | TD error r_t + gamma V(s_t) - V(s_{t-1}), / running RMS, tanh | joy / distress, brief (Schultz 1997; Broekens 2015) |
-| mood | z(V(s_t)) over ~1 min, tanh | hope / fear, slow; the dense balance reward keeps TD near 0 |
-| surprise | KL(q_t ‖ p_t) | Bayesian surprise (Itti & Baldi 2009) |
-| novelty | H(p_t) | how uncertain the prediction was |
-| unexpected surprise | H(q_t) + KL - H(p_t) | surprise beyond the prediction's own spread (Yu & Dayan 2005) |
-| reward error | abs(r_t - r_hat(s_t)) | |
-| empowerment | 9 constant actions rolled 8 steps through the prior; mean KL of each end prediction from their mixture (= H(mix) - mean H) | control over where it ends up (Klyubin 2005) |
-| helplessness | z(abs(TD)) x (1 - sigmoid(z(empowerment))) | large errors with no control (Maier & Seligman 2016) |
-| **arousal** | sigmoid(z(novelty) + z(unexpected) + z(reward error) - z(empowerment) + helplessness) | |
-| **dominance** | tanh(z(empowerment)) | PAD third axis |
+| TD error, change in outlook (pleasure) | phasic dopamine; momentary happiness | Schultz et al. 1997; Rutledge et al. 2014 (strong) |
+| reward and pain now | hedonic "liking"; pain unpleasantness in anterior cingulate | Berridge & Kringelbach 2015; Rainville et al. 1997 (strong) |
+| threat | defensive threat circuits, apart from felt fear; serotonin as dopamine's aversive opponent | LeDoux 2014; Daw, Kakade & Dayan 2002 (debated) |
+| prediction error (arousal) | noradrenaline: unexpected uncertainty; acetylcholine: expected uncertainty | Yu & Dayan 2005; Aston-Jones & Cohen 2005; Nassar et al. 2012 (strong) |
+| empowerment (dominance) | prefrontal detection of control inhibiting the serotonergic stress response | Maier & Seligman 2016; Amat et al. 2005 (strong in rodents) |
+| pain as impact | nociception, a sensation with its own drive | Craig 2003; Seymour 2019 (strong) |
 
-The face shows `face_valence` = 0.7 mood + 0.3 valence, arousal and dominance.
+## Status
 
-## Where it runs
+| part | status |
+|---|---|
+| Pleasure, arousal, dominance as above | being built as emotion model `v2` (old `v1` kept) |
+| Arousal with or without novelty; reward/pain from the prior; H 16 or 32; value and threat in dominance | being tested on the 5 recorded real sessions |
+| Impact pain, threat on it, catch reflex | being built (switches, off by default); sim round PF: today's pain + brake vs impact pain + threat vs + reflex |
+| Face: three axes only, pain as the negative end of pleasure, dominance as lid, eye height and gaze | built (face.html, 43d0a0e) |
+| Time constants: pleasure fading 0.5 s, z-score window ~10 s | open |
 
-* Offline, on recorded runs: `tools/robot/dev/emotion_trace.py LOGDIR OUT.npz`
-  (replays the observations and the applied actions through the policy; full
-  checkpoints only, the published policy pickles lack the critic).
-  Figures: `tools/robot/dev/fig_emotion_real.py`.
-* On the phone: `PolicyRunner.feel(reward)` after each step (every 4 steps,
-  empowerment on its own thread every 0.5 s), `emotion_state` in the web
-  state, the face at `http://<phone>:8080/face` (`tools/robot/face/face.html`;
-  app patch `tools/robot/dev/dreamerbridge_cap_home_face.patch`). Needs
-  `--env.robot.weights_emotion True` so the pushes carry the prior, critic and
-  reward head (~1 MB more as int8).
-
-## First result: the signals read danger on the real robot
-
-Five real live-training sessions (two in the Germany lab, one on the OIST
-table, two on carpet), each traced with its final checkpoint:
-
-![a session](figs/emotion/fig_real_session.png)
-
-![around bumper hits](figs/emotion/fig_real_events.png)
-
-Around every bumper hit (tilt crossing +6.5 / -5 deg) in all five sessions,
-valence falls from ~0.3 s before the hit to its minimum at contact (-0.4 to
--1.1 below the session median), arousal peaks just before it, and
-empowerment collapses at contact (-3 to -7 nats): against a bumper the
-robot's actions stop mattering. Unexpected surprise is flat on average.
-
-## Using it for learning
-
-In imagination (agent.arousal_imag): each replay start's actor and critic
-loss weighted by 1 + w clip(z(signal), 0, 3), renormalised per batch
-(relative, because LaProp normalises any global scale). On real data:
-surprise-prioritised replay (replay.fracs.priority, model-loss priority) and
-a recency share standing in for a volatility-driven learning rate
-(Behrens 2007; Nassar 2012). Experiments E1/E2 (e19340-e19360): carpet ->
-table shift at 6 min, live balance recipe; results below when in.
-
-Proposed next, on the real robot: arousal-set exploration noise on the phone
-(Doya 2002: NE ~ inverse temperature), surprise-triggered weight pushes,
-and a call for help on helplessness.
-
-## Pain (proposed fourth axis; EMOTION_LITERATURE.md §8)
-
-Pain = three parts, as in the nervous system: a hard barrier (the reflex:
-our runaway brake, speed cap, fence and return home now; ATACOM, Liu,
-Tateo, Bou-Ammar & Peters CoRL 2021 / T-RO 2025, as the smooth version on the
-physical layer), a separate cost critic learned in imagination (fear,
-anticipatory pain; its TD error = phasic pain and relief), and an affective
-input (negative to valence, positive to arousal, damped by empowerment as
-controllable pain is less aversive). Kept out of the task reward, so reward
-cannot buy violations. Nociception = constraint proximity (tilt vs the
-bumpers, wheel saturation, distance from home); intensity = violation +
-size of the reflex's correction.
-
-## Emotion acting on behaviour and learning (2026-11-06)
-
-All off by default; each is one setting, so it can be tested alone and on
-the robot. The phone does the fast parts, the learner the slow one.
-
-| Part | Where | Setting | What it does |
-|---|---|---|---|
-| Pain | `policy_runner.pain_signal` (copy in `robot.py`) | `env.robot.pain_zone` (0.035 rad) | 0 upright; rises to 1 over the last `pain_zone` before a bumper; plus the size of a reflex's override (brake, cap, limit). Raises arousal (+3 x pain inside the sigmoid) and lowers the face's valence by pain x (1 - 0.5 control). A sensation, not a prediction. |
-| Vigour | `PolicyRunner.modulate` | `env.robot.affect_vigour` | Excited (arousal x positive valence): action x (1 + k arousal valence+). |
-| Catch | `PolicyRunner.modulate` | `env.robot.affect_catch` | In pain toward a bumper: + k (front - back) on both wheels (positive drives forward, under a forward lean). |
-| Exploration | `PolicyRunner.explore_scale` | `env.robot.affect_explore` | The policy's sampling spread x clip(1 + k arousal max(0, -mood) - k pain, 0.5, 2). |
-| Arousal events | `PolicyRunner._detect_event` -> trainer -> `online/ArousalBoost` | `env.robot.emotion_event` (phasic threshold), `online_arousal.{lr,updates,burst,publish}` | Arousal rising `emotion_event` above its ~10 s average fires an event (2 s apart). The learner multiplies every optimizer group's update by 1 + lr x intensity, decaying over `updates` updates, after the RMS normalisation (`MultiOptimizer` `lr_scale`; a loss weight would be normalised away), runs `burst` x intensity extra updates and publishes at once. |
-| Fear | `agent.py` (`cst`, `cval`) | `env.robot.cost_obs True`, `agent.fear.weight` | The env reports pain as `cost` beside the reward; a cost head and its own critic over the imagined rollouts; the actor's objective is the reward's advantage minus weight x the cost's. Never in the reward. |
-
-The sim runs the phone's own loop (`embodied/envs/sim_phone.py`,
-`env.robot.sim_phone True`): `PolicyRunner` on int8 pushes of the learner's
-published weights, installed 3 s after publishing, then the trainer's limits,
-recorded as the executed action, as onboard. Perturbations:
-`env.robot.sim_push every:lo:hi` (a 0.1 s horizontal push at the body's top,
-forward or back) and `env.robot.sim_walls` (a square of walls). Per-step
-signals go to `<logdir>/emotion.csv`; `tools/robot/dev/r6/emostats.py`
-summarises a round.
-
-On the phone (dreamerBridge `main.py`, three lines; the trainer already sends
-the settings in its pause frames as `emotion`):
-
-1. `loop_onboard`: after `obs, act = runner.act(snap, cmd)`, `act = runner.modulate(act)`.
-2. `apply_pause(state)`: `runner.configure(state.get('emotion'))`.
-3. The obs message: add `emotion_event=runner.event` (the trainer forwards a new one to the learner).
-
-### Sim results (2026-11-06; report https://claude.ai/artifact/3TxrKuGtzwhbcYrByMpPwp)
-
-Sim table, sim_phone, pushes `5:0.05:0.15` and walls 0.5 m, 30 min, minutes
-10-30, n = 4 seeds per arm (mean +- std).
-
-- Alone, on the robot defaults (round EA, e19410-e19437): fear (weight 1) is
-  the one clear win, upright 0.95 vs 0.68, crossings 4.0 +- 1.0 vs 14.1 +- 3.0 a
-  minute, falls per push 0.04 vs 0.26; the same pain as a reward penalty
-  (`balance_bumper 1`) gets half of it. Arousal-triggered weight changes,
-  catch, vigour and exploration alone did not help (boost lost two seeds).
-- Arousal is not selective: it falls at bumper hits (novelty drops, the model
-  is sure of itself there). `event_signal salience` (|TD valence| + pain,
-  phasic threshold 1.0) gives 4-6 events a minute, 97% within 1 s of a hit.
-- Combined, on the e30114 recipe (rounds EB/EC, e19442-e19489): fear + catch
-  0.5 is the pick, crossings 5.5 +- 1.8 vs 16.2 +- 2.5 a minute and falls per
-  push 0.08 vs 0.22 (n = 8 vs 4); without pushes or walls 5.4 +- 1.8 vs
-  13.2 +- 4.0. Fear can replace the bumper penalty. Fear weight 0.5-2 and
-  catch 0.5-1 are within the seed spread; the salience boost adds nothing.
-
-Live: the e30114 flags plus `--env.robot.weights_emotion True
---env.robot.cost_obs True --agent.fear.weight 1.0 --env.robot.affect_catch 0.5`,
-and the three phone lines above (without them fear still trains; only the
-catch and the face's fear are missing).
+Plan page with figures: claude.ai artifact "Robot Emotion Model".

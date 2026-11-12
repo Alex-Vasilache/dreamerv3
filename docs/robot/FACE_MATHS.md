@@ -1,68 +1,19 @@
-# Emotion, pain and the face: the maths
+# Emotion and the face: the maths
 
-How the face's inputs are computed now (2026-11-10) and how they move the
-eyes. Code: `dreamerv3/deploy/emotion.py` (signals), `policy_runner.py`
-(pain, the phone's cadence), `tools/robot/face/face.html` (the face).
-Reasons and literature: `EMOTION.md`, `FACE.md`.
+How the face's inputs move the eyes. The emotion model itself (pleasure,
+arousal, dominance, pain, threat) is in [EMOTION.md](EMOTION.md) since
+2026-11-12; the earlier signal definitions are in
+[history/FACE_MATHS_2026-11-10.md](history/FACE_MATHS_2026-11-10.md).
+Code: `tools/robot/face/face.html` (the face), `dreamerv3/deploy/policy_runner.py`
+(cadence and delivery).
 
-## 1. Signals from the world model (every K = 4 control steps, 16 Hz)
+## 1-3. Inputs
 
-At a feel step t, with deterministic state h_t, posterior q_t = q(z_t | h_t, o_t)
-and prior p_t = p(z_t | h_t) (32 categoricals x 4 classes, 1 % unimix):
-
-| symbol | definition |
-|---|---|
-| surprise S_t | KL(q_t ‖ p_t) |
-| novelty N_t | H(p_t) |
-| unexpected U_t | H(q_t) + KL(q_t ‖ p_t) − H(p_t) |
-| value V_t | critic v(h_t, z_t) |
-| reward error E_t | \|R_t − r̂(h_t, z_t)\|, R_t = Σ_{k<K} γ^k r_{t−K+k} |
-| TD error δ_t | R_t + γ^K V_t − V_{t−K} |
-| empowerment C_t | (1/9) Σ_a KL(p^a_{t+8} ‖ p̄_{t+8}), the 9 constant wheel commands a ∈ {−1,0,1}², each rolled 8 prior steps; p̄ their mean. Recomputed every 3 s on its own thread |
-| fear F_t | −c(h_t, z_t), the fear critic's predicted pain (if trained) |
-
-Each is z-scored online: z(x_t) = (x_t − m_t)/σ_t with exponential mean and
-variance over τ = 650/K ≈ 162 feel steps (10 s); mood uses τ_m = 6τ (~1 min).
-The TD error is scaled by its running RMS ρ_t instead of its SD (a steady
-disappointment stays negative).
-
-## 2. Pain (every control step, 65 Hz)
-
-With tilt θ_t relative to the balance point, bumpers at θ_lo < 0 < θ_hi and a
-zone w = 0.035 rad before each:
-
-  front_t = clip((θ_t − (θ_hi − w)) / w, 0, 1),   back_t = clip(((θ_lo + w) − θ_t) / w, 0, 1)
-
-  P_t = max(front_t, back_t) + min(1, mean_i \|u^applied_i − u^chosen_i\|)
-
-The second term is a reflex (brake, cap, travel limit) overriding the policy.
-P is a sensation of the body, not a prediction. Until now the face saw
-max P over the last K steps, once per feel step.
-
-## 3. The affect axes
-
-  control c_t = σ(z(C_t))
-
-  helplessness H_t = z(\|δ_t\|) (1 − c_t)
-
-  drive D_t = z(N_t) + z(U_t) + z(E_t) − z(C_t) + H_t
-
-  **arousal**   A_t = σ((D_t + 3 P_t) / 2)                    ∈ (0, 1)
-
-  TD valence    v_t = tanh(δ_t / ρ_t)                        brief joy / distress
-
-  mood          m_t = tanh(z_m(V_t) / 2)                     slow hope / fear
-
-  hurt          h_t = P_t (1 − 0.5 c_t)                      controllable pain hurts less
-
-  **valence**   V^face_t = clip(0.7 m_t + 0.3 v_t − h_t, −1, 1)
-
-  **dominance** G_t = tanh(z(C_t))                             ∈ (−1, 1)
-
-  **pain**      P_t (shown as min(P_t, 1))
-
-The face receives (V^face, A, G, P, v) and the body (tilt, applied and chosen
-wheel commands).
+The face takes three axes: valence (= pleasure), arousal (0-1) and
+dominance (-1..1). Since 2026-11-12 pain has no channel of its own: its shape
+(squint, then `> <`) is the negative end of pleasure, with
+p = max(pain input, clip((−v − 0.6) / 0.4, 0, 1)). A `pain` input, while the
+phone still sends one, shows the same way. Effort is no longer shown.
 
 ## 4. Delivery and smoothing (before this change)
 
@@ -92,12 +43,12 @@ tilted by `tilt` toward the nose, and a lower lid arching up by `bot`:
 | feature | goal |
 |---|---|
 | aperture (open) | (0.62 + 0.5 a)(1 − 0.6 p) x (1 + 0.25 startle) |
-| upper lid (top) | 0.3 clip((0.45 − a)/0.45) + 0.1 d⁺ + 0.15 v⁻ + 0.25 v⁻(1−d⁺)(1−a) + 0.3 v⁻ d⁺ a + 0.22 p + half-blink |
-| lid slope (tilt) | v⁻(−0.5 (1−d⁺)(1−0.4a) + d⁺ a) − 0.15 max(0, −d) + 0.3 p  (+ inward = cross / hurt, − = sad) |
+| upper lid (top) | 0.3 clip((0.45 − a)/0.45) + 0.2 d⁺ + 0.15 v⁻ + 0.25 v⁻(1−d⁺)(1−a) + 0.3 v⁻ d⁺ a + 0.22 p + half-blink |
+| lid slope (tilt) | v⁻(−0.5 (1−d⁺)(1−0.4a) + d⁺ a) − 0.45 max(0, −d) + 0.3 p  (+ inward = cross / hurt, − = sad) |
 | lower lid (bot) | 0.5 max(0, v)(1 − p) + 0.25 v⁻ a (1 − d⁺) + 0.3 p |
 | roundness | 0.5 + 0.45 max(0, v) − 0.2 p |
 | width | 4.4 (1 + 0.12 p) LEDs; size x (1 + 0.08 d + 0.1 (a − 0.5)) |
-| height on face | −1.6 d + 0.8 v⁻ (+ a slow bob) |
+| height on face | −2.4 d + 0.8 v⁻ (+ a slow bob) |
 | gap between eyes | 6.6 + 0.5 d |
 | shake | (0.6 p + 2 max(0, a − 0.85)) sin(60 t) |
 | colour | cyan, saturation 30 + 60 a, brightness 0.5 + 0.5 (0.3 + 0.7 a); red replaced cyan LED by LED for p from 0.15 to 0.5 |
@@ -164,3 +115,23 @@ Check (2026-11-10): `face.html` rendered in headless Chromium (Playwright)
 before and after, states set with `window.__faceSet`, no page errors; sheet
 `figs/face/face_1110.png`. Phone side: `test_pain_reaches_the_face_every_step`
 (embodied/tests/test_emotion_affect.py). Not yet seen on the phone.
+
+## 7. Changes (2026-11-12): pain on pleasure, stronger dominance
+
+- Pain's shape is driven by p = max(pain, clip((−v − 0.6)/0.4, 0, 1)): mild
+  displeasure droops the eyes, below −0.6 they squint, at −1 they are `> <`.
+  In the new model a hit drives pleasure down through the outcome term
+  (EMOTION.md), so no separate pain channel is needed.
+- Dominance follows the face-perception findings: in control the lid sits low
+  and flat and the eyes high (Keating et al. 1981; Mignault & Chaudhuri 2003);
+  without control the inner corners rise, the eyes sit low and the gaze
+  slides down and away (Adams & Kleck 2003). Constants: top +0.2 d⁺ (was 0.1),
+  tilt −0.45 max(0, −d) (was 0.15), height −2.4 d (was 1.6), saccade target
+  +0.6 max(0, −d) sideways and +1.0 max(0, −d) down (was 0.6 down only).
+- Effort is no longer driven by the plan (the face still reads the wheel
+  commands if sent).
+
+Renders of the eight PAD corners (±0.8 and ±0.5) and of negative pleasure 0 to
+−1: plan page "Robot Emotion Model". The renders step the face 360 frames
+before the capture so springs have settled; earlier headless captures had not,
+which made dominance look weaker than it is.
