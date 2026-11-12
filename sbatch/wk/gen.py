@@ -292,6 +292,22 @@ R_ARMS = [N_ARMS[2]]
 # default is 2 since 11-11. Seeds 811-818 pair with P/R (Saion) and N (IAS).
 S2_ARMS = [('unc_d05', f'{PICK_UNC} {DROP} 0.05 {REP} 1')]
 
+# Round PF (11-12, pain and fear; docs/robot/EMOTION.md target design): on
+# S2's pick (uncapped, dropout 0.05, the fear critic) with pushes and walls,
+# (a) today's pain (bumper closeness + reflex override) and runaway brake,
+# (b) impact pain (|change of tilt rate| per step) for the threat critic,
+# no brake, (c) = (b) + the catch reflex in the phone loop. 60 min, n = 8.
+PF_BASE = f'{S2_ARMS[0][1]} {PUSH}'
+PF_IMPACT = '--env.robot.pain_mode impact --env.robot.runaway_s 0'
+# catch_tmax 0.2: in the 4-min smokes (e44501-e44502) the threat critic sat
+# at 0.08-0.11 (p99 0.14) and rose to 0.2-0.26 around impacts.
+PF_REFLEX = '--env.robot.catch_reflex True --env.robot.catch_tmax 0.2'
+PF_ARMS = [
+    ('a_bumper_brake', PF_BASE),
+    ('b_impact', f'{PF_BASE} {PF_IMPACT}'),
+    ('c_impact_reflex', f'{PF_BASE} {PF_IMPACT} {PF_REFLEX}'),
+]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -573,6 +589,16 @@ def main():
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
+  elif rnd in ('pfsmoke', 'pfv', 'pfi'):
+    gpu = {'pfsmoke': 'v100', 'pfv': 'v100', 'pfi': 'any'}[rnd]
+    # Seeds split by cluster, all three arms of a seed on the same GPU type:
+    # 811-814 Saion V100, 815-818 IAS.
+    seeds, minutes = {'pfsmoke': ([1], 4), 'pfv': (SEEDS4, 60),
+                      'pfi': (SEEDS8[4:], 60)}[rnd]
+    for seed in seeds:
+      for arm, flags in PF_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd.startswith('w1'):
     base = W1_BASE
     gpu = {'w1p': 'p100', 'w1i': 'any'}[rnd]
