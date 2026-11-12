@@ -297,7 +297,11 @@ S2_ARMS = [('unc_d05', f'{PICK_UNC} {DROP} 0.05 {REP} 1')]
 # (a) today's pain (bumper closeness + reflex override) and runaway brake,
 # (b) impact pain (|change of tilt rate| per step) for the threat critic,
 # no brake, (c) = (b) + the catch reflex in the phone loop. 60 min, n = 8.
-PF_BASE = f'{S2_ARMS[0][1]} {PUSH}'
+# Logging only (no effect on learning): the phone loop feels every step and
+# records every arousal variant, pleasure's parts and the empowerment terms
+# at 16 and 32 steps, for comparing the emotion variants afterwards.
+PF_LOG = '--env.robot.sim_phone_feel_every 1 --env.robot.empower_extra 32'
+PF_BASE = f'{S2_ARMS[0][1]} {PUSH} {PF_LOG}'
 PF_IMPACT = '--env.robot.pain_mode impact --env.robot.runaway_s 0'
 # catch_tmax 0.2: in the 4-min smokes (e44501-e44502) the threat critic sat
 # at 0.08-0.11 (p99 0.14) and rose to 0.2-0.26 around impacts.
@@ -589,14 +593,15 @@ def main():
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd == 'smoke2':
     lines.append(cmd_line(f'e{n}', 'p100', SMOOTH + ' --env.robot.command_grow_s 120', 1, minutes=4)); n += 1
-  elif rnd in ('pfsmoke', 'pfv', 'pfi'):
-    gpu = {'pfsmoke': 'v100', 'pfv': 'v100', 'pfi': 'any'}[rnd]
+  elif rnd in ('pfsmoke', 'pfsmoke2', 'pfv', 'pfi'):
+    gpu = {'pfsmoke': 'v100', 'pfsmoke2': 'v100', 'pfv': 'v100', 'pfi': 'any'}[rnd]
     # Seeds split by cluster, all three arms of a seed on the same GPU type:
     # 811-814 Saion V100, 815-818 IAS.
-    seeds, minutes = {'pfsmoke': ([1], 4), 'pfv': (SEEDS4, 60),
+    seeds, minutes = {'pfsmoke': ([1], 4), 'pfsmoke2': ([1], 4), 'pfv': (SEEDS4, 60),
                       'pfi': (SEEDS8[4:], 60)}[rnd]
+    arms = PF_ARMS[2:] if rnd == 'pfsmoke2' else PF_ARMS
     for seed in seeds:
-      for arm, flags in PF_ARMS:
+      for arm, flags in arms:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd.startswith('w1'):
