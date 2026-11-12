@@ -675,6 +675,10 @@ of solved seeds. Expected: more pin pad six seeds solved than V's 1/5 and a high
 solved seeds; hopper is the risk (earlier variable-length runs hurt it).
 Watch: `goal/hold_len_imag`, `goal/hold_len_repl`, `goal/hold_reach_frac`, `goal/hold_len1_frac`,
 `goal/reach_ceil`. Tests: `embodied/tests/test_goal_hold_reach.py` (7 pass).
+**Status 2026-11-12 19:20: not started.** The array has been pending for 19 h (reason Priority):
+all 32 A100 GPUs are held by other users and the estimated start keeps slipping (now 11-13 early
+morning). `--nice=100` was removed from the array at 04:00 to help it compete. No GPU smoke has
+run yet, so the first jobs to start are the smoke: check them before trusting the rest.
 Known: 12 older tests in test_variable_goals / test_block_pooled_* / test_hrl_package fail on the
 unmodified tree too (a metrics line on stub norms, and `fromto` missing from a module list).
 
