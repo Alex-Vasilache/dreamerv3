@@ -111,6 +111,18 @@ def pain_signal(theta, body, act=None, chosen=None):
   return pain, front, back
 
 
+def impact_pain(rate, prev_rate, iota0, iota1):
+  """Impact pain: (pain 0-1, impact). The impact is the change of tilt rate
+  over one control step, |w_t - w_{t-1}| (rad/s); pain is 0 below iota0,
+  1 from iota1, linear between. The trainer (embodied/envs/robot.py) keeps
+  a copy for the cost it records, so change both."""
+  if prev_rate is None:
+    return 0.0, 0.0
+  impact = abs(float(rate) - float(prev_rate))
+  span = max(float(iota1) - float(iota0), 1e-6)
+  return min(1.0, max(0.0, (impact - float(iota0)) / span)), impact
+
+
 class PolicyRunner:
 
   def __init__(self, path=None):
@@ -166,6 +178,16 @@ class PolicyRunner:
     self._arousal_base = None
     self._events = 0
     self.pain = (0.0, 0.0, 0.0)   # (pain, front, back) of the last step
+    # body['pain_mode'] 'impact': pain is the change of tilt rate per step
+    # (impact_pain), not closeness to a bumper; front/back stay 0.
+    self.impact = 0.0
+    self._rate = None
+    # The emotion model (deploy/emotion.py) and its switches, from the
+    # trainer's settings: 'v2' (pleasure, arousal, dominance) or 'v1'.
+    self.emotion_cfg = dict(model='v2', arousal='error', empower_steps=16)
+    # The catch reflex (reflex()), off unless the trainer turns it on.
+    self.reflex_cfg = dict(on=False, tmax=0.5, eps=0.1, steps=4)
+    self.reflex_last = 0.0
     self._chosen = None
     self._applied = None
     self._theta = None
@@ -209,15 +231,28 @@ class PolicyRunner:
       self.emotion = None
       return
     try:
-      from emotion import Emotion  # noqa: E402  (flat layout on the phone)
+      import emotion as emotion_lib  # noqa: E402  (flat layout on the phone)
     except ImportError:
       return
+    cfg = self.emotion_cfg
+    v2 = cfg.get('model', 'v2') == 'v2' and hasattr(emotion_lib, 'EmotionV2')
     with self._emo_lock:
-      if self.emotion is None:
-        self.emotion = Emotion(policy, gamma=policy.meta['emotion']['gamma'],
-                               every=0, tau=650 // self.FEEL_EVERY)
+      emo = self.emotion
+      if emo is not None and (getattr(emo, 'version', 'v1') == 'v2') == v2:
+        if v2:
+          emo.set_policy(policy)   # keep the running normalisation
+        else:
+          emo.p = policy
+      elif v2:
+        hz = float(policy.meta.get('obs_scale', {}).get('hz', 65.0))
+        self.emotion = emotion_lib.EmotionV2(
+            policy, hz=hz, tau=max(1, int(10 * hz) // self.FEEL_EVERY),
+            arousal=cfg.get('arousal', 'error'),
+            horizon=int(cfg.get('empower_steps', 16)), every=0)
       else:
-        self.emotion.p = policy   # keep the running normalisation
+        self.emotion = emotion_lib.Emotion(
+            policy, gamma=policy.meta['emotion']['gamma'], every=0,
+            tau=650 // self.FEEL_EVERY)
     if self._emo_thread is None:
       self._emo_thread = threading.Thread(target=self._empower_loop, daemon=True)
       self._emo_thread.start()
@@ -247,6 +282,8 @@ class PolicyRunner:
     emo = self.emotion
     if emo is None or getattr(self.policy, 'last_post', None) is None:
       return
+    if getattr(emo, 'version', 'v1') == 'v2':
+      return self._feel_v2(emo, reward)
     acc = self._feel
     acc[0] += (emo.gamma ** acc[1]) * float(reward)
     acc[1] += 1
@@ -278,6 +315,40 @@ class PolicyRunner:
       # while the TD error and pain rose (e19410-e19425).
       self._detect_event(
           abs(sig['valence']) + sig['pain'] if self.event_signal == 'salience'
+          else sig['arousal'])
+    except Exception as e:  # noqa: BLE001
+      print('dreamerBridge: emotion failed: %s' % e)
+      self.emotion = None
+    self._feel = [0.0, 0, False, 0.0, 0.0]
+
+  def _feel_v2(self, emo, reward):
+    """emotion.EmotionV2: each step's outcome (reward minus pain) fades in
+    now; every FEEL_EVERY steps the world model adds the outlook's change,
+    arousal and the z-scores."""
+    acc = self._feel
+    pain = min(float(self.pain[0]), 1.0)
+    with self._emo_lock:
+      emo.tick(reward, pain)
+    acc[1] += 1
+    acc[2] = acc[2] or self.was_first
+    acc[4] += float(reward)
+    if acc[1] < self.FEEL_EVERY:
+      return
+    deter, stoch, logit = self.policy.last_post
+    try:
+      with self._emo_lock:
+        sig = emo.step(deter, logit, stoch, reward, pain, is_first=acc[2])
+      self.emotion_state = dict(
+          valence=sig['pleasure'], pleasure=sig['pleasure'],
+          arousal=sig['arousal'], dominance=sig['dominance'],
+          mood=sig['mood'], pain=pain, threat=sig['threat'],
+          fear=sig['threat'], value=sig['value'], outlook=sig['outlook'],
+          td=sig['change'], surprise=sig['surprise'],
+          unexpected=sig['unexpected'], expected=sig['expected'],
+          empowerment=sig['empowerment'], faded=sig['faded'], model='v2',
+          reward=acc[4] / acc[1], **self._body_state())
+      self._detect_event(
+          abs(sig['pleasure']) + pain if self.event_signal == 'salience'
           else sig['arousal'])
     except Exception as e:  # noqa: BLE001
       print('dreamerBridge: emotion failed: %s' % e)
@@ -329,6 +400,19 @@ class PolicyRunner:
       self.body = dict(settings['body'])
     self.event_threshold = float(settings.get('emotion_event') or 0.0)
     self.event_signal = settings.get('event_signal') or 'arousal'
+    if settings.get('reflex'):
+      self.reflex_cfg.update(settings['reflex'])
+    cfg = dict(self.emotion_cfg)
+    for key, name in (('model', 'model'), ('arousal', 'arousal'),
+                      ('empower_steps', 'empower_steps')):
+      if settings.get(key) is not None:
+        cfg[name] = settings[key]
+    if cfg != self.emotion_cfg:
+      self.emotion_cfg = cfg
+      if self.policy is not None:
+        with self._emo_lock:
+          self.emotion = None
+        self._install_emotion(self.policy)
 
   @staticmethod
   def build_blob(blob, path):
@@ -371,6 +455,7 @@ class PolicyRunner:
       self.carry = self.policy.initial()
     self.is_first = True
     self._pre = None
+    self._rate = None
     self.fatigue.reset()
 
   def observe(self, sensors, command=None, track=True):
@@ -431,7 +516,8 @@ class PolicyRunner:
     if self.carry is not None:
       self.carry = dict(self.carry, prevact=np.asarray(act, np.float32))
       self._pre = None
-    if self.body is not None and self._theta is not None:
+    if (self.body is not None and self._theta is not None
+        and self.body.get('pain_mode', 'bumper') != 'impact'):
       self.pain = pain_signal(self._theta, self.body, act, self._chosen)
     self._fast_affect()
 
@@ -442,6 +528,16 @@ class PolicyRunner:
     at once (a bumper hit used to wait up to FEEL_EVERY steps; FACE_MATHS.md
     section 6). A new dict each time: the web thread reads it unlocked."""
     st = self.emotion_state
+    if st and st.get('model') == 'v2':
+      # v2: pain reaches the face through pleasure's outcome term, which
+      # feel() fades in every step; refresh it from the current statistics.
+      emo = self.emotion
+      if emo is not None and hasattr(emo, 'pleasure_now'):
+        p = emo.pleasure_now()
+        st = dict(st, valence=p, pleasure=p, mood=p,
+                  pain=min(float(self.pain[0]), 1.0), **self._body_state())
+        self.emotion_state = st
+      return
     if not st or st.get('drive') is None:
       return
     pain = min(float(self.pain[0]), 1.0)
@@ -479,8 +575,16 @@ class PolicyRunner:
     t0 = time.monotonic()
     obs = self.observe(sensors, command)
     self._theta = float(sensors['theta'])
+    rate = float(sensors.get('angular_velocity', 0.0))
+    pain, self.impact = impact_pain(
+        rate, None if self.is_first else self._rate,
+        *((self.body or {}).get('iota0', 1.0), (self.body or {}).get('iota1', 3.0)))
+    self._rate = rate
     if self.body is not None:
-      self.pain = pain_signal(self._theta, self.body)
+      if self.body.get('pain_mode', 'bumper') == 'impact':
+        self.pain = (pain, 0.0, 0.0)
+      else:
+        self.pain = pain_signal(self._theta, self.body)
     self.policy.explore = self.explore_scale()
     self.was_first = self.is_first
     pre = self._pre
@@ -525,7 +629,40 @@ class PolicyRunner:
     # What the trainer's limits are measured against: a reflex overriding
     # this hurts (applied), the affect's own change does not.
     self._chosen = [float(min(1.0, max(-1.0, a))) for a in act]
-    return list(self._chosen)
+    return self.reflex(list(self._chosen))
+
+  def reflex(self, act):
+    """The catch reflex (reflex_cfg 'on'; settings env.robot.catch_*): roll
+    the intended command `steps` steps through the world model, read the
+    threat critic's T(a), and with k(a) = T(a) - tmax > 0 step the drive
+    (both wheels together) back along k's slope, a' = a - k(a) / g with
+    g = (k(a + eps) - k(a - eps)) / 2 eps; skipped when |g| is tiny. Needs
+    emotion weights with the threat critic (cval). A learned safety filter
+    after ATACOM (Liu et al. 2025), with the world model for the physics:
+    it fires on a prediction and is only as good as the model."""
+    self.reflex_last = 0.0
+    cfg, emo = self.reflex_cfg, self.emotion
+    if (not cfg.get('on') or emo is None or not getattr(emo, 'has_threat', False)
+        or getattr(self.policy, 'last_post', None) is None):
+      return act
+    eps, tmax = float(cfg.get('eps', 0.1)), float(cfg.get('tmax', 0.5))
+    deter, stoch, _ = self.policy.last_post
+    a = np.asarray(act, np.float32)
+    cands = np.stack([a, a + eps, a - eps]).astype(np.float32)
+    try:
+      k = emo.threat_after(deter, stoch, cands, int(cfg.get('steps', 4))) - tmax
+    except Exception as e:  # noqa: BLE001 -- never let the reflex stop the robot
+      print('dreamerBridge: reflex failed: %s' % e)
+      return act
+    if k[0] <= 0:
+      return act
+    g = (k[1] - k[2]) / (2 * eps)
+    if abs(g) < 1e-6:
+      return act
+    delta = float(-k[0] / g)
+    out = [float(min(1.0, max(-1.0, x + delta))) for x in act]
+    self.reflex_last = float(np.mean(np.subtract(out, act)))
+    return out
 
   def warm(self):
     """A throwaway step on the current carry, to bring the core up to speed

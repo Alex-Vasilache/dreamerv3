@@ -358,6 +358,12 @@ class Physics:
     self.bodies = [self.model.body(n).id for n in PHONE_WHEELS]
     self._robot_body = body
     self._front_geom = self.model.geom('bumper_front').id
+    self._bumper_geoms = (self.model.geom('bumper_back').id,
+                          self._front_geom)
+    self._force6 = np.zeros(6)
+    # The largest normal force (N) on either bumper over the last step()'s
+    # substeps: the true contact force at a hit, for checking impact pain.
+    self.bumper_force = 0.0
     self._vel = np.zeros(6)
     # Each wheel's contact geom, in the same (phone) order as dofs.
     self.wheel_geoms = [
@@ -411,6 +417,7 @@ class Physics:
   def step(self, sent, n):
     """`n` physics steps with outputs `sent` (phone order) at the motors."""
     m, d = self.model, self.data
+    peak = 0.0
     for _ in range(n):
       for u, dof, act in zip(sent, self.motor_dofs, self.acts):
         w = float(d.qvel[dof])
@@ -433,6 +440,19 @@ class Physics:
           m.geom_friction[geom, 2] = (
               self.rolling_static if spin < self.ROLL_STILL else self.rolling)
       mujoco.mj_step(m, d)
+      peak = max(peak, self._bumper_contact())
+    self.bumper_force = peak
+
+  def _bumper_contact(self):
+    """Total normal force (N) on the bumpers now."""
+    m, d = self.model, self.data
+    total = 0.0
+    for i in range(d.ncon):
+      c = d.contact[i]
+      if c.geom1 in self._bumper_geoms or c.geom2 in self._bumper_geoms:
+        mujoco.mj_contactForce(m, d, i, self._force6)
+        total += abs(float(self._force6[0]))
+    return total
 
   def _gears(self):
     """Each motor drives its wheel through the gearbox's play."""
@@ -805,6 +825,19 @@ class RobotMujoco(robot_sim.RobotSim):
   def _phone_runs(self):
     return self.sim_phone
 
+  def _extra_logs(self):
+    # The sim logs the impact whatever the pain mode, and the true bumper
+    # contact force beside it (the largest over the step's substeps).
+    return ('log/impact', 'log/bumper_force')
+
+  def _extra_log_values(self):
+    return {'log/impact': np.float32(self._impact),
+            'log/bumper_force': np.float32(self._bumper_force())}
+
+  def _bumper_force(self):
+    physics = getattr(self, 'physics', None)
+    return float(physics.bumper_force) if physics is not None else 0.0
+
   def _obs(self, sensors, latency, reward, is_first=False, is_last=False,
            is_terminal=False):
     if self.sim_phone:
@@ -822,10 +855,7 @@ class RobotMujoco(robot_sim.RobotSim):
           'sim_phone needs the agent config and the shared policy dir')
       self._phone = sim_phone.SimPhone(
           a['config'], a['shared'], dtype=a['dtype'], delay=a['delay'],
-          affect=self.affect, event=self.emotion_event,
-          event_signal=self.event_signal, seed=self._seed,
-          body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
-                    hi=self.bumper_hi, zone=self.pain_zone),
+          settings=self._emotion_settings(), seed=self._seed,
           log=str(a['shared']) + '/../emotion.csv')
     act = self._phone.decide(
         sensors, reward, is_first,

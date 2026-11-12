@@ -83,6 +83,22 @@ def pain_signal(theta, body, act=None, chosen=None):
   return pain, front, back
 
 
+def impact_pain(rate, prev_rate, iota0, iota1):
+  """Impact pain (env.robot.pain_mode 'impact'): (pain 0-1, impact). The
+  impact is the change of tilt rate over one control step, |w_t - w_{t-1}|
+  (rad/s): a hit stops the body's rotation within a step or two. Pain is 0
+  below the tolerance iota0 and 1 from iota1 on, linear in between. No
+  bumper angles, no reflex term. A copy of deploy/policy_runner.py's, so
+  change both. Defaults from the five recorded real sessions at 65 Hz
+  (2026-11-12): iota0 1.0 is above 99% of the steps away from bumper hits,
+  iota1 3.0 near the 80th percentile of the hits' peak impact."""
+  if prev_rate is None:
+    return 0.0, 0.0
+  impact = abs(float(rate) - float(prev_rate))
+  span = max(float(iota1) - float(iota0), 1e-6)
+  return min(1.0, max(0.0, (impact - float(iota0)) / span)), impact
+
+
 def travel_limit(act, pos, lo, hi, state=None):
   """Scale wheel commands that push the robot further the way it has already
   travelled: none below `lo` of leaky travel (`pos`, the mean of the two
@@ -661,7 +677,9 @@ class SmartphoneRobot(embodied.Env):
       fatigue_s=0.0, fatigue_tol=0.15, fatigue_dead=0.05, travel_lo=0.0,
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
       pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
-      cost_obs=False):
+      cost_obs=False, pain_mode='bumper', pain_iota0=1.0, pain_iota1=3.0,
+      emotion_model='v2', arousal_mode='error', empower_steps=16,
+      catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
     self.host = host
@@ -1000,6 +1018,31 @@ class SmartphoneRobot(embodied.Env):
     # cost_obs: report the body's pain as 'cost' beside the reward, for the
     # agent's fear critic (agent.fear); never part of the reward.
     self.cost_obs = bool(cost_obs)
+    # pain_mode: what that pain is. 'bumper' (closeness to a bumper, plus a
+    # reflex overriding the policy; pain_signal) or 'impact' (the change of
+    # tilt rate per step, impact_pain, between pain_iota0 and pain_iota1
+    # rad/s). The phone computes the same for its face (PolicyRunner).
+    assert pain_mode in ('bumper', 'impact'), pain_mode
+    self.pain_mode = str(pain_mode)
+    self.pain_iota = (float(pain_iota0), float(pain_iota1))
+    self._prev_rate = None
+    self._impact = 0.0
+    # The phone's emotion model (deploy/emotion.py): 'v1' the old signals,
+    # 'v2' pleasure, arousal and dominance from the world model and both
+    # critics; arousal 'error' (prediction error) or 'unexpected' (minus its
+    # expected size); the empowerment rollout's length in steps.
+    assert emotion_model in ('v1', 'v2'), emotion_model
+    assert arousal_mode in ('error', 'unexpected'), arousal_mode
+    self.emotion_model = str(emotion_model)
+    self.arousal_mode = str(arousal_mode)
+    self.empower_steps = int(empower_steps)
+    # The catch reflex on the phone (PolicyRunner.reflex): before each
+    # command, roll it catch_steps steps through the world model, read the
+    # threat critic's prediction, and if that exceeds catch_tmax step the
+    # drive back along its slope (central difference, catch_eps). Off by
+    # default; meant to replace the runaway brake once tested.
+    self.reflex = dict(on=bool(catch_reflex), tmax=float(catch_tmax),
+                       eps=float(catch_eps), steps=int(catch_steps))
     self._chosen_act = None
     self._cost_pair = (None, None)   # (applied, chosen) of the last step
     self._event_n = None
@@ -1114,6 +1157,7 @@ class SmartphoneRobot(embodied.Env):
         # pushes keep up.
         'log/policy_age_s': elements.Space(np.float32),
         'log/brake': elements.Space(np.float32),
+        **{k: elements.Space(np.float32) for k in self._extra_logs()},
         **({k: elements.Space(np.float32) for k in (
             'log/cmd_forward', 'log/cmd_turn', 'log/cmd_joystick',
             'log/forward', 'log/turn', 'log/turn_wheels', 'log/yaw_rate',
@@ -1121,6 +1165,42 @@ class SmartphoneRobot(embodied.Env):
         **({'executed/drive': elements.Space(np.float32, (2,), -1.0, 1.0)}
            if self._records_executed() else {}),
     }
+
+  def _extra_logs(self):
+    """Log keys beyond the fixed ones: the impact, with impact pain (the sim
+    logs it always, robot_mujoco.py)."""
+    return ('log/impact',) if self.pain_mode == 'impact' else ()
+
+  def _extra_log_values(self):
+    return {'log/impact': np.float32(self._impact)} if (
+        'log/impact' in self._extra_logs()) else {}
+
+  def _pain(self, sensors, is_first=False):
+    """This step's pain for 'cost' (pain_mode); also tracks the impact."""
+    rate = float(sensors['angular_velocity'])
+    prev = None if is_first else self._prev_rate
+    self._prev_rate = rate
+    pain, self._impact = impact_pain(rate, prev, *self.pain_iota)
+    if self.pain_mode == 'impact':
+      return pain
+    return pain_signal(
+        sensors['theta'], dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
+                               hi=self.bumper_hi, zone=self.pain_zone),
+        *self._cost_pair)[0]
+
+  def _emotion_settings(self):
+    """What the phone's PolicyRunner.configure reads: the affect gains, the
+    body for pain, the arousal event threshold, the emotion model and the
+    catch reflex."""
+    return dict(
+        affect=self.affect, emotion_event=self.emotion_event,
+        event_signal=self.event_signal, model=self.emotion_model,
+        arousal=self.arousal_mode, empower_steps=self.empower_steps,
+        reflex=dict(self.reflex),
+        body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
+                  hi=self.bumper_hi, zone=self.pain_zone,
+                  pain_mode=self.pain_mode, iota0=self.pain_iota[0],
+                  iota1=self.pain_iota[1]))
 
   @property
   def act_space(self):
@@ -1718,6 +1798,7 @@ class SmartphoneRobot(embodied.Env):
   def _obs(self, sensors, latency, reward, is_first=False, is_last=False,
            is_terminal=False):
     theta = float(sensors['theta'])
+    pain = self._pain(sensors, is_first)
     return dict(
         wheels=np.clip(np.array([
             sensors['wheel_speed_l'], sensors['wheel_speed_r']],
@@ -1735,11 +1816,7 @@ class SmartphoneRobot(embodied.Env):
             self._pos * self.obs_pos_scale, -self.obs_clip,
             self.obs_clip).astype(np.float32)} if self.pos_tau else {}),
         reward=np.float32(reward),
-        **({'cost': np.float32(pain_signal(
-            sensors['theta'], dict(theta_zero=self.theta_zero,
-                                   lo=self.bumper_lo, hi=self.bumper_hi,
-                                   zone=self.pain_zone),
-            *self._cost_pair)[0])} if self.cost_obs else {}),
+        **({'cost': np.float32(pain)} if self.cost_obs else {}),
         is_first=is_first,
         is_last=is_last,
         is_terminal=is_terminal,
@@ -1767,6 +1844,7 @@ class SmartphoneRobot(embodied.Env):
             'log/backlog': np.float32(self._backlog),
             'log/policy_age_s': np.float32(self._policy_age()),
             'log/brake': np.float32(self._brake_left > 0),
+            **self._extra_log_values(),
             **(self._command_logs(sensors) if self.task == 'command' else {}),
         },
     )
@@ -1907,11 +1985,7 @@ class SmartphoneRobot(embodied.Env):
                    if self.travel_hi else {}),
                 # Emotion on the phone (PolicyRunner.configure): the affect
                 # gains, the body for pain, the arousal event threshold.
-                **({'emotion': dict(
-                    affect=self.affect, emotion_event=self.emotion_event,
-                    event_signal=self.event_signal,
-                    body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
-                              hi=self.bumper_hi, zone=self.pain_zone))}
+                **({'emotion': self._emotion_settings()}
                    if self.weights_emotion else {}))
 
   def _request_pause(self, request):

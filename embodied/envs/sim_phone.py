@@ -38,22 +38,28 @@ from policy_runner import PolicyRunner  # noqa: E402
 
 FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
           'td', 'unexpected', 'empowerment', 'pain', 'hurt', 'fear', 'explore',
-          'event', 'push', 'theta', 'act0', 'chosen0')
+          'event', 'push', 'theta', 'act0', 'chosen0',
+          # Since 11-12 (emotion v2, impact pain, catch reflex): the threat
+          # critic's value, the impact, and the reflex's last correction.
+          'threat', 'impact', 'reflex')
 
 
 class SimPhone:
 
   def __init__(self, config, shared, dtype='int8', delay=3.0, poll=1.0,
                affect=None, body=None, event=0.0, event_signal='arousal', log=None,
-               seed=0):
+               seed=0, settings=None):
     self.config = config
     self.shared = str(shared)
     self.dtype = dtype
     self.delay = float(delay)
     self.poll = float(poll)
     self.runner = PolicyRunner()
-    self.runner.configure(dict(affect=affect or {}, body=body,
-                               emotion_event=event, event_signal=event_signal))
+    # `settings`: what the trainer sends the phone (robot.py
+    # _emotion_settings); the separate arguments are the older form.
+    self.runner.configure(settings or dict(
+        affect=affect or {}, body=body, emotion_event=event,
+        event_signal=event_signal))
     self._event_n = None
     self._dir = tempfile.mkdtemp(prefix='sim_phone_')
     # (policy, stamp, published_at) built off-thread; each lands on the
@@ -153,10 +159,11 @@ class SimPhone:
       from embodied.envs.robot import write_event
       write_event(self.shared, r.event)
     if self._log and st and (self.steps % r.FEEL_EVERY == 0 or event or self.push):
-      row = dict(t=time.time(), step=step, stamp=r.stamp, event=event,
+      row = {k: st[k] for k in FIELDS if k in st}
+      row.update(t=time.time(), step=step, stamp=r.stamp, event=event,
                  push=self.push, theta=r._theta, act0=act[0],
                  chosen0=(r._chosen or [0.0])[0], explore=r.policy.explore,
-                 **{k: st.get(k, 0.0) for k in FIELDS if k in st})
+                 impact=r.impact, reflex=r.reflex_last)
       self._log.write(','.join(
           (f'{row[k]:.3f}' if k == 't' else f'{row[k]:.5g}'
            if isinstance(row.get(k), float) else str(row.get(k, '')))
