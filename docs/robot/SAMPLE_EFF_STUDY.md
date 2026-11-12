@@ -455,3 +455,44 @@ ones: sim hits are softer), the threat critic sat at 0.08-0.11 and rose to
 ~0.25 near impacts (hence `catch_tmax 0.2`), and its slope along the drive
 over 4 steps is small (|g| ~ 0.001-0.01), so a firing reflex steps the
 command far, usually to the clip.
+
+### Thu 11-12: RF, catch reflex variants (launched)
+
+What PF c showed by minute 16 (e44552) and offline on its recorded states:
+
+- The threat critic's level falls ~100x while the policy learns (median
+  0.15 in minute 2, 0.001 by minute 15). The absolute `catch_tmax 0.2`
+  fired on 22-28% of steps in minutes 2-3, |a' - a| ~0.43, and never
+  after minute 7.
+- Holding the command longer separates the candidates more (median
+  |T(a+0.5) - T(a-0.5)| 0.003-0.014 at 4 steps, 0.04-0.10 at 8-16), but
+  predicts worse: AUC of T(a) for a crossing within 0.25 s is 0.76 at 4
+  steps, 0.70-0.72 at 8 and 0.62-0.65 at 16 (e44551, e44552; 8000 states
+  each, latest weights).
+- Cost (numpy, one thread, Saion CPU node): act 1.0 ms; reflex 3.3 ms (slope,
+  4 steps), 11.7 ms (slope, 16), 14.5 ms (search over 7 commands, 16), 3.7 ms
+  mean (search 16, evaluated every 4th step; 19 ms on those steps). On the
+  P100 nodes inside a run it is ~2x that. Emotion rollouts now use a matmul
+  instead of einsum (3.3 vs 5.3 ms for the old reflex).
+- OpenBLAS ran one thread per node core in the 3-CPU jobs: the phone loop of
+  the first RF smokes (e44600-e44603) fell to 25-50 Hz. `sim_phone_threads 1`
+  brings it back to 53-61 Hz (smokes e44604-e44609), so RF reruns b and c
+  with the same cap rather than reusing PF's.
+
+New options (`env.robot.catch_*`, off by default): `catch_mode search`,
+`catch_dmax`, `catch_z` + `catch_zlog` + `catch_window` (limit at mean + z SD
+of log T(a) over ~10 s; samples capped at mean + 2 SD), `catch_every`,
+`catch_rising`. Arms, on PF c's setup, all with `sim_phone_threads 1` and
+`sim_phone_log_every 16`:
+
+| arm | reflex |
+|---|---|
+| b | none |
+| c | PF c: slope, 4 steps, tmax 0.2 |
+| g4z | slope, 4 steps, step capped at 0.5, z 3 (log) |
+| s4z | search a + {0, ±0.25, ±0.5, ±1}, 4 steps, z 3 (log) |
+| s8z | search, 8 steps, every 2nd step, z 3 (log) |
+| s16z | search, 16 steps, every 4th step, z 3 (log) |
+
+Saion V100 seeds 811-814: e44610-e44633 (jobs 4816270-4816293); IAS seeds
+815-818: e44640-e44663 (array 205979, code snapshot `code_rf`). 60 min each.
