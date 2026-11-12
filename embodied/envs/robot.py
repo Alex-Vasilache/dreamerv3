@@ -678,7 +678,7 @@ class SmartphoneRobot(embodied.Env):
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
       pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
       cost_obs=False, pain_mode='bumper', pain_iota0=1.0, pain_iota1=3.0,
-      emotion_model='v2', arousal_mode='error', empower_steps=16,
+      emotion_model='v2', arousal_mode='kl', empower_steps=16,
       catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
@@ -1029,10 +1029,12 @@ class SmartphoneRobot(embodied.Env):
     self._impact = 0.0
     # The phone's emotion model (deploy/emotion.py): 'v1' the old signals,
     # 'v2' pleasure, arousal and dominance from the world model and both
-    # critics; arousal 'error' (prediction error) or 'unexpected' (minus its
-    # expected size); the empowerment rollout's length in steps.
+    # critics; arousal 'kl' (the belief update over state, reward and cost),
+    # 'total' (the prior's prediction error) or 'unexpected' (minus its
+    # expected size); the empowerment rollout's length in steps (16: as good
+    # as 32 on the recorded sessions at half the cost).
     assert emotion_model in ('v1', 'v2'), emotion_model
-    assert arousal_mode in ('error', 'unexpected'), arousal_mode
+    assert arousal_mode in ('kl', 'total', 'error', 'unexpected'), arousal_mode
     self.emotion_model = str(emotion_model)
     self.arousal_mode = str(arousal_mode)
     self.empower_steps = int(empower_steps)

@@ -184,7 +184,7 @@ class PolicyRunner:
     self._rate = None
     # The emotion model (deploy/emotion.py) and its switches, from the
     # trainer's settings: 'v2' (pleasure, arousal, dominance) or 'v1'.
-    self.emotion_cfg = dict(model='v2', arousal='error', empower_steps=16)
+    self.emotion_cfg = dict(model='v2', arousal='kl', empower_steps=16)
     # The catch reflex (reflex()), off unless the trainer turns it on.
     self.reflex_cfg = dict(on=False, tmax=0.5, eps=0.1, steps=4)
     self.reflex_last = 0.0
@@ -247,7 +247,7 @@ class PolicyRunner:
         hz = float(policy.meta.get('obs_scale', {}).get('hz', 65.0))
         self.emotion = emotion_lib.EmotionV2(
             policy, hz=hz, tau=max(1, int(10 * hz) // self.FEEL_EVERY),
-            arousal=cfg.get('arousal', 'error'),
+            arousal=cfg.get('arousal', 'kl'),
             horizon=int(cfg.get('empower_steps', 16)), every=0)
       else:
         self.emotion = emotion_lib.Emotion(
@@ -345,6 +345,7 @@ class PolicyRunner:
           fear=sig['threat'], value=sig['value'], outlook=sig['outlook'],
           td=sig['change'], surprise=sig['surprise'],
           unexpected=sig['unexpected'], expected=sig['expected'],
+          update=sig['update'],
           empowerment=sig['empowerment'], faded=sig['faded'], model='v2',
           reward=acc[4] / acc[1], **self._body_state())
       self._detect_event(

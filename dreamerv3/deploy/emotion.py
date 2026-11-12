@@ -297,9 +297,15 @@ class EmotionV2(Emotion):
              pleasure = tanh z(p~)
     arousal  e_t = (1/n)(-log p^(s_t)) - log p^(r_t) - log p^(c_t), the
              prediction error of the prior p^ (state, and the reward and cost
-             heads on the prior's state); arousal = sigmoid z(e_t), or with
-             arousal='unexpected' sigmoid z(e_t - e^_t), e^_t = (1/n) H(p^_s)
-             + H(p^_r) + H(p^_c) its expected size
+             heads on the prior's state); arousal = sigmoid z of one of
+             'kl' (default): the belief update, (1/n) KL(q_s || p_s) +
+               KL(r(q) || r(p)) + KL(c(q) || c(p)), the reward and cost
+               heads' distributions on the posterior's state against the
+               prior's (the recorded sessions: only the belief update picked
+               out hits, AUC 0.78; the errors 0.4-0.57, 11-12)
+             'total' (also 'error'): e_t
+             'unexpected': e_t - e^_t, e^_t = (1/n) H(p^_s) + H(p^_r) +
+               H(p^_c) its expected size
     dominance  32 random wheel commands in [-1, 1]^2, each held `horizon`
              steps through the prior; C = mean_k[(1/n) KL(s_k || <s>) +
              KL(V_k || <V>) + KL(T_k || <T>)] with V, T the critics' two-hot
@@ -318,9 +324,10 @@ class EmotionV2(Emotion):
 
   version = 'v2'
 
-  def __init__(self, policy, hz=65.0, tau=650, arousal='error', horizon=16,
+  def __init__(self, policy, hz=65.0, tau=650, arousal='kl', horizon=16,
                commands=32, fade_s=0.5, every=0, seed=0):
-    assert arousal in ('error', 'unexpected'), arousal
+    arousal = {'error': 'total'}.get(arousal, arousal)
+    assert arousal in ('kl', 'total', 'unexpected'), arousal
     self.p = policy
     self.set_policy(policy)
     self.hz = float(hz)
@@ -485,6 +492,23 @@ class EmotionV2(Emotion):
       exp += _entropy(pr_c)
     return err, exp
 
+  def belief_update(self, deter, post_logit, stoch):
+    """(1/n) KL(q_s || p_s) + KL(r(q) || r(p)) + KL(c(q) || c(p)): how
+    much the observation moved the belief, over the latent state and over
+    the reward and cost it implies (heads on the posterior's sample against
+    the prior's likeliest state)."""
+    unimix = self.p.meta['unimix']
+    pr = _probs(self.prior_logit(deter), unimix)
+    q = _probs(np.asarray(post_logit, F32).reshape(pr.shape), unimix)
+    n = pr.shape[-2]
+    kl = _kl(q, pr) / n
+    sp = self.mode_stoch(pr)
+    sq = np.asarray(stoch, F32).reshape(pr.shape)
+    kl += _kl(self.head_probs('rew', deter, sq), self.head_probs('rew', deter, sp))
+    if self.has_cost:
+      kl += _kl(self.head_probs('cst', deter, sq), self.head_probs('cst', deter, sp))
+    return kl
+
   # -- the step ------------------------------------------------------------------
 
   def step(self, deter, post_logit, stoch, reward, cost=0.0, is_first=False,
@@ -502,12 +526,13 @@ class EmotionV2(Emotion):
     # The outlook's change lands in one step of the fading average.
     self.faded += (1 - self.lam) * change
     err, expected = self.prediction_error(deter, stoch, reward, cost)
+    update = self.belief_update(deter, post_logit, stoch)
     if self.every > 0 and self.steps % self.every == 0:
       self.empowerment = self._empowerment(deter, stoch)
     self.steps += 1
     z_p = self.norm['pleasure'](self.faded)
-    z_a = self.norm['arousal'](err - expected if self.arousal_mode == 'unexpected'
-                               else err)
+    z_a = self.norm['arousal']({'kl': update, 'total': err,
+                                'unexpected': err - expected}[self.arousal_mode])
     z_d = self.norm['dominance'](self.empowerment)
     pleasure = float(np.tanh(z_p))
     return dict(
@@ -516,5 +541,5 @@ class EmotionV2(Emotion):
         dominance=float(np.tanh(z_d)), faded=float(self.faded),
         outlook=outlook, change=change, value=value, threat=float(threat),
         fear=float(threat), pain=float(cost), surprise=err, expected=expected,
-        unexpected=err - expected, empowerment=float(self.empowerment),
+        unexpected=err - expected, update=update, empowerment=float(self.empowerment),
         td=change, version='v2')

@@ -142,7 +142,7 @@ def test_empowerment_kl_terms():
   assert len(out) == emo.horizon + 1 and out[-1] >= 0 and np.isfinite(out[-1])
 
 
-@pytest.mark.parametrize('mode', ['error', 'unexpected'])
+@pytest.mark.parametrize('mode', ['kl', 'total', 'error', 'unexpected'])
 def test_arousal_modes(mode):
   emo = emotion.EmotionV2(ToyPolicy(), arousal=mode)
   d, s, logit = emo.p.last_post
@@ -152,6 +152,11 @@ def test_arousal_modes(mode):
     sig = emo.step(d, logit, s, 0.3 * i, 0.0)
     assert 0 < sig['arousal'] < 1 and -1 <= sig['dominance'] <= 1
   assert sig['unexpected'] == pytest.approx(sig['surprise'] - sig['expected'])
+  assert sig['update'] >= -1e-6
+  # The belief update is 0 when the posterior is the prior and its sample
+  # the prior's likeliest state.
+  pr = emotion._probs(emo.prior_logit(d), emo.p.meta['unimix'])
+  assert emo.belief_update(d, np.log(pr), emo.mode_stoch(pr)) == pytest.approx(0.0, abs=1e-3)
 
 
 def test_impact_pain_copies_agree():
