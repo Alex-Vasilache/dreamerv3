@@ -158,7 +158,7 @@ def main(argv=None):
       online_publish_every=config.online_publish_every,
       # The phone's face (env.robot.weights_emotion) needs the critic and the
       # reward head in the published weights, beside the acting ones.
-      online_publish_extra=('^(val|rew|cval)/' if bool(
+      online_publish_extra=('^(val|rew|cval|cst|retnorm|cretnorm)/' if bool(
           config.env.get('robot', {}).get('weights_emotion', False)) else ''),
       online_replay_sync_interval=config.online_replay_sync_interval,
       online_max_train_repeats=config.online_max_train_repeats,
