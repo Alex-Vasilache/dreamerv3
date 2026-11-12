@@ -431,21 +431,27 @@ threat critic (`agent.fear`, cval), the catch reflex in place of the runaway
 brake. On S2's pick (uncapped, dropout 0.05, fear critic) with pushes and
 walls (`sim_push 5:0.05:0.15`, `sim_walls 0.5`), 60 min, n = 8:
 
-| arm | flags | Saion V100, seeds 811-814 | IAS, 815-818 (array 205715) |
+| arm | flags | Saion V100, seeds 811-814 | IAS, 815-818 (array 205727) |
 |---|---|---|---|
-| a: bumper pain + runaway brake (today) | | e44510, 13, 16, 19 | e44530, 33, 36, 39 |
-| b: impact pain, no brake | `pain_mode impact`, `runaway_s 0` | e44511, 14, 17, 20 | e44531, 34, 37, 40 |
-| c: b + catch reflex | `catch_reflex True`, `catch_tmax 0.2` | e44512, 15, 18, 21 | e44532, 35, 38, 41 |
+| a: bumper pain + runaway brake (today) | | e44550, 53, 56, 59 | e44570, 73, 76, 79 |
+| b: impact pain, no brake | `pain_mode impact`, `runaway_s 0` | e44551, 54, 57, 60 | e44571, 74, 77, 80 |
+| c: b + catch reflex | `catch_reflex True`, `catch_tmax 0.2` | e44552, 55, 58, 61 | e44572, 75, 78, 81 |
 
-Saion jobs 4816160-4816171. Smokes e44500-e44502 (4 min, V100) ran clean.
+Saion jobs 4816179-4816190. Every arm also logs, every step, to
+`emotion.csv` (`sim_phone_feel_every 1`, `empower_extra 32`; no effect on
+learning): pleasure and its parts, all six arousal variants (total,
+unexpected, kl, each with and without the efference copy), the empowerment
+end-point terms at 16 and 32 steps, threat, impact, impact pain and the true
+bumper force. A first launch without that logging (e44510-e44541) was
+cancelled after 5 min. Smokes e44500-e44503 (4 min, V100) ran clean.
+
 Impact pain: c = clip((|dw| - 1.0) / (3.0 - 1.0), 0, 1), rad/s per step;
 1.0 is above 99% of real steps away from hits, 3.0 near the 80th percentile
 of real hit peaks. In the MuJoCo sim the per-hit peak impact tracks the
 true peak bumper force (Spearman 0.73 table, 0.87 carpet; figure
-`figs/study/pf_impact.png`); the sim logs both (`log/impact`,
-`log/bumper_force`). Caveats from the smokes: impact pain was rare once the
-policy balanced (sim hits are softer than real ones: 40% of sim hits pass
-1.0 against 85% of real ones), the threat critic sat at 0.08-0.11 and rose
-to ~0.25 near impacts (hence `catch_tmax 0.2`), and its slope along the
-drive over 4 steps is small (|g| ~ 0.001-0.01), so a firing reflex steps
-the command far, usually to the clip.
+`figs/study/pf_impact.png`). Caveats from the smokes: impact pain was rare
+once the policy balanced (40% of sim hits pass 1.0 against 85% of real
+ones: sim hits are softer), the threat critic sat at 0.08-0.11 and rose to
+~0.25 near impacts (hence `catch_tmax 0.2`), and its slope along the drive
+over 4 steps is small (|g| ~ 0.001-0.01), so a firing reflex steps the
+command far, usually to the clip.
