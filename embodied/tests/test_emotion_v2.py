@@ -245,3 +245,58 @@ def test_sim_logs_impact_and_bumper_force():
     pains.append(env._pain(sensors))
   assert max(forces) > 0.5 and forces[-1] > 0.1   # the hit, then the weight
   assert max(pains) > 0 and pains[-1] == 0.0       # pain at the hit only
+
+
+def test_efference_copy_variants():
+  emo = emotion.EmotionV2(ToyPolicy(), efference=True)
+  d, s, logit = emo.p.last_post
+  # No override: the efference variants equal the plain ones.
+  sig = emo.step(d, logit, s, 0.2, 0.0)
+  for k in ('total', 'unexpected', 'kl'):
+    assert sig[f'arousal_{k}_eff'] == sig[f'arousal_{k}']
+  assert sig['efference'] == 0.0
+  # With a different prior state the efference variants move.
+  eff = emo.efference_deter(d, s, [1.0, -1.0])
+  assert eff.shape == d.shape
+  sig = emo.step(d, logit, s, 0.2, 0.0, eff_deter=eff)
+  assert sig['efference'] == 1.0
+  assert sig['arousal_kl_eff'] != pytest.approx(sig['arousal_kl'])
+  assert sig['arousal_total_eff'] != pytest.approx(sig['arousal_total'])
+
+
+def test_runner_takes_the_efference_copy_only_when_overridden():
+  r = _runner_v2()
+  r.configure(dict(efference=True))
+  assert r.emotion.efference
+  r._intended = [0.5, 0.5]
+  r.applied([0.5, 0.5])                 # as intended: no copy
+  assert r._eff_next is None
+  r._intended = [0.5, 0.5]
+  r.applied([0.0, 0.0])                 # held by a limit: a copy
+  assert r._eff_next is not None and r._eff_next.shape == (D,)
+
+
+def test_dominance_terms_at_two_horizons():
+  emo = emotion.EmotionV2(ToyPolicy(), horizon=16, empower_extra=(32,))
+  d, s, _ = emo.p.last_post
+  out = list(emo.empowerment_slices(d, s))
+  assert len(out) == 33 and all(x is None for x in out[:-1])
+  t = emo.empower_terms
+  for h in (16, 32):
+    for k in ('state', 'value', 'threat'):
+      assert t[f'emp{h}_{k}'] >= -1e-9
+  assert out[-1] == pytest.approx(t['emp16_state'] + t['emp16_value'] + t['emp16_threat'])
+  sig = emo.step(d, emo.p.last_post[2], s, 0.0, 0.0)
+  assert 'emp32_value' in sig
+
+
+def test_pleasure_parts_for_offline_rebuilds():
+  emo = emotion.EmotionV2(ToyPolicy())
+  d, s, logit = emo.p.last_post
+  a = emo.step(d, logit, s, 0.0, 0.0)
+  b = emo.step(d, logit, s, 3.0, 0.4)
+  assert b['o_reward'] == pytest.approx(3.0 / emo.S_V)
+  assert b['o_pain'] == pytest.approx(emo.w_pain * 0.4 / emo.S_T)
+  assert b['td'] == pytest.approx(b['o_reward'] - b['o_pain']
+                                  + emo.gamma * b['outlook'] - a['outlook'])
+  assert b['change'] == pytest.approx(b['outlook'] - a['outlook'])

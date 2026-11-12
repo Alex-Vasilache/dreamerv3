@@ -41,20 +41,36 @@ FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
           'event', 'push', 'theta', 'act0', 'chosen0',
           # Since 11-12 (emotion v2, impact pain, catch reflex): the threat
           # critic's value, the impact, and the reflex's last correction.
-          'threat', 'impact', 'reflex')
+          'threat', 'impact', 'reflex',
+          # And every arousal variant (EmotionV2: total, unexpected, kl, each
+          # also against the efference copy), the policy's intended action,
+          # whether an efference copy differed, and the true bumper force (N).
+          'pleasure', 'arousal_total', 'arousal_unexpected', 'arousal_kl',
+          'arousal_total_eff', 'arousal_unexpected_eff', 'arousal_kl_eff',
+          'efference', 'intended0', 'force',
+          # Pleasure's parts (faded = p~; o_reward - o_pain = o; change =
+          # O_{t+1} - O_t; outlook = O; td the plain TD error) and the
+          # empowerment end-point terms at each recorded rollout length.
+          'faded', 'o_reward', 'o_pain', 'change', 'outlook', 'value',
+          'emp16_state', 'emp16_value', 'emp16_threat',
+          'emp32_state', 'emp32_value', 'emp32_threat')
 
 
 class SimPhone:
 
   def __init__(self, config, shared, dtype='int8', delay=3.0, poll=1.0,
                affect=None, body=None, event=0.0, event_signal='arousal', log=None,
-               seed=0, settings=None):
+               seed=0, settings=None, feel_every=4):
     self.config = config
     self.shared = str(shared)
     self.dtype = dtype
     self.delay = float(delay)
     self.poll = float(poll)
     self.runner = PolicyRunner()
+    # The phone feels every 4 control steps; the sim can feel (and log)
+    # every step (env.robot.sim_phone_feel_every 1) for the analysis.
+    self.runner.FEEL_EVERY = max(1, int(feel_every))
+    self.force = 0.0      # set by the env: the true bumper contact force
     # `settings`: what the trainer sends the phone (robot.py
     # _emotion_settings); the separate arguments are the older form.
     self.runner.configure(settings or dict(
@@ -163,7 +179,8 @@ class SimPhone:
       row.update(t=time.time(), step=step, stamp=r.stamp, event=event,
                  push=self.push, theta=r._theta, act0=act[0],
                  chosen0=(r._chosen or [0.0])[0], explore=r.policy.explore,
-                 impact=r.impact, reflex=r.reflex_last)
+                 impact=r.impact, reflex=r.reflex_last, force=self.force,
+                 intended0=(r._intended or [0.0])[0])
       self._log.write(','.join(
           (f'{row[k]:.3f}' if k == 't' else f'{row[k]:.5g}'
            if isinstance(row.get(k), float) else str(row.get(k, '')))

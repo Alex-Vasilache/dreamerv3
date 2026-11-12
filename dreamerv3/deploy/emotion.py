@@ -306,6 +306,14 @@ class EmotionV2(Emotion):
              'total' (also 'error'): e_t
              'unexpected': e_t - e^_t, e^_t = (1/n) H(p^_s) + H(p^_r) +
                H(p^_c) its expected size
+             with efference=True, the prior side of each comes from one
+             extra prior step taken with the policy's intended action (before
+             the catch reflex and the limits) instead of the executed one:
+             what happened against what the robot meant to do. Identical when
+             nothing overrode the policy. The world model itself keeps
+             stepping on the executed action. All six values are returned
+             (arousal_<mode>[_eff]); which one drives the face is a setting,
+             and its default is provisional.
     dominance  32 random wheel commands in [-1, 1]^2, each held `horizon`
              steps through the prior; C = mean_k[(1/n) KL(s_k || <s>) +
              KL(V_k || <V>) + KL(T_k || <T>)] with V, T the critics' two-hot
@@ -325,7 +333,8 @@ class EmotionV2(Emotion):
   version = 'v2'
 
   def __init__(self, policy, hz=65.0, tau=650, arousal='kl', horizon=16,
-               commands=32, fade_s=0.5, every=0, seed=0):
+               commands=32, fade_s=0.5, every=0, seed=0, efference=False,
+               empower_extra=()):
     arousal = {'error': 'total'}.get(arousal, arousal)
     assert arousal in ('kl', 'total', 'unexpected'), arousal
     self.p = policy
@@ -333,6 +342,12 @@ class EmotionV2(Emotion):
     self.hz = float(hz)
     self.lam = fade_lambda(hz, fade_s)
     self.arousal_mode = arousal
+    self.efference = bool(efference)
+    # Extra rollout lengths whose end-point terms are recorded beside the
+    # one that drives dominance (`empower_terms`), for comparing variants
+    # offline; the rollout then runs to the longest.
+    self.empower_extra = tuple(int(h) for h in empower_extra)
+    self.empower_terms = {}
     self.horizon, self.commands, self.every = int(horizon), int(commands), int(every)
     self.rng = np.random.default_rng(seed)
     self.norm = {k: Running(tau) for k in ('pleasure', 'arousal', 'dominance')}
@@ -453,13 +468,36 @@ class EmotionV2(Emotion):
   def empowerment_slices(self, deter, stoch):
     """C_t, one rollout step per yield (None), then the value."""
     actions = self.rng.uniform(-1, 1, (self.commands, 2)).astype(F32)
-    for out in self.rollout(deter, stoch, actions, self.horizon):
-      if out is None:
-        yield None
-    d, s, p = out
-    yield self.empowerment_value(p, self.head_probs('val', d, s),
-                                 self.head_probs('cval', d, s)
-                                 if self.has_threat else None)
+    marks = sorted(set((self.horizon,) + self.empower_extra))
+    K = len(actions)
+    d = np.repeat(np.asarray(deter, F32)[None], K, 0)
+    s = np.repeat(np.asarray(stoch, F32)[None], K, 0)
+    unimix = self.p.meta['unimix']
+    terms, value = {}, None
+    for i in range(1, marks[-1] + 1):
+      d = self._core_batch(d, s, actions)
+      p = _probs(self.prior_logit(d), unimix)
+      s = self.mode_stoch(p)
+      if i in marks:
+        t = self.empowerment_terms(p, self.head_probs('val', d, s),
+                                   self.head_probs('cval', d, s)
+                                   if self.has_threat else None)
+        for k, v in t.items():
+          terms[f'emp{i}_{k}'] = v
+        if i == self.horizon:
+          value = t['state'] + t['value'] + t['threat']
+      yield None
+    self.empower_terms = terms
+    yield value
+
+  def empowerment_terms(self, p, v, t=None):
+    """The three end-point terms of C apart: (1/n) KL of the latent state,
+    KL of the value and of the threat distributions, each a mean over the
+    commands."""
+    n = p.shape[-2]
+    return dict(state=float((_kl_rows(p, p.mean(0)) / n).mean()),
+                value=float(_kl_rows(v, v.mean(0)).mean()),
+                threat=float(_kl_rows(t, t.mean(0)).mean()) if t is not None else 0.0)
 
   def empowerment_value(self, p, v, t=None):
     """mean_k[(1/n) KL(p_k || <p>) + KL(v_k || <v>) + KL(t_k || <t>)]."""
@@ -474,9 +512,18 @@ class EmotionV2(Emotion):
       pass
     return value
 
-  def prediction_error(self, deter, stoch, reward, cost):
+  def efference_deter(self, deter, stoch, action):
+    """One prior step from (deter, stoch) with `action`: the deterministic
+    state the world model would have reached on the intended action."""
+    return self._core_batch(np.asarray(deter, F32)[None],
+                            np.asarray(stoch, F32)[None],
+                            np.asarray(action, F32).reshape(1, -1))[0]
+
+  def prediction_error(self, deter, stoch, reward, cost, prior_deter=None):
     """(e, e^): the prior's error on this step's state, reward and cost,
-    and its expected size."""
+    and its expected size. `prior_deter`: the prior's deterministic state if
+    not `deter` (the efference copy)."""
+    deter = deter if prior_deter is None else prior_deter
     pr = _probs(self.prior_logit(deter), self.p.meta['unimix'])
     n = pr.shape[-2]
     s = np.asarray(stoch, np.float64).reshape(pr.shape)
@@ -492,47 +539,68 @@ class EmotionV2(Emotion):
       exp += _entropy(pr_c)
     return err, exp
 
-  def belief_update(self, deter, post_logit, stoch):
+  def belief_update(self, deter, post_logit, stoch, prior_deter=None):
     """(1/n) KL(q_s || p_s) + KL(r(q) || r(p)) + KL(c(q) || c(p)): how
     much the observation moved the belief, over the latent state and over
     the reward and cost it implies (heads on the posterior's sample against
     the prior's likeliest state)."""
     unimix = self.p.meta['unimix']
-    pr = _probs(self.prior_logit(deter), unimix)
+    pd = deter if prior_deter is None else prior_deter
+    pr = _probs(self.prior_logit(pd), unimix)
     q = _probs(np.asarray(post_logit, F32).reshape(pr.shape), unimix)
     n = pr.shape[-2]
     kl = _kl(q, pr) / n
     sp = self.mode_stoch(pr)
     sq = np.asarray(stoch, F32).reshape(pr.shape)
-    kl += _kl(self.head_probs('rew', deter, sq), self.head_probs('rew', deter, sp))
+    kl += _kl(self.head_probs('rew', deter, sq), self.head_probs('rew', pd, sp))
     if self.has_cost:
-      kl += _kl(self.head_probs('cst', deter, sq), self.head_probs('cst', deter, sp))
+      kl += _kl(self.head_probs('cst', deter, sq), self.head_probs('cst', pd, sp))
     return kl
 
   # -- the step ------------------------------------------------------------------
 
+  def arousal_signals(self, deter, post_logit, stoch, reward, cost,
+                      prior_deter=None):
+    """The raw arousal variants: total, unexpected, kl (and the error's
+    expected size)."""
+    err, expected = self.prediction_error(deter, stoch, reward, cost, prior_deter)
+    update = self.belief_update(deter, post_logit, stoch, prior_deter)
+    return dict(total=err, unexpected=err - expected, kl=update,
+                expected=expected)
+
   def step(self, deter, post_logit, stoch, reward, cost=0.0, is_first=False,
-           steps=1):
+           steps=1, eff_deter=None):
     """Every few control steps, after tick() has faded in each step's
     outcome: `reward`, `cost` are this step's (for arousal). Adds the
-    outlook's change since the last call to the faded pleasure."""
+    outlook's change since the last call to the faded pleasure.
+    `eff_deter`: the efference copy's deterministic state for this step
+    (PolicyRunner), None when the executed action was the intended one."""
     if is_first:
       self.reset()
     value = self.value(deter, stoch)
     threat = self.threat(deter, stoch)
     outlook = self.outlook(value, threat)
-    change = 0.0 if self.prev_outlook is None else outlook - self.prev_outlook
+    first = self.prev_outlook is None
+    change = 0.0 if first else outlook - self.prev_outlook
+    # The parts, for rebuilding other combinations offline: the outcome's
+    # reward and pain terms (this step's), and the plain TD error
+    # o + gamma^steps O_{t+1} - O_t (exact with a call every step).
+    o_reward = float(reward) / self.S_V
+    o_pain = self.w_pain * float(cost) / self.S_T
+    td = 0.0 if first else (o_reward - o_pain + self.gamma ** int(steps) * outlook
+                            - self.prev_outlook)
     self.prev_outlook = outlook
     # The outlook's change lands in one step of the fading average.
     self.faded += (1 - self.lam) * change
-    err, expected = self.prediction_error(deter, stoch, reward, cost)
-    update = self.belief_update(deter, post_logit, stoch)
+    plain = self.arousal_signals(deter, post_logit, stoch, reward, cost)
+    eff = plain if eff_deter is None else self.arousal_signals(
+        deter, post_logit, stoch, reward, cost, prior_deter=eff_deter)
+    err, expected, update = plain['total'], plain['expected'], plain['kl']
     if self.every > 0 and self.steps % self.every == 0:
       self.empowerment = self._empowerment(deter, stoch)
     self.steps += 1
     z_p = self.norm['pleasure'](self.faded)
-    z_a = self.norm['arousal']({'kl': update, 'total': err,
-                                'unexpected': err - expected}[self.arousal_mode])
+    z_a = self.norm['arousal']((eff if self.efference else plain)[self.arousal_mode])
     z_d = self.norm['dominance'](self.empowerment)
     pleasure = float(np.tanh(z_p))
     return dict(
@@ -542,4 +610,7 @@ class EmotionV2(Emotion):
         outlook=outlook, change=change, value=value, threat=float(threat),
         fear=float(threat), pain=float(cost), surprise=err, expected=expected,
         unexpected=err - expected, update=update, empowerment=float(self.empowerment),
-        td=change, version='v2')
+        td=td, o_reward=o_reward, o_pain=o_pain, version='v2',
+        efference=float(eff_deter is not None), **self.empower_terms,
+        **{f'arousal_{k}': float(plain[k]) for k in ('total', 'unexpected', 'kl')},
+        **{f'arousal_{k}_eff': float(eff[k]) for k in ('total', 'unexpected', 'kl')})

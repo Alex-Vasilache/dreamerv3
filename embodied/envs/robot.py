@@ -678,7 +678,8 @@ class SmartphoneRobot(embodied.Env):
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
       pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
       cost_obs=False, pain_mode='bumper', pain_iota0=1.0, pain_iota1=3.0,
-      emotion_model='v2', arousal_mode='kl', empower_steps=16,
+      emotion_model='v2', arousal_mode='kl', arousal_efference=False,
+      empower_steps=16, empower_extra='',
       catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
@@ -1037,7 +1038,14 @@ class SmartphoneRobot(embodied.Env):
     assert arousal_mode in ('kl', 'total', 'error', 'unexpected'), arousal_mode
     self.emotion_model = str(emotion_model)
     self.arousal_mode = str(arousal_mode)
+    # arousal_efference: score arousal against a prior step on the policy's
+    # intended action (before the reflex and limits). The arousal default
+    # is provisional: the definition is still open (round PF logs all).
+    self.arousal_efference = bool(arousal_efference)
     self.empower_steps = int(empower_steps)
+    # empower_extra '32' (comma-separated): also record the end-point terms
+    # of these rollout lengths (analysis only; the rollout runs longer).
+    self.empower_extra = [int(x) for x in str(empower_extra).split(',') if x.strip()]
     # The catch reflex on the phone (PolicyRunner.reflex): before each
     # command, roll it catch_steps steps through the world model, read the
     # threat critic's prediction, and if that exceeds catch_tmax step the
@@ -1197,7 +1205,8 @@ class SmartphoneRobot(embodied.Env):
     return dict(
         affect=self.affect, emotion_event=self.emotion_event,
         event_signal=self.event_signal, model=self.emotion_model,
-        arousal=self.arousal_mode, empower_steps=self.empower_steps,
+        arousal=self.arousal_mode, efference=self.arousal_efference,
+        empower_steps=self.empower_steps, empower_extra=self.empower_extra,
         reflex=dict(self.reflex),
         body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
                   hi=self.bumper_hi, zone=self.pain_zone,

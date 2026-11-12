@@ -184,7 +184,14 @@ class PolicyRunner:
     self._rate = None
     # The emotion model (deploy/emotion.py) and its switches, from the
     # trainer's settings: 'v2' (pleasure, arousal, dominance) or 'v1'.
-    self.emotion_cfg = dict(model='v2', arousal='kl', empower_steps=16)
+    # efference: score arousal against a prior step taken with the
+    # intended action (before the reflex and the limits); defaults
+    # provisional, the arousal definition is still open.
+    self.emotion_cfg = dict(model='v2', arousal='kl', empower_steps=16,
+                            efference=False)
+    self._intended = None    # the policy's action before reflex and limits
+    self._eff_next = None    # efference deter for the next step, if overridden
+    self._eff_deter = None   # ... paired with the current last_post
     # The catch reflex (reflex()), off unless the trainer turns it on.
     self.reflex_cfg = dict(on=False, tmax=0.5, eps=0.1, steps=4)
     self.reflex_last = 0.0
@@ -248,7 +255,9 @@ class PolicyRunner:
         self.emotion = emotion_lib.EmotionV2(
             policy, hz=hz, tau=max(1, int(10 * hz) // self.FEEL_EVERY),
             arousal=cfg.get('arousal', 'kl'),
-            horizon=int(cfg.get('empower_steps', 16)), every=0)
+            horizon=int(cfg.get('empower_steps', 16)), every=0,
+            efference=bool(cfg.get('efference', False)),
+            empower_extra=tuple(cfg.get('empower_extra') or ()))
       else:
         self.emotion = emotion_lib.Emotion(
             policy, gamma=policy.meta['emotion']['gamma'], every=0,
@@ -337,15 +346,19 @@ class PolicyRunner:
     deter, stoch, logit = self.policy.last_post
     try:
       with self._emo_lock:
-        sig = emo.step(deter, logit, stoch, reward, pain, is_first=acc[2])
+        sig = emo.step(deter, logit, stoch, reward, pain, is_first=acc[2],
+                       eff_deter=self._eff_deter)
       self.emotion_state = dict(
           valence=sig['pleasure'], pleasure=sig['pleasure'],
           arousal=sig['arousal'], dominance=sig['dominance'],
           mood=sig['mood'], pain=pain, threat=sig['threat'],
           fear=sig['threat'], value=sig['value'], outlook=sig['outlook'],
-          td=sig['change'], surprise=sig['surprise'],
+          td=sig['td'], change=sig['change'], o_reward=sig['o_reward'],
+          o_pain=sig['o_pain'], surprise=sig['surprise'],
+          **{k: v for k, v in sig.items() if k[:3] == 'emp' and k[3:4].isdigit()},
           unexpected=sig['unexpected'], expected=sig['expected'],
-          update=sig['update'],
+          update=sig['update'], efference=sig['efference'],
+          **{k: v for k, v in sig.items() if k.startswith('arousal_')},
           empowerment=sig['empowerment'], faded=sig['faded'], model='v2',
           reward=acc[4] / acc[1], **self._body_state())
       self._detect_event(
@@ -405,7 +418,9 @@ class PolicyRunner:
       self.reflex_cfg.update(settings['reflex'])
     cfg = dict(self.emotion_cfg)
     for key, name in (('model', 'model'), ('arousal', 'arousal'),
-                      ('empower_steps', 'empower_steps')):
+                      ('empower_steps', 'empower_steps'),
+                      ('efference', 'efference'),
+                      ('empower_extra', 'empower_extra')):
       if settings.get(key) is not None:
         cfg[name] = settings[key]
     if cfg != self.emotion_cfg:
@@ -517,10 +532,29 @@ class PolicyRunner:
     if self.carry is not None:
       self.carry = dict(self.carry, prevact=np.asarray(act, np.float32))
       self._pre = None
+    self._efference(act)
     if (self.body is not None and self._theta is not None
         and self.body.get('pain_mode', 'bumper') != 'impact'):
       self.pain = pain_signal(self._theta, self.body, act, self._chosen)
     self._fast_affect()
+
+  def _efference(self, act):
+    """The efference copy: when the wheels got something other than the
+    policy's intended action, the deterministic state one prior step on the
+    intended action would reach, for the next step's arousal (EmotionV2)."""
+    self._eff_next = None
+    emo, intended = self.emotion, self._intended
+    last = getattr(self.policy, 'last_post', None)
+    if (intended is None or last is None or emo is None
+        or not hasattr(emo, 'efference_deter')):
+      return
+    if np.allclose(np.asarray(intended, np.float32),
+                   np.asarray(act, np.float32)[:len(intended)], atol=1e-6):
+      return
+    try:
+      self._eff_next = emo.efference_deter(last[0], last[1], intended)
+    except Exception as e:  # noqa: BLE001
+      print('dreamerBridge: efference failed: %s' % e)
 
   def _fast_affect(self):
     """Refresh the fast parts of emotion_state every control step: pain,
@@ -596,10 +630,15 @@ class PolicyRunner:
     else:
       deter = self.policy.precompute(self.carry, self.is_first)
     act, self.carry = self.policy.finish(obs, self.carry, deter, mode=self.mode)
+    # The efference state computed at the last applied() belongs to this
+    # step's posterior (none at an episode's first step).
+    self._eff_deter = None if self.was_first else self._eff_next
+    self._eff_next = None
     self.is_first = False
     self.steps += 1
     self.last_ms = (time.monotonic() - t0) * 1e3
     self._chosen = [float(act[0]), float(act[1])]
+    self._intended = list(self._chosen)
     return obs, list(self._chosen)
 
   def explore_scale(self):
@@ -630,6 +669,7 @@ class PolicyRunner:
     # What the trainer's limits are measured against: a reflex overriding
     # this hurts (applied), the affect's own change does not.
     self._chosen = [float(min(1.0, max(-1.0, a))) for a in act]
+    self._intended = list(self._chosen)
     return self.reflex(list(self._chosen))
 
   def reflex(self, act):
