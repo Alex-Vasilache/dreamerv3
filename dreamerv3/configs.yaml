@@ -1701,6 +1701,19 @@ goal_hold_reach:
     imag_length: 32
     worker_timed_goals: False
 
+# Shorter caps for goal_hold_reach (2026-11-13); layer AFTER it. Added when the
+# first cap-32 run (h0374, pin pad four) held goals ~20-25 steps on real states
+# and scored ~200 where every old V seed had ~305: the reached test ends too few
+# holds, so the cap sets the hold length. cap 8 = never longer than Director's
+# hold, shorter when the goal is reached (imag_length back to 16).
+goal_hold_cap16:
+  agent:
+    goal_duration_fixed: 16
+goal_hold_cap8:
+  agent:
+    goal_duration_fixed: 8
+    imag_length: 16
+
 tce_critic:
   agent:
     mgr_novel: True

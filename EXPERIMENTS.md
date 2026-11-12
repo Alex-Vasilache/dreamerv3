@@ -675,6 +675,29 @@ of solved seeds. Expected: more pin pad six seeds solved than V's 1/5 and a high
 solved seeds; hopper is the risk (earlier variable-length runs hurt it).
 Watch: `goal/hold_len_imag`, `goal/hold_len_repl`, `goal/hold_reach_frac`, `goal/hold_len1_frac`,
 `goal/reach_ceil`. Tests: `embodied/tests/test_goal_hold_reach.py` (7 pass).
+**Re-plan 2026-11-13 06:10 (array rows 2-29, none had started).** First data: h0374 (pin pad
+four, cap 32, seed 0) scores ~200 from 0.25M to 2M where all five old V seeds had 238-320 at the
+same steps (0.25-0.5M: 238-305; 1.5-1.75M: 309-320). Goals are held ~20-25 steps on replayed real
+states (`goal/hold_len_repl`) against ~10 in imagination: the reached test ends too few holds on
+real states, so the cap sets the hold length and reactions get slower. One seed, and V's lr also
+changed (4e-5 -> 1e-4), so not proven. Only 2 of 30 jobs had a GPU after 30 h, so instead of
+spending the rest on cap 32 the unstarted rows now cover three caps (blocks `goal_hold_cap16`,
+`goal_hold_cap8`, layered after `goal_hold_reach`; cap 8 also sets imag_length 16). Cap 8 is
+"never longer than Director, shorter when reached"; with the same lr it also tells us whether the
+pin pad four drop comes from the hold or from the learning rate. Rows were edited in place to
+keep the array's queue age (`run_benchmark.sbatch` reads its row at start). Layout, h = 374 + row:
+
+| Rows | Runs | What |
+|---|---|---|
+| 0-2 | h0374-h0376 | cap 32, seed 0: four, five, six (0 and 1 running) |
+| 3-8 | h0377-h0382 | seed 0, cap 8 then cap 16: four, six, five |
+| 9-17 | h0383-h0391 | seed 0, cartpole / cheetah / hopper x cap 32, 8, 16 |
+| 18-26 | h0392-h0400 | seed 1, four / five / six x cap 32, 8, 16 |
+| 27-29 | h0401-h0403 | seed 2, six x cap 32, 8, 16 |
+
+Also changed on the queued array: `--nice=100` removed (11-12 04:00) and time limit 48 h -> 16 h
+(11-13 00:10) so backfill can place the jobs; runs take ~8.7 h at 128-135 fps.
+
 **Status 2026-11-12 19:20: not started.** The array has been pending for 19 h (reason Priority):
 all 32 A100 GPUs are held by other users and the estimated start keeps slipping (now 11-13 early
 morning). `--nice=100` was removed from the array at 04:00 to help it compete. No GPU smoke has

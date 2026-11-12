@@ -1,30 +1,30 @@
 director pinpad_four 0 h0374 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
 director pinpad_five 0 h0375 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
 director pinpad_six 0 h0376 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cartpole_swingup 0 h0377 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cheetah_run 0 h0378 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_hopper_hop 0 h0379 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_four 1 h0380 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_five 1 h0381 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_six 1 h0382 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cartpole_swingup 1 h0383 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cheetah_run 1 h0384 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_hopper_hop 1 h0385 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_four 2 h0386 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_five 2 h0387 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_six 2 h0388 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cartpole_swingup 2 h0389 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cheetah_run 2 h0390 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_hopper_hop 2 h0391 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_four 3 h0392 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_five 3 h0393 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_six 3 h0394 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cartpole_swingup 3 h0395 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cheetah_run 3 h0396 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_hopper_hop 3 h0397 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_four 4 h0398 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_five 4 h0399 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director pinpad_six 4 h0400 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cartpole_swingup 4 h0401 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_cheetah_run 4 h0402 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
-director dmc_hopper_hop 4 h0403 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director pinpad_four 0 h0377 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_four 0 h0378 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director pinpad_six 0 h0379 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_six 0 h0380 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director pinpad_five 0 h0381 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_five 0 h0382 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director dmc_cartpole_swingup 0 h0383 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director dmc_cartpole_swingup 0 h0384 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director dmc_cartpole_swingup 0 h0385 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director dmc_cheetah_run 0 h0386 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director dmc_cheetah_run 0 h0387 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director dmc_cheetah_run 0 h0388 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director dmc_hopper_hop 0 h0389 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director dmc_hopper_hop 0 h0390 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director dmc_hopper_hop 0 h0391 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director pinpad_four 1 h0392 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director pinpad_four 1 h0393 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_four 1 h0394 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director pinpad_five 1 h0395 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director pinpad_five 1 h0396 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_five 1 h0397 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director pinpad_six 1 h0398 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director pinpad_six 1 h0399 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_six 1 h0400 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director pinpad_six 2 h0401 director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch
+director pinpad_six 2 h0402 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_six 2 h0403 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
