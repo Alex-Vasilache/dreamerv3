@@ -682,7 +682,8 @@ class SmartphoneRobot(embodied.Env):
       empower_steps=16, empower_extra='',
       catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4,
       catch_mode='slope', catch_dmax=0.0, catch_offsets='0.25,0.5,1',
-      catch_z=0.0, catch_window=650, catch_zlog=False, catch_rising=False,
+      catch_z=0.0, catch_window=650, catch_zlog=False, catch_tmin=0.0,
+      catch_rising=False,
       catch_every=1):
     assert task in ('drive', 'balance', 'track', 'command', 'none'), task
     self.task = task
@@ -1058,7 +1059,7 @@ class SmartphoneRobot(embodied.Env):
     # the command shifted by +-catch_offsets and sends the nearest one under
     # the limit; catch_dmax caps the slope step; catch_z > 0 sets the limit
     # at mean + z SD of the run's own predicted threat (catch_window steps;
-    # of its log with catch_zlog);
+    # of its log with catch_zlog; never below catch_tmin);
     # catch_rising fires only while the predicted threat rises; catch_every
     # N evaluates every N steps and holds the correction in between.
     assert catch_mode in ('slope', 'search'), catch_mode
@@ -1067,6 +1068,7 @@ class SmartphoneRobot(embodied.Env):
                        mode=str(catch_mode), dmax=float(catch_dmax),
                        offsets=str(catch_offsets), z=float(catch_z),
                        window=int(catch_window), zlog=bool(catch_zlog),
+                       tmin=float(catch_tmin),
                        rising=bool(catch_rising),
                        every=int(catch_every))
     self._chosen_act = None

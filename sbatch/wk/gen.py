@@ -340,6 +340,22 @@ RF_ARMS = [
 ]
 
 
+# Round RF2 (11-12 evening): in RF the log-z limit of g4z and s4z stuck at
+# the 1e-4 floor (the critic sat at or below it through the 10 s warm-up, SD
+# 0, and the capped update kept it there), so both fired on 57-91% of steps:
+# an always-on threat-minimising filter, not a reflex. s4z that way had the
+# fewest crossings and the least pain. Fixed (SD floor 0.1 in log space) and
+# with an absolute floor catch_tmin 0.02; plus the always-on search on
+# purpose (catch_tmax 1e-4, no z) to confirm what RF's s4z measured.
+RF2_COMMON = f'{PF_BASE} {PF_IMPACT} {RF_LOG} --env.robot.catch_reflex True'
+RF2_Z = '--env.robot.catch_z 3 --env.robot.catch_zlog True --env.robot.catch_tmin 0.02'
+RF2_ARMS = [
+    ('s4z2', f'{RF2_COMMON} {RF2_Z} --env.robot.catch_mode search'),
+    ('g4z2', f'{RF2_COMMON} {RF2_Z} --env.robot.catch_mode slope --env.robot.catch_dmax 0.5'),
+    ('s4on', f'{RF2_COMMON} --env.robot.catch_mode search --env.robot.catch_tmax 1e-4'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -641,6 +657,12 @@ def main():
       for arm, flags in arms:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd in ('rf2v', 'rf2i'):
+    gpu, seeds = {'rf2v': ('v100', SEEDS4), 'rf2i': ('any', SEEDS8[4:])}[rnd]
+    for seed in seeds:
+      for arm, flags in RF2_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
   elif rnd.startswith('w1'):
     base = W1_BASE
     gpu = {'w1p': 'p100', 'w1i': 'any'}[rnd]

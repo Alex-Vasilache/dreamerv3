@@ -320,6 +320,32 @@ def test_reflex_relative_limit_ignores_spikes_and_scales_in_log():
   assert hi == pytest.approx(0.1 * np.exp(0.3), rel=0.2)
 
 
+def test_reflex_relative_limit_recovers_from_a_flat_warm_up():
+  # Round RF's bug: T at the 1e-4 floor through the warm-up froze the limit
+  # there, and the reflex fired on every later step.
+  r = _runner_v2(on=True, mode='search', z=3.0, window=50, zlog=True)
+  level = {'t': -0.01}
+  rng = np.random.default_rng(2)
+  r.emotion.threat_after = lambda d, s, acts, steps: np.full(
+      len(acts), level['t'] * np.exp(0.3 * rng.normal()))
+  for _ in range(60):
+    r.reflex([0.0, 0.0])
+  level['t'] = 0.003
+  fired = []
+  for _ in range(2000):
+    r.reflex([0.0, 0.0])
+    fired.append(r.reflex_last != 0)
+  assert np.mean(fired[-500:]) < 0.05
+  # And tmin: nothing under the absolute floor fires.
+  t = _runner_v2(on=True, mode='search', z=3.0, window=50, zlog=True, tmin=0.01)
+  t.emotion.threat_after = r.emotion.threat_after
+  for _ in range(60):
+    t.reflex([0.0, 0.0])
+  assert t.reflex_thr >= 0.01
+  level['t'] = 0.005
+  assert all(t.reflex([0.0, 0.0]) == [0.0, 0.0] for _ in range(50))
+
+
 def test_reflex_rising_fires_only_while_threat_climbs():
   r = _runner_v2(on=True, tmax=0.5, mode='search', offsets='1', rising=True)
   level = {'t': 1.0}
@@ -333,7 +359,7 @@ def test_reflex_rising_fires_only_while_threat_climbs():
 def test_reflex_settings_from_the_env_reach_the_runner():
   env_reflex = dict(on=True, tmax=0.2, eps=0.1, steps=16, mode='search',
                     dmax=0.0, offsets='0.25,0.5', z=2.5, window=650, zlog=True,
-                    rising=False, every=4)
+                    tmin=0.01, rising=False, every=4)
   r = _runner_v2(**env_reflex)
   assert r.reflex_cfg == env_reflex
   # The defaults are the first version: slope, 4 steps, absolute limit.
@@ -346,7 +372,8 @@ def test_reflex_settings_from_the_env_reach_the_runner():
   env = robot_mujoco.RobotMujoco(
       'balance', hz=65.0, discrete=False, symmetric=False, sim_noise=0.0,
       catch_reflex=True, catch_tmax=0.2, catch_steps=16, catch_mode='search',
-      catch_offsets='0.25,0.5', catch_z=2.5, catch_zlog=True, catch_every=4,
+      catch_offsets='0.25,0.5', catch_z=2.5, catch_zlog=True, catch_tmin=0.01,
+      catch_every=4,
       sim_phone_log_every=16, sim_phone_threads=1)
   assert env._emotion_settings()['reflex'] == env_reflex
   assert env._phone_args['log_every'] == 16 and env._phone_args['threads'] == 1

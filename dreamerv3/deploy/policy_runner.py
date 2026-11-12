@@ -197,7 +197,8 @@ class PolicyRunner:
     # or 'search', dmax, offsets, z, window, rising; see reflex().
     self.reflex_cfg = dict(on=False, tmax=0.5, eps=0.1, steps=4, mode='slope',
                            dmax=0.0, offsets='0.25,0.5,1', z=0.0,
-                           window=650, zlog=False, rising=False, every=1)
+                           window=650, zlog=False, tmin=0.0, rising=False,
+                           every=1)
     self.reflex_last = 0.0
     self.reflex_threat = 0.0   # T(a) of the intended command, last step
     self.reflex_thr = 0.0      # the limit it was held against
@@ -695,7 +696,7 @@ class PolicyRunner:
     The limit: `tmax` (absolute), or with z > 0 relative to this run,
     mean + z SD of T(a) (of log T(a) with `zlog`) over a running window of
     `window` steps (an exponential average; silent for the first `window`
-    steps; see _reflex_limit). `rising`
+    steps; never below `tmin`; see _reflex_limit). `rising`
     fires only while T(a) is above its value one step before.
 
     mode 'slope' (the first version): k(a) = T(a) - limit, step back along
@@ -748,9 +749,14 @@ class PolicyRunner:
     if self._rstat is None:
       self._rstat = (0, x, 0.0)
     n, mu, var = self._rstat
+    # The SD has a floor in log space (0.1, a factor 1.1): a critic sitting
+    # at the 1e-4 floor through the warm-up left SD 0, the cap below then
+    # kept it there, and the limit stuck at 1e-4 (round RF: the reflex fired
+    # on every step from minute 1).
+    sd = max(float(np.sqrt(var)), 0.1) if log else float(np.sqrt(var))
     if n >= window:
-      limit = mu + z * np.sqrt(var)
-      x = min(x, mu + 2 * np.sqrt(var))
+      limit = mu + z * sd
+      x = min(x, mu + 2 * sd)
     else:
       limit = float('inf')
     alpha = max(1.0 / window, 1.0 / (n + 1))
@@ -758,7 +764,9 @@ class PolicyRunner:
     mu += alpha * d
     var = (1 - alpha) * (var + alpha * d * d)
     self._rstat = (n + 1, mu, var)
-    return float(np.exp(limit)) if log and np.isfinite(limit) else float(limit)
+    limit = float(np.exp(limit)) if log and np.isfinite(limit) else float(limit)
+    # tmin: never fire below this absolute threat, whatever the run's level.
+    return max(limit, float(cfg.get('tmin', 0.0) or 0.0))
 
   def _reflex(self, act, cfg, emo):
     mode = str(cfg.get('mode', 'slope') or 'slope')
