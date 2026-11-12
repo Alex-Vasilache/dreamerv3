@@ -332,6 +332,11 @@ canvas.inst { display: block; width: 100%; }
   function drawFace(dt, ms) {
     const v = clamp(mid.valence, -1, 1), a = clamp(mid.arousal, 0, 1), d = clamp(mid.dominance, -1, 1);
     const p = clamp(mid.pain, 0, 1), td = clamp(mid.td_valence || 0, -1, 1);
+    // Pain's shape sits on the negative end of pleasure (2026-11-12): below
+    // -0.6 the sad eyes squint, then split into > < at -1. A hard hit drives
+    // pleasure down through the outcome term, so no pain channel is needed;
+    // a `pain` input, while the phone still sends one, shows the same way.
+    const ps = Math.max(p, clamp((-v - 0.6) / 0.4, 0, 1));
     const sp = (n, g, w) => spring(n, g, dt, w);
 
     // Phasic events, on top of the tonic state: a startle when arousal jumps,
@@ -359,7 +364,8 @@ canvas.inst { display: block; width: 100%; }
     // the gaze holds steady and level, helpless it slides down and away.
     if (ms > sacAt) {
       const steady = clamp(0.5 + 0.5 * d, 0, 1);
-      gaze = [(Math.random() * 2 - 1) * (0.35 + 0.9 * (1 - steady)), (Math.random() * 2 - 1) * 0.35 + 0.6 * Math.max(0, -d)];
+      gaze = [(Math.random() * 2 - 1) * (0.35 + 0.9 * (1 - steady)) + 0.6 * Math.max(0, -d) * (Math.random() < 0.5 ? -1 : 1),
+        (Math.random() * 2 - 1) * 0.35 + 1.0 * Math.max(0, -d)];   // helpless: averted and down (Adams & Kleck 2003)
       if (Math.random() < 0.4 * steady) gaze = [0, 0];   // back to looking at you
       kick('wide', -1.5);   // a dart carries a small squash (Vector's animators)
       sacAt = ms + (250 + Math.random() * 550) * (0.6 + 1.8 * (1 - a)) * (0.7 + 0.6 * steady);
@@ -383,26 +389,28 @@ canvas.inst { display: block; width: 100%; }
     const eRaw = has.act_l ? (Math.abs(mid.act_l) + Math.abs(mid.act_r ?? mid.act_l)) / 2 : 0;
     effortLP += (eRaw - effortLP) * (1 - Math.exp(-dt / 0.12));
     const ef = sp('effort', clamp((effortLP - 0.2) / 0.5, 0, 1), 30);
-    const efl = ef * (1 - clamp(p, 0, 1));   // on the lids, pain's squeeze wins
+    const efl = ef * (1 - ps);   // on the lids, pain's squeeze wins
     phase += dt * (1.0 + 2.6 * a);
     const vn = Math.max(0, -v), dp = Math.max(0, d);
     const scale = sp('scale', 1 + 0.08 * d + 0.1 * (a - 0.5)) * (1 + 0.06 * sp('bounce', 0, 9));
-    const rise = sp('rise', -d * 1.6 + 0.8 * Math.max(0, -v), 4) + Math.sin(phase) * 0.25;
-    const pq = sp('pq', p, 45);   // pain's squint, fast to follow
-    const shake = sp('shake', 0.6 * p + Math.max(0, a - 0.85) * 2, 45) * Math.sin(ms * 0.06)
+    const rise = sp('rise', -d * 2.4 + 0.8 * Math.max(0, -v), 4) + Math.sin(phase) * 0.25;
+    const pq = sp('pq', ps, 45);   // pain's squint, fast to follow
+    const shake = sp('shake', 0.6 * ps + Math.max(0, a - 0.85) * 2, 45) * Math.sin(ms * 0.06)
       + 0.15 * Math.max(0, ef - 0.6) * Math.sin(ms * 0.09);
-    const sq = clamp(p / 0.35, 0, 1);   // pain squints first, then splits
+    const sq = clamp(ps / 0.35, 0, 1);   // pain squints first, then splits
     const open = sp('open', (0.62 + 0.5 * a) * (1 - 0.8 * sq)) * (1 + 0.25 * clamp(sp('wide', 0, 12), -1, 2));
     if (d < -0.3 && Math.random() < dt * 0.25 * -d) halfAt = ms;   // a half-blink, anxious
     const half = Math.max(0, 1 - (ms - halfAt) / 450);
-    const top = sp('top', 0.3 * clamp((0.45 - a) / 0.45, 0, 1) + 0.1 * Math.max(0, d) + 0.15 * Math.max(0, -v)
+    const top = sp('top', 0.3 * clamp((0.45 - a) / 0.45, 0, 1) + 0.2 * Math.max(0, d) + 0.15 * Math.max(0, -v)
       + 0.25 * vn * (1 - dp) * (1 - a) + 0.3 * vn * dp * a) + 0.05 * pq + 0.26 * efl + 0.35 * Math.sin(Math.PI * half);
     // The slope: sad droops the outer ends; negative valence while in
     // control and aroused tips it inward instead (cross, not scared: anger
     // and fear differ mainly in dominance).
-    const tilt = sp('tilt', vn * (-0.5 * (1 - dp) * (1 - 0.4 * a) + 1.0 * dp * a) - 0.15 * Math.max(0, -d));
+    // Dominance (Keating et al. 1981; Mignault & Chaudhuri 2003): in control the
+    // lid sits low and flat, helpless the inner corners rise.
+    const tilt = sp('tilt', vn * (-0.5 * (1 - dp) * (1 - 0.4 * a) + 1.0 * dp * a) - 0.45 * Math.max(0, -d));
     // glad: the smiling lower lid; scared: a tense one (Cozmo's fear)
-    const bot = sp('bot', 0.5 * Math.max(0, v) * (1 - p) + 0.25 * vn * a * (1 - dp)) + 0.05 * pq + 0.15 * efl;
+    const bot = sp('bot', 0.5 * Math.max(0, v) * (1 - ps) + 0.25 * vn * a * (1 - dp)) + 0.05 * pq + 0.15 * efl;
     const btilt = 0;
     // Pain's chevron (> <): the squint opens into arms pointing at the nose,
     // growing with pain and full by 0.6 (Alex 11-10: a rounded squint read
