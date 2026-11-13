@@ -675,6 +675,37 @@ of solved seeds. Expected: more pin pad six seeds solved than V's 1/5 and a high
 solved seeds; hopper is the risk (earlier variable-length runs hurt it).
 Watch: `goal/hold_len_imag`, `goal/hold_len_repl`, `goal/hold_reach_frac`, `goal/hold_len1_frac`,
 `goal/reach_ceil`. Tests: `embodied/tests/test_goal_hold_reach.py` (7 pass).
+**Interim result 2026-11-13 18:30 (9 pin pad runs finished, seed 0): worse than old V on pin pad
+four and five at every cap; pin pad six unsolved at every cap.** Late window 3.5-4M, sustained-50
+crossing in M steps (trailing 10 episodes), n=1 per cell vs old V n=5 (lr 4e-5):
+
+| Task | old V late (5 seeds) | old V crossing | cap 32 | cap 16 | cap 8 |
+|---|---|---|---|---|---|
+| Pin pad four | 297-335, mean 311 | 0.14-0.30 | 237 (2.86) | 173 (3.63) | 180 (3.95) |
+| Pin pad five | 268-287, mean 278 | 1.11-2.59 | 144 (2.96) | 154 (3.77) | 140 (3.85) |
+| Pin pad six | 202, 0, 0, 0, 0 | 2.99 (1/5) | 0 | 0 | 0 |
+
+The late crossings are dips, not late learning: pin pad four sits at ~160-250 from 0.25M on and
+the trailing mean drops under 50 now and then. DMC so far (seed 0, still running): cartpole
+equal to old V at matched steps (cap 32: 739 at 2.25-2.5M; old V mean 758), cheetah at 1.0-1.25M
+cap 8 505 / cap 16 435 (0.75-1.0M) / cap 32 393 vs old V mean 442.
+**Correction to the 06:10 note:** `goal/hold_len_repl` is not the real hold length. It replays
+the current manager's goals over old trajectories that were not pursuing them, so reach rarely
+fires there. The cap-8 runs show the drop directly: their holds are at most 8 steps and they
+still score ~180 on pin pad four. So the cause is not long holds. Suspects: the reached test
+itself (ending a goal one cell before the pad), the training-path changes that come with the
+block (summed manager rewards, hold-length discount in replay, worker return ended at the
+switch), or the worker lr (partial V runs at lr 1e-4, h0344/h0350, had 266/245 on pin pad four at
+0.25-0.5M vs 305 for old V seed 0 and ~200 here).
+**Diagnostics launched 18:25, pin pad four seed 0, all at cap 8** (rows 17-19; the two hopper runs
+h0389 at 0.48M and h0390 at 0 were cancelled to free the slots, hopper is requeued as
+h0404-h0406 in rows 20-22; the seed-1 pin pad four rows and two seed-1 pin pad five rows were
+dropped):
+- h0407 `... goal_hold_cap8 wkr_lr4e5`: old worker lr. Recovers ~305 -> it was the lr.
+- h0408 `... goal_hold_cap8 goal_hold_noreach`: reached test never fires, holds exactly 8, rest
+  of the block unchanged. Recovers -> the reached test hurts; stays ~200 -> the training path.
+- h0409 `... goal_hold_cap8 goal_hold_mean`: mean reward pooling (starts when a slot frees).
+
 **Re-plan 2026-11-13 06:10 (array rows 2-29, none had started).** First data: h0374 (pin pad
 four, cap 32, seed 0) scores ~200 from 0.25M to 2M where all five old V seeds had 238-320 at the
 same steps (0.25-0.5M: 238-305; 1.5-1.75M: 309-320). Goals are held ~20-25 steps on replayed real

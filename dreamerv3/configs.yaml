@@ -1714,6 +1714,18 @@ goal_hold_cap8:
     goal_duration_fixed: 8
     imag_length: 16
 
+# Diagnostics for the pin pad drop of goal_hold_reach (2026-11-13); layer after
+# goal_hold_cap8. `noreach`: the reached test never fires (threshold far above
+# any match), so holds are exactly 8 steps but the rest of the block's training
+# path stays (summed manager rewards, hold-length discount in replay, worker
+# return ended at the switch). `mean`: Director's mean reward pooling.
+goal_hold_noreach:
+  agent:
+    goal_reach_frac: 50.0
+goal_hold_mean:
+  agent:
+    mgr_reward_agg: mean
+
 tce_critic:
   agent:
     mgr_novel: True
