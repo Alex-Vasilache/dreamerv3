@@ -496,3 +496,73 @@ of log T(a) over ~10 s; samples capped at mean + 2 SD), `catch_every`,
 
 Saion V100 seeds 811-814: e44610-e44633 (jobs 4816270-4816293); IAS seeds
 815-818: e44640-e44663 (array 205979, code snapshot `code_rf`). 60 min each.
+
+### Fri 11-13: RF and RF2 results (catch reflex)
+
+RF2 (fix and confirm): Saion V100 e44720-e44731 (jobs 4816626-4816637), IAS
+e44740-e44751 (array 206217, snapshot `code_rf2`). Bug found in RF: the
+log-z limit of g4z and s4z stuck at the 1e-4 floor whenever the critic sat
+there through the 10 s warm-up (SD 0, and the capped update kept it 0), so
+those arms fired on 57-91% of steps (Saion; IAS s4z 6%, g4z 53% ± 47%):
+an always-on threat-minimising filter rather than a reflex. Fixed in RF2
+(SD floor 0.1 in log space, `catch_tmin 0.02`), and the always-on search
+was run on purpose (s4on: `catch_mode search`, `catch_tmax 1e-4`).
+
+Minutes 11-60, mean ± SD over seeds, n = 8 (4 Saion V100, seeds 811-814; 4
+IAS, 815-818); peak force = mean peak true bumper force per contact;
+reflex share = steps whose command it changed. Figure
+`figs/study/rf_reflex.png`. b and c are RF's own reruns with the BLAS cap; PF's
+Saion b and c (seeds 811-814, no cap) agree: 11.6 ± 2.0 and 11.7 ± 3.1
+crossings/min, peak force 3.32 ± 0.09 and 3.21 ± 0.19 N, impact pain
+1.22 ± 0.10 and 1.13 ± 0.41 (n = 4 each).
+
+| arm | t90 (min) | crossings/min | peak force (N) | impact pain/min | falls/push | reflex share of steps | mean abs(a'-a) | loop Hz |
+|---|---|---|---|---|---|---|---|---|
+| b: no reflex | 4.4 ± 0.7 | 12.7 ± 4.3 | 3.33 ± 0.31 | 1.32 ± 0.41 | 0.168 ± 0.062 | 0.000 ± 0.000 | 0.00 ± 0.00 | 53 ± 12 |
+| c: first reflex (slope 4, tmax 0.2) | 4.9 ± 0.8 | 11.5 ± 3.9 | 3.27 ± 0.29 | 1.14 ± 0.32 | 0.148 ± 0.053 | 0.001 ± 0.001 | 0.25 ± 0.07 | 46 ± 17 |
+| g4z: slope 4, cap 0.5, log-z (RF, stuck limit) | 6.6 ± 1.7 | 9.2 ± 3.7 | 1.85 ± 0.64 | 3.00 ± 1.39 | 0.119 ± 0.062 | 0.720 ± 0.397 | 0.36 ± 0.07 | 50 ± 12 |
+| s4z: search 4, log-z (RF, stuck limit) | 6.4 ± 2.2 | 8.2 ± 2.3 | 1.97 ± 0.48 | 0.61 ± 0.27 | 0.112 ± 0.036 | 0.315 ± 0.259 | 0.33 ± 0.03 | 48 ± 13 |
+| s8z: search 8, every 2nd, log-z | 4.6 ± 1.3 | 11.6 ± 2.1 | 2.84 ± 0.18 | 1.11 ± 0.21 | 0.156 ± 0.037 | 0.030 ± 0.009 | 0.30 ± 0.01 | 49 ± 13 |
+| s16z: search 16, every 4th, log-z | 5.1 ± 1.5 | 16.8 ± 4.6 | 3.31 ± 0.21 | 1.70 ± 0.56 | 0.227 ± 0.058 | 0.002 ± 0.003 | 0.25 ± 0.01 | 52 ± 8 |
+| s4z2: search 4, log-z 3, tmin 0.02 | 3.9 ± 0.8 | 9.4 ± 1.4 | 2.62 ± 0.41 | 0.77 ± 0.14 | 0.130 ± 0.024 | 0.043 ± 0.006 | 0.37 ± 0.01 | 54 ± 8 |
+| g4z2: slope 4, cap 0.5, log-z 3, tmin 0.02 | 5.4 ± 1.3 | 12.0 ± 2.9 | 3.03 ± 0.17 | 0.93 ± 0.23 | 0.163 ± 0.042 | 0.041 ± 0.005 | 0.29 ± 0.01 | 51 ± 13 |
+| s4on: search 4, always on | 7.2 ± 3.9 | 6.0 ± 1.1 | 1.45 ± 0.42 | 0.27 ± 0.20 | 0.084 ± 0.013 | 0.508 ± 0.115 | 0.31 ± 0.01 | 52 ± 8 |
+
+Mann-Whitney, n = 8 vs 8. s4z2 vs b: impact pain p = 0.010, peak force
+p = 0.003, crossings p = 0.08, falls/push p = 0.16; vs c: pain p = 0.04,
+force p = 0.007, t90 p = 0.05 (faster). s4on vs b: crossings, pain, force,
+falls/push all p ≤ 0.01; t90 p = 0.12 (slower, 7.2 ± 3.9 min, one seed late).
+
+Reading.
+
+- The first reflex (c, absolute tmax 0.2) is inert after minute ~7 (0.1% of
+  steps): the threat critic's level falls ~100x as the policy learns. Its
+  late numbers equal b's.
+- Longer look-ahead does not help: 16 steps (s16z) is the worst arm
+  (16.8 crossings/min, falls/push 0.23); 8 steps (s8z) equals b. Holding a
+  command 16 steps makes the predicted threat high for every candidate and
+  a poor predictor of the next 0.25 s (offline AUC 0.62-0.65 vs 0.76 at 4).
+- A search over the drive at 4 steps works; the slope step does not, even
+  capped (g4z2 equals b). With the relative limit and tmin (s4z2) the reflex
+  fires on 4% of steps, moves the command by 0.37, and cuts impact pain 42%
+  and peak contact force 21% against b, with no cost in learning speed
+  (t90 3.9 vs 4.4 min). Crossings and falls per push drop only a little
+  (n.s.).
+- Always on (s4on: send the nearest command whose 4-step threat is under
+  1e-4, else the safest; changes 51% of steps by 0.31) is the strongest:
+  crossings -53%, impact pain -80%, peak force -56%, falls per push 0.08 vs
+  0.17. But it is no longer a reflex: it rewrites half the commands, and
+  learning to balance was slower and more variable (t90 7.2 ± 3.9 min).
+- Cost: the 4-step search is 4 ms (numpy, one thread, CPU node; 6-7 ms on
+  the P100 nodes) per evaluated step. With `sim_phone_threads 1` the Saion
+  loop ran at 60-62 Hz in every arm. The IAS loop ran at 31-47 Hz in all
+  arms including b (not a reflex cost; IAS nodes are slower for the phone
+  loop), so IAS runs saw fewer steps per wall second.
+
+Recommended setting (sim only, untested on the robot): `catch_reflex True,
+catch_mode search, catch_steps 4, catch_z 3, catch_zlog True, catch_tmin
+0.02` (s4z2). s4on is worth a robot test only as a separate "guarded" mode.
+Not yet on the phone: the app's copies of policy_runner.py/emotion.py are
+not updated (tools/robot/dev/check_app_copies.sh --fix), and the phone is
+50-100x slower, so even the 4-step search (7 commands) may not fit its
+control step; measure there first.

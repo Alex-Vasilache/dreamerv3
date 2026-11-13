@@ -1,4 +1,4 @@
-"""Round RF figure: catch reflex variants against PF b (no reflex) and c
+"""Rounds RF/RF2 figure: catch reflex variants against b (no reflex) and c
 (the first reflex), per minute, mean +- SD over seeds.
 
   python fig_reflex.py OUT_STEM STATS.json [STATS.json ...]
@@ -18,13 +18,13 @@ import numpy as np  # noqa: E402
 # Colour + marker + dash per arm (deuteranopia: hues apart in lightness,
 # shape and dash carry identity too).
 STY = {
-    'b': dict(color='#000000', marker='o', ls='-', mfc='#000000', label='b: no reflex (PF)'),
-    'c': dict(color='#888888', marker='v', ls='--', mfc='#888888', label='c: first reflex (PF)'),
-    'g4z': dict(color='#E69F00', marker='s', ls='-.', mfc='#E69F00', label='slope 4, cap 0.5, z 3'),
-    's4z': dict(color='#0072B2', marker='D', ls='-', mfc='#0072B2', label='search 4, z 3'),
-    's8z': dict(color='#56B4E9', marker='^', ls=':', mfc='white', label='search 8, z 3'),
+    'b': dict(color='#000000', marker='o', ls='-', mfc='#000000', label='b: no reflex'),
+    'c': dict(color='#888888', marker='v', ls='--', mfc='#888888', label='c: first reflex (tmax 0.2)'),
+    's4z2': dict(color='#0072B2', marker='D', ls='-', mfc='#0072B2', label='search 4, log-z 3, tmin 0.02'),
+    'g4z2': dict(color='#E69F00', marker='s', ls='-.', mfc='#E69F00', label='slope 4, cap 0.5, log-z 3'),
+    's4on': dict(color='#56B4E9', marker='^', ls=':', mfc='white', label='search 4, always on'),
     's16z': dict(color='#009E73', marker='P', ls=(0, (5, 1.5, 1, 1.5, 1, 1.5)), mfc='white',
-                 label='search 16, z 3'),
+                 label='search 16 (every 4th), log-z 3'),
 }
 plt.rcParams.update({'axes.titlesize': 17, 'axes.labelsize': 15, 'xtick.labelsize': 13,
                      'ytick.labelsize': 13, 'legend.fontsize': 14})
@@ -56,14 +56,16 @@ def main(out, paths):
     ax.set_ylim(bottom=0)
     ax.grid(color='#d5d5d2', lw=0.7)
     ax.set_axisbelow(True)
+  axes[0].set_ylim(0, 45)   # minutes 1-2 (100-200) cut: the late rates matter
+  axes[1].set_ylim(0, 6)
   axes[2].set_yscale('symlog', linthresh=1e-3)
   axes[2].set_ylim(0, 1)
   axes[0].set_ylabel('per minute')
-  axes[2].set_ylabel('per minute')
-  fig.supxlabel('minute of robot time (65 Hz steps)', fontsize=15, y=0.1)
+  axes[2].set_ylabel('share; N')
+  fig.text(0.5, 0.125, 'minute of robot time (65 Hz steps)', ha='center', fontsize=15)
   h, l = axes[0].get_legend_handles_labels()
   fig.legend(h, l, loc='lower center', ncol=3, frameon=False)
-  fig.tight_layout(rect=(0, 0.11, 1, 1))
+  fig.tight_layout(rect=(0, 0.15, 1, 1))
   for ext in ('png', 'pdf'):
     fig.savefig(f'{out}.{ext}', dpi=200, facecolor='white')
 
