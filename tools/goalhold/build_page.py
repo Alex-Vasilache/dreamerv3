@@ -14,7 +14,7 @@ RUNS = [
 TASKS = [
   ('Step-by-step tests of the whole path', 'ok', 'done', '24 checks on the real agent; older suites repaired (192 pass)'),
   ('Find the cause of the pin pad drop', 'ok', 'done', 'wrong bootstrap state for the cut last hold'),
-  ('Fix and confirmation runs', 'run', 'running', 'array 4823288, h0410-h0417'),
+  ('Fix and confirmation runs', 'run', 'running', 'array 4823338, h0410-h0417'),
   ('More bug-hunt angles', 'todo', 'next', 'trained checkpoint, real hold length in the environment, replay worker path'),
   ('Threshold, distance test, worker "done"', 'todo', 'next', 'after the fix is confirmed; cap 32'),
   ('Manager-chosen goal length', 'todo', 'next', 'rerun with the fix'),

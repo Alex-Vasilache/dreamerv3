@@ -8,7 +8,7 @@ echo "== runs"
 python3 - "$A" <<'P'
 import glob, json, os, sys, math, time
 A = sys.argv[1]
-for d in sorted(glob.glob(f'/work/DoyaU/vasilache/work/h0[34]*_j{A}_*')):
+for d in sorted(glob.glob(f'/work/DoyaU/vasilache/work/h0*_j{A}_*')):
   name = os.path.basename(d); tag = name.split('_')[0]; task = name.split('_director')[0][6:]
   mp = d + '/logdir/metrics.jsonl'
   if not os.path.exists(mp): print(tag, task, 'no metrics yet'); continue

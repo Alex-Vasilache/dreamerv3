@@ -1,7 +1,7 @@
 #!/bin/bash
 # Archive goal-hold array runs whose SLURM task is in a terminal state. Copy (no replay), verify, then delete.
-A=4812978; W=/work/DoyaU/vasilache/work; B=/bucket/DoyaU/vasilache/bucket/results/dreamerv3; L=$W/slurm_logs
-for d in $W/h0[34]*_j${A}_*; do
+A=${1:-4812978}; W=/work/DoyaU/vasilache/work; B=/bucket/DoyaU/vasilache/bucket/results/dreamerv3; L=$W/slurm_logs
+for d in $W/h0*_j${A}_*; do
   [ -d "$d" ] || continue
   run=$(basename $d); task=${run##*_}; job=$(grep '^JOB=' $d/job.env | cut -d= -f2)
   st=$(sacct -j ${A}_${task} -X -n -o State | head -1 | tr -d ' +')

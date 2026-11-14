@@ -672,6 +672,14 @@ DMC_PROPRIO=False`), all `director director_og wkr_ent_fixed wkr_v3 goal_hold_re
 | h0413 | pin pad six, s0 | 32 | h0376 0, V 1/5 solved | open |
 | h0415 | pin pad six, s0 | 8 | h0379 0 | open |
 
+**23:15 restart.** The first version of the fix (5e745f3) set only the FIRST padding slot to the
+final state. The lambda-return chains through all padding slots (continuation 1, reward 0), so the
+last decision still read 0.95 x V(own start state). Complete fix 2069ea8
+(`fill_trailing_final_state`: every padding slot = final state; `test_6` checks the return number
+against a hand-written SMDP return, both earlier versions fail it). Array 4823288 had started
+23:02-23:06, 30 s before the complete fix was on disk: cancelled at ~10 min, dirs removed,
+resubmitted unchanged as **array 4823338** (same h-numbers, literal restart).
+
 Also check: `mgr/range_extr` should fall to ~10 (sum pooling) from 30-120.
 Array 4812978 fully finished and archived 11-14 (28 runs; none left in `/work`).
 
