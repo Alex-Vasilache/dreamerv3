@@ -724,6 +724,9 @@ is below cap 8 on both (reach ends 97% of imagined switches there, mean imagined
 h0410 332 / 0.19M, h0417 350 / 0.22M (old V 311, 0.14-0.30; before the fix h0377 181); pin pad
 five h0414 277 / 1.71M (first >= 50 at 0.30M, dips until 1.7M; old V 278, 1.11-2.59).
 
+Pin pad six, both caps (h0413 cap 32, h0415 cap 8): 0 over all 4M (archived 07:57), as 4 of 5 old V
+seeds; the hold rule does not fix exploration there.
+
 Also check: `mgr/range_extr` should fall to ~10 (sum pooling) from 30-120.
 Array 4812978 fully finished and archived 11-14 (28 runs; none left in `/work`).
 
