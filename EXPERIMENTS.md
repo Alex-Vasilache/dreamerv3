@@ -706,6 +706,31 @@ dropped):
   of the block unchanged. Recovers -> the reached test hurts; stays ~200 -> the training path.
 - h0409 `... goal_hold_cap8 goal_hold_mean`: mean reward pooling (starts when a slot frees).
 
+**Diagnostics outcome 2026-11-14 (all three finished 4M; pin pad four, seed 0, cap 8).** Window
+means, sustained-50 crossing in brackets:
+
+| Run | 0.25-0.5M | 0.5-0.75M | 1-2M | 2-3M | 3.5-4M |
+|---|---|---|---|---|---|
+| h0407 old worker lr | 193 | 173 | 260 | 218 | 152 (3.88) |
+| h0408 reached test off | 228 | 261 | 308 | 318 | 323 (0.29) |
+| h0409 mean pooling | 0 | 0 | 89 | 55 | 131 (3.97) |
+
+With the reached test off the run matches old V (311, crossing 0.14-0.30) although the rest of the
+block stays on (summed rewards, hold-length discount in replay, worker return ended at the
+switch). So the drop comes from reach-based switching itself, not from the worker lr, the sum
+pooling or the variable-length training path. One seed each.
+
+**Code check of the variable-length path (2026-11-14).** New `embodied/tests/
+test_vargoal_path_stepwise.py` (20 checks): real agent, real config blocks, every stage captured
+inside the jitted code and recomputed by hand: env switch rule, imagination (switch mask, reach
+flags, held skills, countdown, start states), manager tensors (decision skills, pooled rewards and
+continuations, credited decisions; equal to the fixed-K helpers when reach is off), worker tensors
+(reward against the old goal, old-goal bootstrap), replay (switch rule, real rewards, per-step
+discount). All pass, at four reach thresholds. The 12 older failing tests were a test stub
+returning a Python float (and a stale module list); fixed, 192 pass, including the block-pooled
+vs fixed-K loss / gradient equivalence. No bug found in the path. Noted, not on in V:
+`_mgr_novel_update` samples the replay trace on the fixed `::K` grid, not at the real switches.
+
 **Re-plan 2026-11-13 06:10 (array rows 2-29, none had started).** First data: h0374 (pin pad
 four, cap 32, seed 0) scores ~200 from 0.25M to 2M where all five old V seeds had 238-320 at the
 same steps (0.25-0.5M: 238-305; 1.5-1.75M: 309-320). Goals are held ~20-25 steps on replayed real

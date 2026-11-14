@@ -78,11 +78,11 @@ class RecordingNorm:
     self.seen = []
 
   def stats(self):
-    return 0.0, 1.0
+    return jnp.float32(0.0), jnp.float32(1.0)
 
   def __call__(self, x, update=True, weights=None):
     self.seen.append((x, weights))
-    return 0.0, 1.0
+    return jnp.float32(0.0), jnp.float32(1.0)
 
   @staticmethod
   def moments(entry):

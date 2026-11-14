@@ -19,6 +19,7 @@ import dreamerv3.hrl as hrl
 # branch since those modules landed.
 SUBMODULES = [
     'explore',
+    'fromto',
     'goal_ae',
     'goal_mask',
     'goals',

@@ -1140,10 +1140,10 @@ def test_free_running_manager_loss_end_to_end_heterogeneous_batch():
 
 class _NullNorm:
   def stats(self):
-    return 0.0, 1.0
+    return jnp.float32(0.0), jnp.float32(1.0)
 
   def __call__(self, x, update=True, weights=None):
-    return 0.0, 1.0
+    return jnp.float32(0.0), jnp.float32(1.0)
 
 
 # --------------------------------------------------------------------------

@@ -515,8 +515,8 @@ def test_decision_rescale_makes_variable_length_manager_loss_match_a_fixed_k_row
   import embodied.jax.outs as outs
 
   class _StubNorm:
-    def stats(self): return 0.0, 1.0
-    def __call__(self, x, update=True, weights=None): return 0.0, 1.0
+    def stats(self): return jnp.float32(0.0), jnp.float32(1.0)
+    def __call__(self, x, update=True, weights=None): return jnp.float32(0.0), jnp.float32(1.0)
 
   policy = {'skill': outs.OneHot(jnp.einsum('btd,dc->btc', feat_eff, logit_w))}
   val = outs.MSE(feat_eff @ val_w)
