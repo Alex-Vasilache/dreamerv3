@@ -408,8 +408,12 @@ def test_3b_manager_bootstrap_state(frac, agg):
       # by the manager policy logits, which are computed on the same input.
       assert np.abs(im['plog'][b, -1] - im['plog'][b, starts[-1]]).max() > 1e-4 \
           or starts[-1] == T - 1
+      # EVERY slot after the last decision: the lambda-return chains through
+      # all of them (continuation 1, reward 0), so one stale slot is enough to
+      # put the start state back into the return with weight lambda.
       np.testing.assert_allclose(
-          mg['plog'][b, n], im['plog'][b, -1], rtol=1e-3, atol=1e-4,
+          mg['plog'][b, n:], np.broadcast_to(im['plog'][b, -1], mg['plog'][b, n:].shape),
+          rtol=1e-3, atol=1e-4,
           err_msg=f'row {b}: last switch at {starts[-1]}, horizon end {T - 1}')
   print(f'frac={frac}: rollouts whose last hold is cut by the horizon: {cut}/{M}')
 
@@ -478,3 +482,60 @@ def test_5_replay_path(frac, agg):
   assert rets, 'replay manager lambda_return call not found'
   np.testing.assert_allclose(rets[-1]['term'], 1.0 - c_out, rtol=1e-6, atol=1e-7)
   assert float(rets[-1]['disc']) == 1.0
+
+
+# --------------------------------------------------------------------------
+# 6. The number that reaches the critic: return of the horizon-cut last hold
+# --------------------------------------------------------------------------
+
+def test_6_last_hold_return_bootstraps_from_the_final_state_only():
+  """Synthetic rollout, value = a distinct number per state. The manager
+  return of every decision, computed exactly as ``Agent.loss`` does it
+  (downsample -> fill -> pooled tensors -> lambda_return), must equal the
+  hand-written SMDP return that bootstraps from the FINAL state:
+    R_j + g^h_j * [(1-lam) V(s_next) + lam * G_next],  G_last = R + g^h V(s_T).
+  The start state of the last hold must not appear in its own return."""
+  from dreamerv3.hrl.tensors import (
+      downsample_at_switch_mask, fill_trailing_final_state,
+      patch_trailing_replay_state, variable_block_director_tensors)
+  from dreamerv3.hrl.losses import lambda_return
+  T, g, lam = 17, 0.9, 0.95
+  sw = jnp.array([[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+                  [1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]], f32)
+  rng = np.random.RandomState(0)
+  rew = jnp.asarray(rng.rand(2, T), f32)
+  con = jnp.full((2, T), g, f32)
+  V = jnp.asarray(100.0 + 10.0 * np.arange(T)[None] + np.zeros((2, 1)), f32)
+
+  def returns(fill):
+    v = downsample_at_switch_mask({'v': V}, sw)['v']
+    if fill is not None:
+      v = fill({'v': v}, {'v': V}, sw)['v']
+    r, _, c, _ = variable_block_director_tensors(
+        rew, con, jnp.zeros_like(rew), sw, T, agg_mode='sum')
+    return np.asarray(lambda_return(
+        jnp.zeros_like(c), 1 - c, r, v, v, 1.0, lam))
+
+  def longhand(b):
+    starts = list(np.where(np.asarray(sw[b]) > 0.5)[0]); out = {}
+    G = None
+    for j in reversed(range(len(starts))):
+      s = starts[j]; e = starts[j + 1] if j + 1 < len(starts) else T - 1
+      R = sum(float(rew[b, t + 1]) * g ** (t - s + 1) for t in range(s, e))
+      disc = g ** (e - s)
+      if G is None:
+        G = R + disc * float(V[b, T - 1])
+      else:
+        G = R + disc * ((1 - lam) * float(V[b, e]) + lam * G)
+      out[j] = G
+    return [out[j] for j in range(len(starts))]
+
+  good = returns(fill_trailing_final_state)
+  for b in range(2):
+    want = longhand(b)
+    np.testing.assert_allclose(good[b, :len(want)], want, rtol=1e-5)
+  # The two earlier versions are both wrong for the last decision.
+  for bad_fill in (None, patch_trailing_replay_state):
+    bad = returns(bad_fill)
+    want = longhand(0)
+    assert abs(bad[0, len(want) - 1] - want[-1]) > 1.0

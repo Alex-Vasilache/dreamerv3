@@ -453,6 +453,31 @@ def patch_trailing_replay_state(x_down, x_full, switch_mask):
   return jax.tree.map(patch, x_down, x_full)
 
 
+def fill_trailing_final_state(x_down, x_full, switch_mask):
+  """Set EVERY padding slot (index >= number of switches) of a
+  ``downsample_at_switch_mask`` result to the sequence's final state.
+
+  Imagination needs all of them, not only the first (which is what
+  ``patch_trailing_replay_state`` sets): the manager lambda-return runs over
+  the whole padded axis with continuation 1 and reward 0 past the last
+  decision, and bootstraps from the critic at each slot, so the return at the
+  first padding slot is a lambda-mix of every later one. One slot left at the
+  forward-filled start state of the last hold puts that state back into the
+  last decision's return with weight lambda (0.95). With all padding at the
+  final state the last decision's return is exactly R + g^h V(s_final).
+  """
+  sw = f32(switch_mask)
+  B, T = sw.shape
+  n_sw = jnp.sum(sw, axis=-1).astype(i32)                       # (B,)
+  pad = jnp.arange(T)[None, :] >= n_sw[:, None]                 # (B, T)
+
+  def fill(down, full):
+    m = pad.reshape(pad.shape + (1,) * (down.ndim - 2))
+    return jnp.where(m, full[:, -1:].astype(down.dtype), down)
+
+  return jax.tree.map(fill, x_down, x_full)
+
+
 def _last_decision_truncation(mgr_skills_eff, switch_mask, dur_min, dur_max):
   """Shared derivation for BOTH truncation policies (relabel and drop).
 

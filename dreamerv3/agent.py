@@ -33,6 +33,7 @@ from .hrl import (
     mgr_as_dict,
     pairwise_cosmax,
     patch_trailing_replay_state,
+    fill_trailing_final_state,
     decision_mean_rescale,
     relabel_truncated_last_duration,
     truncated_last_decision_mask,
@@ -1790,7 +1791,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         # true final imagined state there, as the replay path already does.
         # A no-op when the last switch lands on the final state (fixed holds
         # that divide the horizon), so fixed-K equivalence is unchanged.
-        imgfeat_eff = patch_trailing_replay_state(
+        # Every padding slot, not only the first: the lambda-return chains
+        # through all of them (see ``fill_trailing_final_state``).
+        imgfeat_eff = fill_trailing_final_state(
             imgfeat_eff, imgfeat, switch_mask)
       inp_eff = self.feat2tensor(imgfeat_eff)
       n_mgr = imgfeat_eff['deter'].shape[1]
