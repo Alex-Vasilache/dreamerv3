@@ -72,6 +72,14 @@ are in nats. Being tested: with novelty (total error, noradrenaline plus
 acetylcholine in Yu & Dayan's terms) or without (unexpected error,
 noradrenaline only).
 
+Update 11-14: an offline bake-off of ten definitions on 48 sim runs
+(`LIT_AROUSAL_YU.md`) picked the Pearce-Hall associability, a running
+average of the absolute TD error, α_t = η|δ_{t-1}| + (1-η)α_{t-1} with
+η ≈ 0.05-0.1 per step, arousal = σ(z(α)) over ~60 s: AUC 0.81 at a hit, 0.75
+0.1-0.3 s before, 0.69 after a push, and the only definition that adds
+information beyond pleasure (0.63). It is the arousal for the next sim round;
+the surprise variants and Yu's base-rate version stay as switches.
+
 ## Dominance: can my actions make the end state different?
 
     m_s = (1/32) Σ_k s_k,  m_V = (1/32) Σ_k V_k,  m_T = (1/32) Σ_k T_k     average end point

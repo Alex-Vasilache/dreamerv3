@@ -13,8 +13,9 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [x] Decided (11-14): pleasure stays outcome + change in outlook, equal weights (best out of sample); no gamma' factor; no regret term (not supported)
 2. Arousal: competing definitions
    - [x] Angela Yu's work: base-rate surprise on threat beats current versions in 48 sim runs (0.69 / 0.71 vs <= 0.64 / 0.62)
-   - [~] Survey of competing definitions (salience, volatility, free energy, stakes, urgency, learning progress, ...), shortlist
-   - [ ] Offline bake-off of the shortlist on the 48 logged runs (hits, before hits, pushes)
+   - [x] Survey of competing definitions (20 families, `LIT_AROUSAL_YU.md`)
+   - [x] Offline bake-off on the 48 logged runs: Pearce-Hall associability (running |TD error|, eta 0.05-0.1, z over 60 s) wins: 0.81 hit / 0.75 before / 0.69 push, and the only one beyond pleasure (0.63)
+   - [x] Decided (11-14): arousal = Pearce-Hall associability; Yu base-rate kept as a switch
    - [ ] Questions for the meeting with Angela Yu (in `LIT_AROUSAL_YU.md`)
 3. Sim round with the best current definitions
    - [ ] Build behind switches: pleasure gamma' (+ regret), arousal winner(s) incl. Yu's exact version (log posterior/prior pain probability), dominance updated more often
