@@ -734,6 +734,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         scales['cost'] = scales['rew']
         scales['fear_policy'] = self.fear
         scales['fear_value'] = scales['value']
+      # M2 regret distillation: beta is inside the loss term itself.
+      if float((self.config.get('regret', {}) or {}).get('beta', 0.0)):
+        scales['regret'] = 1.0
     self.scales = scales
 
   @property
@@ -1035,6 +1038,62 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         mgr_skill, mgr_step)
     return carry, outs, metrics
 
+  def _cand_outlook(self, starts):
+    """Candidate outlooks at M imagination starts (agent.outlook; M2/M5).
+
+    The policy's mean command a0 at each start, shifted by outlook_deltas
+    (every continuous action dim together, clipped to [-1, 1]), is held
+    `steps` steps through the world model with the prior's mode (no
+    sampling noise between candidates) and scored by outlook_score with the
+    actor's own units (retnorm / cretnorm scales). No gradient flows.
+    Returns (O (J, M), cands (J, M, A), action key)."""
+    cfg = self.config.get('outlook', {}) or {}
+    steps = int(cfg.get('steps', 4))
+    deltas = jnp.asarray(outlook_deltas(cfg.get('offsets', '0.25,0.5,1')))
+    keys = [k for k, s in self.act_space.items() if not s.discrete]
+    assert len(keys) == 1 and len(self.act_space) == 1, (
+        'outlook candidates need a single continuous action', self.act_space)
+    key = keys[0]
+    starts = nn.cast(sg(dict(deter=starts['deter'], stoch=starts['stoch'])))
+    M = starts['deter'].shape[0]
+    J = deltas.shape[0]
+    a0 = sg(self.pol(self.feat2tensor(starts), 1)[key].pred())
+    cands = jnp.clip(a0[None] + deltas[:, None, None], -1.0, 1.0)   # (J,M,A)
+    deter = jnp.concatenate([starts['deter']] * J, 0)
+    stoch = jnp.concatenate([starts['stoch']] * J, 0)
+    act = nn.cast(cands.reshape((J * M, -1)))
+    actemb = nn.DictConcat(self.act_space, 1)({key: act})
+    unimix = self.dyn.unimix
+    rews, crews = [], []
+    for _ in range(steps):
+      deter = self.dyn._core(deter, stoch, actemb)
+      logit = self.dyn._prior(deter)
+      classes = logit.shape[-1]
+      probs = jax.nn.softmax(f32(logit), -1)
+      probs = (1 - unimix) * probs + unimix / classes
+      stoch = nn.cast(jax.nn.one_hot(jnp.argmax(probs, -1), classes))
+      inp = self.feat2tensor(dict(deter=deter, stoch=stoch))
+      rews.append(f32(self.rew(inp, 1).pred()))
+      crews.append(-f32(self.cst(inp, 1).pred()) if self.fear
+                   else jnp.zeros((J * M,), f32))
+    inp = self.feat2tensor(dict(deter=deter, stoch=stoch))
+    voff, vscale = self.valnorm.stats()
+    val = f32(self.slowval(inp, 1).pred()) * vscale + voff
+    if self.fear:
+      coff, cvscale = self.cvalnorm.stats()
+      cval = f32(self.slowcval(inp, 1).pred()) * cvscale + coff
+      cscale = self.cretnorm.stats()[1]
+    else:
+      cval, cscale = jnp.zeros_like(val), 1.0
+    rscale = self.retnorm.stats()[1]
+    shape = lambda x: x.reshape((J, M) + x.shape[1:])
+    rew = jnp.stack([shape(r) for r in rews], -1)
+    crew = jnp.stack([shape(c) for c in crews], -1)
+    disc = 1 - 1 / self.config.horizon
+    O = outlook_score(rew, shape(val), crew, shape(cval), disc,
+                      rscale, cscale, self.fear)
+    return sg(O), sg(cands), key
+
   def _flat_ac_loss(
       self, obs, repfeat, tokens, dyn_entries, dyn_carry, losses, metrics,
       enc_carry, dec_carry, enc_entries, dec_entries, B, T, training):
@@ -1132,6 +1191,60 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       for k in ('policy', 'value'):
         losses[f'fear_{k}'] = per_start(los_c[k].mean(1))
       metrics.update({f'fear/{k}': v for k, v in mets_c.items()})
+    regret = self.config.get('regret', {}) or {}
+    control = self.config.get('control', {}) or {}
+    beta = float(regret.get('beta', 0.0))
+    cweight = float(control.get('weight', 0.0))
+    if beta or cweight:
+      # Round LE2 (docs/robot/LIT_EMOTION_LEARNING.md M2, M5). The catch
+      # reflex's 4-step candidate search, run in the learner on the replayed
+      # imagination starts rather than on the phone: the targets must train
+      # the policy, the learner already holds every replayed state, and the
+      # phone app needs no change. One untiled set of B x K starts.
+      M = B * K_imag
+      ustarts = jax.tree.map(lambda x: x[:M], starts)
+      O, cands, akey = self._cand_outlook(ustarts)
+      metrics['outlook/spread'] = O.std(0).mean()
+      if beta:
+        # M2 regret: pre-pain starts (relative threat high and rising, not
+        # yet in pain) pull the policy toward the best candidate, weighted
+        # by the regret relative to the gated starts' mean.
+        if self.fear:
+          coff, cvscale = self.cvalnorm.stats()
+          threat = -(f32(self.cval(self.feat2tensor(sg(repfeat)), 2).pred())
+                     * cvscale + coff)
+          gate = threat_gate(
+              threat, obs['cost'], float(regret.get('gate_z', 1.0)),
+              bool(regret.get('gate_rising', True)),
+              float(regret.get('gate_cost', 0.05)))[:, -K_imag:].reshape((M,))
+        else:
+          gate = jnp.ones((M,), bool)
+        a_star, rho, w_r = regret_targets(O, cands, sg(gate))
+        pol0 = self.pol(self.feat2tensor(sg(ustarts)), 1)[akey]
+        logp = f32(pol0.logp(sg(a_star)))
+        logp = logp.reshape((M, -1)).sum(-1)
+        losses['regret'] = (beta * sg(w_r) * -logp).reshape((B, K_imag))
+        gf = f32(gate)
+        metrics['regret/gate_frac'] = gf.mean()
+        metrics['regret/rho_gated'] = (gf * rho).sum() / jnp.maximum(gf.sum(), 1)
+        metrics['regret/rho_all'] = rho.mean()
+        metrics['regret/best_is_own'] = (
+            (gf * f32(rho <= 0)).sum() / jnp.maximum(gf.sum(), 1))
+        metrics['regret/shift_gated'] = (
+            (gf * jnp.abs(a_star - cands[0]).mean(-1)).sum()
+            / jnp.maximum(gf.sum(), 1))
+        metrics['regret/logp'] = (gf * logp).sum() / jnp.maximum(gf.sum(), 1)
+      if cweight:
+        # M5 controllability: the actor learns less where commands barely
+        # change the outlook (critics untouched).
+        w_c, D = control_weights(O, cweight)
+        w_c = sg(w_c).reshape((B, K_imag))
+        for k in ('policy', 'fear_policy'):
+          if k in losses:
+            losses[k] = losses[k] * w_c
+        metrics['control/w_min'] = w_c.min()
+        metrics['control/w_max'] = w_c.max()
+        metrics['control/D_mean'] = D.mean()
     arousal = self.config.get('arousal_imag', {}) or {}
     if float(arousal.get('weight', 0.0)):
       # Arousal-tagged imagination (docs/robot/EMOTION.md): weight each
@@ -2245,6 +2358,64 @@ def stress_lambda(surprise, lam, kappa, zclip=2.0):
   s = jnp.asarray(surprise, jnp.float32)
   z = (s - s.mean()) / (s.std() + 1e-6)
   return lam * (1 - kappa * jnp.clip(z, 0, zclip) / zclip)
+
+
+def outlook_deltas(offsets):
+  """Candidate shifts 0, -o1, +o1, -o2, +o2, ... (the catch reflex's
+  search order, PolicyRunner._reflex): index 0 is the policy's own command."""
+  offs = sorted(float(x) for x in str(offsets).split(',') if x.strip())
+  return np.array([0.0] + [s * o for o in offs for s in (-1, 1)], np.float32)
+
+
+def outlook_score(rew, val, crew, cval, disc, rscale, cscale, weight):
+  """Outlook of J candidates at M starts, the actor's objective over a short
+  hold: O = R / rscale + weight * C / cscale, with R = sum_k disc^(k-1) r_k +
+  disc^n V_n (rew (J, M, n), val (J, M)) and C the same for the threat's
+  negative-cost stream (crew, cval; zeros without fear)."""
+  n = rew.shape[-1]
+  g = disc ** jnp.arange(n, dtype=jnp.float32)
+  R = (f32(rew) * g).sum(-1) + disc ** n * f32(val)
+  C = (f32(crew) * g).sum(-1) + disc ** n * f32(cval)
+  return R / rscale + weight * C / cscale
+
+
+def regret_targets(O, cands, gate):
+  """M2: the best candidate per start and its regret weight.
+
+  O (J, M) outlooks, cands (J, M, A) commands (index 0 = the policy's mean),
+  gate (M,) bool. rho_i = max_j O_ji - O_0i >= 0; w_i = gate_i rho_i /
+  mean over gated starts of rho (mean 1 over the gated starts; 0 if none
+  is gated or no regret). Returns (a_star (M, A), rho (M,), w (M,))."""
+  best = jnp.argmax(O, 0)
+  rho = jnp.maximum(O.max(0) - O[0], 0.0)
+  a_star = jnp.take_along_axis(cands, best[None, :, None], 0)[0]
+  g = f32(gate)
+  denom = (g * rho).sum() / jnp.maximum(g.sum(), 1.0)
+  w = jnp.where(denom > 1e-8, g * rho / jnp.maximum(denom, 1e-8), 0.0)
+  return a_star, rho, w
+
+
+def threat_gate(threat, cost, zmin=1.0, rising=True, cmax=0.05):
+  """M2 pre-pain gate on replayed states (B, T): log threat z-scored over
+  the batch above zmin, (with `rising`) above its value one replay step
+  before (never at t = 0), and not yet in pain (cost < cmax)."""
+  x = jnp.log(jnp.maximum(f32(threat), 1e-4))
+  z = (x - x.mean()) / (x.std() + 1e-6)
+  gate = (z > zmin) & (f32(cost) < cmax)
+  if rising:
+    up = jnp.concatenate(
+        [jnp.zeros_like(x[:, :1], bool), x[:, 1:] > x[:, :-1]], 1)
+    gate = gate & up
+  return gate
+
+
+def control_weights(O, weight=1.0):
+  """M5: per-start actor weight sigmoid(weight * z(D)), D = SD over the
+  candidates of the outlook (O (J, M)), z within the batch, mean 1."""
+  D = f32(O).std(0)
+  z = (D - D.mean()) / (D.std() + 1e-6)
+  w = jax.nn.sigmoid(weight * z)
+  return w / w.mean(), D
 
 
 def _decay_toward_init(rate, mask):

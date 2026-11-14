@@ -819,6 +819,26 @@ defaults:
     # threat critic's updates x lr_mult after the RMS normalisation (their lr
     # x lr_mult); 1: off.
     fear: {weight: 0.0, lr_mult: 1.0}
+    # Candidate outlooks (agent.py:_cand_outlook, flat actor only; round LE2,
+    # docs/robot/LIT_EMOTION_LEARNING.md M2/M5): at every imagination start
+    # the policy's mean command shifted by 0, +-offsets (all wheels together,
+    # clipped) is held `steps` steps in the world model (prior mode) and scored
+    # by the actor's own objective, O = R/S_R + fear.weight * C/S_C (R, C:
+    # the reward's and the threat's n-step returns bootstrapped by val/cval;
+    # S: their retnorm scales) -- the catch reflex's 4-step search, in the
+    # learner from replayed starts. Computed only when regret or control is on.
+    outlook: {offsets: '0.25,0.5,1', steps: 4}
+    # M2 regret distillation: at pre-pain starts (threat z-scored in log
+    # space within the batch > gate_z, rising since the previous replay step
+    # if gate_rising, cost at the start < gate_cost), an extra actor term
+    # beta * w_i * -log pi(a*_i | s_i) toward the best candidate a*; w_i =
+    # regret (max_j O_j - O_mean) relative to its mean over gated starts.
+    # beta 0: off.
+    regret: {beta: 0.0, gate_z: 1.0, gate_rising: True, gate_cost: 0.05}
+    # M5 controllability gate: each start's actor loss (reward and threat
+    # terms) x sigmoid(weight * z(D_i)), renormalised to mean 1 in the batch;
+    # D_i = SD over candidates of O. Critics untouched. weight 0: off.
+    control: {weight: 0.0}
     repval_grad: True
     # HRL only: let the replay value losses (manager task, manager exploration,
     # worker goal) backprop into enc/RSSM. Off since 2026-10-05: on, they reshape

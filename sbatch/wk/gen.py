@@ -395,6 +395,23 @@ LE1_ARMS = [
 ]
 
 
+# Round LE2 (11-15, TASKS.md step 4, round 2; LIT_EMOTION_LEARNING.md M2,
+# M5) on LE1's base under stronger pushes (LE1 had little headroom). First
+# a headroom smoke of the base at four push levels (8 min, seeds 1-2), then
+# base / M2 regret distillation / M5 controllability gate at the chosen
+# level. Both mechanisms score the reflex's 7 candidates (policy mean +
+# {0, +-0.25, +-0.5, +-1}, 4 steps) in the learner from replayed starts.
+LE2_PUSHES = ['5:0.05:0.15', '5:0.1:0.25', '4:0.15:0.3', '4:0.2:0.4']
+LE2_PUSH = os.environ.get('LE2_PUSH', '4:0.15:0.3')
+LE2_BASE = LE1_BASE.replace('--env.robot.sim_push 5:0.05:0.15',
+                            f'--env.robot.sim_push {LE2_PUSH}')
+LE2_ARMS = [
+    ('base', LE2_BASE),
+    ('m2_regret', f'{LE2_BASE} --agent.regret.beta 0.1'),
+    ('m5_control', f'{LE2_BASE} --agent.control.weight 1.0'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -713,6 +730,21 @@ def main():
                            'le1i': ('any', SEEDS8[4:], 60)}[rnd]
     for seed in seeds:
       for arm, flags in LE1_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd == 'le2push':
+    for seed in (1, 2):
+      for push in LE2_PUSHES:
+        lines.append(f'# base push {push}')
+        flags = LE1_BASE.replace('--env.robot.sim_push 5:0.05:0.15',
+                                 f'--env.robot.sim_push {push}')
+        lines.append(bal_line(f'e{n}', 'v100', flags, seed, minutes=8, base='old')); n += 1
+  elif rnd in ('le2smoke', 'le2v', 'le2i'):
+    gpu, seeds, minutes = {'le2smoke': ('v100', [1], 6), 'le2v': ('v100', SEEDS4, 60),
+                           'le2i': ('any', SEEDS8[4:], 60)}[rnd]
+    arms = LE2_ARMS[1:] if rnd == 'le2smoke' else LE2_ARMS
+    for seed in seeds:
+      for arm, flags in arms:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd.startswith('w1'):
