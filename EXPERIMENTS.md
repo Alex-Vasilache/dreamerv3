@@ -644,6 +644,30 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0418-h0425: ways to end a hold, and surprise (2026-11-15 05:05, array 4823592)
+
+All on V (`director director_og wkr_ent_fixed wkr_v3 ... pubmatch`) with the bootstrap fix, A100,
+`sbatch/goalhold_b2_params.txt`. New code (commit 5c8b488, tested in
+`test_vargoal_path_stepwise.py::test_7`, `test_mgr_surprise.py`): `goal_reach_mode` cos / mse /
+done, `goal_dur_head` (manager-chosen 1..32 on the same SMDP training path as reach, countdown
+shown to the worker), `mgr_surprise`, real hold length `episode/log/hold_switch/avg` (= switch
+rate in the environment). Pin pad five is the main task: it separates the arms most (V first
+scores at 1.1-2.6M, reach cap 8 at 0.30M, reach cap 32 at 1.93M).
+
+| Run | Task, seed | Blocks after V | Question | Compare with |
+|---|---|---|---|---|
+| h0418 | pin pad five, 0 | `goal_hold_reach goal_hold_frac07` | lower threshold (cap 32): ends holds sooner | h0412 |
+| h0419 | pin pad five, 0 | `goal_hold_reach goal_hold_frac09` | higher threshold (cap 32) | h0412 |
+| h0420 | pin pad five, 0 | `goal_hold_reach goal_hold_done` | worker "done": (1-g) V(s,g) <= cos, floor 0.5 x ceiling, cap 32 | h0412, h0414 |
+| h0421 | pin pad five, 0 | `goal_dur_head` | manager picks the length | h0412, h0414, V |
+| h0425 | pin pad four, 0 | `goal_dur_head` | same | h0410, h0411, V |
+| h0422 | pin pad five, 0 | `goal_hold_reach goal_hold_cap8 mgr_surprise` | surprise reward on the best hold rule | h0414 |
+| h0423 | pin pad six, 0 | `goal_hold_reach goal_hold_cap8 mgr_surprise` | does surprise find pin pad six | h0415 (0) |
+| h0424 | pin pad five, 1 | `goal_hold_reach goal_hold_cap8` | second seed of the 0.30M result | h0414, V |
+
+Not in this batch: the squared-error reached test (`goal_hold_mse`; offline AUC equal to cosine and
+its multiplier is not calibrated yet), caps 16 / 48, switch cost.
+
 ### h0410-h0417: goal hold with the trailing-bootstrap fix (2026-11-14 21:10, array 4823288)
 
 **Bug found 2026-11-14 (every variable-length run to date, h0374-h0409 and the old duration-head
