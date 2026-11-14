@@ -158,6 +158,13 @@ defaults:
     # progress ratio control (online_progress) probes the world model on it.
     holdout: 0.0
     holdout_age: 7800
+    # Retroactive pain tagging (embodied/core/replay.py:pain_tag; docs/robot/
+    # LIT_EMOTION_LEARNING.md M1), learner only: a sequence is tagged when a
+    # step out of contact (cost < cost) is followed within `window` steps by
+    # pain (cost >= cost) or, drop > 0, a one-step reward drop >= drop; a
+    # `share` of training samples comes from tagged sequences, which are
+    # never evicted. share 0: off.
+    tag: {share: 0.0, window: 65, cost: 0.05, drop: 0.0}
 
   run:
     steps: 1e10
@@ -797,13 +804,21 @@ defaults:
     # weight 0 is off; > 0 weights each replay start's actor and critic loss by
     # 1 + weight * clip(z(signal), 0, clip), renormalised to mean 1 per batch.
     arousal_imag: {weight: 0.0, signal: unexpected, clip: 3.0}
+    # Stress -> trust the model less (agent.py:stress_lambda, flat actor only;
+    # docs/robot/LIT_EMOTION_LEARNING.md M3): per imagination start, lambda x
+    # (1 - kappa * clip(z, 0, zclip) / zclip), z = the start state's
+    # KL(posterior || prior) z-scored within the batch. kappa 0: off.
+    stress_lam: {kappa: 0.0, zclip: 2.0}
     # Fear (agent.py, flat only): with env.robot.cost_obs, a cost predictor
     # and critic beside the reward's; the actor's objective is the reward's
     # advantage minus weight x the cost's. 0: off. The key keeps its old
     # name; the critic it adds (cval) is "threat" in the emotion design
     # (expected future pain, docs/robot/EMOTION.md), "fear" being kept for
-    # the emotion. env.robot.pain_mode sets what the cost is.
-    fear: {weight: 0.0}
+    # the emotion. env.robot.pain_mode sets what the cost is. lr_mult (fast
+    # fear, docs/robot/LIT_EMOTION_LEARNING.md M4): the cost head's and the
+    # threat critic's updates x lr_mult after the RMS normalisation (their lr
+    # x lr_mult); 1: off.
+    fear: {weight: 0.0, lr_mult: 1.0}
     repval_grad: True
     # HRL only: let the replay value losses (manager task, manager exploration,
     # worker goal) backprop into enc/RSSM. Off since 2026-10-05: on, they reshape

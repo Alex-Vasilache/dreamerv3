@@ -396,10 +396,11 @@ def make_online_actor_replay(config, folder, mode='train'):
   cap = config.online_actor_replay_size
   if cap:
     config = config.update(replay=config.replay.update(size=cap))
-  return make_replay(config, folder, mode)
+  # The actor's copy only writes experience; tagging (M1) is the learner's.
+  return make_replay(config, folder, mode, tag=False)
 
 
-def make_replay(config, folder, mode='train'):
+def make_replay(config, folder, mode='train', tag=True):
   batlen = config.batch_length if mode == 'train' else config.report_length
   consec = config.consec_train if mode == 'train' else config.consec_report
   capacity = config.replay.size if mode == 'train' else config.replay.size / 10
@@ -425,6 +426,9 @@ def make_replay(config, folder, mode='train'):
     if mode == 'train' and config.replay.get('holdout', 0.0):
       kwargs['holdout'] = config.replay.holdout
       kwargs['holdout_age'] = int(config.replay.get('holdout_age', 7800))
+  tagcfg = dict(config.replay.get('tag', None) or {})
+  if tag and mode == 'train' and float(tagcfg.get('share', 0.0) or 0.0):
+    kwargs['tag'] = tagcfg
 
   if config.replay.fracs.uniform < 1 and mode == 'train':
     assert config.jax.compute_dtype in ('bfloat16', 'float32'), (

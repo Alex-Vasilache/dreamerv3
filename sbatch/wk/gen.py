@@ -376,6 +376,25 @@ EM_ARMS = [
 ]
 
 
+# Round LE1 (11-14, TASKS.md step 4, round 1; docs/robot/LIT_EMOTION_LEARNING.md
+# sections 3-4): three emotion-inspired learning mechanisms, one at a time,
+# on EM's arm em_a (impact pain 0.5/1.5, no brake, reflex s4z2, threat
+# critic, Pearce-Hall arousal set explicitly). M1 retroactive pain tagging:
+# a quarter of the training sequences from those where a step out of
+# contact is followed within 65 steps (1 s) by impact pain >= 0.05, never
+# evicted. M3 stress: per-start lambda x (1 - 0.5 clip(z(KL), 0, 2) / 2).
+# M4 fast fear: cost head and threat critic updates x3 after the RMS
+# normalisation. 60 min, n = 8: seeds 811-814 Saion V100, 815-818 IAS.
+LE1_BASE = EM_ARMS[0][1]
+LE1_ARMS = [
+    ('base', LE1_BASE),
+    ('m1_tag', f'{LE1_BASE} --replay.tag.share 0.25 --replay.tag.window 65 '
+               '--replay.tag.cost 0.05'),
+    ('m3_stress', f'{LE1_BASE} --agent.stress_lam.kappa 0.5 --agent.stress_lam.zclip 2'),
+    ('m4_fastfear', f'{LE1_BASE} --agent.fear.lr_mult 3'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -689,6 +708,13 @@ def main():
       for arm, flags in EM_ARMS:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', 'v100', flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd in ('le1smoke', 'le1v', 'le1i'):
+    gpu, seeds, minutes = {'le1smoke': ('any', [1], 4), 'le1v': ('v100', SEEDS4, 60),
+                           'le1i': ('any', SEEDS8[4:], 60)}[rnd]
+    for seed in seeds:
+      for arm, flags in LE1_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd.startswith('w1'):
     base = W1_BASE
     gpu = {'w1p': 'p100', 'w1i': 'any'}[rnd]

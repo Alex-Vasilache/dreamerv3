@@ -18,7 +18,7 @@ class Replay:
   def __init__(
       self, length, capacity=None, directory=None, chunksize=1024,
       online=False, selector=None, save_wait=False, name='unnamed', seed=0,
-      holdout=0.0, holdout_age=0):
+      holdout=0.0, holdout_age=0, tag=None):
 
     self.length = length
     self.capacity = capacity
@@ -65,6 +65,25 @@ class Replay:
     self.held_lock = threading.Lock()
     self.held_rng = np.random.default_rng(seed + 1)
 
+    # Retroactive pain tagging (docs/robot/LIT_EMOTION_LEARNING.md M1):
+    # `tag` = dict(share, window, cost, drop). An item (one training
+    # sequence) is tagged when it holds a step t, itself out of contact
+    # (cost_t < cost), followed within `window` steps in the same episode by
+    # an event: cost_k >= cost (pain), or, with drop > 0, a one-step reward
+    # drop r_{k-1} - r_k >= drop. A `share` of the training samples is drawn
+    # uniformly from tagged items, the rest from the normal selector, and
+    # tagged items are never evicted (they stay outside the capacity count).
+    tag = dict(tag or {})
+    self.tag_share = float(tag.get('share', 0.0) or 0.0)
+    if self.tag_share:
+      self.tag_window = int(tag.get('window', 65))
+      self.tag_cost = float(tag.get('cost', 0.05))
+      self.tag_drop = float(tag.get('drop', 0.0) or 0.0)
+      self.tag_sampler = selectors.Uniform(seed + 2)
+      self.tag_rng = np.random.default_rng(seed + 3)
+      self.tagged = set()
+      self.protected = set()
+
     self.metrics = {'samples': 0, 'inserts': 0, 'updates': 0}
     self._loaded_items = {}
 
@@ -85,6 +104,10 @@ class Replay:
         'updates': m['updates'],
         'replay_ratio': ratio(self.length * m['samples'], m['inserts']),
     }
+    if self.tag_share:
+      stats['tagged'] = len(self.tagged)
+      stats['tagged_frac'] = ratio(len(self.tagged), len(self.items))
+      stats['tag_protected'] = len(self.protected)
     for key in self.metrics:
       self.metrics[key] = 0
     return stats
@@ -174,6 +197,11 @@ class Replay:
         if self.online and self.queue and mode == 'train':
           chunkid, index = self.queue.popleft()
           is_online = True
+        elif (self.tag_share and mode == 'train' and len(self.tag_sampler)
+              and self.tag_rng.random() < self.tag_share):
+          itemid = self.tag_sampler()
+          chunkid, index = self.items[itemid]
+          is_online = False
         else:
           with elements.timer.section('sample'):
             itemid = self.sampler()
@@ -185,8 +213,11 @@ class Replay:
         continue
 
   def _insert(self, chunkid, index):
-    while self.capacity and len(self.items) >= self.capacity:
-      self._remove()
+    protected = len(self.protected) if self.tag_share else 0
+    while self.capacity and len(self.items) - protected >= self.capacity:
+      if not self._remove():
+        break
+      protected = len(self.protected) if self.tag_share else 0
     itemid = self.itemid
     self.itemid += 1
     self.items[itemid] = (chunkid, index)
@@ -198,8 +229,22 @@ class Replay:
     else:
       stepids = self._getseq(chunkid, index, ['stepid'])['stepid']
       self.sampler[itemid] = stepids
+      self._tag(itemid, chunkid, index, stepids)
     if self.holdout:
       self._release_held()
+
+  def _tag(self, itemid, chunkid, index, stepids):
+    if not self.tag_share:
+      return
+    keys = [k for k in ('cost', 'reward', 'is_first')
+            if k in self.chunks[chunkid].data]
+    if 'cost' not in keys and not self.tag_drop:
+      return
+    seq = self._getseq(chunkid, index, keys)
+    if pain_tag(seq.get('cost'), seq.get('reward'), seq.get('is_first'),
+                self.tag_window, self.tag_cost, self.tag_drop):
+      self.tagged.add(itemid)
+      self.tag_sampler[itemid] = stepids
 
   def _is_held(self, chunkid):
     h = zlib.crc32(bytes(chunkid)) / 2 ** 32
@@ -221,6 +266,7 @@ class Replay:
         except KeyError:
           continue
         self.sampler[itemid] = stepids
+        self._tag(itemid, chunkid, index, stepids)
 
   def num_heldout(self):
     return len(self.held_set)
@@ -245,7 +291,14 @@ class Replay:
     return self._annotate_batch(data, [False] * batch, True)
 
   def _remove(self):
+    if not self.fifo:
+      return False
     itemid = self.fifo.popleft()
+    if self.tag_share and itemid in self.tagged:
+      # Tagged items are kept: out of the FIFO and the capacity count, still
+      # in both samplers, their chunk references held.
+      self.protected.add(itemid)
+      return True
     held = False
     if self.holdout:
       with self.held_lock:
@@ -267,13 +320,14 @@ class Replay:
         # Discarding the item is what _sample() already does on exactly this
         # condition; raising here instead killed the robot learner 1.5h into
         # the 2026-09-07 session and cost 75 minutes of robot time.
-        return
+        return True
       self.refs[chunkid] -= 1
       if self.refs[chunkid] < 1:
         del self.refs[chunkid]
         chunk = self.chunks.pop(chunkid, None)
         if chunk is not None and chunk.succ in self.refs:
           self.refs[chunk.succ] -= 1
+    return True
 
   def _getseq(self, chunkid, index, keys=None, concat=True):
     chunk = self.chunks[chunkid]
@@ -478,3 +532,29 @@ class Replay:
       return (True, 'ok') if len(self.sampler) else (False, 'empty buffer')
     else:
       return bool(len(self.sampler))
+
+
+def pain_tag(cost, reward=None, is_first=None, window=65, thresh=0.05,
+             drop=0.0):
+  """M1's tag for one sequence (see Replay `tag`): True when some step t with
+  cost_t < thresh is followed, at t + 1 .. t + window and with no episode start
+  in (t, k], by an event k: cost_k >= thresh, or (drop > 0) a reward drop
+  reward_{k-1} - reward_k >= drop. cost/reward/is_first: arrays of shape (T,)."""
+  ref = cost if cost is not None else reward
+  T = len(ref)
+  event = np.zeros(T, bool)
+  calm = np.ones(T, bool)
+  if cost is not None:
+    cost = np.asarray(cost, np.float32).reshape(T)
+    event |= cost >= thresh
+    calm = cost < thresh
+  if drop and reward is not None:
+    reward = np.asarray(reward, np.float32).reshape(T)
+    event[1:] |= (reward[:-1] - reward[1:]) >= drop
+  seg = (np.cumsum(np.asarray(is_first, bool).reshape(T))
+         if is_first is not None else np.zeros(T, int))
+  for k in np.flatnonzero(event):
+    lo = max(0, k - int(window))
+    if k > lo and np.any(calm[lo:k] & (seg[lo:k] == seg[k])):
+      return True
+  return False

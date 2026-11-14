@@ -664,9 +664,18 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         at = int(getattr(config, f'freeze_{fname}_at', 0))
         if at > 0:
           freeze[fname] = (mods, at)
+    # Fast fear (docs/robot/LIT_EMOTION_LEARNING.md M4): fear.lr_mult scales
+    # the updates of the cost head (cst, model group) and the threat critic
+    # (cval, ac group) after the optimizer's RMS normalisation, i.e. their
+    # learning rate x lr_mult; every other module is unchanged. 1: off.
+    module_scale = {}
+    fear_lr = float((getattr(config, 'fear', None) or {}).get('lr_mult', 1.0))
+    if self.fear and fear_lr != 1.0:
+      module_scale['fear'] = ([self.cst, self.cval], fear_lr)
     self.opt = embodied.jax.MultiOptimizer(
         groups, freeze=freeze, summary_depth=1, name='opt',
-        lr_scale=bool(getattr(config, 'lr_scale_var', False)))
+        lr_scale=bool(getattr(config, 'lr_scale_var', False)),
+        module_scale=module_scale)
 
     # One ``rec`` scale is expanded to every reconstruction key in ``dec_space``.
     scales = self.config.loss_scales.copy()
@@ -1069,6 +1078,27 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       noise = (noise * spatial_sigma * sg(deter.astype(jnp.float32).std((0, 1)))).astype(deter.dtype)
       imag_kw['policy_noisy'] = self.pol(
           jnp.concatenate([deter + noise, inp[..., d:]], -1), 2)
+    stress = self.config.get('stress_lam', {}) or {}
+    if float(stress.get('kappa', 0.0)):
+      # Stress -> trust the model less (docs/robot/LIT_EMOTION_LEARNING.md M3):
+      # per imagination start i, the world model's surprise at the replayed
+      # start state, s_i = KL(q(z|h,x) || p(z|h)), z-scored within the batch
+      # (B x K starts); lambda_i = lambda * (1 - kappa * clip(z_i, 0, zclip)
+      # / zclip). Surprised starts bootstrap from the critic sooner; starts at
+      # or below the batch mean keep lambda. Applies to the reward's and the
+      # threat's lambda-returns alike (same rollouts, same model).
+      lam0 = float(imag_kw.get('lam', 0.95))
+      kappa = float(stress['kappa'])
+      zclip = float(stress.get('zclip', 2.0))
+      post = self.dyn._dist(sg(repfeat['logit']))
+      prior = self.dyn._dist(sg(self.dyn._prior(sg(repfeat['deter']))))
+      surprise = f32(post.kl(prior))[:, -K_imag:].reshape((B * K_imag,))
+      lam_i = stress_lambda(surprise, lam0, kappa, zclip)
+      lam_i = jnp.concatenate([lam_i] * N, 0) if N > 1 else lam_i
+      imag_kw['lam'] = sg(lam_i)[:, None]
+      metrics['stress/lam_mean'] = lam_i.mean()
+      metrics['stress/lam_min'] = lam_i.min()
+      metrics['stress/kl'] = surprise.mean()
     los_flat, imgloss_out, mets = imag_loss(
         imgact,
         self.rew(inp, 2).pred(),
@@ -2206,6 +2236,15 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       sched = optax.join_schedules([ramp, sched], [warmup])
     chain.append(optax.scale_by_learning_rate(sched))
     return optax.chain(*chain)
+
+
+def stress_lambda(surprise, lam, kappa, zclip=2.0):
+  """Per-start lambda for M3 (agent.stress_lam): lam * (1 - kappa *
+  clip(z, 0, zclip) / zclip), z = (s - mean(s)) / (std(s) + 1e-6) over the
+  batch of starts. kappa 0.5: the most surprised starts get lam / 2."""
+  s = jnp.asarray(surprise, jnp.float32)
+  z = (s - s.mean()) / (s.std() + 1e-6)
+  return lam * (1 - kappa * jnp.clip(z, 0, zclip) / zclip)
 
 
 def _decay_toward_init(rate, mask):

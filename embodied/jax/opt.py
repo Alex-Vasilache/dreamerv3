@@ -121,8 +121,16 @@ class MultiOptimizer(nj.Module):
 
   summary_depth: int = 2
 
-  def __init__(self, groups, freeze=None, lr_scale=False):
+  def __init__(self, groups, freeze=None, lr_scale=False, module_scale=None):
     self.groups = {k: (tuple(ms), opt) for k, (ms, opt) in groups.items()}
+    # module_scale: {name: (modules, factor)}, a static multiplier on those
+    # modules' updates after their group's optax chain (so after the RMS
+    # normalisation and the lr schedule), whichever group they sit in: a
+    # per-module learning-rate factor that the normalisation cannot cancel
+    # (fast fear, agent.fear.lr_mult). The optimizer state is unchanged.
+    self.module_scale = {
+        k: (tuple(ms), float(f)) for k, (ms, f) in (module_scale or {}).items()
+        if float(f) != 1.0}
     # lr_scale: a multiplier per group on its updates, after the optax chain
     # (so after the RMS normalisation, which would cancel a scale on the
     # loss), held in a variable the learner can set between steps
@@ -175,6 +183,13 @@ class MultiOptimizer(nj.Module):
         scale = self.lr_scale[gname].read()
         updates = jax.tree.map(lambda u: (u * scale).astype(u.dtype), updates)
         metrics[f'{gname}_lr_scale'] = scale
+      for mname, (mmods, factor) in self.module_scale.items():
+        mpre = tuple(m.path + '/' for m in mmods)
+        hit = [k for k in updates if k.startswith(mpre)]
+        if hit:
+          updates = {k: ((u * factor).astype(u.dtype) if k in hit else u)
+                     for k, u in updates.items()}
+          metrics[f'{mname}_lr_mult'] = jnp.array(factor, f32)
       newparams = optax.apply_updates(gparams, updates)
       for fname, (fmods, at) in self.freeze.items():
         fpre = tuple(m.path + '/' for m in fmods)
