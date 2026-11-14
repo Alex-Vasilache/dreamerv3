@@ -566,3 +566,41 @@ Not yet on the phone: the app's copies of policy_runner.py/emotion.py are
 not updated (tools/robot/dev/check_app_copies.sh --fix), and the phone is
 50-100x slower, so even the 4-step search (7 commands) may not fit its
 control step; measure there first.
+
+### Sat 11-14: EM, emotion definitions in one sim round (launched)
+
+TASKS.md step 3: the current best definitions on PF's setup (pushes
+`sim_push 5:0.05:0.15`, walls `sim_walls 0.5`, threat critic `fear.weight 1`
+on `cost_obs`, 60 min, seeds 811-818, Saion V100, n = 8 per arm). New in the
+code (commits ddfcc05, 6d05496; snapshot `code_em`):
+
+- Arousal `pearce_hall` (now the default `env.robot.arousal_mode`): α_t =
+  η|δ_{t-1}| + (1-η)α_{t-1} on the outlook's plain TD error δ (the bake-off's
+  `td` column), η = 0.07 per control step (`arousal_eta`), arousal = σ(z(α))
+  over 60 s (`arousal_z_s`). The old modes stay selectable; α is logged in
+  every mode.
+- Dominance every ~1 s: `empower_s` is the pause between empowerment
+  rollouts (default 3 s, unchanged). With `empower_s 0.3` the 32-step rollout
+  (16 drives dominance, 32 logged) plus its 16 ms gaps refreshes every 1.0 s
+  in the smokes; compute 150 ms per rollout (32 commands, one BLAS thread).
+- emotion.csv: light columns every step, the rest every 16th row
+  (`sim_phone_heavy_every 16`, empty cells between: forward-fill); ~240 vs
+  330 bytes/row, ~45 MB per hour. New columns: `ph_alpha`, `arousal_ph`,
+  Yu's `p_pain_prior` / `q_pain_post` (P(c > 0) from the cost head on the
+  prior's and the posterior's state), `value_std` / `threat_std` (two-hot SD
+  in symlog units), `emp_n` (rollouts done), `emp_ms`.
+
+| arm | flags (on PF_BASE + `EM_LOG`, sbatch/wk/gen.py) | runs |
+|---|---|---|
+| em_a: impact pain (ι 0.5/1.5), no brake, reflex s4z2 | `pain_mode impact`, `runaway_s 0`, `pain_iota0 0.5`, `pain_iota1 1.5`, `catch_reflex True`, `catch_mode search`, `catch_z 3`, `catch_zlog True`, `catch_tmin 0.02` | e44802, 04, ..., 16 |
+| em_b: bumper pain, no brake, no reflex | `pain_mode bumper`, `runaway_s 0` | e44803, 05, ..., 17 |
+
+`EM_LOG` = `sim_phone_threads 1`, `sim_phone_heavy_every 16`, `empower_s
+0.3`, `arousal_mode pearce_hall`, `arousal_eta 0.07`, `arousal_z_s 60`
+(PF_BASE already has `sim_phone_feel_every 1`, `empower_extra 32`). Seeds in
+order 811-818 per arm pair. Jobs 4823309-4823324 (params `sbatch/wk/emv.txt`,
+MINUTES 80); 8 run at once (V100 cap), the second half after the first.
+Smokes e44800 (a) and e44801 (b), 4 min: no errors, loop 60.0 / 60.8 Hz
+(last 2 min 60.4 / 61.1), dominance refresh 0.99 / 1.00 s, all new columns
+filled. Note: the Pearce-Hall z window here is 60 s; the bake-off script
+z-scored over 10 s (and η 0.1).

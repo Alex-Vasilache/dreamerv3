@@ -22,8 +22,9 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [ ] Functional test on the robot (arousal vs future world-model error and update size)
    - [ ] Questions for the meeting with Angela Yu (in `LIT_AROUSAL_YU.md`)
 3. Sim round with the best current definitions
-   - [ ] Build behind switches: pleasure gamma' (+ regret), arousal winner(s) incl. Yu's exact version (log posterior/prior pain probability), dominance updated more often
-   - [ ] Run: pain/threat as decided (impact low threshold vs bumper), reflex s4z2; n = 8, 60 min, pushes and walls; score every axis at hits, near misses, pushes
+   - [x] Build behind switches: arousal pearce_hall (default; eta 0.07, z 60 s), Yu's p(c>0) prior/posterior and critic SDs logged, dominance every ~1 s (empower_s 0.3), light/heavy emotion.csv (11-14; pleasure gamma'/regret not built: decided against in step 1)
+   - [~] Run EM: em_a impact pain (0.5/1.5) + reflex s4z2 vs em_b bumper pain, no reflex; n = 8, 60 min, pushes and walls; V100 e44802-e44817 (jobs 4823309-24)
+   - [ ] Score every axis at hits, near misses, pushes
    - [ ] Update `EMOTION.md`, `FACE_MATHS.md`, plan page
 4. Do emotions help learning?
    - [x] Literature (`LIT_EMOTION_LEARNING.md`, ~60 papers): emotion acts selectively (which memory is kept, which outcome sign, which system), never as a global boost. Shortlist: M1 retroactive pain tagging (replay share), M2 regret distillation, M3 stress -> trust the model less (per-start lambda/horizon), M4 fast fear (3x lr for threat head/critic), M5 controllability gate
