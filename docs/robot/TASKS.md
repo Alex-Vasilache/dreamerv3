@@ -4,6 +4,28 @@ Kept current by the working session; newest state at the top of each section.
 Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 `SAMPLE_EFF_STUDY.md`, `WEEKEND_1107.md`.
 
+## Now: emotion model, step by step (plan after Jan, 11-13; `EMOTION.md`, `LIT_AROUSAL_YU.md`, `../../rutledge_rl`)
+
+1. Validate the RL correlates on human data
+   - [x] Rutledge task, Jangraw 2023 OSF data (n = 93 / 1,829): equal weights fit worse; r + gamma'(V' - V), gamma' ~0.5-0.6, matches Rutledge; EV is value not advantage; V(s) fits as well as Q
+   - [x] Bootstrapper of bootstrappers (1B): already published as kappa-value iteration (Efroni 2018; Tomar 2020); write a paragraph only
+   - [~] Re-fit on Rutledge's own GBE app data (Dryad, 47k participants)
+   - [ ] Decide pleasure: gamma' value; optional regret term A_max from the dominance rollouts (if the GBE fit supports it)
+2. Arousal: competing definitions
+   - [x] Angela Yu's work: base-rate surprise on threat beats current versions in 48 sim runs (0.69 / 0.71 vs <= 0.64 / 0.62)
+   - [~] Survey of competing definitions (salience, volatility, free energy, stakes, urgency, learning progress, ...), shortlist
+   - [ ] Offline bake-off of the shortlist on the 48 logged runs (hits, before hits, pushes)
+   - [ ] Questions for the meeting with Angela Yu (in `LIT_AROUSAL_YU.md`)
+3. Sim round with the best current definitions
+   - [ ] Build behind switches: pleasure gamma' (+ regret), arousal winner(s) incl. Yu's exact version (log posterior/prior pain probability), dominance updated more often
+   - [ ] Run: pain/threat as decided (impact low threshold vs bumper), reflex s4z2; n = 8, 60 min, pushes and walls; score every axis at hits, near misses, pushes
+   - [ ] Update `EMOTION.md`, `FACE_MATHS.md`, plan page
+4. Do emotions help learning?
+   - [ ] Literature: which emotions influence learning in humans and how (learning rate, replay/consolidation, exploration, attention, memory), with verified citations
+   - [ ] Turn the strongest into robot mechanisms (e.g. arousal -> learning rate or replay priority; pleasure/regret -> exploration), each a switch
+   - [ ] Test in sim against the current recipe (time to balance, late stability, pushes); best ones live only with Alex
+5. Later (from Jan's list): emotions arise from learning (evolution strategies on a shaping function); emotions in agentic AI; meeting Daniel in December
+
 ## Now: sample-efficiency study (`SAMPLE_EFF_STUDY.md`)
 
 - [x] Weekend sweeps documented; report page; live flags corrected (11-09)
