@@ -19,7 +19,8 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [~] Validation criteria (PI 11-14): (1) fit to HUMAN arousal data (pupil, SCR, ratings) like Rutledge for pleasure; (2) function on the robot: does arousal predict when the world model is wrong / when updates matter; (3) event marking only as a sanity check
    - [x] Human arousal data (Filipowicz 2020 pupil n = 55; Tzovara 2018 SCR n = 63, pupil n = 20): pupil follows surprise / |prediction error| of the CURRENT outcome; lagged Pearce-Hall fits worst; including the current error brings it near the best. Robot change: include the current step in alpha (at 65 Hz the average spans ~0.2 s anyway)
    - [x] Dominance (Spiering 2025 control ratings, n = 73): Bayesian control estimate fits best; our empowerment second (positive in 93 %), saturates near 1 bit. Ligneul 2022 data need the PI's ORCID login (data.donders.ru.nl DSC_3017049.01_905)
-   - [ ] Functional test on the robot (arousal vs future world-model error and update size)
+   - [x] Functional test (EM): Pearce-Hall predicts the world-model error 1-2 s ahead (rho 0.15) better than the current error (0.08); dominance lower in contact (z -0.2 to -0.3)
+   - [x] Round EM (step 3): Pearce-Hall incl. current |delta| best arousal at hits (0.85); bumper pain borderline better than impact + reflex; reflex adds nothing
    - [ ] Questions for the meeting with Angela Yu (in `LIT_AROUSAL_YU.md`)
 3. Sim round with the best current definitions
    - [x] Build behind switches: arousal pearce_hall (default; eta 0.07, z 60 s), Yu's p(c>0) prior/posterior and critic SDs logged, dominance every ~1 s (empower_s 0.3), light/heavy emotion.csv (11-14; pleasure gamma'/regret not built: decided against in step 1)

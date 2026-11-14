@@ -656,3 +656,25 @@ seen (bumper pain, PF2 d: 4.2 and 0.13), so there is little headroom at this
 perturbation level; with n = 8, only changes of ~30 % are detectable.
 Next (round 2): M2 regret distillation and M5 controllability gate under
 stronger pushes, with a base arm, to give the mechanisms room to show.
+
+### Sun 11-15: EM results (best emotion definitions, step 3)
+
+n = 8 per arm, minutes 11-60, Mann-Whitney; figure `figs/study/em.png`.
+
+| | em_a: impact 0.5/1.5 + reflex s4z2 | em_b: bumper pain | p |
+|---|---|---|---|
+| t90 (min) | 5.1 ± 1.1 | 3.9 ± 1.1 | 0.057 |
+| crossings/min | 5.1 ± 1.7 | 4.0 ± 1.0 | 0.16 |
+| peak contact force (N) | 1.63 ± 0.29 | 1.29 ± 0.28 | 0.052 |
+| falls/push | 0.16 ± 0.04 | 0.12 ± 0.02 | 0.052 |
+
+Bumper pain stays borderline better; the reflex adds nothing over PF3 f
+(p >= 0.27). Emotion signals, pooled AUC (hit / before / push / beyond
+pleasure): pleasure 0.81 / 0.81 / 0.57; Pearce-Hall including the current
+|δ| 0.85 / 0.78 / 0.58 / 0.63 (best at hits; logged lagged version 0.83);
+|δ| alone 0.68; Yu base-rate 0.60; dominance 0.52 (event-blind, as intended).
+Dominance does its job in contact: z −0.19 (em_a) and −0.30 (em_b) within
+0.25 s of bumper contact vs +0.01 free; it barely moves after pushes.
+Functional test: Pearce-Hall at t predicts the world model's error 1-2 s
+later (Spearman 0.15) better than the current error (0.08); low pleasure
+predicts it best (0.18-0.22), i.e. model errors cluster around contact.

@@ -80,6 +80,12 @@ average of the absolute TD error, α_t = η|δ_{t-1}| + (1-η)α_{t-1} with
 information beyond pleasure (0.63). It is the arousal for the next sim round;
 the surprise variants and Yu's base-rate version stay as switches.
 
+Update 11-15 (rounds EM and human data): include the current error,
+α_t = η|δ_t| + (1−η)α_{t−1}. Human pupil data follow the surprise of the
+current outcome (lagged Pearce-Hall fits worst); in sim the version with the
+current |δ| scores best at hits (AUC 0.85) and predicts the world model's
+error 1-2 s ahead better than the error itself.
+
 ## Dominance: can my actions make the end state different?
 
     m_s = (1/32) Σ_k s_k,  m_V = (1/32) Σ_k V_k,  m_T = (1/32) Σ_k T_k     average end point
