@@ -101,6 +101,16 @@ picked out hits best per session (AUC 0.74 ± 0.07, 87 ms per evaluation);
 deviations around the policy and the old 9-command grid did worse
 (SAMPLE_EFF_STUDY.md, empowerment comparison).
 
+Human data (11-15, `../../rutledge_rl/empowerment`): on control ratings
+(Spiering et al. 2025, n = 73) a Bayesian control estimate fits best and our
+empowerment second; on Ligneul & Cools' controllability task (n = 50, and 54
+with stress) empowerment AVERAGED over the task's states beats their
+actor-vs-spectator estimate on subjective control and exploration times,
+while the current-state value (what the robot computes) is clearly worse. So
+dominance should be a slow running average of empowerment, the
+controllability of the current situation, not its instantaneous value.
+Stress did not lower the estimate but raised the threshold for acting on it.
+
 Named emotions are regions of the PAD space, not extra signals: fear is low
 pleasure, high arousal, low dominance; helplessness is a bad situation with
 low dominance.
