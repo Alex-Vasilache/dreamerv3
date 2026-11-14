@@ -84,7 +84,7 @@ ol.refs a{color:var(--accent);word-break:break-all}
 <p>In words: "the reward of these 6 steps comes again every 6 steps, forever". On a pin pad the reward is one large payment at the end of a sequence, so states just before a payment get a value many times too high. With a smooth reward (cartpole, cheetah) the loop is close to the truth, which is why those tasks looked fine.</p>
 <figure><img alt="Pin pad four and five scores, manager return range and share of reach switches for V, reach off, and reach on before and after the fix" src="data:image/png;base64,__FIG__">
 <figcaption>Top: scores. Bottom left: the spread of the manager's returns on pin pad four. With fixed holds it stays near 9 (blue; V in black is lower only because it averages rewards over the hold). With irregular holds it is 3 to 13 times larger and unstable, the trace of the loop above. Bottom right: how many switches come from the reached test. Runs after the fix appear here as they report.</figcaption></figure>
-<p class="note">How it was found: a new test file runs the real agent and recomputes every stage of the variable-length path by hand (24 checks: switch rule in the environment, imagination, manager and worker training tensors, replay). 23 agreed; the bootstrap state did not. The fix is one line and switched on by default (<code>goal_duration_trailing_boot</code>). Every earlier variable-length run, including the old manager-chosen durations, had this error.</p>
+<p class="note">How it was found: a new test file runs the real agent and recomputes every stage of the variable-length path by hand (24 checks: switch rule in the environment, imagination, manager and worker training tensors, replay). 23 agreed; the bootstrap state did not. A last test compares the return itself with a hand-written one. The fix is small and switched on by default (<code>goal_duration_trailing_boot</code>). Every earlier variable-length run, including the old manager-chosen durations, had this error.</p>
 </section>
 
 <section>
@@ -114,6 +114,7 @@ __RUNS__
 <span class="k">5 · Next designs</span>
 <h2>What will be tested after the fix is confirmed</h2>
 <ol class="steps">
+<li><b>Other caps.</b> 16, and 48 with a longer imagined rollout (rollouts are 16 steps by default and 32 for cap 32, so a full 32-step hold just fits).</li>
 <li><b>Threshold.</b> Sweep the reached fraction around 0.8 (lower fires earlier and more often, higher waits for a closer match). Cap 32 throughout.</li>
 <li><b>Reached by distance.</b> Use the squared error between goal and state, against a running reference, in place of the cosine match.</li>
 <li><b>Worker says "done".</b> The risk: many short goals can pay the worker more than one long goal, so it would always say done. Two guards to try: a done only counts when the match test also passes; and each switch costs the manager a small price, so short holds must earn it back.</li>
