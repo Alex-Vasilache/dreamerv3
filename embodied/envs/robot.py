@@ -678,8 +678,9 @@ class SmartphoneRobot(embodied.Env):
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
       pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
       cost_obs=False, pain_mode='bumper', pain_iota0=1.0, pain_iota1=3.0,
-      emotion_model='v2', arousal_mode='kl', arousal_efference=False,
-      empower_steps=16, empower_extra='',
+      emotion_model='v2', arousal_mode='pearce_hall', arousal_efference=False,
+      arousal_eta=0.07, arousal_z_s=60.0, empower_steps=16, empower_extra='',
+      empower_s=3.0,
       catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4,
       catch_mode='slope', catch_dmax=0.0, catch_offsets='0.25,0.5,1',
       catch_z=0.0, catch_window=650, catch_zlog=False, catch_tmin=0.0,
@@ -1036,17 +1037,25 @@ class SmartphoneRobot(embodied.Env):
     # 'v2' pleasure, arousal and dominance from the world model and both
     # critics; arousal 'kl' (the belief update over state, reward and cost),
     # 'total' (the prior's prediction error) or 'unexpected' (minus its
-    # expected size); the empowerment rollout's length in steps (16: as good
-    # as 32 on the recorded sessions at half the cost).
+    # expected size) or, the default since 11-14, 'pearce_hall' (a running
+    # average of |TD error| of the outlook, arousal_eta per control step, z
+    # over arousal_z_s s; the arousal bake-off's winner); the empowerment
+    # rollout's length in steps (16: as good as 32 on the recorded sessions
+    # at half the cost) and the pause between rollouts on the phone
+    # (empower_s; one 16-step rollout adds ~16 x 16 ms of gaps).
     assert emotion_model in ('v1', 'v2'), emotion_model
-    assert arousal_mode in ('kl', 'total', 'error', 'unexpected'), arousal_mode
+    assert arousal_mode in ('kl', 'total', 'error', 'unexpected',
+                            'pearce_hall'), arousal_mode
     self.emotion_model = str(emotion_model)
     self.arousal_mode = str(arousal_mode)
     # arousal_efference: score arousal against a prior step on the policy's
     # intended action (before the reflex and limits). The arousal default
     # is provisional: the definition is still open (round PF logs all).
     self.arousal_efference = bool(arousal_efference)
+    self.arousal_eta = float(arousal_eta)
+    self.arousal_z_s = float(arousal_z_s)
     self.empower_steps = int(empower_steps)
+    self.empower_s = float(empower_s)
     # empower_extra '32' (comma-separated): also record the end-point terms
     # of these rollout lengths (analysis only; the rollout runs longer).
     self.empower_extra = [int(x) for x in str(empower_extra).split(',') if x.strip()]
@@ -1225,7 +1234,8 @@ class SmartphoneRobot(embodied.Env):
         event_signal=self.event_signal, model=self.emotion_model,
         arousal=self.arousal_mode, efference=self.arousal_efference,
         empower_steps=self.empower_steps, empower_extra=self.empower_extra,
-        reflex=dict(self.reflex),
+        arousal_eta=self.arousal_eta, arousal_z_s=self.arousal_z_s,
+        empower_s=self.empower_s, reflex=dict(self.reflex),
         body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
                   hi=self.bumper_hi, zone=self.pain_zone,
                   pain_mode=self.pain_mode, iota0=self.pain_iota[0],

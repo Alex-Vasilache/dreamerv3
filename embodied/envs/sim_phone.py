@@ -22,7 +22,11 @@ so it can be tested there before it runs on the robot:
 * a CSV of the signals every FEEL_EVERY steps, for the analysis; or with
   `log_every` (env.robot.sim_phone_log_every) > 0 every log_every steps
   plus every step with a push, an event, bumper contact or a reflex
-  correction (smaller files, the same counts for those).
+  correction (smaller files, the same counts for those). With
+  `heavy_every` (env.robot.sim_phone_heavy_every) > 0 the rows keep every
+  column of LIGHT and fill the others only every heavy_every-th row (empty
+  cells otherwise; forward-fill when reading): a 60-min run every step was
+  ~75 MB with all columns.
 """
 
 import os
@@ -59,14 +63,28 @@ FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
           'emp32_state', 'emp32_value', 'emp32_threat',
           # Since round RF (11-12): the reflex's predicted threat T(a) of the
           # intended command, its limit, and its time (ms).
-          'reflex_threat', 'reflex_thr', 'reflex_ms')
+          'reflex_threat', 'reflex_thr', 'reflex_ms',
+          # Since round EM (11-14): the Pearce-Hall associability alpha and
+          # its arousal, Yu's prior and posterior probability of pain > 0
+          # from the cost head, the value and threat critics' two-hot SD, and
+          # the empowerment rollouts finished so far and the last one's ms.
+          'ph_alpha', 'arousal_ph', 'p_pain_prior', 'q_pain_post',
+          'value_std', 'threat_std', 'emp_n', 'emp_ms')
+
+# Written every row with heavy_every > 0; the rest every heavy_every-th row.
+LIGHT = frozenset((
+    't', 'step', 'arousal', 'dominance', 'pleasure', 'td', 'faded', 'change',
+    'pain', 'threat', 'value', 'impact', 'reflex', 'event', 'push', 'theta',
+    'act0', 'intended0', 'force', 'reflex_threat', 'ph_alpha', 'p_pain_prior',
+    'q_pain_post', 'value_std', 'threat_std', 'emp_n', 'empowerment'))
 
 
 class SimPhone:
 
   def __init__(self, config, shared, dtype='int8', delay=3.0, poll=1.0,
                affect=None, body=None, event=0.0, event_signal='arousal', log=None,
-               seed=0, settings=None, feel_every=4, log_every=0, threads=0):
+               seed=0, settings=None, feel_every=4, log_every=0, threads=0,
+               heavy_every=0):
     self.config = config
     self.shared = str(shared)
     self.dtype = dtype
@@ -77,6 +95,8 @@ class SimPhone:
     # every step (env.robot.sim_phone_feel_every 1) for the analysis.
     self.runner.FEEL_EVERY = max(1, int(feel_every))
     self.log_every = int(log_every)
+    self.heavy_every = int(heavy_every)
+    self._rows = 0
     # threads > 0: cap BLAS threads in this (the actor's) process. The
     # phone's matrices are small; OpenBLAS's default of one thread per core
     # of the node, in a 3-CPU job beside the learner, made a 16-step reflex
@@ -206,7 +226,11 @@ class SimPhone:
                  intended0=(r._intended or [0.0])[0],
                  reflex_threat=r.reflex_threat, reflex_thr=r.reflex_thr,
                  reflex_ms=r.reflex_ms)
+      every, rows = getattr(self, 'heavy_every', 0), getattr(self, '_rows', 0)
+      heavy = every <= 0 or rows % every == 0
+      self._rows = rows + 1
       self._log.write(','.join(
+          '' if not (heavy or k in LIGHT) else
           (f'{row[k]:.3f}' if k == 't' else f'{row[k]:.5g}'
            if isinstance(row.get(k), float) else str(row.get(k, '')))
           for k in FIELDS) + '\n')

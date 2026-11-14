@@ -356,6 +356,26 @@ RF2_ARMS = [
 ]
 
 
+# Round EM (11-14, emotion definitions; TASKS.md step 3): one sim round with
+# the current best definitions on PF's setup (pushes, walls, threat critic
+# on cost_obs, 60 min, seeds 811-818, Saion V100). Arousal = Pearce-Hall
+# associability (the 11-14 bake-off winner, eta 0.07 per step, z over 60 s;
+# now the default, set here explicitly); dominance refreshed ~1 s
+# (empower_s 0.3: the 32-step rollout with its 16 ms gaps takes ~0.7 s);
+# the CSV keeps the light columns every step and the rest every 16th row.
+# a: impact pain at the sim calibration (iota 0.5/1.5, PF3), no brake, the
+# catch reflex s4z2 (RF2's pick); b: bumper pain, no brake, no reflex (PF2 d).
+EM_LOG = ('--env.robot.sim_phone_threads 1 --env.robot.sim_phone_heavy_every 16 '
+          '--env.robot.empower_s 0.3 --env.robot.arousal_mode pearce_hall '
+          '--env.robot.arousal_eta 0.07 --env.robot.arousal_z_s 60')
+EM_ARMS = [
+    ('em_a', f'{PF_BASE} {EM_LOG} {PF_IMPACT} --env.robot.pain_iota0 0.5 '
+             f'--env.robot.pain_iota1 1.5 --env.robot.catch_reflex True {RF2_Z} '
+             '--env.robot.catch_mode search'),
+    ('em_b', f'{PF_BASE} {EM_LOG} --env.robot.pain_mode bumper --env.robot.runaway_s 0'),
+]
+
+
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
   return (f'{exp} flat balance 65 {gpu} {floor} {phone} {bal} '
@@ -663,6 +683,12 @@ def main():
       for arm, flags in RF2_ARMS:
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', gpu, flags, seed, minutes=60, base='old')); n += 1
+  elif rnd in ('emsmoke', 'emv'):
+    seeds, minutes = {'emsmoke': ([1], 4), 'emv': (SEEDS8, 60)}[rnd]
+    for seed in seeds:
+      for arm, flags in EM_ARMS:
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', 'v100', flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd.startswith('w1'):
     base = W1_BASE
     gpu = {'w1p': 'p100', 'w1i': 'any'}[rnd]

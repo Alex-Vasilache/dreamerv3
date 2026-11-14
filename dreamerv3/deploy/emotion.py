@@ -300,7 +300,7 @@ class EmotionV2(Emotion):
     arousal  e_t = (1/n)(-log p^(s_t)) - log p^(r_t) - log p^(c_t), the
              prediction error of the prior p^ (state, and the reward and cost
              heads on the prior's state); arousal = sigmoid z of one of
-             'kl' (default): the belief update, (1/n) KL(q_s || p_s) +
+             'kl': the belief update, (1/n) KL(q_s || p_s) +
                KL(r(q) || r(p)) + KL(c(q) || c(p)), the reward and cost
                heads' distributions on the posterior's state against the
                prior's (the recorded sessions: only the belief update picked
@@ -308,14 +308,21 @@ class EmotionV2(Emotion):
              'total' (also 'error'): e_t
              'unexpected': e_t - e^_t, e^_t = (1/n) H(p^_s) + H(p^_r) +
                H(p^_c) its expected size
+             'pearce_hall' (default since 11-14): the Pearce-Hall
+               associability, a running average of the absolute TD error
+               of the outlook (`td` below), alpha_t = eta |delta_{t-1}| + (1 - eta) alpha_{t-1}, eta per
+               control step (`arousal_eta`; a call covering n steps uses
+               1 - (1 - eta)^n), z over `arousal_z_s` seconds (Pearce & Hall
+               1980; the offline bake-off on 48 sim runs, 11-14: AUC 0.81 at
+               hits, the only definition beyond pleasure). Always computed
+               and returned (ph_alpha, arousal_ph), whatever the mode.
              with efference=True, the prior side of each comes from one
              extra prior step taken with the policy's intended action (before
              the catch reflex and the limits) instead of the executed one:
              what happened against what the robot meant to do. Identical when
              nothing overrode the policy. The world model itself keeps
              stepping on the executed action. All six values are returned
-             (arousal_<mode>[_eff]); which one drives the face is a setting,
-             and its default is provisional.
+             (arousal_<mode>[_eff]); which one drives the face is a setting.
     dominance  32 random wheel commands in [-1, 1]^2, each held `horizon`
              steps through the prior; C = mean_k[(1/n) KL(s_k || <s>) +
              KL(V_k || <V>) + KL(T_k || <T>)] with V, T the critics' two-hot
@@ -334,11 +341,17 @@ class EmotionV2(Emotion):
 
   version = 'v2'
 
-  def __init__(self, policy, hz=65.0, tau=650, arousal='kl', horizon=16,
-               commands=32, fade_s=0.5, every=0, seed=0, efference=False,
-               empower_extra=()):
+  MODES = ('kl', 'total', 'unexpected', 'pearce_hall')
+
+  def __init__(self, policy, hz=65.0, tau=650, arousal='pearce_hall',
+               horizon=16, commands=32, fade_s=0.5, every=0, seed=0,
+               efference=False, empower_extra=(), arousal_eta=0.07,
+               arousal_z_s=60.0, feel_every=1):
+    """`tau`: calls in the ~10 s z window of the three axes; `feel_every`:
+    control steps per step() call, for the Pearce-Hall z window
+    (`arousal_z_s` s) in calls."""
     arousal = {'error': 'total'}.get(arousal, arousal)
-    assert arousal in ('kl', 'total', 'unexpected'), arousal
+    assert arousal in self.MODES, arousal
     self.p = policy
     self.set_policy(policy)
     self.hz = float(hz)
@@ -353,6 +366,11 @@ class EmotionV2(Emotion):
     self.horizon, self.commands, self.every = int(horizon), int(commands), int(every)
     self.rng = np.random.default_rng(seed)
     self.norm = {k: Running(tau) for k in ('pleasure', 'arousal', 'dominance')}
+    self.eta = float(arousal_eta)
+    self.norm['ph'] = Running(max(1, int(round(
+        float(arousal_z_s) * self.hz / max(1, int(feel_every))))))
+    self.ph_alpha = 0.0
+    self._ph_prev_td = 0.0
     self.faded = 0.0
     self.reset()
 
@@ -411,14 +429,28 @@ class EmotionV2(Emotion):
     return (np.asarray(probs, np.float64) * bins).sum(-1)
 
   def value(self, deter, stoch):
-    return float(self._mean(self.head_probs('val', deter, stoch), self.bins))
+    p = self.head_probs('val', deter, stoch)
+    self._vp = p
+    return float(self._mean(p, self.bins))
+
+  def _std(self, probs, bins):
+    """SD of a two-hot categorical over `bins` (in the bins' units)."""
+    p = np.asarray(probs, np.float64)
+    m = (p * bins).sum(-1, keepdims=True)
+    return np.sqrt(np.maximum((p * (bins - m) ** 2).sum(-1), 0.0))
+
+  def p_positive(self, probs, bins):
+    """P(x > 0) of a two-hot categorical: the mass above the zero bin."""
+    return float(np.asarray(probs, np.float64)[..., np.asarray(bins) > 0].sum(-1))
 
   def threat(self, deter, stoch):
     """T: expected future pain (minus the cval critic, which is trained on
     minus the cost). 0 without a threat critic. Batched over a leading axis."""
     if not self.has_threat:
       return np.zeros(deter.shape[:-1]) if deter.ndim > 1 else 0.0
-    t = -self._mean(self.head_probs('cval', deter, stoch), self.bins)
+    p = self.head_probs('cval', deter, stoch)
+    self._tp = p
+    t = -self._mean(p, self.bins)
     return t if deter.ndim > 1 else float(t)
 
   def outcome(self, reward, cost):
@@ -537,6 +569,7 @@ class EmotionV2(Emotion):
     exp += _entropy(pr_r)
     if self.has_cost:
       pr_c = self.head_probs('cst', deter, sp)
+      self._pc_prior = pr_c
       err += _twohot_nll(pr_c, self.cbins, cost)
       exp += _entropy(pr_c)
     return err, exp
@@ -556,7 +589,9 @@ class EmotionV2(Emotion):
     sq = np.asarray(stoch, F32).reshape(pr.shape)
     kl += _kl(self.head_probs('rew', deter, sq), self.head_probs('rew', pd, sp))
     if self.has_cost:
-      kl += _kl(self.head_probs('cst', deter, sq), self.head_probs('cst', pd, sp))
+      qc = self.head_probs('cst', deter, sq)
+      self._pc_post = qc
+      kl += _kl(qc, self.head_probs('cst', pd, sp))
     return kl
 
   # -- the step ------------------------------------------------------------------
@@ -579,6 +614,7 @@ class EmotionV2(Emotion):
     (PolicyRunner), None when the executed action was the intended one."""
     if is_first:
       self.reset()
+    self._vp = self._tp = self._pc_prior = self._pc_post = None
     value = self.value(deter, stoch)
     threat = self.threat(deter, stoch)
     outlook = self.outlook(value, threat)
@@ -592,9 +628,15 @@ class EmotionV2(Emotion):
     td = 0.0 if first else (o_reward - o_pain + self.gamma ** int(steps) * outlook
                             - self.prev_outlook)
     self.prev_outlook = outlook
+    # Pearce-Hall associability: the last call's |TD error| into the running
+    # average (alpha_t from delta_{t-1}, as in the offline bake-off).
+    eta = 1.0 - (1.0 - self.eta) ** max(1, int(steps))
+    self.ph_alpha = eta * abs(self._ph_prev_td) + (1 - eta) * self.ph_alpha
+    self._ph_prev_td = td
     # The outlook's change lands in one step of the fading average.
     self.faded += (1 - self.lam) * change
     plain = self.arousal_signals(deter, post_logit, stoch, reward, cost)
+    pc_prior, pc_post = self._pc_prior, self._pc_post   # before eff overwrites
     eff = plain if eff_deter is None else self.arousal_signals(
         deter, post_logit, stoch, reward, cost, prior_deter=eff_deter)
     err, expected, update = plain['total'], plain['expected'], plain['kl']
@@ -602,9 +644,25 @@ class EmotionV2(Emotion):
       self.empowerment = self._empowerment(deter, stoch)
     self.steps += 1
     z_p = self.norm['pleasure'](self.faded)
-    z_a = self.norm['arousal']((eff if self.efference else plain)[self.arousal_mode])
+    z_ph = self.norm['ph'](self.ph_alpha)
+    if self.arousal_mode == 'pearce_hall':
+      z_a = z_ph
+    else:
+      z_a = self.norm['arousal']((eff if self.efference else plain)[self.arousal_mode])
     z_d = self.norm['dominance'](self.empowerment)
     pleasure = float(np.tanh(z_p))
+    # Yu's terms: the prior and posterior probability of pain > 0 from the
+    # cost head (0 without one); the critics' spread.
+    yu = dict(p_pain_prior=0.0, q_pain_post=0.0)
+    if self.has_cost and pc_prior is not None:
+      yu = dict(p_pain_prior=self.p_positive(pc_prior, self.cbins),
+                q_pain_post=self.p_positive(pc_post, self.cbins))
+    vp = self._vp if self._vp is not None else self.head_probs('val', deter, stoch)
+    value_std = float(self._std(vp, self.bins))
+    threat_std = 0.0
+    if self.has_threat:
+      tp = self._tp if self._tp is not None else self.head_probs('cval', deter, stoch)
+      threat_std = float(self._std(tp, self.bins))
     return dict(
         pleasure=pleasure, valence=pleasure, face_valence=pleasure,
         mood=pleasure, arousal=float(sigmoid(np.float32(z_a))),
@@ -613,6 +671,8 @@ class EmotionV2(Emotion):
         fear=float(threat), pain=float(cost), surprise=err, expected=expected,
         unexpected=err - expected, update=update, empowerment=float(self.empowerment),
         td=td, o_reward=o_reward, o_pain=o_pain, version='v2',
+        ph_alpha=float(self.ph_alpha), arousal_ph=float(sigmoid(np.float32(z_ph))),
+        value_std=value_std, threat_std=threat_std, **yu,
         efference=float(eff_deter is not None), **self.empower_terms,
         **{f'arousal_{k}': float(plain[k]) for k in ('total', 'unexpected', 'kl')},
         **{f'arousal_{k}_eff': float(eff[k]) for k in ('total', 'unexpected', 'kl')})

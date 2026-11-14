@@ -513,3 +513,109 @@ def test_pleasure_parts_for_offline_rebuilds():
   assert b['td'] == pytest.approx(b['o_reward'] - b['o_pain']
                                   + emo.gamma * b['outlook'] - a['outlook'])
   assert b['change'] == pytest.approx(b['outlook'] - a['outlook'])
+
+
+# -- round EM (11-14): Pearce-Hall arousal, Yu's terms, logging -----------------
+
+def test_pearce_hall_alpha_matches_the_offline_recursion():
+  """alpha_t = eta |td_{t-1}| + (1 - eta) alpha_{t-1}, td the step's own
+  plain TD error of the outlook (the bake-off's 'td' column)."""
+  emo = emotion.EmotionV2(ToyPolicy(), arousal='pearce_hall', arousal_eta=0.07)
+  assert emo.arousal_mode == 'pearce_hall'
+  d, s, logit = emo.p.last_post
+  rng = np.random.default_rng(3)
+  tds, alphas = [], []
+  for i in range(30):
+    sig = emo.step(d + 0.3 * rng.normal(size=d.shape).astype(np.float32),
+                   logit, s, float(rng.normal()), 0.0)
+    tds.append(sig['td'])
+    alphas.append(sig['ph_alpha'])
+    assert 0 < sig['arousal'] < 1 and sig['arousal'] == sig['arousal_ph']
+  a, ref = 0.0, []
+  for i in range(30):
+    a = 0.07 * abs(tds[i - 1] if i else 0.0) + 0.93 * a
+    ref.append(a)
+  np.testing.assert_allclose(alphas, ref, rtol=1e-6, atol=1e-12)
+  # A call covering n steps decays as n single steps.
+  b = emotion.EmotionV2(ToyPolicy(), arousal_eta=0.07)
+  b._ph_prev_td, b.ph_alpha = 1.0, 0.0
+  b.step(d, logit, s, 0.0, 0.0, steps=4)
+  assert b.ph_alpha == pytest.approx(1 - 0.93 ** 4)
+
+
+def test_pearce_hall_z_window_and_default():
+  emo = emotion.EmotionV2(ToyPolicy(), hz=65.0, arousal_z_s=60.0, feel_every=4)
+  assert emo.arousal_mode == 'pearce_hall'
+  assert emo.norm['ph'].a == pytest.approx(1 / 975)   # 60 s x 65 Hz / 4
+  # The other modes still drive arousal and alpha is still reported.
+  kl = emotion.EmotionV2(ToyPolicy(), arousal='kl')
+  d, s, logit = kl.p.last_post
+  sig = kl.step(d, logit, s, 0.1, 0.0)
+  assert 'ph_alpha' in sig and 'arousal_ph' in sig
+  with pytest.raises(AssertionError):
+    emotion.EmotionV2(ToyPolicy(), arousal='nope')
+
+
+def test_yu_pain_probabilities_and_critic_spread():
+  emo = emotion.EmotionV2(ToyPolicy())
+  d, s, logit = emo.p.last_post
+  sig = emo.step(d, logit, s, 0.1, 0.3)
+  assert 0 <= sig['p_pain_prior'] <= 1 and 0 <= sig['q_pain_post'] <= 1
+  pr = emotion._probs(emo.prior_logit(d), emo.p.meta['unimix'])
+  pc = emo.head_probs('cst', d, emo.mode_stoch(pr))
+  assert sig['p_pain_prior'] == pytest.approx(float(pc[emo.cbins > 0].sum()))
+  qc = emo.head_probs('cst', d, s)
+  assert sig['q_pain_post'] == pytest.approx(float(qc[emo.cbins > 0].sum()))
+  vp = emo.head_probs('val', d, s)
+  m = (vp * emo.bins).sum()
+  assert sig['value_std'] == pytest.approx(float(np.sqrt((vp * (emo.bins - m) ** 2).sum())), rel=1e-5)
+  assert sig['threat_std'] > 0
+  bare = emotion.EmotionV2(ToyPolicy(threat=False, cost=False))
+  sig = bare.step(d, logit, s, 0.1, 0.0)
+  assert sig['p_pain_prior'] == 0.0 and sig['threat_std'] == 0.0
+
+
+def test_runner_passes_the_em_settings():
+  r = _runner_v2()
+  assert r.emotion.arousal_mode == 'pearce_hall'
+  r.configure(dict(arousal_eta=0.1, arousal_z_s=30.0, empower_s=0.5))
+  assert r.emotion.eta == 0.1 and r.emotion_cfg['empower_s'] == 0.5
+  assert r.emotion.norm['ph'].a == pytest.approx(1 / round(30 * 65 / r.FEEL_EVERY))
+  r.pain = (0.0, 0.0, 0.0)
+  for _ in range(r.FEEL_EVERY):
+    r.feel(0.1)
+  for k in ('ph_alpha', 'p_pain_prior', 'q_pain_post', 'value_std', 'threat_std', 'emp_n'):
+    assert k in r.emotion_state
+  pytest.importorskip('mujoco')
+  from embodied.envs import robot_mujoco
+  env = robot_mujoco.RobotMujoco('balance', hz=65.0, discrete=False, symmetric=False,
+                                 sim_noise=0.0, empower_s=0.5, sim_phone_heavy_every=16)
+  st = env._emotion_settings()
+  assert (st['arousal'], st['arousal_eta'], st['arousal_z_s'], st['empower_s']) == (
+      'pearce_hall', 0.07, 60.0, 0.5)
+  assert env._phone_args['heavy_every'] == 16
+
+
+def test_sim_phone_heavy_columns_subsampled(tmp_path):
+  from embodied.envs import sim_phone
+  ph = sim_phone.SimPhone.__new__(sim_phone.SimPhone)
+  log = tmp_path / 'emotion.csv'
+  ph._log = open(log, 'w', buffering=1)
+  ph._log.write(','.join(sim_phone.FIELDS) + '\n')
+  ph.runner = _runner_v2()
+  ph.runner._fast_affect = lambda: None
+  ph.runner.emotion_state = dict(arousal=0.2, valence=0.0, mood=0.0, pain=0.0,
+                                 ph_alpha=0.01, arousal_kl=0.5)
+  ph.runner.event = None
+  ph.runner.policy.explore = 1.0
+  ph.steps, ph._event_n, ph.push, ph.force, ph.log_every = 0, None, 0.0, 0.0, 0
+  ph.runner.FEEL_EVERY = 1
+  ph.heavy_every = 4
+  for i in range(8):
+    ph.applied([0.0, 0.0], i)
+  ph._log.close()
+  import csv
+  rows = list(csv.DictReader(open(log)))
+  assert [int(r['step']) for r in rows] == list(range(8))   # every step
+  assert all(r['ph_alpha'] == '0.01' and r['arousal'] == '0.2' for r in rows)
+  assert [r['arousal_kl'] for r in rows] == ['0.5', '', '', '', '0.5', '', '', '']

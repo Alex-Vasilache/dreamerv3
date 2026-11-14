@@ -185,10 +185,14 @@ class PolicyRunner:
     # The emotion model (deploy/emotion.py) and its switches, from the
     # trainer's settings: 'v2' (pleasure, arousal, dominance) or 'v1'.
     # efference: score arousal against a prior step taken with the
-    # intended action (before the reflex and the limits); defaults
-    # provisional, the arousal definition is still open.
-    self.emotion_cfg = dict(model='v2', arousal='kl', empower_steps=16,
-                            efference=False)
+    # intended action (before the reflex and the limits). Arousal
+    # 'pearce_hall' since 11-14 (the bake-off winner): eta per control step,
+    # z over arousal_z_s seconds. empower_s: the pause between empowerment
+    # rollouts (EMPOWER_S if unset).
+    self.emotion_cfg = dict(model='v2', arousal='pearce_hall', empower_steps=16,
+                            efference=False, arousal_eta=0.07, arousal_z_s=60.0)
+    self.emp_n = 0         # empowerment rollouts finished
+    self.emp_ms = 0.0      # the last one's compute time (without the gaps)
     self._intended = None    # the policy's action before reflex and limits
     self._eff_next = None    # efference deter for the next step, if overridden
     self._eff_deter = None   # ... paired with the current last_post
@@ -266,10 +270,13 @@ class PolicyRunner:
         hz = float(policy.meta.get('obs_scale', {}).get('hz', 65.0))
         self.emotion = emotion_lib.EmotionV2(
             policy, hz=hz, tau=max(1, int(10 * hz) // self.FEEL_EVERY),
-            arousal=cfg.get('arousal', 'kl'),
+            arousal=cfg.get('arousal', 'pearce_hall'),
             horizon=int(cfg.get('empower_steps', 16)), every=0,
             efference=bool(cfg.get('efference', False)),
-            empower_extra=tuple(cfg.get('empower_extra') or ()))
+            empower_extra=tuple(cfg.get('empower_extra') or ()),
+            arousal_eta=float(cfg.get('arousal_eta', 0.07)),
+            arousal_z_s=float(cfg.get('arousal_z_s', 60.0)),
+            feel_every=self.FEEL_EVERY)
       else:
         self.emotion = emotion_lib.Emotion(
             policy, gamma=policy.meta['emotion']['gamma'], every=0,
@@ -280,21 +287,35 @@ class PolicyRunner:
 
   def _empower_loop(self):
     while True:
-      time.sleep(self.EMPOWER_S)
+      pause = self.emotion_cfg.get('empower_s')
+      time.sleep(self.EMPOWER_S if pause is None else max(0.0, float(pause)))
       emo, last = self.emotion, getattr(self.policy, 'last_post', None)
       if emo is None or last is None:
         continue
       try:
+        busy = 0.0
         slices = getattr(emo, 'empowerment_slices', None)
         if slices is None:   # an older emotion.py
+          t0 = time.monotonic()
           value = emo._empowerment(last[0], last[1])
+          busy = time.monotonic() - t0
         else:
           # One rollout step at a time, sleeping between them, so the
           # control loop is never held up for the whole rollout.
-          for value in slices(last[0], last[1]):
+          it = slices(last[0], last[1])
+          while True:
+            t0 = time.monotonic()
+            value = next(it, StopIteration)
+            busy += time.monotonic() - t0
+            if value is StopIteration:
+              break
+            last_value = value
             time.sleep(self.EMPOWER_GAP_S)
+          value = last_value
         with self._emo_lock:
           emo.empowerment = value
+        self.emp_n += 1
+        self.emp_ms = busy * 1e3
       except Exception as e:  # noqa: BLE001 -- the face is never worth a crash
         print('dreamerBridge: empowerment failed: %s' % e)
 
@@ -359,7 +380,7 @@ class PolicyRunner:
     try:
       with self._emo_lock:
         sig = emo.step(deter, logit, stoch, reward, pain, is_first=acc[2],
-                       eff_deter=self._eff_deter)
+                       steps=acc[1], eff_deter=self._eff_deter)
       self.emotion_state = dict(
           valence=sig['pleasure'], pleasure=sig['pleasure'],
           arousal=sig['arousal'], dominance=sig['dominance'],
@@ -372,6 +393,11 @@ class PolicyRunner:
           update=sig['update'], efference=sig['efference'],
           **{k: v for k, v in sig.items() if k.startswith('arousal_')},
           empowerment=sig['empowerment'], faded=sig['faded'], model='v2',
+          ph_alpha=sig.get('ph_alpha', 0.0),
+          p_pain_prior=sig.get('p_pain_prior', 0.0),
+          q_pain_post=sig.get('q_pain_post', 0.0),
+          value_std=sig.get('value_std', 0.0), threat_std=sig.get('threat_std', 0.0),
+          emp_n=self.emp_n, emp_ms=self.emp_ms,
           reward=acc[4] / acc[1], **self._body_state())
       self._detect_event(
           abs(sig['pleasure']) + pain if self.event_signal == 'salience'
@@ -432,7 +458,10 @@ class PolicyRunner:
     for key, name in (('model', 'model'), ('arousal', 'arousal'),
                       ('empower_steps', 'empower_steps'),
                       ('efference', 'efference'),
-                      ('empower_extra', 'empower_extra')):
+                      ('empower_extra', 'empower_extra'),
+                      ('arousal_eta', 'arousal_eta'),
+                      ('arousal_z_s', 'arousal_z_s'),
+                      ('empower_s', 'empower_s')):
       if settings.get(key) is not None:
         cfg[name] = settings[key]
     if cfg != self.emotion_cfg:
