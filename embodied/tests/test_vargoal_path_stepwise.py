@@ -82,7 +82,7 @@ def _install():
   def imag(self, starts, H_, training):
     out = orig_imag(self, starts, H_, training)
     imgfeat, imgact, skills, seed, sw, cd = out
-    if self.goal_reach:
+    if self.goal_smdp:
       full = jax.tree.map(lambda a, b: jnp.concatenate([a[:, None], b], 1),
                           {k: starts[k] for k in ('deter', 'stoch')},
                           {k: imgfeat[k] for k in ('deter', 'stoch')})
@@ -91,7 +91,8 @@ def _install():
           starts=f32(starts['deter']), deter=f32(self.feat2deter(full)),
           skill=f32(skills['skill']), sw=sw, cd=cd,
           goals=f32(self._goals_from_skills(skills, bdims=2)),
-          reached=f32(self._imag_reached), tau=self._goal_reach_tau(),
+          reached=f32(self._imag_reached),
+          tau=(self._goal_reach_tau() if self.goal_reach else jnp.float32(9e9)),
           rew=f32(self.rew(inp, 2).pred()), con=f32(self.con(inp, 2).prob(1)),
           expl=f32(self._mgr_expl_reward(full)),
           plog=f32(agent_mod._head_inner(agent_mod.mgr_as_dict(
@@ -108,10 +109,11 @@ def _install():
   orig_seq = Agent._manager_skills_on_sequence
   def seq(self, repfeat, downsample=False, deterministic=False):
     out = orig_seq(self, repfeat, downsample, deterministic)
-    if self.goal_reach and deterministic and not downsample:
+    if self.goal_smdp and deterministic and not downsample:
       _put('seq', dict(
           deter=f32(self.feat2deter(repfeat)), skill=f32(out['skill']),
-          sw=out['switch'], cd=out['countdown'], tau=self._goal_reach_tau(),
+          sw=out['switch'], cd=out['countdown'],
+          tau=(self._goal_reach_tau() if self.goal_reach else jnp.float32(9e9)),
           det=jnp.asarray(bool(deterministic)),
           down=jnp.asarray(bool(downsample)),
           goals=f32(self._goals_from_skills(
@@ -165,12 +167,25 @@ def _install():
 # --------------------------------------------------------------------------
 
 @functools.lru_cache(maxsize=None)
-def run(frac, agg):
+def run(frac, agg, kind='cos'):
   _install()
-  agent = make_agent(
-      *BLOCKS, batch_size=4, batch_length=BL,
-      agent=dict(goal_reach_frac=frac, mgr_reward_agg=agg, imag_length=H,
-                 goal_duration_fixed=CAP))
+  if kind == 'dur':
+    # Manager-chosen durations 1..8 on the SMDP path.
+    agent = make_agent(
+        'director', 'director_og', 'wkr_ent_fixed', 'wkr_v3', 'goal_dur_head',
+        'debug', batch_size=4, batch_length=BL,
+        agent=dict(mgr_reward_agg=agg, imag_length=H, goal_duration_max=CAP))
+  else:
+    extra = {}
+    if kind == 'mse':
+      extra = dict(goal_reach_mode='mse', goal_reach_mse_mult=frac)
+      frac = 0.8
+    if kind == 'done':
+      extra = dict(goal_reach_mode='done')
+    agent = make_agent(
+        *BLOCKS, batch_size=4, batch_length=BL,
+        agent=dict(goal_reach_frac=frac, mgr_reward_agg=agg, imag_length=H,
+                   goal_duration_fixed=CAP, **extra))
   from embodied.jax import internal
   STORE.clear()
   carry = agent.init_train(agent.config.batch_size)
@@ -337,6 +352,10 @@ def test_2_imagination_rollout(frac, agg):
 @pytest.mark.parametrize('frac,agg', CASES)
 def test_3_manager_tensors(frac, agg):
   train, _, _ = run(frac, agg)
+  _check_manager_tensors(train, frac, agg)
+
+
+def _check_manager_tensors(train, frac, agg):
   im, mg = train['imag'], train['mgr']
   sw = im['sw'] > 0.5
   M, T = sw.shape
@@ -393,6 +412,10 @@ def test_3b_manager_bootstrap_state(frac, agg):
   be the critic at the FINAL imagined state -- not at its own start state
   (a self-bootstrap V(s) <- R + g^h V(s), which inflates sparse rewards)."""
   train, _, _ = run(frac, agg)
+  _check_bootstrap_state(train, frac)
+
+
+def _check_bootstrap_state(train, frac):
   im, mg = train['imag'], train['mgr']
   sw = im['sw'] > 0.5
   M, T = sw.shape
@@ -425,6 +448,10 @@ def test_3b_manager_bootstrap_state(frac, agg):
 @pytest.mark.parametrize('frac,agg', CASES)
 def test_4_worker_tensors(frac, agg):
   train, _, _ = run(frac, agg)
+  _check_worker_tensors(train)
+
+
+def _check_worker_tensors(train):
   im, wk = train['imag'], train['wkr']
   sw = im['sw'] > 0.5
   # Boundary mask is the imagination switch mask.
@@ -539,3 +566,44 @@ def test_6_last_hold_return_bootstraps_from_the_final_state_only():
     bad = returns(bad_fill)
     want = longhand(0)
     assert abs(bad[0, len(want) - 1] - want[-1]) > 1.0
+
+
+# --------------------------------------------------------------------------
+# 7. The other ways a hold can end: distance test, worker "done", manager-
+#    chosen duration. The switch RULE differs; everything downstream of the
+#    switch mask must still hold.
+# --------------------------------------------------------------------------
+
+KINDS = [(1e3, 'sum', 'mse'), (-50.0, 'sum', 'done'), (0.0, 'sum', 'dur')]
+
+
+@pytest.mark.parametrize('frac,agg,kind', KINDS)
+def test_7_other_switch_rules_share_the_training_path(frac, agg, kind):
+  train, env, _ = run(frac, agg, kind)
+  im = train['imag']
+  sw = im['sw'] > 0.5
+  M, T = sw.shape
+  assert sw[:, 0].all()
+  for t in range(1, T):
+    keep = ~sw[:, t]
+    np.testing.assert_array_equal(im['skill'][keep, t], im['skill'][keep, t - 1])
+  for b in range(M):
+    starts = np.where(sw[b])[0]
+    assert (np.diff(np.append(starts, T)) <= CAP).all(), starts
+  # Irregular pattern, or the checks below say nothing new.
+  regular = np.broadcast_to(np.arange(T) % CAP == 0, sw.shape)
+  assert (sw != regular).any(), f'{kind}: switch pattern is the fixed grid'
+  _check_manager_tensors(train, None, agg)
+  _check_bootstrap_state(train, kind)
+  _check_worker_tensors(train)
+  if kind == 'mse':
+    # Rule: squared error against the running reference, t >= 1.
+    err = ((im['goals'][:, :-1] - im['deter'][:, 1:]) ** 2).mean(-1)
+    hit = im['reached'][:, 1:] > 0.5
+    if hit.any() and (~hit).any():
+      assert err[hit].max() <= err[~hit].min() + 1e-6
+  if kind == 'done':
+    # Critic is zero at init, so "done" reduces to cos_max >= 0.
+    cos = _cosmax(im['goals'][:, :-1], im['deter'][:, 1:])
+    _close_or_tie(im['reached'][:, 1:], cos >= 0, cos, 0.0, 'done rule')
+  print(f'{kind}: imag switch rate {sw.mean():.3f}')

@@ -283,7 +283,8 @@ class ManagerMixin:
       if self.goal_reach and cached_goal is not None:
         # Reached-or-cap: also re-decide as soon as the held goal is reached.
         # ``cached_goal`` is the decoded goal the worker has been following.
-        update = jnp.logical_or(update, self._goal_reached(cached_goal, feat))
+        update = jnp.logical_or(update, self._goal_reached(
+            cached_goal, feat, skill=mgr_skill))
     else:
       update = jnp.equal(mgr_step % K, 0)
     # Optionally condition the manager on the PREVIOUS emitted skill (held in
@@ -425,7 +426,8 @@ class ManagerMixin:
           # coming INTO this state counts as reached if this state matches it.
           # Step 0 holds the zero dummy skill, which is not a goal.
           held = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
-          reached = jnp.logical_and(self._goal_reached(held, feat), step_i > 0)
+          reached = jnp.logical_and(self._goal_reached(
+              held, feat, skill=mgr_skill), step_i > 0)
           update = jnp.logical_or(update, reached)
       else:
         update = jnp.equal(step_i % K, 0)
@@ -503,7 +505,8 @@ class ManagerMixin:
       if self.goal_reach:
         held_last = sg(self._goal_from_skill(
             jax.tree.map(sg, last_mgr_skill), bdims=1))
-        reached_last = self._goal_reached(held_last, feat_last)
+        reached_last = self._goal_reached(
+            held_last, feat_last, skill=last_mgr_skill)
         update_last = jnp.logical_or(update_last, reached_last)
     else:
       update_last = jnp.equal(H % K, 0)
@@ -578,7 +581,8 @@ class ManagerMixin:
           # imagination. t = 0 always switches (remaining starts at 0).
           held = sg(self._goal_from_skill(jax.tree.map(sg, mgr_skill), bdims=1))
           update = jnp.logical_or(
-              update, jnp.logical_and(self._goal_reached(held, feat), t > 0))
+              update, jnp.logical_and(self._goal_reached(
+                  held, feat, skill=mgr_skill), t > 0))
       else:
         update = jnp.equal(t % K, 0)
       emit = self._emit_manager(
@@ -594,7 +598,7 @@ class ManagerMixin:
       # ``countdown`` is output-only (steps left incl. current); it must never
       # enter the carry skill dict, which other code tree-maps over.
       out = {**mgr_skill, 'countdown': i32(cd_steps)}
-      if self.goal_reach:
+      if self.goal_smdp:
         # Output-only, like ``countdown``: with reach-based switches the mask
         # cannot be rebuilt from durations (``_switch_mask_from_skills``).
         out['switch'] = jnp.broadcast_to(f32(update), remaining.shape)

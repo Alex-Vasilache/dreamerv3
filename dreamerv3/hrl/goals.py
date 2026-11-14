@@ -34,15 +34,23 @@ class ReachCeil(nj.Module):
   def __init__(self, rate=0.01):
     self.rate = float(rate)
     self.ceil = nj.Variable(lambda: jnp.ones((), f32), name='ceil')
+    # Running self-reconstruction MSE (reference for ``goal_reach_mode: mse``).
+    self.mse = nj.Variable(lambda: jnp.zeros((), f32), name='mse')
 
   def read(self):
     return sg(self.ceil.read())
 
-  def update(self, self_cos, training=True):
+  def read_mse(self):
+    return sg(self.mse.read())
+
+  def update(self, self_cos, training=True, self_mse=None):
     prev = self.ceil.read()
     new = prev + self.rate * (sg(f32(self_cos)).mean() - prev)
     if training:
       self.ceil.write(new)
+      if self_mse is not None:
+        pm = self.mse.read()
+        self.mse.write(pm + self.rate * (sg(f32(self_mse)).mean() - pm))
     return new
 
 
@@ -127,14 +135,36 @@ class GoalCodeMixin:
     """Reached threshold on cos_max: ``goal_reach_frac`` x the running ceiling."""
     return self.goal_reach_frac * self.goal_reach_ceil.read()
 
-  def _goal_reached(self, goal, feat):
+  def _goal_reached(self, goal, feat, skill=None):
     """Has the state reached the held goal? ``cos_max(goal, deter) >= tau``.
 
     The same quantity the worker is rewarded for (``_wkr_goal_reward``), so
     "reached" and the worker's objective cannot drift apart. ``goal`` is the
     decoded goal ``(..., D)`` in force BEFORE this step's manager decision;
-    returns a bool array of the leading shape."""
-    cos = goal_reward_cosine_max(sg(f32(goal)), sg(f32(self.feat2deter(feat))))
+    returns a bool array of the leading shape. ``goal_reach_mode`` selects the
+    test (see ``Agent.__init__``); ``skill`` is the held skill dict, needed
+    only when the worker conditions on the code."""
+    deter = sg(f32(self.feat2deter(feat)))
+    goal = sg(f32(goal))
+    cos = goal_reward_cosine_max(goal, deter)
+    mode = getattr(self, 'goal_reach_mode', 'cos')
+    if mode == 'mse':
+      err = ((goal - deter) ** 2).mean(-1)
+      return err <= self.goal_reach_mse_mult * self.goal_reach_ceil.read_mse()
+    if mode == 'done':
+      # Worker "done": its critic expects no further gain from pursuing this
+      # goal. V(s, g) is the discounted sum of future match rewards; freezing
+      # the current match forever is worth cos / (1 - gamma). Stop when the
+      # former does not exceed the latter. The low match floor keeps an
+      # untrained (zero) critic from ending every hold.
+      goal_in = goal if skill is None else self._wkr_goal_in(goal, skill)
+      inp = self._feat_goal2tensor(
+          feat, goal_in, countdown=jnp.zeros(deter.shape[:-1] + (1,), f32))
+      voff, vscale = self.wkr_goal_valnorm.stats()
+      v = sg(f32(self.wkr_goal_val(inp, 1).pred()) * vscale + voff)
+      gamma = 1.0 - 1.0 / float(self.config.horizon)
+      stop = (1.0 - gamma) * v <= cos * (1.0 + self.goal_reach_done_margin)
+      return jnp.logical_and(stop, cos >= self._goal_reach_tau())
     return cos >= self._goal_reach_tau()
 
   def _mgr_expl_reward(self, imgfeat):

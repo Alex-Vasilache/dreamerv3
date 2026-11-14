@@ -124,6 +124,9 @@ class RSSM(nj.Module):
     post = feat['logit']
     dyn = self._dist(sg(post)).kl(self._dist(prior))
     rep = self._dist(post).kl(self._dist(sg(prior)))
+    # Raw per-step KL(post || prior), before free nats: the agent's surprise
+    # signal (``agent.mgr_surprise``). Read in the same trace only.
+    self._last_kl = sg(dyn)
     if self.free_nats:
       dyn = jnp.maximum(dyn, self.free_nats)
       rep = jnp.maximum(rep, self.free_nats)
