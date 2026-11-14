@@ -17,8 +17,8 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [x] Offline bake-off on the 48 logged runs: Pearce-Hall associability (running |TD error|, eta 0.05-0.1, z over 60 s) wins: 0.81 hit / 0.75 before / 0.69 push, and the only one beyond pleasure (0.63)
    - [x] Provisional (11-14): arousal = Pearce-Hall associability; Yu base-rate kept as a switch
    - [~] Validation criteria (PI 11-14): (1) fit to HUMAN arousal data (pupil, SCR, ratings) like Rutledge for pleasure; (2) function on the robot: does arousal predict when the world model is wrong / when updates matter; (3) event marking only as a sanity check
-   - [~] Human arousal datasets: search + fit all candidates (`../../rutledge_rl/arousal/`)
-   - [~] Same for empowerment/dominance: human perceived-control / agency data (`../../rutledge_rl/empowerment/`)
+   - [x] Human arousal data (Filipowicz 2020 pupil n = 55; Tzovara 2018 SCR n = 63, pupil n = 20): pupil follows surprise / |prediction error| of the CURRENT outcome; lagged Pearce-Hall fits worst; including the current error brings it near the best. Robot change: include the current step in alpha (at 65 Hz the average spans ~0.2 s anyway)
+   - [x] Dominance (Spiering 2025 control ratings, n = 73): Bayesian control estimate fits best; our empowerment second (positive in 93 %), saturates near 1 bit. Ligneul 2022 data need the PI's ORCID login (data.donders.ru.nl DSC_3017049.01_905)
    - [ ] Functional test on the robot (arousal vs future world-model error and update size)
    - [ ] Questions for the meeting with Angela Yu (in `LIT_AROUSAL_YU.md`)
 3. Sim round with the best current definitions
@@ -28,7 +28,8 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [ ] Update `EMOTION.md`, `FACE_MATHS.md`, plan page
 4. Do emotions help learning?
    - [x] Literature (`LIT_EMOTION_LEARNING.md`, ~60 papers): emotion acts selectively (which memory is kept, which outcome sign, which system), never as a global boost. Shortlist: M1 retroactive pain tagging (replay share), M2 regret distillation, M3 stress -> trust the model less (per-start lambda/horizon), M4 fast fear (3x lr for threat head/critic), M5 controllability gate
-   - [ ] Build M1, M3, M4 (round 1) after step 3's code is in; M2, M5 (round 2) share the candidate rollouts
+   - [x] Build M1 (replay.tag), M3 (agent.stress_lam), M4 (agent.fear.lr_mult), round 1, 566c9c0, unit tests (11-14); M2, M5 (round 2) share the candidate rollouts
+   - [~] Run LE1: em_a base vs +M1 / +M3 / +M4, n = 8, 60 min; V100 e44824-e44839 (behind EM), IAS e44840-e44855 (209462)
    - [ ] Test in sim against the current recipe (time to balance, late stability, pushes); best ones live only with Alex
 5. Later (from Jan's list): emotions arise from learning (evolution strategies on a shaping function); emotions in agentic AI; meeting Daniel in December
 
