@@ -604,3 +604,35 @@ Smokes e44800 (a) and e44801 (b), 4 min: no errors, loop 60.0 / 60.8 Hz
 (last 2 min 60.4 / 61.1), dominance refresh 0.99 / 1.00 s, all new columns
 filled. Note: the Pearce-Hall z window here is 60 s; the bake-off script
 z-scored over 10 s (and η 0.1).
+
+### Sat 11-14 night: LE1, emotion-inspired learning, round 1 (launched)
+
+TASKS.md step 4, round 1: M1, M3, M4 of `LIT_EMOTION_LEARNING.md` (sections
+3-4, with their predictions), one at a time on EM's arm em_a (identical
+flags). Code 566c9c0 (snapshots `code_le1` on /work and IAS), every switch
+default off:
+
+- M1 retroactive pain tagging (`replay.tag`, learner replay only;
+  `replay.py:pain_tag`): a training sequence is tagged when a step out of
+  contact (cost < 0.05) is followed within 65 steps (1 s), same episode, by
+  impact pain >= 0.05. 25% of training samples are drawn uniformly from
+  tagged sequences; tagged ones are never evicted. Pleasure is not in replay,
+  so the pleasure-drop half is a reward-drop option (`tag.drop`, off here).
+  `replay/tagged_frac` logs the natural share.
+- M3 stress (`agent.stress_lam`): per imagination start, λ_i = λ (1 − κ
+  clip(z_i, 0, 2)/2), z_i = KL(q‖p) of the start state z-scored over the
+  batch's starts, κ = 0.5; used for the reward's and the threat's returns.
+- M4 fast fear (`agent.fear.lr_mult 3`): updates of the cost head `cst` and
+  threat critic `cval` ×3 after the RMS normalisation, other modules
+  unchanged.
+
+Arms base / m1_tag / m3_stress / m4_fastfear, 60 min, seeds 811-814 on
+Saion V100 (e44824-e44839, jobs 4823353-68, queued behind EM; params
+`sbatch/wk/le1v.txt`), 815-818 on IAS (e44840-e44855, array 209462, 7 at a
+time; `le1i.txt`). Smokes e44820-e44823 (IAS array 209460, 4 min): no
+errors; M1 natural tagged share 0.43 at minute 4 (so ~0.57 of samples
+tagged with the 0.25 share), M3 mean λ 0.90 (min 0.475 = λ/2), M4
+`opt/fear_lr_mult` 3. Phone loop on IAS 36-45 Hz (M1 smoke 36, the M1 runs
+43-44 vs 45-47 for the other arms; RF on IAS ran 42), so an IAS "60-min"
+run is ~90 min of wall time; Saion V100 runs at ~61 Hz (EM). Compare arms
+within a cluster.
