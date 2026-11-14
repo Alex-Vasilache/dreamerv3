@@ -66,7 +66,8 @@ FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
           'reflex_threat', 'reflex_thr', 'reflex_ms',
           # Since round EM (11-14): the Pearce-Hall associability alpha and
           # its arousal, Yu's prior and posterior probability of pain > 0
-          # from the cost head, the value and threat critics' two-hot SD, and
+          # from the cost head, the value and threat critics' two-hot SD (in
+          # symlog units), and
           # the empowerment rollouts finished so far and the last one's ms.
           'ph_alpha', 'arousal_ph', 'p_pain_prior', 'q_pain_post',
           'value_std', 'threat_std', 'emp_n', 'emp_ms')
@@ -76,7 +77,7 @@ LIGHT = frozenset((
     't', 'step', 'arousal', 'dominance', 'pleasure', 'td', 'faded', 'change',
     'pain', 'threat', 'value', 'impact', 'reflex', 'event', 'push', 'theta',
     'act0', 'intended0', 'force', 'reflex_threat', 'ph_alpha', 'p_pain_prior',
-    'q_pain_post', 'value_std', 'threat_std', 'emp_n', 'empowerment'))
+    'q_pain_post', 'value_std', 'threat_std', 'emp_n'))
 
 
 class SimPhone:

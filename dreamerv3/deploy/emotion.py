@@ -434,10 +434,13 @@ class EmotionV2(Emotion):
     return float(self._mean(p, self.bins))
 
   def _std(self, probs, bins):
-    """SD of a two-hot categorical over `bins` (in the bins' units)."""
+    """SD of a two-hot categorical in symlog units, the space its bins are
+    spaced evenly in (in raw units the far bins' tiny mass, up to 4.8e8,
+    swamps it: ~1e7 in the EM smokes)."""
     p = np.asarray(probs, np.float64)
-    m = (p * bins).sum(-1, keepdims=True)
-    return np.sqrt(np.maximum((p * (bins - m) ** 2).sum(-1), 0.0))
+    b = np.sign(bins) * np.log1p(np.abs(np.asarray(bins, np.float64)))
+    m = (p * b).sum(-1, keepdims=True)
+    return np.sqrt(np.maximum((p * (b - m) ** 2).sum(-1), 0.0))
 
   def p_positive(self, probs, bins):
     """P(x > 0) of a two-hot categorical: the mass above the zero bin."""

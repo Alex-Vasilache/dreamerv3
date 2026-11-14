@@ -567,8 +567,10 @@ def test_yu_pain_probabilities_and_critic_spread():
   qc = emo.head_probs('cst', d, s)
   assert sig['q_pain_post'] == pytest.approx(float(qc[emo.cbins > 0].sum()))
   vp = emo.head_probs('val', d, s)
-  m = (vp * emo.bins).sum()
-  assert sig['value_std'] == pytest.approx(float(np.sqrt((vp * (emo.bins - m) ** 2).sum())), rel=1e-5)
+  sl = np.sign(emo.bins) * np.log1p(np.abs(emo.bins))   # symlog: bins evenly spaced
+  m = (vp * sl).sum()
+  assert sig['value_std'] == pytest.approx(float(np.sqrt((vp * (sl - m) ** 2).sum())), rel=1e-5)
+  assert sig['value_std'] < 20
   assert sig['threat_std'] > 0
   bare = emotion.EmotionV2(ToyPolicy(threat=False, cost=False))
   sig = bare.step(d, logit, s, 0.1, 0.0)
