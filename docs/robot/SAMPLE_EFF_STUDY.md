@@ -636,3 +636,23 @@ tagged with the 0.25 share), M3 mean λ 0.90 (min 0.475 = λ/2), M4
 43-44 vs 45-47 for the other arms; RF on IAS ran 42), so an IAS "60-min"
 run is ~90 min of wall time; Saion V100 runs at ~61 Hz (EM). Compare arms
 within a cluster.
+
+### Sun 11-15: LE1 results (emotion-inspired learning, round 1)
+
+32 runs (16 Saion V100 seeds 811-814, 16 IAS 815-818), minutes 11-60, mean ±
+SD over n = 8, Wilcoxon paired by seed against base (em_a's flags):
+
+| arm | t90 (min) | crossings/min | peak force (N) | impact pain/min | falls/push |
+|---|---|---|---|---|---|
+| base | 5.4 ± 1.6 | 5.0 ± 1.4 | 1.38 ± 0.33 | 0.11 ± 0.07 | 0.15 ± 0.03 |
+| M1 pain tagging | 5.1 ± 1.0 | 5.3 ± 1.4 (p 0.95) | 1.62 ± 0.26 (p 0.04) | 0.15 ± 0.06 | 0.16 ± 0.03 |
+| M3 stress lambda | 6.3 ± 3.3 | 5.0 ± 1.6 (p 0.84) | 1.70 ± 0.35 | 0.20 ± 0.11 | 0.16 ± 0.04 |
+| M4 fast fear | 5.4 ± 1.5 | 4.9 ± 1.5 (p 0.94) | 1.54 ± 0.45 | 0.14 ± 0.08 | 0.15 ± 0.04 |
+
+Reading: none of the three helps; M1 hits slightly harder (p = 0.04, not
+corrected). The base (impact pain at the sim calibration + s4z2 reflex)
+already sits at ~5 crossings/min and 0.15 falls/push, close to the best
+seen (bumper pain, PF2 d: 4.2 and 0.13), so there is little headroom at this
+perturbation level; with n = 8, only changes of ~30 % are detectable.
+Next (round 2): M2 regret distillation and M5 controllability gate under
+stronger pushes, with a base arm, to give the mechanisms room to show.
