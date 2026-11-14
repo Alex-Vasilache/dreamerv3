@@ -381,3 +381,94 @@ itself (z-scored threat warns as well), which pleasure already contains
 through the outlook; A1's added value is at the hit. The exact A1 (posterior
 vs base-rate pain probability, reward term, reset after contact) needs
 q(c > 0) and p̂(c > 0) logged.
+
+## Competing definitions (survey, 11-14)
+
+Goal: a list of rival computational definitions of arousal, each one
+computable from a DreamerV3 agent. They are to be compared offline on the
+sim's `emotion.csv`, so the PI can pick one by AUC rather than by taste.
+Every citation below was checked on 2026-11-14 against Crossref (DOI) or
+the arXiv API (title and first author match). Formulas come from the
+abstracts and our knowledge of the papers. Where the arousal reading is
+**ours** and not the authors' (they defined something else, such as valence or
+salience), the row says "our reading".
+
+**Notation.** `h_t` is the deterministic state. `p̂_t`, `q_t` are the prior and
+posterior over 32×32 categoricals. `V_t`, `T_t` are the value and threat critics
+(twohot); `O_t = V_t/S_V − w T_t/S_T` is the outlook; `δ_t` = logged `td`.
+`a_t` = `act0`, the executed wheel command; `ā_t` = `intended0`. `π` is the policy.
+Imagination `ρ_k` means a k-step rollout under π (or under random commands, as in `emp16_*`).
+
+**Logged now** (sim `emotion.csv`, `embodied/envs/sim_phone.py` FIELDS):
+`theta, threat, value, impact, pain, o_reward, o_pain, outlook, change, td,
+pleasure, faded, arousal_{total,unexpected,kl}[_eff], emp16_{state,value,threat}`
+(and emp32), `act0, chosen0, intended0, force, push, reflex, reflex_threat`.
+Rows are written every `log_every` steps *plus* on every event, push, force or
+reflex step, so the cadence is irregular. Resample on `step` before taking any
+difference.
+
+### Table
+
+"Now" means computable from the columns above with an offline filter only.
+"Proxy" means a cheap stand-in is computable now and the exact form needs logging.
+
+| # | Family | Formula (arousal `A_t`) | Evidence | Now? | What to log for the exact form |
+|---|---|---|---|---|---|
+| 0a | Surprise / PE, split into expected (ACh) and unexpected (NE) — *covered* | `e_t = −log p̂(s,r,c)`, `e_t − ê_t` | Yu & Dayan 2005, 10.1016/j.neuron.2005.04.026 | yes (`arousal_total`, `_unexpected`) | – |
+| 0b | Bayesian surprise — *covered* | `KL(q_t‖p̂_t)` | Itti & Baldi 2009, 10.1016/j.visres.2008.09.007 | yes (`arousal_kl`) | – |
+| 0c | Phasic NE vs base rate — *covered* (A1) | `KL(Bern(b_t)‖Bern(π̄_t))` | Dayan & Yu 2006, 10.1080/09548980601004024 | proxy (threat) | `q(c>0)`, `p̂(c>0)` |
+| 0d | Change-point probability — *covered* (A2) | `Ω_t = σ(logit h + ℓ^new − ℓ^old)` | Nassar et al. 2010, 10.1523/JNEUROSCI.0822-10.2010; 2012, 10.1038/nn.3130 | proxy (KL variant) | per-term surprise, `log π̄_s(s_t)` |
+| 1 | Unsigned TD error / salience | `A_t = |δ_t|` | Bromberg-Martin, Matsumoto & Hikosaka 2010 (alerting and salience DA), 10.1016/j.neuron.2010.11.022; Hayden et al. 2011 (ACC unsigned RPE), 10.1523/JNEUROSCI.4652-10.2011; Broekens 2018, TDRL theory of emotion (all emotions are TD appraisals), arXiv:1807.08941; Moerland, Broekens & Jonker 2018 survey, 10.1007/s10994-017-5666-0. The arousal reading is ours: TDRL maps TD to joy/distress/hope/fear, not to an arousal axis | **yes** (`td`; also split by `o_pain`, `change`) | – |
+| 2 | Associability (Pearce-Hall) | `α_t = η|δ_{t−1}| + (1−η)α_{t−1}` | Pearce & Hall 1980, 10.1037/0033-295X.87.6.532; Li et al. 2011 (**SCR tracks associability**, amygdala), 10.1038/nn.2904; Zhang et al. 2016 (pain conditioning: SCR = associability), 10.1016/j.cub.2015.10.066 | **yes** (`td`) | – |
+| 3 | Precision-weighted PE / volatility (HGF) | `ε₂ = σ̂₂ δ₁` (PE weighted by the belief precision); tonic `A = μ₃` (log-volatility); in short `A_t = |δ^T_t| / √v_t`, with `v_t` a running PE variance whose own rate is learnt | Behrens et al. 2007, 10.1038/nn1954; Mathys et al. 2011, 10.3389/fnhum.2011.00039; Mathys et al. 2014, 10.3389/fnhum.2014.00825; de Berker et al. 2016 (**stress: SCR, pupil, cortisol track uncertainty**), 10.1038/ncomms10996; Lawson, Mathys & Rees 2017 (pupil and volatility), 10.1038/nn.4615; Peters, McEwen & Friston 2017, 10.1016/j.pneurobio.2017.05.004 | **yes** (filter on `td`, `o_pain`, `threat`) | twohot std of `T`, `V` for the true precision |
+| 4 | Variational free energy = novelty + complexity | `F_t = KL(q_t‖p̂_t) + E_q[−log p(x_t|h,z)]`; arousal potential = `F` (Yanagisawa); valence = `−dF/dt`, unsigned `|dF/dt|` is our reading | Yanagisawa, Kawamata & Ueda 2019, 10.3389/fncom.2019.00002; Yanagisawa 2021, 10.3389/fncom.2021.698252; Yanagisawa 2025 (KL and Bayesian surprise as arousal potential, Wundt curve), 10.3389/fpsyg.2025.1438080; Joffily & Coricelli 2013, 10.1371/journal.pcbi.1003094 | proxy (KL part only) | decoder NLL `−log p(x_t|h_t,z_t)` per step (proprio, and image if any) |
+| 5 | Posterior entropy (active-inference circumplex) | `A_t = H[q_t(s)]` (Pattisapu); in Hesp: arousal-like policy precision `γ`, updated by affective charge `(G_prior − G_post)` | Pattisapu et al. 2024, arXiv:2407.02474; Hesp et al. 2021, 10.1162/neco_a_01341; Smith, Parr & Friston 2019, 10.3389/fpsyg.2019.02844; Schumann et al. 2026 (driving: predicted future outcomes), arXiv:2608.07480; Feldman & Friston 2010 (attention as precision), 10.3389/fnhum.2010.00215 | no | `H(q_s)/32`, `H(p̂_s)/32` per step |
+| 6 | Expected free energy / epistemic value | `A_t = E_{ρ_k}[KL(q(s|o)‖q(s))]` summed over the imagined horizon (expected information gain) | Friston et al. 2015, 10.1080/17588928.2015.1020053; Parr & Friston 2017, 10.1098/rsif.2017.0376; Schwartenbeck et al. 2019, 10.7554/eLife.41703 | no | in imagination there is no posterior, so log the mutual information `H(E_k p̂_k) − E_k H(p̂_k)` from an ensemble (row 7) or MC-dropout |
+| 7 | Parameter information gain / ensemble disagreement | `A_t = Var_k[μ_k(h_t,z_t,a_t)]` over K one-step heads (Plan2Explore); VIME: `KL(p(θ|D,x)‖p(θ|D))` | Houthooft et al. 2016 (VIME), arXiv:1605.09674; Pathak et al. 2019, arXiv:1906.04161; Sekar et al. 2020 (Plan2Explore), arXiv:2005.05960 | no | train K = 5 heads `(h,z,a)→z'` and log their variance per step (a new model part) |
+| 8 | Learning / compression progress | `A_t = L_{θ_{t−Δ}}(x_t) − L_{θ_t}(x_t)` (loss decrease) | Schmidhuber 2010, 10.1109/TAMD.2010.2056368; Oudeyer, Kaplan & Hafner 2007, 10.1109/TEVC.2006.890271; Ten et al. 2021 (humans track LP), 10.1038/s41467-021-26196-w | no | WM loss per step under the current and a lagged checkpoint (slow timescale; not an event marker) |
+| 9 | Stakes: value at risk / return spread | `A_t = σ[G_t]` from the twohot critic (`√(Σ p_i b_i² − V²)`), for `V` and `T`; "stakes of choice" `= E_a KL(P(V|a)‖P̄(V))` = `emp16_value`, `emp16_threat` | Preuschoff, Bossaerts & Quartz 2006 (risk = variance), 10.1016/j.neuron.2006.06.024; Fiorillo, Tobler & Schultz 2003 (DA ∝ p(1−p)), 10.1126/science.1077349; Bach & Dolan 2012, 10.1038/nrn3289; Bellemare et al. 2017, arXiv:1707.06887; Dabney et al. 2020, 10.1038/s41586-019-1924-6 | **yes** for stakes of choice (`emp16_value`, `emp16_threat`); no for σ[G] | twohot std of value and threat critics per step |
+| 10 | Threat imminence / urgency / hazard | TTC `τ = d/ḋ` (Lee); hazard `h_k = 1 − Π_{j≤k}(1 − p̂(c_j>0))` along `ρ_k` under π; proxy `A_t = [ΔT_t]⁺` over 0.1-0.3 s, or `z(T_t)`; tilt TTC `(θ_lim − |θ|)/|θ̇|` | Lee 1976, 10.1068/p050437; Mobbs et al. 2007, 10.1126/science.1144298; Mobbs et al. 2020, 10.1016/j.tics.2019.12.016; Cisek et al. 2009 (urgency gating), 10.1523/JNEUROSCI.1844-09.2009; Murphy, Boonstra & Nieuwenhuis 2016 (**pupil-linked urgency gain**), 10.1038/ncomms13526; Janssen & Shadlen 2005 (hazard rate), 10.1038/nn1386 | **proxy** (`threat`, `reflex_threat`, `theta`) | `h_k` for k = 4, 8, 16 under π (reuse the empowerment rollout with policy actions); sim ground-truth distance and closing speed to wall/bumper |
+| 11 | Effort / energy / allostatic load | `A_t = |a_t|²` (power), `|a_t − a_{t−1}|`, override `|ā_t − a_t|`; allostatic: predicted spend `E_ρ[Σ_k |a_k|²]`; homeostatic drive `D_t = |θ_t − θ*|` (Keramati & Gutkin `D = (Σ|h*−h|ⁿ)^{1/m}`) | Sterling 2012, 10.1016/j.physbeh.2011.06.004; Barrett & Simmons 2015, 10.1038/nrn3950; Barrett 2017, 10.1093/scan/nsw154; Seth 2013, 10.1016/j.tics.2013.09.007; Seth & Friston 2016, 10.1098/rstb.2016.0007; McEwen 1998, 10.1056/NEJM199801153380307; Varazzani et al. 2015 (**LC tracks effort, not reward**), 10.1523/jneurosci.0454-15.2015; Silvetti et al. 2018 (LC boosting), 10.1371/journal.pcbi.1006370; Shenhav et al. 2013, 10.1016/j.neuron.2013.07.007; Kahneman & Beatty 1966, 10.1126/science.154.3756.1583; Keramati & Gutkin 2014, 10.7554/eLife.04811; Kirtay et al. 2019 (robot, energy-based emotion), 10.1177/1059712319880649; Yoshida et al. 2024, 10.1016/j.neunet.2024.106379; Man & Damasio 2019, 10.1038/s42256-019-0103-7 | **yes** (`act0`, `intended0`, `chosen0`, `theta`) | wheel speed / motor current for true power; imagined `Σ|a|²` |
+| 12 | Decision uncertainty | `A_t = H[π(·|s_t)]`, or `1 − confidence` | Urai, Braun & Donner 2017 (**pupil ∝ decision uncertainty**), 10.1038/ncomms14637 | no | policy entropy or std per step |
+| 13 | LC adaptive gain, tonic vs phasic | phasic = gain × task-relevant event (rows 0c, 10); tonic `A^tonic_t = [Ū_long − Ū_short]⁺` (utility falling → disengage / explore); Yerkes-Dodson is a test (inverted U of performance vs A), not a definition | Aston-Jones & Cohen 2005, 10.1146/annurev.neuro.28.061604.135709; Gilzenrat et al. 2010, 10.3758/CABN.10.2.252; Eldar, Cohen & Niv 2013, 10.1038/nn.3428; Yerkes & Dodson 1908, 10.1002/cne.920180503; Krishnamurthy et al. 2017, 10.1038/s41562-017-0107; Filipowicz et al. 2020 (pupil = complexity of belief update), 10.7554/eLife.57872; Preuschoff et al. 2011, 10.3389/fnins.2011.00115 | **yes** (`o_reward`, `o_pain`, `value`: two leaky averages) | – |
+| 14 | Appraisal (Scherer checks) | `A_t = w_n z(novelty) + w_r z(relevance) + w_u z(urgency) − w_c z(coping)`, with novelty = KL, relevance = `|change|`, urgency = `[ΔT]⁺`, coping = empowerment | Scherer 2009, 10.1080/02699930902928969; Marinier, Laird & Lewis 2009, 10.1016/j.cogsys.2008.03.004; Gratch & Marsella 2004, 10.1016/j.cogsys.2004.02.002; Sequeira, Melo & Paiva 2011, 10.1007/978-3-642-24600-5_36; Salichs & Malfaz 2012, 10.1109/T-AFFC.2011.32 | **yes** (`arousal_kl`, `change`, `threat`, `emp16_*`) | – |
+| 15 | Fear-driven risk prediction (agent) | `A_t` = predicted risk from an imagined adversarial rollout (agent's fear model) | He et al. 2024, 10.1109/TPAMI.2023.3322426; Bach & Dayan 2017, 10.1038/nrn.2017.35; Emanuel & Eldar 2023, 10.1016/j.neubiorev.2022.104977 | proxy (`reflex_threat`) | same as row 10 |
+
+Not used: Go-Blend / affect-driven RL (Barthet et al. 2021/2022, arXiv:2109.13388,
+2208.12622). It *learns* arousal from human labels, so it gives no definition.
+Eldar et al. 2016 (mood as momentum, 10.1016/j.tics.2015.07.010) is a valence/mood
+signal and feeds pleasure, not arousal.
+
+### Ranked shortlist for the offline bake-off
+
+Event = bumper contact (`force > 0`) at ±0.25 s, and the pre-window 0.1-0.3 s
+before contact. Pushes (`push ≠ 0`) are a second event class. Score: AUC per
+run, then mean ± SD over runs, with a Wilcoxon test against the current best
+(A1 rising, 0.71 pre-hit). Report the partial AUC after regressing out
+`pleasure` *and* `|act0|`, so that "arousal is just threat" and "arousal is
+just driving fast" are both excluded.
+
+1. **Threat imminence (row 10).** `A = z([T_t − T_{t−k}]⁺)`, k ≈ 0.1-0.2 s, together with
+   `z(reflex_threat)`. Computable now. The exact form `h_16 = 1 − Π(1 − p̂(c_j>0))`
+   needs logging. Mobbs/Lee evidence; it targets the pre-window directly.
+2. **Stakes of choice (row 9).** `A = z(emp16_value + emp16_threat)`: how much the
+   imagined value and threat depend on the command. Computable now. The σ[G] variant
+   needs the twohot std.
+3. **Pearce-Hall associability / |TD| (rows 1-2).** `A = |δ_t|` and
+   `α_t = η|δ_{t−1}| + (1−η)α_{t−1}`. Computable now. It has the only direct
+   *pain*-and-SCR evidence (Zhang 2016; Li 2011).
+4. **Precision-weighted PE (row 3).** `A = |δ_t| / √v_t`, `v_t = EMA(δ²)` with a
+   learnt rate (2-level HGF on `td`, or on `o_pain` and `threat` separately).
+   Computable now.
+5. **Appraisal composite (row 14).** `z(KL) + z(|change|) + z([ΔT]⁺) − z(emp16)`.
+   Computable now. Fit the weights by logistic regression on half the runs and test on the rest.
+6. **Effort / homeostatic deviation (row 11).** `z(|a_t|²)`, `z(|ā_t − a_t|)`,
+   `z(|θ_t − θ̄|)`. Computable now. It is mainly a confound control: if it wins,
+   the other signals are tracking speed.
+7. **Free energy / posterior entropy (rows 4-5).** `KL + decoder NLL`; `H(q_s)`.
+   Needs logging. Run it in the next sim round, together with A1/A2 exact.
+
+**Logging to add in one change** (with `log_every = 1` around events):
+`H(q_s)/32`, `H(p̂_s)/32`, decoder NLL, the twohot std of `V` and `T`, `q(c>0)`
+and `p̂(c>0)`, imagined hazard `h_{4,8,16}` under π, policy entropy, and in sim the
+ground-truth wall distance and closing speed.
