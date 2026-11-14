@@ -97,6 +97,22 @@ __RUNS__
 </section>
 
 <section>
+<span class="k">Result so far</span>
+<h2>The fix closes the gap, and cap 8 now beats fixed holds</h2>
+<div class="tw"><table><thead><tr><th>Task</th><th>Arm</th><th>0.25-0.5M</th><th>1-1.5M</th><th>2-2.5M</th><th>First score above 50 (M steps)</th></tr></thead><tbody>
+<tr><td>Pin pad four</td><td class="r">V, fixed 8 (5 seeds)</td><td>238-305</td><td>281-318</td><td>307-325</td><td>0.14-0.22</td></tr>
+<tr><td></td><td class="r">reach or 8, before fix</td><td>193</td><td>154</td><td>180</td><td>dips all run</td></tr>
+<tr class="hl"><td></td><td class="r">reach or 8, fixed (2 seeds)</td><td>275, 290</td><td>324, 347</td><td>327, 334</td><td>0.19, 0.22</td></tr>
+<tr><td></td><td class="r">reach or 32, fixed (2 seeds)</td><td>232, 284</td><td>252, 258</td><td>282, 288</td><td>0.14, 0.21</td></tr>
+<tr><td>Pin pad five</td><td class="r">V, fixed 8 (5 seeds)</td><td>0</td><td>0-152</td><td>0-288</td><td>1.11-2.59</td></tr>
+<tr class="hl"><td></td><td class="r">reach or 8, fixed (1 seed)</td><td>175</td><td>257</td><td>277</td><td>0.30</td></tr>
+<tr><td></td><td class="r">reach or 32, fixed (1 seed)</td><td>0</td><td>0</td><td>rising</td><td>1.93</td></tr>
+<tr><td>Pin pad six</td><td class="r">both caps (1 seed each)</td><td>0</td><td>0</td><td>0</td><td>not yet</td></tr>
+</tbody></table></div>
+<p class="take">Runs are at 2-2.7M of 4M steps. With the fix, "reach or 8 steps" is a little above V on pin pad four and finds pin pad five about four times sooner (one seed). Cap 32 is slower than cap 8 on both. The manager return range is back to 9.</p>
+</section>
+
+<section>
 <span class="k">4 · How others end a goal</span>
 <h2>Short literature review</h2>
 <div class="tw"><table><thead><tr><th>Method</th><th>When does the high level re-decide?</th><th>What we take from it</th></tr></thead><tbody>

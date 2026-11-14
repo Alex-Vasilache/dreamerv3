@@ -680,6 +680,22 @@ against a hand-written SMDP return, both earlier versions fail it). Array 482328
 23:02-23:06, 30 s before the complete fix was on disk: cancelled at ~10 min, dirs removed,
 resubmitted unchanged as **array 4823338** (same h-numbers, literal restart).
 
+**Interim 2026-11-15 04:20 (runs at 2.0-2.7M): the fix closes the gap.** `mgr/range_extr` is 7.5-9
+in all scoring runs (was 30-120). Window means; first trailing-10 >= 50 in M steps:
+
+| Task | Arm | 0.25-0.5M | 1-1.5M | 2-2.5M | first >= 50 |
+|---|---|---|---|---|---|
+| Pin pad four | old V (5) | 238-305 | 281-318 | 307-325 | 0.14-0.22 |
+| | h0410 / h0417 cap 8 | 290 / 275 | 347 / 324 | 334 / 327 | 0.19 / 0.22 |
+| | h0411 / h0416 cap 32 | 284 / 232 | 258 / 252 | 282 / 288 | 0.14 / 0.21 |
+| Pin pad five | old V (5) | 0 | 0-152 | 0-288 | 1.11-2.59 |
+| | h0414 cap 8 | 175 | 257 | 277 | 0.30 |
+| | h0412 cap 32 | 0 | 0 | rising | 1.93 |
+| Pin pad six | h0415 cap 8, h0413 cap 32 | 0 | 0 | 0 | - |
+
+Cap 8 with reach is at or above V on pin pad four and finds pin pad five ~4x sooner (n=1). Cap 32
+is below cap 8 on both (reach ends 97% of imagined switches there, mean imagined hold ~10-11).
+
 Also check: `mgr/range_extr` should fall to ~10 (sum pooling) from 30-120.
 Array 4812978 fully finished and archived 11-14 (28 runs; none left in `/work`).
 
