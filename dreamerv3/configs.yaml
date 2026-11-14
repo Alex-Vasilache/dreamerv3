@@ -469,6 +469,11 @@ defaults:
     # No minimum hold. 0 = off.
     goal_reach_frac: 0.0
     goal_reach_rate: 0.01
+    # Variable-length holds: the rollout's last hold is cut by the imagination
+    # horizon and must bootstrap from the FINAL imagined state. Before
+    # 2026-11-14 it bootstrapped from its own start state (every variable-
+    # length run to that date, h0374-h0409 included). False restores that.
+    goal_duration_trailing_boot: True
     # Causal-intervention freezes (pinpad collapse study, 2026-09-30). Each is an
     # optimizer-UPDATE count (not env steps; director_og at ratio 64 does ~0.5
     # updates per env step) after which that module group's parameters are held

@@ -169,6 +169,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # != 0 rather than > 0: a negative fraction makes every state count as
     # reached, which the tests use to drive the switch-every-step extreme.
     self.goal_reach = self.goal_reach_frac != 0.0
+    # Bootstrap the horizon-cut last hold from the final imagined state (the
+    # fix of 2026-11-14). False reproduces every earlier variable-length run.
+    self.goal_duration_trailing_boot = bool(
+        getattr(config, 'goal_duration_trailing_boot', True))
     if self.goal_reach:
       assert self.variable_goal_length and self.goal_duration_fixed > 0, (
           'goal_reach_frac needs variable_goal_length with goal_duration_fixed '
@@ -1777,6 +1781,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             mgr_skills_eff, switch_mask, self.goal_duration_min,
             self.goal_duration_max)
       imgfeat_eff = downsample_at_switch_mask(imgfeat, switch_mask)
+      if self.goal_duration_trailing_boot:
+        # The last hold of a rollout is usually cut by the horizon. Its return
+        # bootstraps from the slot after it, which the forward-fill leaves at
+        # that hold's OWN start state: V(s) <- R + g^h V(s), a self-bootstrap
+        # that reads "this reward repeats every h steps" (found 2026-11-14;
+        # manager extrinsic return range 50-90 vs 9 on pin pad four). Put the
+        # true final imagined state there, as the replay path already does.
+        # A no-op when the last switch lands on the final state (fixed holds
+        # that divide the horizon), so fixed-K equivalence is unchanged.
+        imgfeat_eff = patch_trailing_replay_state(
+            imgfeat_eff, imgfeat, switch_mask)
       inp_eff = self.feat2tensor(imgfeat_eff)
       n_mgr = imgfeat_eff['deter'].shape[1]
       mgr_extr_rew, mgr_expl_rew, mgr_cont, mgr_switch = (

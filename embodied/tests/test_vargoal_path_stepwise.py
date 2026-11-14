@@ -93,7 +93,9 @@ def _install():
           goals=f32(self._goals_from_skills(skills, bdims=2)),
           reached=f32(self._imag_reached), tau=self._goal_reach_tau(),
           rew=f32(self.rew(inp, 2).pred()), con=f32(self.con(inp, 2).prob(1)),
-          expl=f32(self._mgr_expl_reward(full))))
+          expl=f32(self._mgr_expl_reward(full)),
+          plog=f32(agent_mod._head_inner(agent_mod.mgr_as_dict(
+              self.manager_pol(inp, 2))['skill']).dist.logits)))
     return out
   Agent._imagine_with_manager = imag
 
@@ -130,7 +132,9 @@ def _install():
   def mgr(skills, extr, expl, cont, policy, *a, **k):
     _put('mgr', dict(skill=f32(skills['skill']), extr=f32(extr),
                      expl=f32(expl), cont=f32(cont),
-                     switch=f32(k['switch_mask'])))
+                     switch=f32(k['switch_mask']),
+                     plog=f32(agent_mod._head_inner(
+                         policy['skill']).dist.logits)))
     return orig_mgr(skills, extr, expl, cont, policy, *a, **k)
   agent_mod.imag_loss_mgr = mgr
 
@@ -380,6 +384,34 @@ def test_3_manager_tensors(frac, agg):
     np.testing.assert_allclose(mg['cont'][:, :n], fx_c[:, :n], rtol=1e-4)
     np.testing.assert_array_equal(
         mg['skill'][:, :n], im['skill'][:, ::CAP][:, :n])
+
+
+@pytest.mark.parametrize('frac,agg', CASES)
+def test_3b_manager_bootstrap_state(frac, agg):
+  """Each decision's return bootstraps from the critic at the NEXT decision
+  state; the last decision's hold is cut by the horizon, so its bootstrap must
+  be the critic at the FINAL imagined state -- not at its own start state
+  (a self-bootstrap V(s) <- R + g^h V(s), which inflates sparse rewards)."""
+  train, _, _ = run(frac, agg)
+  im, mg = train['imag'], train['mgr']
+  sw = im['sw'] > 0.5
+  M, T = sw.shape
+  cut = 0
+  for b in range(M):
+    starts = np.where(sw[b])[0]
+    n = len(starts)
+    np.testing.assert_allclose(mg['plog'][b, :n], im['plog'][b, starts],
+                               rtol=1e-3, atol=1e-4)
+    if n < T:
+      cut += starts[-1] != T - 1
+      # The critic is zero at init, so the state in each slot is identified
+      # by the manager policy logits, which are computed on the same input.
+      assert np.abs(im['plog'][b, -1] - im['plog'][b, starts[-1]]).max() > 1e-4 \
+          or starts[-1] == T - 1
+      np.testing.assert_allclose(
+          mg['plog'][b, n], im['plog'][b, -1], rtol=1e-3, atol=1e-4,
+          err_msg=f'row {b}: last switch at {starts[-1]}, horizon end {T - 1}')
+  print(f'frac={frac}: rollouts whose last hold is cut by the horizon: {cut}/{M}')
 
 
 # --------------------------------------------------------------------------
