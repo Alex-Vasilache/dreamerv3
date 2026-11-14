@@ -9,8 +9,8 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 1. Validate the RL correlates on human data
    - [x] Rutledge task, Jangraw 2023 OSF data (n = 93 / 1,829): equal weights fit worse; r + gamma'(V' - V), gamma' ~0.5-0.6, matches Rutledge; EV is value not advantage; V(s) fits as well as Q
    - [x] Bootstrapper of bootstrappers (1B): already published as kappa-value iteration (Efroni 2018; Tomar 2020); write a paragraph only
-   - [~] Re-fit on Rutledge's own GBE app data (Dryad, 47k participants)
-   - [ ] Decide pleasure: gamma' value; optional regret term A_max from the dominance rollouts (if the GBE fit supports it)
+   - [x] Re-fit on Rutledge's own GBE app data (n = 42,121): Rutledge's model fits best in-sample, but our equal-weight r + V' - V (V' = next trial) predicts the next play best (r = .51 vs .38); Q vs V(s) no difference; advantage weight ~0 (positive in 54 %)
+   - [x] Decided (11-14): pleasure stays outcome + change in outlook, equal weights (best out of sample); no gamma' factor; no regret term (not supported)
 2. Arousal: competing definitions
    - [x] Angela Yu's work: base-rate surprise on threat beats current versions in 48 sim runs (0.69 / 0.71 vs <= 0.64 / 0.62)
    - [~] Survey of competing definitions (salience, volatility, free energy, stakes, urgency, learning progress, ...), shortlist

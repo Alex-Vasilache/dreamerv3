@@ -50,6 +50,15 @@ its reward and pain; controllability shows in dominance. Fading is needed
 because O_{t+1} − O_t over one 15 ms step is critic jitter and a hit lasts one
 or two steps (unfaded TD error: AUC 0.74 for hits; faded: 0.89).
 
+Human data (`../../rutledge_rl`, 11-14). On Rutledge's gamble task, our
+terms fit happiness ratings: in two online cohorts (Jangraw et al. 2023,
+n = 93 and 1,829) r + γ'(V' − V) with γ' ≈ 0.5-0.6 matches Rutledge's model;
+on Rutledge's own app data (n = 42,121) his model fits best in-sample, but the
+equal-weight r + V' − V predicts each participant's next play best
+(play-to-play r = 0.51 vs 0.38). "What I expected" is the value, not the
+advantage; Q(s,a) and V(s) fit alike; a regret (advantage) term adds nothing.
+So pleasure keeps equal weights and no regret term.
+
 ## Arousal: how badly this moment was predicted
 
     e_t = (1/32)[−log p̂(s_t)] − log p̂(r_t) − log p̂(c_t)        prediction error
