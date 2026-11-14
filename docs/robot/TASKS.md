@@ -15,7 +15,11 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [x] Angela Yu's work: base-rate surprise on threat beats current versions in 48 sim runs (0.69 / 0.71 vs <= 0.64 / 0.62)
    - [x] Survey of competing definitions (20 families, `LIT_AROUSAL_YU.md`)
    - [x] Offline bake-off on the 48 logged runs: Pearce-Hall associability (running |TD error|, eta 0.05-0.1, z over 60 s) wins: 0.81 hit / 0.75 before / 0.69 push, and the only one beyond pleasure (0.63)
-   - [x] Decided (11-14): arousal = Pearce-Hall associability; Yu base-rate kept as a switch
+   - [x] Provisional (11-14): arousal = Pearce-Hall associability; Yu base-rate kept as a switch
+   - [~] Validation criteria (PI 11-14): (1) fit to HUMAN arousal data (pupil, SCR, ratings) like Rutledge for pleasure; (2) function on the robot: does arousal predict when the world model is wrong / when updates matter; (3) event marking only as a sanity check
+   - [~] Human arousal datasets: search + fit all candidates (`../../rutledge_rl/arousal/`)
+   - [~] Same for empowerment/dominance: human perceived-control / agency data (`../../rutledge_rl/empowerment/`)
+   - [ ] Functional test on the robot (arousal vs future world-model error and update size)
    - [ ] Questions for the meeting with Angela Yu (in `LIT_AROUSAL_YU.md`)
 3. Sim round with the best current definitions
    - [ ] Build behind switches: pleasure gamma' (+ regret), arousal winner(s) incl. Yu's exact version (log posterior/prior pain probability), dominance updated more often
