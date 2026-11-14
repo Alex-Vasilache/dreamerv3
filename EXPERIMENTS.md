@@ -720,6 +720,10 @@ in all scoring runs (was 30-120). Window means; first trailing-10 >= 50 in M ste
 Cap 8 with reach is at or above V on pin pad four and finds pin pad five ~4x sooner (n=1). Cap 32
 is below cap 8 on both (reach ends 97% of imagined switches there, mean imagined hold ~10-11).
 
+**Final, cap 8 (2026-11-15 07:00; archived).** Late 3.5-4M / sustained-50 crossing: pin pad four
+h0410 332 / 0.19M, h0417 350 / 0.22M (old V 311, 0.14-0.30; before the fix h0377 181); pin pad
+five h0414 277 / 1.71M (first >= 50 at 0.30M, dips until 1.7M; old V 278, 1.11-2.59).
+
 Also check: `mgr/range_extr` should fall to ~10 (sum pooling) from 30-120.
 Array 4812978 fully finished and archived 11-14 (28 runs; none left in `/work`).
 
