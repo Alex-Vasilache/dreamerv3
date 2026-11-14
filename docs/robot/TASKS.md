@@ -26,8 +26,8 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [ ] Run: pain/threat as decided (impact low threshold vs bumper), reflex s4z2; n = 8, 60 min, pushes and walls; score every axis at hits, near misses, pushes
    - [ ] Update `EMOTION.md`, `FACE_MATHS.md`, plan page
 4. Do emotions help learning?
-   - [ ] Literature: which emotions influence learning in humans and how (learning rate, replay/consolidation, exploration, attention, memory), with verified citations
-   - [ ] Turn the strongest into robot mechanisms (e.g. arousal -> learning rate or replay priority; pleasure/regret -> exploration), each a switch
+   - [x] Literature (`LIT_EMOTION_LEARNING.md`, ~60 papers): emotion acts selectively (which memory is kept, which outcome sign, which system), never as a global boost. Shortlist: M1 retroactive pain tagging (replay share), M2 regret distillation, M3 stress -> trust the model less (per-start lambda/horizon), M4 fast fear (3x lr for threat head/critic), M5 controllability gate
+   - [ ] Build M1, M3, M4 (round 1) after step 3's code is in; M2, M5 (round 2) share the candidate rollouts
    - [ ] Test in sim against the current recipe (time to balance, late stability, pushes); best ones live only with Alex
 5. Later (from Jan's list): emotions arise from learning (evolution strategies on a shaping function); emotions in agentic AI; meeting Daniel in December
 
