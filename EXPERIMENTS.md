@@ -644,6 +644,37 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0410-h0417: goal hold with the trailing-bootstrap fix (2026-11-14 21:10, array 4823288)
+
+**Bug found 2026-11-14 (every variable-length run to date, h0374-h0409 and the old duration-head
+runs included).** In imagination the last hold of a rollout is cut by the horizon. Its manager
+return bootstraps from the slot after it in the packed decision buffer, which
+`downsample_at_switch_mask` forward-fills with that hold's OWN start state. So
+V(s) <- R + g^h V(s): "this reward repeats every h steps". Harmless with fixed holds that divide
+the horizon (last switch = last state, so reach-off h0408 and the fixed-K equivalence tests were
+unaffected) and nearly harmless with dense rewards (cartpole, cheetah fine); on pin pads the
+manager extrinsic return range was 30-120 with reach on vs 9 with reach off (`mgr/range_extr`).
+Found by `test_vargoal_path_stepwise.py::test_3b` (77 of 128 rollouts had a cut last hold).
+Fix: `patch_trailing_replay_state` on the imagined decision states, as the replay path already did
+since 07-27; key `agent.goal_duration_trailing_boot` (default True; False = old behaviour).
+Commit 5e745f3. The earlier reading "reach-based switching itself causes the drop" is therefore
+not established: reach was the only arm with irregular holds.
+
+Confirmation array (`sbatch/goalhold_fix_params.txt`, A100 `%8`, 16 h, `RUN_ENVS=4
+DMC_PROPRIO=False`), all `director director_og wkr_ent_fixed wkr_v3 goal_hold_reach [cap8] pubmatch`:
+
+| Run | Task, seed | Cap | Compare with (late 3.5-4M) | Hypothesis |
+|---|---|---|---|---|
+| h0410, h0417 | pin pad four, s0 / s1 | 8 | h0377 181, h0408 323, V 311 | back to ~310 |
+| h0411, h0416 | pin pad four, s0 / s1 | 32 | h0374 237 | >= 300 |
+| h0412 | pin pad five, s0 | 32 | h0375 144, V 278 | ~280 |
+| h0414 | pin pad five, s0 | 8 | h0381 140 | ~280 |
+| h0413 | pin pad six, s0 | 32 | h0376 0, V 1/5 solved | open |
+| h0415 | pin pad six, s0 | 8 | h0379 0 | open |
+
+Also check: `mgr/range_extr` should fall to ~10 (sum pooling) from 30-120.
+Array 4812978 fully finished and archived 11-14 (28 runs; none left in `/work`).
+
 ### h0374-h0403: V + goal hold until reached or 32 steps (2026-11-12 00:35, array 4812978)
 
 `director director_og wkr_ent_fixed wkr_v3 goal_hold_reach pubmatch`, 6 tasks x 5 seeds, seed-major
