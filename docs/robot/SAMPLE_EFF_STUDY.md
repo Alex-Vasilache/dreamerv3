@@ -678,3 +678,60 @@ Dominance does its job in contact: z −0.19 (em_a) and −0.30 (em_b) within
 Functional test: Pearce-Hall at t predicts the world model's error 1-2 s
 later (Spearman 0.15) better than the current error (0.08); low pleasure
 predicts it best (0.18-0.22), i.e. model errors cluster around contact.
+
+### Sun 11-15: LE2, emotion-inspired learning, round 2 (launched)
+
+TASKS.md step 4, round 2: M2 and M5 of `LIT_EMOTION_LEARNING.md` (section
+3, with their predictions) on LE1's base under stronger pushes. Code c669fc2
+(snapshots `code_le2` on /work and IAS), every switch default off:
+
+- Candidate outlooks (`agent.outlook`, `Agent._cand_outlook`): the catch
+  reflex's s4z2 search, moved into the learner. At every imagination start
+  (B x K = 1024 replayed states), the policy's mean command a0 shifted by
+  {0, ±0.25, ±0.5, ±1} (both wheels, clipped) is held 4 steps in the world
+  model (prior mode, so candidates differ only by the command) and scored
+  with the actor's own objective, O = R/S_R + w·C/S_C (R, C: 4-step
+  discounted reward and minus-cost sums bootstrapped by slowval/slowcval;
+  S: retnorm/cretnorm scales; w = fear.weight). Choice documented here:
+  computed in the learner from replayed starts, not on the phone, because
+  the targets must train the policy, the learner holds every replayed
+  state, and the phone app needs no change.
+- M2 regret distillation (`agent.regret.beta 0.1`): pre-pain gate = the
+  threat critic's T at the start, log-z-scored within the batch, > 1, rising
+  since the previous replay step, and cost at the start < 0.05 (not yet in
+  pain). On gated starts an extra actor term β·w_i·(−log π(a*_i|s_i)) toward
+  the best candidate a*, w_i = regret ρ_i = max_j O_j − O_0 relative to its
+  mean over gated starts (own loss key `regret`).
+- M5 controllability gate (`agent.control.weight 1`): each start's actor
+  losses (reward and threat terms) × σ(z(D_i)), D_i = SD over the 7
+  candidates of O, renormalised to mean 1; critics untouched.
+
+Unit tests: `embodied/tests/test_emotion_learning2.py` (10: helpers, off by
+default, both arms train through the real Agent).
+
+Headroom (base = LE1 base with only the push changed, 8 min, seeds 1-2,
+Saion V100, e44860-e44867, archived). Falls per push over minutes 5-8 and
+t90 (first minute ≥ 0.9 upright):
+
+| push (every s : N lo : N hi) | falls/push min 5-8 (seed 1, 2) | t90 (min) |
+|---|---|---|
+| 5:0.05:0.15 (LE1) | 0.11, 0.31 | 4, 6 |
+| 5:0.1:0.25 | 0.20, 0.51 | 6, 8 |
+| 4:0.15:0.3 | 0.23, 0.42 | 8, 6 (≥ 0.85 upright from min 4) |
+| 4:0.2:0.4 | 0.91, 0.26 | none, 7 (seed 1 not balancing by 8) |
+
+Picked 4:0.15:0.3: ~0.33 falls/push early, balancing by ~6 min, 25% more
+pushes per minute than 5:x; 4:0.2:0.4 broke one seed.
+
+Arm smokes at that push (6 min, seed 1, V100): M2 e44868, M5 e44869, no
+errors, loop 59 / 61 Hz, t90 4 / 5 min. M2 gate fires on ~10-12% of starts,
+best candidate is the own command on ~50% of those, mean shift 0.15-0.28;
+M5 weights 0.2-1.9. Cost: the learner ran 12.9k samples/s against 15.4k for
+the base smokes (−17%), so in this real-time sim both arms also get ~17%
+fewer updates; a null result has to be read with that in mind.
+
+Arms base / m2_regret / m5_control, 60 min, `sim_push 4:0.15:0.3`, walls
+0.5, otherwise LE1's base. Saion V100 seeds 811-814: e44870-e44881 (jobs
+4823579-4823590; params `sbatch/wk/le2v.txt`, MINUTES 80); IAS seeds
+815-818: e44882-e44893 (array 209564, 7 at a time; `le2i.txt`). Compare
+arms within a cluster (IAS phone loop is slower).

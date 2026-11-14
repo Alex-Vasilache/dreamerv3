@@ -30,7 +30,10 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
 4. Do emotions help learning?
    - [x] Literature (`LIT_EMOTION_LEARNING.md`, ~60 papers): emotion acts selectively (which memory is kept, which outcome sign, which system), never as a global boost. Shortlist: M1 retroactive pain tagging (replay share), M2 regret distillation, M3 stress -> trust the model less (per-start lambda/horizon), M4 fast fear (3x lr for threat head/critic), M5 controllability gate
    - [x] Build M1 (replay.tag), M3 (agent.stress_lam), M4 (agent.fear.lr_mult), round 1, 566c9c0, unit tests (11-14); M2, M5 (round 2) share the candidate rollouts
-   - [~] Run LE1: em_a base vs +M1 / +M3 / +M4, n = 8, 60 min; V100 e44824-e44839 (behind EM), IAS e44840-e44855 (209462)
+   - [x] Run LE1: em_a base vs +M1 / +M3 / +M4, n = 8, 60 min; V100 e44824-e44839, IAS e44840-e44855 (209462): null, little headroom at the old pushes
+   - [x] Build M2 regret distillation (agent.regret) and M5 controllability gate (agent.control) on learner-side 4-step candidate outlooks (agent.outlook), c669fc2, unit tests (11-15)
+   - [x] LE2 headroom smokes e44860-e44867: push 4:0.15:0.3 (falls/push ~0.33 early, balancing by ~6 min); arm smokes e44868-e44869 ok (learner -17%)
+   - [~] Run LE2: base vs M2 vs M5 at push 4:0.15:0.3, n = 8, 60 min; V100 e44870-e44881 (4823579-90), IAS e44882-e44893 (209564)
    - [ ] Test in sim against the current recipe (time to balance, late stability, pushes); best ones live only with Alex
 5. Later (from Jan's list): emotions arise from learning (evolution strategies on a shaping function); emotions in agentic AI; meeting Daniel in December
 
