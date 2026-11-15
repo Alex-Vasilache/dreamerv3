@@ -817,3 +817,26 @@ Reading: empowerment from 32 random commands through the prior responds to
 a real loss of control, but at about a fifth of arousal's separation; it is
 a slow, weak signal, as dominance is meant to be, not a detector. Runs
 archived to the bucket (e44980-e44988), IAS dirs and `code_dc` deleted.
+
+### Sun 11-15: evidence-based control on the DC logs (offline)
+
+Empowerment is computed inside the world model, which has not seen the weak
+wheels, so it keeps predicting full control. Offline alternative on the same 8
+DC runs (`tools/robot/dev/emo/control_evidence.py`): over a sliding window,
+regress the tilt's second difference on the wheel command; control = the
+(sign-corrected) slope, i.e. how much my commands move the tilt. AUC of a low
+value for "inside a cut" (bumper contact ±0.25 s excluded, minutes 5-25), mean ± SD over 4 runs per gain:
+
+| signal | x0.2 | x0.5 |
+|---|---|---|
+| dominance (empowerment, tanh z) | 0.49 ± 0.02 | 0.55 ± 0.04 |
+| command→tilt slope, 2 s window | 0.58 ± 0.13 | 0.63 ± 0.07 |
+| command→tilt slope, 5 s window | 0.58 ± 0.06 | 0.63 ± 0.06 |
+| share explained (R²), 5 s window | 0.62 ± 0.07 | 0.58 ± 0.05 |
+
+Evidence beats empowerment by about 0.05-0.1 AUC, consistent but modest;
+the closed loop limits it (the policy pushes harder when the wheels are weak).
+Not built on the robot. A world-model version ("did my action-conditioned
+prediction beat the no-action prediction lately?", the actor-vs-spectator form
+of the Bayesian control estimate that fit Spiering's ratings best) is the
+next candidate for dominance.
