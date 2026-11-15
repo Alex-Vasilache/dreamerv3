@@ -710,6 +710,23 @@ far: the shorter the realised hold, the earlier pin pad five is found.
 steps. Frees a slot for batch 3. h0421 (duration head): entropy regulator holds the duration
 distribution at half of maximum entropy, mean ~15 steps, score ~4 at 1.6M; kept running.
 
+**Interim 13:00 (pin pad five; 0.5M windows up to 3M).** Real hold = 1 / `log/hold_switch/avg`.
+
+| Run | Arm | Real hold | 0.5-1M | 1.5-2M | 2-2.5M | 2.5-3M |
+|---|---|---|---|---|---|---|
+| old V (5) | fixed 8 | 8 | 0 | 0-250 | 0-288 | ~280 (4 of 5) |
+| h0414 / h0424 | reach or 8 | 6.5 | 239 / 249 | 257 / 279 | 277 / 278 | 277 / - |
+| h0422 | reach or 8 + surprise | 7 | 262 | 298 | 294 | 296 |
+| h0420 | worker done, cap 32 | 4-5 | 242 | 256 | 288 | 290 |
+| h0418 | reach 0.7, cap 32 | 7-8 | 41 | 209 | 225 | 220 |
+| h0412 | reach 0.8, cap 32 | ~10 | 0 | 0 | 16 -> 200 | 201 late |
+| h0421 | duration head 1..32 | 11-15 | 4 | 6 | 3 | 0 |
+
+h0421 and h0425 (duration head 1..32; pin pad four 74-114 at 1-1.3M vs ~330 for reach or 8)
+cancelled at 2.6M / 1.4M and archived: the entropy regulator keeps durations spread (mean ~15)
+and the arm does not learn. Follow-up h0436 limits it to 1..8. h0426 (worker done, pin pad four):
+254 at 0.5-1M. h0423 (pin pad six + surprise): 0 at 2.5M.
+
 Not in this batch: the squared-error reached test (`goal_hold_mse`; offline AUC equal to cosine and
 its multiplier is not calibrated yet), caps 16 / 48, switch cost.
 
