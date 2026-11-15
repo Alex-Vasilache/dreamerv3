@@ -681,6 +681,12 @@ pin pad five: 4-5% of steps, excess 0.36-0.40 (the reward steps themselves stay 
 `mgr_surprise_k` sets the threshold to mean + k std (block `mgr_surprise_k2`, k = 2, commit
 7c1f7db), so ordinary steps earn nothing. `sbatch/goalhold_b5_params.txt`, queued last.
 
+**08:20 (11-16): first pin pad six score of the campaign.** h0439 (reach or 8 + surprise with the
+outlier threshold, seed 1) first reaches trailing-10 >= 50 at 3.63M and is at ~105 at 3.66M. To
+see whether it holds, the run is CONTINUED to 6M in the same run dir (block `steps6m`, job 4824783,
+starts after the array task ends; the dir is marked `.keep` so the archive script leaves it and
+its replay). Seed 0 (h0438) is at 0 at 3.7M.
+
 | Run | Task, seed | Blocks after V | Compare with |
 |---|---|---|---|
 | h0438 / h0439 | pin pad six, 0 / 1 | `goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2` | h0423, h0429 (k = 0), h0415 |
