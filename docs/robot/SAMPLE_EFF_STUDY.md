@@ -840,3 +840,16 @@ Not built on the robot. A world-model version ("did my action-conditioned
 prediction beat the no-action prediction lately?", the actor-vs-spectator form
 of the Bayesian control estimate that fit Spiering's ratings best) is the
 next candidate for dominance.
+
+### Sun 11-15: DE, evidence-based dominance in sim (launched)
+
+New switch (59b51c4, edcb565): `env.robot.evidence_k K` logs the evidence of
+control, e_t = (1/n)[log p(s_t | action taken) - log mean_k p(s_t | a_k)],
+K random commands held from the previous posterior, averaged over
+`evidence_s` s (ctl_e, ctl_ev, dominance_ev); `dominance_mode evidence` lets it
+drive dominance. Round DE: DC's em_b + `evidence_k 8 evidence_s 2` with
+control cuts x0.5 and x0.35 (`20:5:G:300`), seeds 851-854, 30 min, IAS array
+209966, e44990-e44997 (even = x0.5, odd = x0.35), snapshot `code_de`,
+`sbatch/wk/dei.txt`. Smokes: e44989 (columns missing from sim_phone's fixed
+list, fixed), e44998 (cancelled, stale snapshot), e44999 (OK; ctl_e mean
+-0.005 ± 0.027 over the first 4 min).
