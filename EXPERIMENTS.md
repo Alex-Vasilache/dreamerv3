@@ -713,6 +713,12 @@ sustained 2.11M) vs h0420 / h0433 293 / 294 (first 0.36 / 0.47M). h0437 (pin pad
 real switches) at 3.5M: 250-280 with dips, about as h0411 / h0416 (284 / 303). So real switch
 points remove the delay at cap 32 and do not change the final level.
 
+**07:00.** h0437 final (pin pad four, cap 32, real switches): 271 late, first >= 50 at 0.28M,
+but dips below 50 until 2.75M (h0411 / h0416 without: 284 / 303, sustained 0.14 / 0.26M). Dips
+(score falls to ~0 for 0.1-0.25M, then recovers) appear in 3 of the 5 real-switch runs so far
+(h0435 at 1.1M and 2.0M, h0437, h0446 at 1.3M) and in h0440. Not seen in h0434. To check when
+more seeds are in: is the dip rate higher with real switch points than without?
+
 | Run | Task, seed | Blocks after V | Compare with |
 |---|---|---|---|
 | h0434 | pin pad five, 0 | `goal_hold_reach goal_hold_realsw` (cap 32) | h0412 (201, first score 1.93M) |
