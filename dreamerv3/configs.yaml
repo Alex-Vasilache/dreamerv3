@@ -1755,6 +1755,10 @@ mgr_surprise:
 mgr_surprise_k2:
   agent: {mgr_surprise_k: 2.0}
 
+# Continue a run to 6M steps (resume in the same run dir; put after pubmatch).
+steps6m:
+  run: {steps: 6e6}
+
 # Variants of the reached test (2026-11-15); layer after goal_hold_reach.
 goal_hold_frac07:
   agent: {goal_reach_frac: 0.7}

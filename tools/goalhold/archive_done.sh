@@ -3,6 +3,7 @@
 A=${1:-4812978}; W=/work/DoyaU/vasilache/work; B=/bucket/DoyaU/vasilache/bucket/results/dreamerv3; L=$W/slurm_logs
 for d in $W/h0*_j${A}_*; do
   [ -d "$d" ] || continue
+  [ -e "$d/.keep" ] && continue   # marked: do not archive (run is being continued)
   run=$(basename $d); task=${run##*_}; job=$(grep '^JOB=' $d/job.env | cut -d= -f2)
   st=$(sacct -j ${A}_${task} -X -n -o State | head -1 | tr -d ' +')
   case "$st" in COMPLETED|CANCELLED|FAILED|TIMEOUT|OUT_OF_MEMORY|NODE_FAIL) ;; *) continue ;; esac
