@@ -644,6 +644,20 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0438-h0441: surprise that pays only outliers (2026-11-15 14:15, array 4824030)
+
+Reading h0422 / h0423 (surprise = max(0, KL - running mean)): the reward does not fade and is not
+sparse. Pin pad six: 35% of steps are above the mean, mean excess 0.08, constant from 0.5M to 3M;
+pin pad five: 4-5% of steps, excess 0.36-0.40 (the reward steps themselves stay surprising).
+`mgr_surprise_k` sets the threshold to mean + k std (block `mgr_surprise_k2`, k = 2, commit
+7c1f7db), so ordinary steps earn nothing. `sbatch/goalhold_b5_params.txt`, queued last.
+
+| Run | Task, seed | Blocks after V | Compare with |
+|---|---|---|---|
+| h0438 / h0439 | pin pad six, 0 / 1 | `goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2` | h0423, h0429 (k = 0), h0415 |
+| h0440 | pin pad five, 0 | same | h0422 (296 at 3M) |
+| h0441 | pin pad five, 1 | `goal_hold_reach goal_hold_cap8 mgr_surprise` | second seed of h0422 |
+
 ### h0434-h0437: real switch points on the replay side; short duration head (2026-11-15 12:40, array 4823918)
 
 Found while auditing the replay path: the replay-side manager returns pool rewards over the
