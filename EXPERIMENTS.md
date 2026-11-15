@@ -644,6 +644,14 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0444-h0445: reach or 8 + TCE critic on pin pad six (2026-11-15 18:00, array 4824246)
+
+Pin pad six is 0 in every goal-hold run so far (h0413, h0415, h0423; h0427 and h0429 at 0 by
+1.3-2M). The arm that solved it most often before was the TCE critic on V (h0314-h0343: 2 of 3
+seeds). Same blocks on the reach-or-8 path: `goal_hold_reach goal_hold_cap8 fromto_dir tce_hash
+tce_critic`, seeds 0 / 1. Builds, trains and runs end to end on CPU (the from-to counter takes the
+real switch flag, so it follows reach-based switches). `sbatch/goalhold_b7_params.txt`, queued last.
+
 ### h0442-h0443: reached by squared error (2026-11-15 16:35, array 4824166)
 
 `goal_reach_mode: mse`: reached = mean squared goal/state error <= mult x running

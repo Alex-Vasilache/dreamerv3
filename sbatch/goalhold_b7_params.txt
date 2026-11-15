@@ -1,0 +1,2 @@
+director pinpad_six 0 h0444 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 fromto_dir tce_hash tce_critic pubmatch
+director pinpad_six 1 h0445 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 fromto_dir tce_hash tce_critic pubmatch
