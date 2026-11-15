@@ -1,6 +1,6 @@
 # Handoff, Mon 11-16 noon CET (weekend 11-14 to 11-16)
 
-Draft, updated as results land. Progress page (plain language, figures):
+Final for the weekend (Sun 11-15). Progress page (plain language, figures):
 claude.ai artifact "Emotion Research Progress". Task list: `TASKS.md` (top).
 Details and tables: `SAMPLE_EFF_STUDY.md` (sections dated 11-14/11-15).
 
@@ -44,16 +44,18 @@ Details and tables: `SAMPLE_EFF_STUDY.md` (sections dated 11-14/11-15).
    before likely pain) helps and replicates: hard push n = 16, time to
    balance −38 % (p 0.013), crossings −19 % (p 0.003), falls −14 %; easy push
    n = 8, time to balance 6.3→4.3 min (p 0.016), crossings −33 %.
+   **Strength (LE4, n = 8, easy push): β 0.2 is best**, crossings −49 % and
+   falls per push −35 % (both p 0.008, all 8 seeds); time to balance −27 %
+   (p 0.11). Learner-only, so no phone change is needed for it.
 
 ## Running at handoff
 
-- **LE4** (Saion, e44940-e44979): regret strength β 0.05/0.1/0.2/0.4 vs base,
-  easy push, seeds 831-838. Analysis: `pf_run.py` per run, Wilcoxon by seed.
+Nothing; all rounds analysed and archived to the bucket.
 
 ## Next
 
-- Pick β from LE4; if regret holds, make it a robot default candidate and test
-  it live (needs the phone sync).
+- Live check of regret (`--agent.regret.beta 0.2`) from scratch on the robot;
+  if it holds, make it the robot default.
 - Decide whether dominance becomes the command→outcome slope (body-specific
   outcome choice) or stays empowerment.
 - Questions for Angela Yu: `LIT_AROUSAL_YU.md`.
