@@ -755,3 +755,24 @@ First emotion-inspired mechanism that helps learning.
 LE3 (replication, launched 11-15): fresh seeds 821-828, arms base / M2 at the
 hard push and base / M2 at the easy push (LE1 level), Saion V100, e44900-e44931
 (jobs 4823688-4823719), code snapshot `code_le3`, params `sbatch/wk/le3v.txt`.
+
+### Sun 11-15: LE3 results (regret replication) and LE4 launch
+
+Fresh seeds 821-828, Saion V100, 60 min, Wilcoxon paired by seed:
+
+| push | measure | base | M2 regret | p | M2 better in |
+|---|---|---|---|---|---|
+| hard (4:0.15:0.3) | t90 (min) | 8.3 ± 2.6 | 6.4 ± 1.4 | 0.17 | 5/8 |
+| hard | crossings/min | 12.1 ± 1.8 | 10.0 ± 2.2 | 0.20 | 5/8 |
+| easy (LE1) | t90 (min) | 6.3 ± 1.5 | **4.3 ± 1.0** | **0.016** | 7/8 |
+| easy | crossings/min | 4.9 ± 1.5 | **3.3 ± 1.1** | **0.039** | 7/8 |
+| easy | falls/push | 0.15 ± 0.03 | 0.11 ± 0.03 | 0.055 | 6/8 |
+
+Pooled hard push, LE2 + LE3 (n = 16): t90 9.6 -> 6.0 min (-38 %, p = 0.013,
+11/16), crossings 12.3 -> 10.0 (-19 %, p = 0.003, 13/16), falls/push 0.53 ->
+0.46 (-14 %, p = 0.021, 13/16). Regret distillation replicates: faster to
+balance and fewer crossings at both push levels.
+
+LE4 (launched): regret strength beta 0.05 / 0.1 / 0.2 / 0.4 vs base at the
+easy push, fresh seeds 831-838, e44940-e44979, snapshot `code_le4`,
+`sbatch/wk/le4v.txt`.
