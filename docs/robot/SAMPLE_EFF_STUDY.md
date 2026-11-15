@@ -880,3 +880,25 @@ AUC of a low value for "inside a cut" (contact ±0.25 s excluded, minutes
   right now", a direct, task-free form of the Bayesian control estimate.
   Not built on the robot; it needs a choice of outcome signal per body
   (here tilt acceleration).
+
+### Sun 11-15: LE4 results (regret strength)
+
+Easy push, 60 min, seeds 831-838, Saion e44940-e44979 (arm = (n - 44940) % 5:
+base, β 0.05, 0.1, 0.2, 0.4). Mean ± SD, n = 8; p = Wilcoxon paired by seed
+vs base; figure `figs/study/le4.png`.
+
+| | base | β 0.05 | β 0.1 | **β 0.2** | β 0.4 |
+|---|---|---|---|---|---|
+| minutes to balance | 6.4 ± 2.8 | 4.6 ± 1.1 | 5.8 ± 2.0 | 4.6 ± 0.9 (p 0.11) | 5.8 ± 2.0 |
+| crossings / min | 5.6 ± 1.1 | 4.6 ± 1.7 | 3.3 ± 1.6 (p 0.023) | **2.9 ± 0.7 (p 0.008, 8/8)** | 3.3 ± 1.5 (p 0.039) |
+| falls per push | 0.17 ± 0.03 | 0.14 ± 0.04 | 0.11 ± 0.04 (p 0.039) | **0.11 ± 0.02 (p 0.008, 8/8)** | 0.11 ± 0.05 (p 0.039) |
+
+- β 0.2 is the pick: crossings −49 %, falls per push −35 %, better in every
+  seed, and the smallest spread between runs. β 0.1 (LE2/LE3) and 0.4 help
+  nearly as much on average but less reliably; 0.05 is too weak.
+- Time to balance: −27 % at β 0.2 but not significant here (base spread is
+  large; LE3 showed −32 % at β 0.1, p 0.016).
+- Regret (`agent.regret.beta 0.2`) is the robot default candidate. It acts
+  in the learner only (agent.py, from replayed starts; needs the threat
+  critic), so the phone app needs no change for it; it was tested in sim
+  only, so a live check comes first.

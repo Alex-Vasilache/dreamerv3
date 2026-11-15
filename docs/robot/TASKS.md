@@ -38,8 +38,10 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [x] Run LE1: em_a base vs +M1 / +M3 / +M4, n = 8, 60 min; V100 e44824-e44839, IAS e44840-e44855 (209462): null, little headroom at the old pushes
    - [x] Build M2 regret distillation (agent.regret) and M5 controllability gate (agent.control) on learner-side 4-step candidate outlooks (agent.outlook), c669fc2, unit tests (11-15)
    - [x] LE2 headroom smokes e44860-e44867: push 4:0.15:0.3 (falls/push ~0.33 early, balancing by ~6 min); arm smokes e44868-e44869 ok (learner -17%)
-   - [~] Run LE2: base vs M2 vs M5 at push 4:0.15:0.3, n = 8, 60 min; V100 e44870-e44881 (4823579-90), IAS e44882-e44893 (209564)
-   - [ ] Test in sim against the current recipe (time to balance, late stability, pushes); best ones live only with Alex
+   - [x] LE2 (hard push, n = 8): M2 regret −21 % crossings, −20 % falls/push, 8/8 seeds; M5 control small
+   - [x] LE3 replication (new seeds): pooled hard push n = 16, t90 −38 % (p 0.013), crossings −19 % (p 0.003); easy push n = 8, t90 −32 % (p 0.016), crossings −33 %
+   - [x] LE4 strength (easy push, n = 8, e44940-e44979): β 0.2 best, crossings −49 %, falls/push −35 % (both p 0.008, 8/8 seeds); t90 −27 % (p 0.11)
+   - [ ] Live check of regret β 0.2 (learner-only; with Alex), then robot default
 5. Later (from Jan's list): emotions arise from learning (evolution strategies on a shaping function); emotions in agentic AI; meeting Daniel in December
 
 ## Now: sample-efficiency study (`SAMPLE_EFF_STUDY.md`)
