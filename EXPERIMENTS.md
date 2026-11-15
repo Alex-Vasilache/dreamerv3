@@ -644,6 +644,21 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0426-h0433: done / surprise follow-ups, short-hold control, DMC check (2026-11-15 09:40, array 4823773)
+
+Queued behind array 4823592 (A100 cap 8). `sbatch/goalhold_b3_params.txt`, all on V + fix.
+
+| Run | Task, seed | Blocks after V | Question |
+|---|---|---|---|
+| h0426 | pin pad four, 0 | `goal_hold_reach goal_hold_done` | worker done vs cap 8 reach (332 / 350) |
+| h0427 | pin pad six, 0 | `goal_hold_reach goal_hold_done` | pin pad six with short self-ended holds |
+| h0433 | pin pad five, 1 | `goal_hold_reach goal_hold_done` | second seed of h0420 |
+| h0432 | pin pad five, 0 | `goal_hold_reach goal_hold_done mgr_surprise` | the two best early arms together |
+| h0429 | pin pad six, 1 | `goal_hold_reach goal_hold_cap8 mgr_surprise` | second pin pad six seed with surprise |
+| h0428 | pin pad five, 0 | `goal_hold_reach goal_hold_cap4 goal_hold_noreach` | CONTROL: fixed 4-step holds, no reached test. If this matches h0414, the gain is the shorter hold, not the reached test |
+| h0431 | pin pad five, 0 | `goal_hold_reach goal_hold_cap16` | cap 16 between 8 (0.30M) and 32 (1.93M) |
+| h0430 | cheetah, 0 | `goal_hold_reach goal_hold_cap8` | DMC with the fix (before: 580 late, V 536) |
+
 ### h0418-h0425: ways to end a hold, and surprise (2026-11-15 05:05, array 4823592)
 
 All on V (`director director_og wkr_ent_fixed wkr_v3 ... pubmatch`) with the bootstrap fix, A100,
