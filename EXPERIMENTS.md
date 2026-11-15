@@ -686,6 +686,10 @@ hold 7); h0419 frac 0.9: 0 (hold 15); h0420 worker done: ~226 at 1.2M, first sco
 132 at 0.35M (replicates h0414's early start); h0423 pin pad six + surprise: 0 at 0.6M. Pattern so
 far: the shorter the realised hold, the earlier pin pad five is found.
 
+**11:20** h0419 (threshold 0.9) cancelled at 2.24M and archived: score 0 throughout, real hold 20-22
+steps. Frees a slot for batch 3. h0421 (duration head): entropy regulator holds the duration
+distribution at half of maximum entropy, mean ~15 steps, score ~4 at 1.6M; kept running.
+
 Not in this batch: the squared-error reached test (`goal_hold_mse`; offline AUC equal to cosine and
 its multiplier is not calibrated yet), caps 16 / 48, switch cost.
 
