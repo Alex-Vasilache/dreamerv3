@@ -73,14 +73,19 @@ FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
           'value_std', 'threat_std', 'emp_n', 'emp_ms',
           # Since round DC (11-15): 1 while env.robot.sim_control_cut scales
           # the wheel outputs down (the step just applied).
-          'control_cut')
+          'control_cut',
+          # Since round DE (11-15): Pearce-Hall including the current error,
+          # and the evidence of control (per call, averaged) and its
+          # dominance (env.robot.evidence_k > 0).
+          'ph_now', 'arousal_ph_now', 'ctl_e', 'ctl_ev', 'dominance_ev')
 
 # Written every row with heavy_every > 0; the rest every heavy_every-th row.
 LIGHT = frozenset((
     't', 'step', 'arousal', 'dominance', 'pleasure', 'td', 'faded', 'change',
     'pain', 'threat', 'value', 'impact', 'reflex', 'event', 'push', 'theta',
     'act0', 'intended0', 'force', 'reflex_threat', 'ph_alpha', 'p_pain_prior',
-    'q_pain_post', 'value_std', 'threat_std', 'emp_n', 'control_cut'))
+    'q_pain_post', 'value_std', 'threat_std', 'emp_n', 'control_cut',
+    'ph_now', 'ctl_e', 'ctl_ev', 'dominance_ev'))
 
 
 class SimPhone:
