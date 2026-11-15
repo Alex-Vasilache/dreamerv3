@@ -394,6 +394,7 @@ class PolicyRunner:
           **{k: v for k, v in sig.items() if k.startswith('arousal_')},
           empowerment=sig['empowerment'], faded=sig['faded'], model='v2',
           ph_alpha=sig.get('ph_alpha', 0.0),
+          ph_now=sig.get('ph_now', 0.0),
           p_pain_prior=sig.get('p_pain_prior', 0.0),
           q_pain_post=sig.get('q_pain_post', 0.0),
           value_std=sig.get('value_std', 0.0), threat_std=sig.get('threat_std', 0.0),

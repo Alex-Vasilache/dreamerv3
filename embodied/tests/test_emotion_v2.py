@@ -556,6 +556,22 @@ def test_pearce_hall_z_window_and_default():
     emotion.EmotionV2(ToyPolicy(), arousal='nope')
 
 
+def test_pearce_hall_now_includes_the_current_error():
+  """alpha'_t = eta |td_t| + (1 - eta) alpha'_{t-1} (the EM analysis'
+  A_ph_incl), driving arousal in 'pearce_hall_now' mode."""
+  emo = emotion.EmotionV2(ToyPolicy(), arousal='pearce_hall_now', arousal_eta=0.07)
+  d, s, logit = emo.p.last_post
+  rng = np.random.default_rng(4)
+  a = 0.0
+  for i in range(30):
+    sig = emo.step(d + 0.3 * rng.normal(size=d.shape).astype(np.float32),
+                   logit, s, float(rng.normal()), 0.0)
+    a = 0.07 * abs(sig['td']) + 0.93 * a
+    assert sig['ph_now'] == pytest.approx(a, rel=1e-6, abs=1e-12)
+    assert 0 < sig['arousal'] < 1 and sig['arousal'] == sig['arousal_ph_now']
+  assert emo.norm['ph_now'].a == pytest.approx(emo.norm['ph'].a)
+
+
 def test_yu_pain_probabilities_and_critic_spread():
   emo = emotion.EmotionV2(ToyPolicy())
   d, s, logit = emo.p.last_post

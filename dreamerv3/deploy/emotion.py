@@ -316,6 +316,11 @@ class EmotionV2(Emotion):
                1980; the offline bake-off on 48 sim runs, 11-14: AUC 0.81 at
                hits, the only definition beyond pleasure). Always computed
                and returned (ph_alpha, arousal_ph), whatever the mode.
+             'pearce_hall_now': the same average including this step's
+               error, alpha'_t = eta |delta_t| + (1 - eta) alpha'_{t-1}
+               (human pupil data follow the current outcome's surprise;
+               best on the 16 EM sim runs, 11-15: AUC 0.85 at hits). Always
+               computed and returned (ph_now, arousal_ph_now).
              with efference=True, the prior side of each comes from one
              extra prior step taken with the policy's intended action (before
              the catch reflex and the limits) instead of the executed one:
@@ -341,7 +346,7 @@ class EmotionV2(Emotion):
 
   version = 'v2'
 
-  MODES = ('kl', 'total', 'unexpected', 'pearce_hall')
+  MODES = ('kl', 'total', 'unexpected', 'pearce_hall', 'pearce_hall_now')
 
   def __init__(self, policy, hz=65.0, tau=650, arousal='pearce_hall',
                horizon=16, commands=32, fade_s=0.5, every=0, seed=0,
@@ -369,7 +374,9 @@ class EmotionV2(Emotion):
     self.eta = float(arousal_eta)
     self.norm['ph'] = Running(max(1, int(round(
         float(arousal_z_s) * self.hz / max(1, int(feel_every))))))
+    self.norm['ph_now'] = Running(1.0 / self.norm['ph'].a)
     self.ph_alpha = 0.0
+    self.ph_now = 0.0
     self._ph_prev_td = 0.0
     self.faded = 0.0
     self.reset()
@@ -636,6 +643,7 @@ class EmotionV2(Emotion):
     eta = 1.0 - (1.0 - self.eta) ** max(1, int(steps))
     self.ph_alpha = eta * abs(self._ph_prev_td) + (1 - eta) * self.ph_alpha
     self._ph_prev_td = td
+    self.ph_now = eta * abs(td) + (1 - eta) * self.ph_now
     # The outlook's change lands in one step of the fading average.
     self.faded += (1 - self.lam) * change
     plain = self.arousal_signals(deter, post_logit, stoch, reward, cost)
@@ -648,8 +656,11 @@ class EmotionV2(Emotion):
     self.steps += 1
     z_p = self.norm['pleasure'](self.faded)
     z_ph = self.norm['ph'](self.ph_alpha)
+    z_ph_now = self.norm['ph_now'](self.ph_now)
     if self.arousal_mode == 'pearce_hall':
       z_a = z_ph
+    elif self.arousal_mode == 'pearce_hall_now':
+      z_a = z_ph_now
     else:
       z_a = self.norm['arousal']((eff if self.efference else plain)[self.arousal_mode])
     z_d = self.norm['dominance'](self.empowerment)
@@ -675,6 +686,7 @@ class EmotionV2(Emotion):
         unexpected=err - expected, update=update, empowerment=float(self.empowerment),
         td=td, o_reward=o_reward, o_pain=o_pain, version='v2',
         ph_alpha=float(self.ph_alpha), arousal_ph=float(sigmoid(np.float32(z_ph))),
+        ph_now=float(self.ph_now), arousal_ph_now=float(sigmoid(np.float32(z_ph_now))),
         value_std=value_std, threat_std=threat_std, **yu,
         efference=float(eff_deter is not None), **self.empower_terms,
         **{f'arousal_{k}': float(plain[k]) for k in ('total', 'unexpected', 'kl')},

@@ -1044,8 +1044,9 @@ class SmartphoneRobot(embodied.Env):
     # at half the cost) and the pause between rollouts on the phone
     # (empower_s; one 16-step rollout adds ~16 x 16 ms of gaps).
     assert emotion_model in ('v1', 'v2'), emotion_model
+    # 'pearce_hall_now' includes this step's |TD error| (11-15).
     assert arousal_mode in ('kl', 'total', 'error', 'unexpected',
-                            'pearce_hall'), arousal_mode
+                            'pearce_hall', 'pearce_hall_now'), arousal_mode
     self.emotion_model = str(emotion_model)
     self.arousal_mode = str(arousal_mode)
     # arousal_efference: score arousal against a prior step on the policy's
