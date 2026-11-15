@@ -3,7 +3,8 @@ tilt acceleration proxy (second difference of theta) on the wheel command.
 control = R^2 (share of tilt change explained by my commands) and slope."""
 import sys, glob, json, numpy as np, pandas as pd
 from scipy.stats import mannwhitneyu
-B='/bucket/DoyaU/vasilache/bucket/results/dreamerv3/'
+import os
+B = os.environ.get('RUNS', '.') + '/'   # folder holding the DC run dirs
 def auc(lo_in, out):  # AUC of LOW value marking "inside"
   u=mannwhitneyu(out, lo_in).statistic; return u/(len(lo_in)*len(out))
 res={}
