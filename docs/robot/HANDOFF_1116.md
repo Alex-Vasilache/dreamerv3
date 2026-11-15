@@ -31,8 +31,11 @@ Details and tables: `SAMPLE_EFF_STUDY.md` (sections dated 11-14/11-15).
    falls (AUC 0.55) because it is computed inside a world model that has not
    seen the weak wheels; arousal (0.83) and pleasure (0.64) react. Offline,
    a model-free evidence measure (command→tilt slope) does better (0.58-0.63).
-   Built: `dominance_mode evidence` (actor vs spectator inside the world
-   model); round DE tests it (below).
+   Round DE (8 new runs): the world-model evidence switch (`dominance_mode
+   evidence`) does not help (0.52); the model-free command→tilt slope
+   replicates (0.65 at both cut strengths, reacts in ~0.5 s). Candidate
+   dominance = how much my commands move the outcome now; not built (needs an
+   outcome signal per body).
 3. **Sim round with the chosen definitions** (EM, 16 runs): definitions hold
    on new runs; arousal predicts the world-model error 1-2 s ahead.
 4. **Emotions that help learning** (literature: emotion acts selectively).
@@ -46,13 +49,11 @@ Details and tables: `SAMPLE_EFF_STUDY.md` (sections dated 11-14/11-15).
 
 - **LE4** (Saion, e44940-e44979): regret strength β 0.05/0.1/0.2/0.4 vs base,
   easy push, seeds 831-838. Analysis: `pf_run.py` per run, Wilcoxon by seed.
-- **DE** (IAS, e44989 smoke, e44990-e44997): evidence-of-control logged next
-  to empowerment under x0.5 and x0.35 control cuts, seeds 851-854.
 
 ## Next
 
 - Pick β from LE4; if regret holds, make it a robot default candidate and test
   it live (needs the phone sync).
-- If DE confirms evidence > empowerment, switch dominance to evidence (and
-  update the face/maths docs).
+- Decide whether dominance becomes the command→outcome slope (body-specific
+  outcome choice) or stays empowerment.
 - Questions for Angela Yu: `LIT_AROUSAL_YU.md`.
