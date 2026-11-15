@@ -86,6 +86,9 @@ ARMS2 = [
   ('fixed 4 (control)', {'five': ['h0428']}, '#000000', 'x', ':'),
   ('reach or 16', {'five': ['h0431']}, '#009E73', 'h', ':'),
   ('done + surprise', {'five': ['h0432']}, '#D55E00', '+', '--'),
+  ('reach or 32, real switches', {'five': ['h0434', 'h0446'], 'four': ['h0437']}, '#009E73', '8', '-.'),
+  ('done, real switches', {'five': ['h0435']}, '#E69F00', 'p', '-.'),
+  ('manager picks 1-8', {'five': ['h0436']}, '#0072B2', 'd', ':'),
 ]
 fig, ax = plt.subplots(2, 2, figsize=(13, 9.4))
 panels = [(ax[0, 0], 'five', 'episode/score', 'scores.jsonl', 'Pin pad five: score', None),
