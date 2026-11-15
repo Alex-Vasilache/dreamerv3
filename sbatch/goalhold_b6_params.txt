@@ -1,0 +1,2 @@
+director pinpad_five 0 h0442 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 goal_hold_mse pubmatch
+director pinpad_five 0 h0443 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 goal_hold_mse4 pubmatch

@@ -1776,6 +1776,8 @@ goal_hold_cap48:
 # Reached by squared error against the running self-reconstruction error.
 goal_hold_mse:
   agent: {goal_reach_mode: mse, goal_reach_mse_mult: 2.0}
+goal_hold_mse4:
+  agent: {goal_reach_mode: mse, goal_reach_mse_mult: 4.0}
 # Worker "done": optimal stopping on the worker critic, match floor 0.5 x ceiling.
 goal_hold_done:
   agent: {goal_reach_mode: done, goal_reach_frac: 0.5, goal_reach_done_margin: 0.0}
