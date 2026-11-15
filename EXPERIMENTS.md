@@ -705,6 +705,14 @@ pad five at 0.30M; h0412 (same without) was at 0 until 1.9M. h0435 (done + real 
 ~147 at 0.29M. So training the replay critic on counterfactual switch points was what held cap 32
 back. One seed each; wait for 1-2M.
 
+**Finals 04:57 (11-16), pin pad five, cap 32.** h0434 reach + real switch points: 209 late, first
+>= 50 and sustained at 0.26M (h0412 without: 201, 1.93M). The late start is gone; the plateau is
+unchanged, consistent with a real hold of ~10 steps (timing cap, oracle K=8 313 / K=16 249).
+h0435 worker done + real switch points: 298 late (first 0.26M; two short dips at 1.1M and 2.0M,
+sustained 2.11M) vs h0420 / h0433 293 / 294 (first 0.36 / 0.47M). h0437 (pin pad four, cap 32,
+real switches) at 3.5M: 250-280 with dips, about as h0411 / h0416 (284 / 303). So real switch
+points remove the delay at cap 32 and do not change the final level.
+
 | Run | Task, seed | Blocks after V | Compare with |
 |---|---|---|---|
 | h0434 | pin pad five, 0 | `goal_hold_reach goal_hold_realsw` (cap 32) | h0412 (201, first score 1.93M) |
