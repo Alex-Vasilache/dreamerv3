@@ -741,6 +741,14 @@ cancelled at 2.6M / 1.4M and archived: the entropy regulator keeps durations spr
 and the arm does not learn. Follow-up h0436 limits it to 1..8. h0426 (worker done, pin pad four):
 254 at 0.5-1M. h0423 (pin pad six + surprise): 0 at 2.5M.
 
+**Finals 15:20 (pin pad five; late 3.5-4M / first >= 50 / sustained-50).** h0422 reach or 8 +
+surprise: 295 / 0.22M / 0.22M (best of every arm so far; old V 278 / 1.11-2.59M). h0418 threshold
+0.7, cap 32: 210 / 0.81M / 1.47M. h0423 pin pad six + surprise: 0. Near the end: h0420 worker done
+293 at 3.5-3.9M (first 0.36M, sustained 1.28M), h0424 reach or 8 seed 1 293 at 3.5-3.6M (0.31M /
+0.38M). Early control read: h0428 (fixed 4-step holds, no reached test) is at 0 at 1.28M, where
+reach or 8 (real hold 6.5) scored from 0.3M; if that holds, the reached test, not the shorter
+hold, is what finds the task.
+
 Not in this batch: the squared-error reached test (`goal_hold_mse`; offline AUC equal to cosine and
 its multiplier is not calibrated yet), caps 16 / 48, switch cost.
 
