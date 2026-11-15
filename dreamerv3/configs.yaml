@@ -660,6 +660,8 @@ defaults:
     # floor, NOT meanstd, so a small surprise stays a small pull.
     mgr_surprise: False
     mgr_surprise_rate: 0.001
+    # Surprise threshold = running mean + k x running std of the per-step KL.
+    mgr_surprise_k: 0.0
     mgr_surp_retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
     mgr_novel_count:
       # Grid resolutions, from measured occupancy growth (experiments/
@@ -1748,6 +1750,10 @@ mgr_surprise:
   agent:
     mgr_surprise: True
     mgr_novel_weight: 0.1
+
+# Pay only clear outliers: threshold = mean + 2 std (layer after mgr_surprise).
+mgr_surprise_k2:
+  agent: {mgr_surprise_k: 2.0}
 
 # Variants of the reached test (2026-11-15); layer after goal_hold_reach.
 goal_hold_frac07:

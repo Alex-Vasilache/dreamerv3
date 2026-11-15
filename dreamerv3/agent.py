@@ -532,6 +532,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         self.surp_base = nj.Variable(
             lambda: jnp.zeros((), f32), name='surp_base')
         self.surp_rate = float(getattr(config, 'mgr_surprise_rate', 0.001))
+        # Baseline = running mean + k x running std of the KL. k = 0 pays
+        # every above-average step (~35% of steps on pin pad six); k = 2
+        # pays only the clear outliers, so ordinary steps earn nothing.
+        self.surp_k = float(getattr(config, 'mgr_surprise_k', 0.0))
+        if self.surp_k > 0:
+          # Only with k > 0, so checkpoints of k = 0 runs keep their layout.
+          self.surp_sq = nj.Variable(
+              lambda: jnp.zeros((), f32), name='surp_sq')
       if self.mgr_novel:
         self.mgr_novel_val = embodied.jax.MLPHead(scalar, **config.value, name='mgr_novel_val')
         self.mgr_novel_slowval = embodied.jax.SlowModel(
@@ -1661,7 +1669,18 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       base = jnp.where(base_prev <= 0.0, kl.mean(), base)
       if training:
         self.surp_base.write(base)
-      self._surp_real = jnp.maximum(kl - sg(base), 0.0)             # (B, T)
+      std = jnp.zeros((), f32)
+      if self.surp_k > 0:
+        sq_prev = self.surp_sq.read()
+        sq = sq_prev + self.surp_rate * ((kl ** 2).mean() - sq_prev)
+        sq = jnp.where(base_prev <= 0.0, (kl ** 2).mean(), sq)
+        if training:
+          self.surp_sq.write(sq)
+        std = jnp.sqrt(jnp.maximum(sq - base ** 2, 0.0))
+      thresh = sg(base + self.surp_k * std)
+      metrics['surprise/std'] = std
+      metrics['surprise/thresh'] = thresh
+      self._surp_real = jnp.maximum(kl - thresh, 0.0)               # (B, T)
       surp_head = self.mgr_surp(sg(self.feat2tensor(repfeat)), 2)
       losses['mgr_surprise'] = surp_head.loss(sg(self._surp_real))
       metrics['surprise/kl'] = kl.mean()
