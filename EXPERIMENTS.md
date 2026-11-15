@@ -688,6 +688,11 @@ never produces, and the gap grows with the cap. `goal_replay_real_switch` (block
 `goal_dur_head8`: manager-chosen 1..8 (h0421 at 1..32 sits at mean 15 and does not find pin pad
 five). `sbatch/goalhold_b4_params.txt`, queued behind arrays 4823592 / 4823773.
 
+**Early read 21:05 (0.30M).** h0434 (reach or 32 + real switch points) already scores ~150 on pin
+pad five at 0.30M; h0412 (same without) was at 0 until 1.9M. h0435 (done + real switch points)
+~147 at 0.29M. So training the replay critic on counterfactual switch points was what held cap 32
+back. One seed each; wait for 1-2M.
+
 | Run | Task, seed | Blocks after V | Compare with |
 |---|---|---|---|
 | h0434 | pin pad five, 0 | `goal_hold_reach goal_hold_realsw` (cap 32) | h0412 (201, first score 1.93M) |
