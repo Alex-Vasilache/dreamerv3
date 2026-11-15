@@ -776,3 +776,44 @@ balance and fewer crossings at both push levels.
 LE4 (launched): regret strength beta 0.05 / 0.1 / 0.2 / 0.4 vs base at the
 easy push, fresh seeds 831-838, e44940-e44979, snapshot `code_le4`,
 `sbatch/wk/le4v.txt`.
+
+### Sun 11-15: DC, functional test of dominance (control cuts; launched)
+
+Dominance (tanh z of empowerment C, z over ~10 s) should drop when the robot
+really loses control; in normal runs controllability hardly changes. New sim
+switch `env.robot.sim_control_cut every:dur:gain[:start]` (default off): from
+`start` s on, after exponential waits of mean `every` s, for `dur` s the
+wheel outputs reach the motors x `gain` (policy, replay and phone see the
+commands as sent); emotion.csv logs `control_cut` (1 inside). Round DC: EM's
+em_b (bumper pain, no brake, no reflex, dominance every ~1 s) plus
+`sim_control_cut 20:5:G:300`, G = 0.2 and 0.5, seeds 841-844, 30 min, IAS,
+e44981-e44988 (array 209919; odd = 0.2, even = 0.5), snapshot `code_dc`,
+`sbatch/wk/dci.txt`. Smoke e44980 (4 min, gain 0.2 from minute 1): no
+errors, cut share 19 %, but the body was on a bumper in 92-98 % of cut steps
+(15-23 % otherwise): at x0.2 it falls, hence the milder arm.
+
+### Sun 11-15: DC results (dominance under control cuts)
+
+n = 4 per gain, minutes 5-30, rows within 0.25 s of bumper contact
+excluded, z per run; AUC = low value predicts "inside a cut" (for arousal
+below 0.5 means high arousal in cuts); figure `figs/study/dc.png`.
+
+| gain | contact in / out of cuts | dominance z in - out | AUC dominance: instant / 5 / 15 / 30 s mean | empowerment instant | pleasure instant | arousal instant |
+|---|---|---|---|---|---|---|
+| 0.5 | 29 % / 5 % | -0.18 ± 0.15 | 0.55 ± 0.04 / 0.55 / 0.53 / 0.51 | 0.56 ± 0.05 | 0.64 ± 0.02 | 0.17 ± 0.01 |
+| 0.2 | 96 % / 12 % | -0.08 ± 0.08 | 0.52 ± 0.02 / 0.50 / 0.58 / 0.50 | 0.50 ± 0.06 | 0.34 ± 0.04 | 0.45 ± 0.05 |
+
+At x0.5 dominance does fall inside a cut, but late and weakly: the event
+average dips to z ~ -0.45 at 2-3 s after onset and is back by the end of
+the 5 s (the 10 s z window adapts; the robot also re-balances), AUC 0.55
+(per seed 0.59 / 0.50 / 0.54 / 0.59). Arousal (Pearce-Hall) marks the cut at
+once (+1.1 z within 0.5 s, AUC 0.83 for high arousal) and pleasure drops
+(-0.9 z); both beat dominance. Slow averages do not help (0.51-0.53): with
+5 s cuts every ~25 s the 15-30 s means mostly average over free time. At
+x0.2 the body falls onto a bumper (96 % of cut steps), so off-contact there
+is almost nothing left to test (~900 rows per run); with contact kept the
+AUC is 0.75, but that is the contact effect (EM), and pleasure has 0.92.
+Reading: empowerment from 32 random commands through the prior responds to
+a real loss of control, but at about a fifth of arousal's separation; it is
+a slow, weak signal, as dominance is meant to be, not a detector. Runs
+archived to the bucket (e44980-e44988), IAS dirs and `code_dc` deleted.

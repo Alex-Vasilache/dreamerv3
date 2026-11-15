@@ -23,6 +23,7 @@ Status: [ ] open · [~] running · [x] done. Plan and results: `PLAN.md`,
    - [x] Round EM (step 3): Pearce-Hall incl. current |delta| best arousal at hits (0.85); bumper pain borderline better than impact + reflex; reflex adds nothing
    - [ ] Questions for the meeting with Angela Yu (in `LIT_AROUSAL_YU.md`)
    - [ ] Dominance as a slow running average of empowerment (from Ligneul): implement as a switch, re-score on EM-style logs
+   - [x] Functional test of dominance (round DC, IAS e44981-e44988): sim control cuts (`sim_control_cut`, wheel outputs x0.5 for 5 s): dominance dips (z -0.45 at 2-3 s, AUC 0.55 ± 0.04), slow means no better; arousal (0.83) and pleasure (0.64) mark the cuts more strongly; at x0.2 the body falls (96 % contact)
 3. Sim round with the best current definitions
    - [x] Build behind switches: arousal pearce_hall (default; eta 0.07, z 60 s), Yu's p(c>0) prior/posterior and critic SDs logged, dominance every ~1 s (empower_s 0.3), light/heavy emotion.csv (11-14; pleasure gamma'/regret not built: decided against in step 1)
    - [~] Run EM: em_a impact pain (0.5/1.5) + reflex s4z2 vs em_b bumper pain, no reflex; n = 8, 60 min, pushes and walls; V100 e44802-e44817 (jobs 4823309-24)

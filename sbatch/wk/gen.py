@@ -416,9 +416,12 @@ LE2_ARMS = [
 # no brake, no reflex, dominance refreshed ~1 s) with control cuts: from
 # minute 5 on, after waits of mean 20 s, for 5 s the wheel outputs reach the
 # motors x0.2 (env.robot.sim_control_cut every:dur:gain:start). Dominance
-# should fall inside the cuts. 30 min, n = 4 (seeds 841-844), IAS.
+# should fall inside the cuts. 30 min, n = 4 (seeds 841-844), IAS. The smoke
+# (e44980, gain 0.2) had the body on a bumper in 92% of cut steps (23%
+# overall), so a milder cut (gain 0.5) runs beside it on the same seeds.
 DC_CUT = os.environ.get('DC_CUT', '20:5:0.2:300')
-DC_ARMS = [('dc', f'{EM_ARMS[1][1]} --env.robot.sim_control_cut {DC_CUT}')]
+DC_ARMS = [('dc_g02', f'{EM_ARMS[1][1]} --env.robot.sim_control_cut {DC_CUT}'),
+           ('dc_g05', f'{EM_ARMS[1][1]} --env.robot.sim_control_cut 20:5:0.5:300')]
 SEEDS_DC = [841, 842, 843, 844]
 
 
@@ -760,7 +763,7 @@ def main():
   elif rnd in ('dcsmoke', 'dci'):
     seeds, minutes = {'dcsmoke': ([1], 4), 'dci': (SEEDS_DC, 30)}[rnd]
     for seed in seeds:
-      for arm, flags in DC_ARMS:
+      for arm, flags in (DC_ARMS[:1] if rnd == 'dcsmoke' else DC_ARMS):
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', 'any', flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd.startswith('w1'):
