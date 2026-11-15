@@ -739,6 +739,12 @@ reach or 8 (332 / 350) and V (311): on the easy task the 3-6 step holds of "done
 done + surprise ~255, h0433 done seed 1 ~285. A100 queue: h0434 / h0435 started 20:16; the rest
 is estimated for Monday 07-08h or later.
 
+**Finals 23:57.** h0431 (reach or 16, pin pad five): 258 late, first >= 50 and sustained at 0.46M
+(between cap 8: 277-293 / 0.30M and cap 32: 201 / 1.93M). h0429 (pin pad six + surprise, seed 1):
+0. h0430 (cheetah, reach or 8) at 3.84M: 613 over 3.5-3.8M (old V 536; before the fix 580).
+h0436 (duration head 1..8) was PREEMPTED at 23:08 at 0.92M (score 0, imagined hold 2.7) and is
+requeued; it resumes from its checkpoint.
+
 ### h0418-h0425: ways to end a hold, and surprise (2026-11-15 05:05, array 4823592)
 
 All on V (`director director_og wkr_ent_fixed wkr_v3 ... pubmatch`) with the bootstrap fix, A100,
