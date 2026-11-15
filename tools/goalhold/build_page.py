@@ -9,11 +9,12 @@ RUNS = [
   ('h0411 / h0416', 'pin pad four, reach or 32', '32', 'before fix 237', 'run', 'running, ~3.2M'),
   ('h0412', 'pin pad five, reach or 32', '32', 'before fix 144', 'run', 'running'),
   ('h0413 / h0415', 'pin pad six, cap 32 / 8', '', 'V solves 1 of 5 seeds', 'run', 'running, 0 so far'),
-  ('h0418 / h0419', 'pin pad five, threshold 0.7 / 0.9', '32', 'h0412', 'run', 'started'),
+  ('h0418 / h0419', 'pin pad five, threshold 0.7 / 0.9', '32', 'h0412', 'run', 'running, 1.8M'),
   ('h0420', 'pin pad five, worker "done"', '32', 'h0412, h0414', 'run', 'started'),
   ('h0421 / h0425', 'pin pad five / four, manager picks length', '1-32', 'h0414, h0410', 'run', 'queued'),
   ('h0422 / h0423', 'pin pad five / six, surprise reward', '8', 'h0414, h0415', 'run', 'queued'),
-  ('h0424', 'pin pad five, reach or 8, seed 1', '8', 'h0414', 'run', 'queued'),
+  ('h0424', 'pin pad five, reach or 8, seed 1', '8', 'h0414', 'run', 'running'),
+  ('h0426-h0433', 'batch 3: done on four / six, done + surprise, cap 16, fixed-4 control, cheetah', '', '', 'run', 'queued'),
 ]
 TASKS = [
   ('Step-by-step tests of the whole path', 'ok', 'done', '24 checks on the real agent; older suites repaired (192 pass)'),
@@ -27,6 +28,7 @@ TASKS = [
 ]
 s = open(SRC).read()
 s = s.replace('__FIG__', base64.b64encode(open('/work/DoyaU/vasilache/work/meetings/goalhold/progress.png', 'rb').read()).decode())
+s = s.replace('__FIG2__', base64.b64encode(open('/work/DoyaU/vasilache/work/meetings/goalhold/progress2.png', 'rb').read()).decode())
 s = s.replace('__DATE__', datetime.datetime.now().strftime('%d %b %Y, %H:%M JST'))
 s = s.replace('__RUNS__', '\n'.join('<tr><td>%s</td><td class="r">%s</td><td>%s</td><td class="r">%s</td><td><span class="st %s">%s</span></td></tr>' % r for r in RUNS))
 s = s.replace('__TASKS__', '\n'.join('<tr><td>%s</td><td><span class="st %s">%s</span></td><td class="r">%s</td></tr>' % t for t in TASKS))

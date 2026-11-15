@@ -113,6 +113,26 @@ __RUNS__
 </section>
 
 <section>
+<span class="k">Ways to end a hold</span>
+<h2>Shorter real holds find pin pad five sooner</h2>
+<p>All runs below include the fix. They differ only in when the manager picks a new goal.</p>
+<figure><img alt="Pin pad five and four scores and real and imagined hold lengths for each way to end a hold" src="data:image/png;base64,__FIG2__">
+<figcaption>Top: scores. Bottom: how many steps a goal is really kept in the environment (left) and in imagination (right). Runs are in progress; curves end where the run currently is.</figcaption></figure>
+<div class="tw"><table><thead><tr><th>Rule</th><th>Real hold (steps)</th><th>Pin pad five so far</th></tr></thead><tbody>
+<tr><td>V, fixed 8</td><td>8</td><td class="r">first score at 1.1-2.6M</td></tr>
+<tr class="hl"><td>worker "done", cap 32</td><td>3-6</td><td class="r">first score ~0.4M</td></tr>
+<tr class="hl"><td>reach or 8 (2 seeds)</td><td>5-7</td><td class="r">first score 0.3M; final 277</td></tr>
+<tr class="hl"><td>reach or 8 + surprise</td><td>6-7</td><td class="r">first score ~0.2M, the earliest</td></tr>
+<tr><td>reach, threshold 0.7, cap 32</td><td>7-9</td><td class="r">first score ~0.8M</td></tr>
+<tr><td>reach, threshold 0.8, cap 32</td><td>about 10 (imagined)</td><td class="r">first score 1.9M; final 201</td></tr>
+<tr><td>manager picks 1-32</td><td>15-18</td><td class="r">near 0 at 1.3M</td></tr>
+<tr><td>reach, threshold 0.9, cap 32</td><td>20-22</td><td class="r">0 at 1.8M</td></tr>
+</tbody></table></div>
+<p class="take">The worker "done" rule works without being gamed into trivial behaviour: it ends holds after 3 to 6 steps and learns pin pad five about as fast as the best rule. A control with fixed 4-step holds is queued to tell whether the reached test matters or only the shorter hold.</p>
+<p class="note">Worker "done" is computed from the worker's own value estimate: stop when the expected future match is no better than keeping the current match, <span data-tex="(1-\gamma)\,V(s,g)\le \cos_{\max}(g,s)"></span>, and the match is at least half the ceiling. The worker cannot gain by stopping early, because stopping only pays what it already has.</p>
+</section>
+
+<section>
 <span class="k">4 · How others end a goal</span>
 <h2>Short literature review</h2>
 <div class="tw"><table><thead><tr><th>Method</th><th>When does the high level re-decide?</th><th>What we take from it</th></tr></thead><tbody>

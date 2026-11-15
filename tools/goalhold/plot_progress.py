@@ -72,3 +72,44 @@ fig.legend(list(handles.values()), list(handles.keys()), loc='lower center', nco
 fig.tight_layout(rect=(0, 0.15, 1, 1), h_pad=2.0)
 fig.savefig(OUT + '/progress.png', dpi=110, facecolor='white'); fig.savefig(OUT + '/progress.pdf')
 print('saved', OUT + '/progress.png')
+
+# ---- Figure 2: ways to end a hold (all with the fix) ----
+ARMS2 = [
+  ('V, fixed 8 steps (5 seeds)', {'five': ['e1917', 'e1929', 'e1941', 'e1953', 'e1965'], 'four': ['e1916', 'e1928', 'e1940', 'e1952', 'e1964']}, '#000000', 'o', '-'),
+  ('reach or 8', {'five': ['h0414', 'h0424'], 'four': ['h0410', 'h0417']}, '#56B4E9', 'v', '-'),
+  ('reach or 32', {'five': ['h0412'], 'four': ['h0411', 'h0416']}, '#009E73', 'P', '-'),
+  ('reach (0.7) or 32', {'five': ['h0418']}, '#E69F00', '^', '--'),
+  ('reach (0.9) or 32', {'five': ['h0419']}, '#CC79A7', 'X', ':'),
+  ('worker done, or 32', {'five': ['h0420', 'h0433'], 'four': ['h0426']}, '#D55E00', 'D', '-'),
+  ('manager picks 1-32', {'five': ['h0421'], 'four': ['h0425']}, '#0072B2', 's', '--'),
+  ('reach or 8 + surprise', {'five': ['h0422']}, '#999999', '*', '-.'),
+  ('fixed 4 (control)', {'five': ['h0428']}, '#000000', 'x', ':'),
+  ('reach or 16', {'five': ['h0431']}, '#009E73', 'h', ':'),
+  ('done + surprise', {'five': ['h0432']}, '#D55E00', '+', '--'),
+]
+fig, ax = plt.subplots(2, 2, figsize=(13, 9.4))
+panels = [(ax[0, 0], 'five', 'episode/score', 'scores.jsonl', 'Pin pad five: score', None),
+          (ax[0, 1], 'four', 'episode/score', 'scores.jsonl', 'Pin pad four: score', None),
+          (ax[1, 0], 'five', 'log/hold_switch/avg', 'scores.jsonl', 'Pin pad five: real hold length', 'inv'),
+          (ax[1, 1], 'five', 'goal/hold_len_imag', 'metrics.jsonl', 'Pin pad five: imagined hold length', None)]
+handles = {}
+for a, task, key, fname, title, tr in panels:
+  for name, tags, c, mk, ls in ARMS2:
+    cs = curve(tags.get(task, []), key, fname)
+    if cs is None:
+      cs = curve(tags.get(task, []), key, 'metrics.jsonl') if fname == 'scores.jsonl' else None
+    if cs is None: continue
+    if tr == 'inv': cs = 1.0 / np.maximum(cs, 1e-6)
+    with np.errstate(all='ignore'):
+      m = np.nanmean(cs, 0)
+    if not np.isfinite(m).any(): continue
+    h, = a.plot(X, m, color=c, lw=2.4, ls=ls, marker=mk, markevery=4, ms=7, label=name)
+    handles.setdefault(name, h)
+  a.set_title(title, fontsize=17); a.tick_params(labelsize=13)
+  a.grid(color='#d5d5d2', lw=0.7); a.set_axisbelow(True); a.set_ylim(bottom=0); a.set_xlim(0, 4)
+ax[0, 0].set_ylabel('episode score', fontsize=15); ax[1, 0].set_ylabel('steps per goal', fontsize=15)
+fig.text(0.5, 0.215, 'environment steps (millions)', ha='center', fontsize=15)
+fig.legend(list(handles.values()), list(handles.keys()), loc='lower center', ncol=3, frameon=False, fontsize=13, handlelength=3.5)
+fig.tight_layout(rect=(0, 0.23, 1, 1), h_pad=2.0)
+fig.savefig(OUT + '/progress2.png', dpi=110, facecolor='white'); fig.savefig(OUT + '/progress2.pdf')
+print('saved', OUT + '/progress2.png')
