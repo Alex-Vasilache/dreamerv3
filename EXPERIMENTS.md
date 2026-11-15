@@ -665,6 +665,12 @@ scores at 1.1-2.6M, reach cap 8 at 0.30M, reach cap 32 at 1.93M).
 | h0423 | pin pad six, 0 | `goal_hold_reach goal_hold_cap8 mgr_surprise` | does surprise find pin pad six | h0415 (0) |
 | h0424 | pin pad five, 1 | `goal_hold_reach goal_hold_cap8` | second seed of the 0.30M result | h0414, V |
 
+**Early read 09:15 (0.35-1.3M, pin pad five unless noted).** h0418 frac 0.7: ~200 at 1.3M (imagined
+hold 7); h0419 frac 0.9: 0 (hold 15); h0420 worker done: ~226 at 1.2M, first score ~0.5M (hold
+4.6); h0421 duration head: 6.5 at 0.77M; h0422 surprise + cap 8: 268 at 0.73M; h0424 cap 8 seed 1:
+132 at 0.35M (replicates h0414's early start); h0423 pin pad six + surprise: 0 at 0.6M. Pattern so
+far: the shorter the realised hold, the earlier pin pad five is found.
+
 Not in this batch: the squared-error reached test (`goal_hold_mse`; offline AUC equal to cosine and
 its multiplier is not calibrated yet), caps 16 / 48, switch cost.
 
@@ -726,6 +732,10 @@ five h0414 277 / 1.71M (first >= 50 at 0.30M, dips until 1.7M; old V 278, 1.11-2
 
 Pin pad six, both caps (h0413 cap 32, h0415 cap 8): 0 over all 4M (archived 07:57), as 4 of 5 old V
 seeds; the hold rule does not fix exploration there.
+
+**Final, cap 32 (2026-11-15 09:15).** Late 3.5-4M / sustained-50: pin pad four h0411 284 / 0.14M,
+h0416 303 / 0.26M (before the fix 237; V 311); pin pad five h0412 201 / 1.93M (before 144; V 278).
+Cap 32 stays below cap 8 and V.
 
 Also check: `mgr/range_extr` should fall to ~10 (sum pooling) from 30-120.
 Array 4812978 fully finished and archived 11-14 (28 runs; none left in `/work`).
