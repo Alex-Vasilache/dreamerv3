@@ -512,7 +512,7 @@ class RobotMujoco(robot_sim.RobotSim):
       sim_phone=False, sim_phone_dtype='int8', sim_phone_delay=3.0,
       sim_phone_feel_every=4, sim_phone_log_every=0, sim_phone_heavy_every=0,
       sim_phone_threads=0,
-      sim_push='', sim_walls=0.0, seed=0, **kwargs):
+      sim_push='', sim_walls=0.0, sim_control_cut='', seed=0, **kwargs):
     # sim_phone: the phone's own onboard loop picks the actions (sim_phone.py)
     # from the learner's published weights, as on the robot.
     self.sim_phone = bool(sim_phone)
@@ -534,6 +534,21 @@ class RobotMujoco(robot_sim.RobotSim):
     self._push_force = 0.0
     self._push_next = None
     self.walls = float(sim_walls)
+    # sim_control_cut 'every:dur:gain[:start]': a manipulation of control for
+    # testing dominance (empowerment). From `start` s of sim time on (default
+    # 0), after an exponential wait of mean `every` s, for `dur` s the wheel
+    # outputs reach the motors scaled by `gain` (0.2: a fifth of the torque),
+    # so the policy's actions change the future much less; then the next
+    # wait. The policy, replay and the phone see the commands as sent; only
+    # the motors get less. The phone's CSV logs control_cut (1 inside).
+    parts = ([float(x) for x in str(sim_control_cut).split(':')]
+             if sim_control_cut else [])
+    assert not parts or len(parts) in (3, 4), sim_control_cut
+    (self.cut_every, self.cut_dur, self.cut_gain,
+     self.cut_start) = (parts + [0.0])[:4] if parts else (0.0, 0.0, 1.0, 0.0)
+    self._cut_left = 0.0
+    self._cut_next = None
+    self.control_cut = 0.0
     for key in ('host', 'port', 'reconnect', 'onboard', 'weights_every',
                 'weights_dtype', 'weights_kbps', 'weight_streams', 'pace',
                 'config', 'policy_dir',
@@ -828,6 +843,21 @@ class RobotMujoco(robot_sim.RobotSim):
     else:
       d.xfrc_applied[body] = 0.0
 
+  def _control_cut(self, dt):
+    """Whether this step's outputs are cut (sim_control_cut); advances it."""
+    if not self.cut_every:
+      return False
+    if self._cut_next is None:
+      self._cut_next = self.cut_start + self.sim_rng.exponential(self.cut_every)
+    if self._cut_left <= 0 and self._sim_time >= self._cut_next:
+      self._cut_left = self.cut_dur
+      self._cut_next = self._sim_time + self.cut_dur + self.sim_rng.exponential(
+          self.cut_every)
+    if self._cut_left > 0:
+      self._cut_left -= dt
+      return True
+    return False
+
   def _phone_runs(self):
     return self.sim_phone
 
@@ -870,6 +900,7 @@ class RobotMujoco(robot_sim.RobotSim):
         sensors, reward, is_first,
         self._cmd if self.task == 'command' else None)
     self._phone.push = self._push_force if self._push_left > 0 else 0.0
+    self._phone.control_cut = self.control_cut
     self._phone.force = self._bumper_force()
     self._chosen_act = tuple(act) if act is not None else None
     final = self._limits(*(act if act is not None else (0.0, 0.0)))
@@ -907,6 +938,9 @@ class RobotMujoco(robot_sim.RobotSim):
     if self._carry:
       self._hold(dt)
     self._push(dt)
+    self.control_cut = float(self._control_cut(dt))
+    if self.control_cut:
+      sent = [self.cut_gain * u for u in sent]
     if self.tilt_lag or 'tilt_lag' in self._rand:
       sub = dt / self.substeps
       for _ in range(self.substeps):

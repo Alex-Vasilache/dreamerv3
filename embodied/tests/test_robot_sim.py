@@ -139,3 +139,37 @@ def test_return_home_drives_back_to_the_start():
   print('true distance from start %.2f m (odometry said %.2f m out)' % (
       away, start / 12178.0))
   assert away < 0.3, away
+
+
+def test_control_cut_scales_the_motors_in_windows():
+  # sim_control_cut 'every:dur:gain:start': from `start` s on, windows of
+  # `dur` s after exponential waits of mean `every` s, outputs x gain.
+  env = make('mujoco', sim_control_cut='2:1:0.2:3')
+  assert (env.cut_every, env.cut_dur, env.cut_gain, env.cut_start) == (
+      2.0, 1.0, 0.2, 3.0)
+  dt, flags = 1.0 / HZ, []
+  for _ in range(int(400 / dt)):
+    flags.append(env._control_cut(dt))
+    env._sim_time += dt
+  flags = np.array(flags)
+  assert not flags[:int(3 / dt)].any()          # nothing before start
+  share = flags[int(3 / dt):].mean()
+  assert 0.25 < share < 0.42                    # ~ dur / (dur + every)
+  onsets = np.flatnonzero(np.diff(flags.astype(int)) == 1) + 1
+  ends = np.flatnonzero(np.diff(flags.astype(int)) == -1) + 1
+  lengths = (ends - onsets[:len(ends)]) * dt
+  # Back-to-back windows (a near-zero wait) merge; most are one window.
+  assert lengths.min() > 1.0 - 2 * dt and np.median(lengths) < 1.0 + 2 * dt
+  assert make('mujoco').cut_every == 0.0        # off by default
+
+
+def test_control_cut_weakens_the_wheels():
+  speeds = {}
+  for name, cut in (('on', '1e-3:100:0.2'), ('off', '')):
+    env = make('mujoco', sim_control_cut=cut, **FALLS)
+    env.theta, env.omega = env.theta_zero, 0.0
+    env.theta_eq = env.theta_zero
+    run(env, [(0.8, 0.8)] * 8)
+    speeds[name] = abs(env.speed.mean())
+    assert env.control_cut == (1.0 if cut else 0.0)
+  assert speeds['on'] < 0.5 * speeds['off']

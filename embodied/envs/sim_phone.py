@@ -70,14 +70,17 @@ FIELDS = ('t', 'step', 'stamp', 'arousal', 'valence', 'mood', 'dominance',
           # symlog units), and
           # the empowerment rollouts finished so far and the last one's ms.
           'ph_alpha', 'arousal_ph', 'p_pain_prior', 'q_pain_post',
-          'value_std', 'threat_std', 'emp_n', 'emp_ms')
+          'value_std', 'threat_std', 'emp_n', 'emp_ms',
+          # Since round DC (11-15): 1 while env.robot.sim_control_cut scales
+          # the wheel outputs down (the step just applied).
+          'control_cut')
 
 # Written every row with heavy_every > 0; the rest every heavy_every-th row.
 LIGHT = frozenset((
     't', 'step', 'arousal', 'dominance', 'pleasure', 'td', 'faded', 'change',
     'pain', 'threat', 'value', 'impact', 'reflex', 'event', 'push', 'theta',
     'act0', 'intended0', 'force', 'reflex_threat', 'ph_alpha', 'p_pain_prior',
-    'q_pain_post', 'value_std', 'threat_std', 'emp_n'))
+    'q_pain_post', 'value_std', 'threat_std', 'emp_n', 'control_cut'))
 
 
 class SimPhone:
@@ -125,6 +128,7 @@ class SimPhone:
     self._seed = seed
     self.steps = 0
     self.push = 0.0       # set by the env when it pushes the body
+    self.control_cut = 0.0  # set by the env while sim_control_cut is on
     self._log = open(log, 'a', buffering=1) if log else None
     if self._log and self._log.tell() == 0:
       self._log.write(','.join(FIELDS) + '\n')
@@ -226,7 +230,8 @@ class SimPhone:
                  impact=r.impact, reflex=r.reflex_last, force=self.force,
                  intended0=(r._intended or [0.0])[0],
                  reflex_threat=r.reflex_threat, reflex_thr=r.reflex_thr,
-                 reflex_ms=r.reflex_ms)
+                 reflex_ms=r.reflex_ms,
+                 control_cut=getattr(self, 'control_cut', 0.0))
       every, rows = getattr(self, 'heavy_every', 0), getattr(self, '_rows', 0)
       heavy = every <= 0 or rows % every == 0
       self._rows = rows + 1

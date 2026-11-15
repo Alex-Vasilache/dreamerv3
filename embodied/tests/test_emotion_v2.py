@@ -621,3 +621,26 @@ def test_sim_phone_heavy_columns_subsampled(tmp_path):
   assert [int(r['step']) for r in rows] == list(range(8))   # every step
   assert all(r['ph_alpha'] == '0.01' and r['arousal'] == '0.2' for r in rows)
   assert [r['arousal_kl'] for r in rows] == ['0.5', '', '', '', '0.5', '', '', '']
+
+
+def test_sim_phone_logs_control_cut(tmp_path):
+  from embodied.envs import sim_phone
+  assert 'control_cut' in sim_phone.FIELDS and 'control_cut' in sim_phone.LIGHT
+  ph = sim_phone.SimPhone.__new__(sim_phone.SimPhone)
+  log = tmp_path / 'emotion.csv'
+  ph._log = open(log, 'w', buffering=1)
+  ph._log.write(','.join(sim_phone.FIELDS) + '\n')
+  ph.runner = _runner_v2()
+  ph.runner._fast_affect = lambda: None
+  ph.runner.emotion_state = dict(arousal=0.0, valence=0.0, mood=0.0, pain=0.0)
+  ph.runner.event = None
+  ph.runner.policy.explore = 1.0
+  ph.steps, ph._event_n, ph.push, ph.force, ph.log_every = 0, None, 0.0, 0.0, 0
+  ph.runner.FEEL_EVERY, ph.heavy_every = 1, 16
+  for i in range(6):
+    ph.control_cut = 1.0 if 2 <= i < 4 else 0.0
+    ph.applied([0.0, 0.0], i)
+  ph._log.close()
+  import csv
+  rows = list(csv.DictReader(open(log)))
+  assert [float(r['control_cut']) for r in rows] == [0, 0, 1, 1, 0, 0]
