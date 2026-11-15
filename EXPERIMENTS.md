@@ -745,6 +745,12 @@ is estimated for Monday 07-08h or later.
 h0436 (duration head 1..8) was PREEMPTED at 23:08 at 0.92M (score 0, imagined hold 2.7) and is
 requeued; it resumes from its checkpoint.
 
+**Finals 00:57 (11-16).** h0430 cheetah, reach or 8: 616 late (old V 536). h0432 pin pad five,
+done + surprise: 262 late, sustained-50 0.26M (no gain over done alone, 293-294). h0433 pin pad
+five, done seed 1: 294 late, 0.54M. Worker done on pin pad five is now 293 / 294 on two seeds.
+Array 4823773 is complete and archived. Only 3 of our jobs hold a GPU; the 13 pending wait on
+priority (A100 nodes busy with higher-priority work).
+
 ### h0418-h0425: ways to end a hold, and surprise (2026-11-15 05:05, array 4823592)
 
 All on V (`director director_og wkr_ent_fixed wkr_v3 ... pubmatch`) with the bootstrap fix, A100,
