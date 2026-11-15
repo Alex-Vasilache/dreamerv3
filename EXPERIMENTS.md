@@ -716,6 +716,12 @@ score 0 throughout, where reach or 8 scored from 0.3M (2 seeds) and old V fixed 
 ending a hold when the goal is reached. h0427 (worker done, pin pad six) cancelled at 2.4M at 0.
 Both archived; slots go to arrays 4823918 / 4824030.
 
+**20:20** h0426 final (worker done, cap 32, pin pad four): 287 late, sustained-50 at 0.22M. Below
+reach or 8 (332 / 350) and V (311): on the easy task the 3-6 step holds of "done" cost score. At
+2M: cheetah h0430 (reach or 8) ~580-610 (V late 536); pin pad five h0431 cap 16 ~250, h0432
+done + surprise ~255, h0433 done seed 1 ~285. A100 queue: h0434 / h0435 started 20:16; the rest
+is estimated for Monday 07-08h or later.
+
 ### h0418-h0425: ways to end a hold, and surprise (2026-11-15 05:05, array 4823592)
 
 All on V (`director director_og wkr_ent_fixed wkr_v3 ... pubmatch`) with the bootstrap fix, A100,
