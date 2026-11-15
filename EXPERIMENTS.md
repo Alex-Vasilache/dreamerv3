@@ -644,6 +644,26 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0434-h0437: real switch points on the replay side; short duration head (2026-11-15 12:40, array 4823918)
+
+Found while auditing the replay path: the replay-side manager returns pool rewards over the
+switch points the CURRENT manager would make on replayed states. Those are counterfactual (the
+trajectory was pursuing other goals), so "reached" rarely fires and holds run to the cap:
+`goal/hold_len_repl` 22-29 at cap 32 while the real hold (`log/hold_switch`) is 10-11, and 12.6 vs
+3-6 for worker done. The replay critic is thus trained on a hold-length distribution the agent
+never produces, and the gap grows with the cap. `goal_replay_real_switch` (block
+`goal_hold_realsw`, commit e588598, `test_8`) stores the real switch flag per step in replay
+(`mgr_sw`) and pools on it. The worker replay path is unchanged (its goals stay counterfactual).
+`goal_dur_head8`: manager-chosen 1..8 (h0421 at 1..32 sits at mean 15 and does not find pin pad
+five). `sbatch/goalhold_b4_params.txt`, queued behind arrays 4823592 / 4823773.
+
+| Run | Task, seed | Blocks after V | Compare with |
+|---|---|---|---|
+| h0434 | pin pad five, 0 | `goal_hold_reach goal_hold_realsw` (cap 32) | h0412 (201, first score 1.93M) |
+| h0437 | pin pad four, 0 | `goal_hold_reach goal_hold_realsw` (cap 32) | h0411 / h0416 (284 / 303) |
+| h0435 | pin pad five, 0 | `goal_hold_reach goal_hold_done goal_hold_realsw` | h0420 |
+| h0436 | pin pad five, 0 | `goal_dur_head goal_dur_head8` | h0421, h0414 |
+
 ### h0426-h0433: done / surprise follow-ups, short-hold control, DMC check (2026-11-15 09:40, array 4823773)
 
 Queued behind array 4823592 (A100 cap 8). `sbatch/goalhold_b3_params.txt`, all on V + fix.
