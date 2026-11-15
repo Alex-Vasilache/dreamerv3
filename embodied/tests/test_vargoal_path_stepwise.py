@@ -182,6 +182,8 @@ def run(frac, agg, kind='cos'):
       frac = 0.8
     if kind == 'done':
       extra = dict(goal_reach_mode='done')
+    if kind == 'realsw':
+      extra = dict(goal_replay_real_switch=True)
     agent = make_agent(
         *BLOCKS, batch_size=4, batch_length=BL,
         agent=dict(goal_reach_frac=frac, mgr_reward_agg=agg, imag_length=H,
@@ -607,3 +609,28 @@ def test_7_other_switch_rules_share_the_training_path(frac, agg, kind):
     cos = _cosmax(im['goals'][:, :-1], im['deter'][:, 1:])
     _close_or_tie(im['reached'][:, 1:], cos >= 0, cos, 0.0, 'done rule')
   print(f'{kind}: imag switch rate {sw.mean():.3f}')
+
+
+def test_8_replay_manager_uses_the_real_switch_points():
+  """``goal_replay_real_switch``: the replay pooling runs on the switch flags
+  stored with the data (window start forced), not on the scan's own."""
+  train, _, batch = run(0.15, 'sum', 'realsw')
+  sq = [q for q in train['seq'] if q['det'] and not q['down']][-1]
+  T = sq['sw'].shape[1]
+  want = batch['mgr_sw'][:, -T:] > 0.5
+  want[:, 0] = True
+  vb = [v for v in train['vbd'] if v['sw'].shape == want.shape]
+  assert vb, 'replay pooling call not found'
+  vb = vb[-1]
+  np.testing.assert_array_equal(vb['sw'] > 0.5, want)
+  assert (want != (sq['sw'] > 0.5)).any(), 'stored and scanned switches coincide'
+  np.testing.assert_allclose(vb['rew'], batch['reward'][:, -T:], rtol=1e-6)
+  R, C, _ = _pool_longhand(vb['rew'], vb['con'], want, 'sum')
+  r_out, _, c_out, valid = vb['out']
+  for b in range(want.shape[0]):
+    n = int(want[b].sum())
+    np.testing.assert_allclose(r_out[b, 1:n + 1], R[b, :n][:T - 1], rtol=1e-4, atol=1e-5)
+    np.testing.assert_allclose(c_out[b, 1:n + 1], C[b, :n][:T - 1], rtol=1e-4)
+  # The imagination path and worker tensors are unaffected.
+  _check_manager_tensors(train, 0.15, 'sum')
+  _check_worker_tensors(train)

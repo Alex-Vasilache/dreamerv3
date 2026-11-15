@@ -189,6 +189,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     # Irregular hold boundaries (reach-based or manager-chosen durations):
     # SMDP training path -- worker return ends at the switch and bootstraps
     # under the old goal, replay manager return discounted per env step.
+    # Replay-side manager returns on the switch points the agent REALLY used
+    # (stored per step as ``mgr_sw``), not on those the current manager would
+    # make on replayed states. The latter are counterfactual: the trajectory
+    # was not pursuing those goals, so "reached" rarely fires and holds run to
+    # the cap (replay hold 22-29 steps vs 10-11 real at cap 32).
+    self.goal_replay_real_switch = bool(
+        getattr(config, 'goal_replay_real_switch', False))
     self.goal_smdp = self.goal_reach or (
         self.variable_goal_length and self.goal_duration_fixed <= 0
         and bool(getattr(config, 'goal_duration_smdp', False)))
@@ -920,6 +927,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     spaces = {}
     spaces['consec'] = elements.Space(np.int32)
     spaces['stepid'] = elements.Space(np.uint8, 20)
+    if self.use_hrl and getattr(self, 'goal_replay_real_switch', False):
+      spaces['mgr_sw'] = elements.Space(np.float32)
     if self.config.replay_context:
       spaces.update(elements.tree.flatdict(dict(
           enc=self.enc.entry_space,
@@ -1128,6 +1137,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       out['log/fromto_switch'] = f32(goal_refresh)
       if getattr(self, 'fromto_hash', ''):
         out['log/fromto_start'] = self._start_hash(feat)
+    if self.use_hrl and self.goal_replay_real_switch:
+      # Stored in replay (no log/ prefix): 1 where the manager decided.
+      out['mgr_sw'] = f32(goal_refresh)
     if self.use_hrl and self.variable_goal_length:
       # Real hold length in the environment: episode mean of this flag is the
       # switch rate, its inverse the mean hold (``episode/log/hold_switch/avg``).
@@ -1223,6 +1235,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
   def train(self, carry, data):
     """Optimizer step on ``loss``; may attach replay context writes for next batch."""
     carry, obs, prevact, stepid = self._apply_replay_context(carry, data)
+    if 'mgr_sw' in data:
+      # Rides along in ``obs`` (popped first thing in ``loss``): a value
+      # stashed on ``self`` would leak across the gradient transform.
+      obs = {**obs, 'mgr_sw': data['mgr_sw'][:, self.config.replay_context:]}
     enc, dyn, dec, prevact, mgr_skill, mgr_step = self._unpack_carry(carry)
     metrics, ((enc, dyn, dec), entries, outs, mets) = self.opt(
         self.loss, (enc, dyn, dec), obs, prevact, training=True, has_aux=True)
@@ -1682,6 +1698,8 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
   def loss(self, carry, obs, prevact, training):
     """Full objective: world-model ELBO + imagined actor-critic (+ optional replay value)."""
     enc_carry, dyn_carry, dec_carry = carry
+    obs = dict(obs)
+    real_sw = obs.pop('mgr_sw', None)   # real switch flags (see ``train``)
     reset = obs['is_first']
     B, T = reset.shape
     losses = {}
@@ -2252,6 +2270,10 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
             feat, deterministic=True)
         repl_skills_full.pop('countdown', None)
         repl_switch = self._switch_mask_from_skills(repl_skills_full)
+        if self.goal_replay_real_switch and real_sw is not None:
+          # Real decisions; the window start counts as one (it opens a hold
+          # that began before the window, like fixed K's arbitrary phase).
+          repl_switch = f32(sg(real_sw) > 0.5).at[:, 0].set(1.0)
         repl_skills_full.pop('switch', None)
         if self.goal_smdp:
           metrics['goal/hold_len_repl'] = (

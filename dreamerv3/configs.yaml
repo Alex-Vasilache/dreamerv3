@@ -482,6 +482,9 @@ defaults:
     # under the old goal, replay manager return discounted per env step.
     # False = the pre-2026-11-15 duration-head path.
     goal_duration_smdp: False
+    # Replay-side manager returns on the agent's REAL switch points (stored in
+    # replay as mgr_sw) instead of the current manager's counterfactual ones.
+    goal_replay_real_switch: False
     # Variable-length holds: the rollout's last hold is cut by the imagination
     # horizon and must bootstrap from the FINAL imagined state. Before
     # 2026-11-14 it bootstrapped from its own start state (every variable-
@@ -1755,6 +1758,12 @@ goal_hold_frac09:
 # control for "is it the reached test or just shorter holds".
 goal_hold_cap4:
   agent: {goal_duration_fixed: 4, imag_length: 16}
+# Real switch points on the replay side (2026-11-15).
+goal_hold_realsw:
+  agent: {goal_replay_real_switch: True}
+# Manager-chosen length 1..8 (short holds are what find the pin pads).
+goal_dur_head8:
+  agent: {goal_duration_max: 8, imag_length: 16}
 # Longer cap with a rollout that fits it.
 goal_hold_cap48:
   agent: {goal_duration_fixed: 48, imag_length: 48}
