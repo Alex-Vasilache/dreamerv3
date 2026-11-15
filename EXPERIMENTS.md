@@ -687,6 +687,22 @@ see whether it holds, the run is CONTINUED to 6M in the same run dir (block `ste
 starts after the array task ends; the dir is marked `.keep` so the archive script leaves it and
 its replay). Seed 0 (h0438) is at 0 at 3.7M.
 
+**Finals 08:57 (11-16).** Late 3.5-4M / first >= 50 / sustained-50:
+
+| Run | Arm | Late | First | Sustained |
+|---|---|---|---|---|
+| h0440 | pin pad five, surprise k = 2 | 304 | 0.76M | 1.43M |
+| h0441 | pin pad five, surprise k = 0, seed 1 | 296 | 0.34M | 0.54M |
+| h0422 | pin pad five, surprise k = 0, seed 0 (earlier) | 295 | 0.22M | 0.22M |
+| h0442 | pin pad five, squared-error reached test x2 | 293 | 0.74M | 0.74M |
+| h0438 | pin pad six, surprise k = 2, seed 0 | 0 | - | - |
+| h0439 | pin pad six, surprise k = 2, seed 1 | 140 (226 over the last 20 episodes) | 3.63M | 3.63M |
+
+Surprise on reach or 8 gives 295 / 296 (k = 0) and 304 (k = 2) on pin pad five against 277 / 293
+without; k = 2 starts later. The squared-error test at x2 matches the cosine rule late and starts
+later (stricter). h0439 continues to 6M as job 4824783 (started 08:54, one second after the array
+task ended).
+
 | Run | Task, seed | Blocks after V | Compare with |
 |---|---|---|---|
 | h0438 / h0439 | pin pad six, 0 / 1 | `goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2` | h0423, h0429 (k = 0), h0415 |
