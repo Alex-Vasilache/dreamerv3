@@ -735,3 +735,23 @@ Arms base / m2_regret / m5_control, 60 min, `sim_push 4:0.15:0.3`, walls
 4823579-4823590; params `sbatch/wk/le2v.txt`, MINUTES 80); IAS seeds
 815-818: e44882-e44893 (array 209564, 7 at a time; `le2i.txt`). Compare
 arms within a cluster (IAS phone loop is slower).
+
+### Sun 11-15: LE2 results (regret and control, stronger pushes) and LE3 launch
+
+Push 4:0.15:0.3, 60 min, n = 8 (Saion seeds 811-814, IAS 815-818), minutes
+11-60, Wilcoxon paired by seed vs base:
+
+| arm | t90 (min) | crossings/min | falls/push | impact pain/min | peak force (N) |
+|---|---|---|---|---|---|
+| base | 11.0 ± 7.7 | 12.5 ± 1.2 | 0.55 ± 0.04 | 0.58 ± 0.05 | 2.12 ± 0.15 |
+| M2 regret distillation | 5.6 ± 1.8 (p 0.06) | **9.9 ± 0.6 (p 0.01)** | **0.44 ± 0.04 (p 0.01)** | 0.52 ± 0.14 | 2.07 ± 0.13 |
+| M5 controllability gate | 7.3 ± 2.3 (p 0.33) | 11.4 ± 2.2 (p 0.31) | 0.49 ± 0.08 (p 0.25) | 0.46 ± 0.14 (p 0.04) | 2.05 ± 0.23 |
+
+M2 is better than base in all 8 seeds on crossings (-21 %) and falls per push
+(-20 %), on both clusters, despite a ~17 % slower learner; t90 also shorter
+(one base seed took 29 min). M5 lowers impact pain (-21 %, p = 0.04) only.
+First emotion-inspired mechanism that helps learning.
+
+LE3 (replication, launched 11-15): fresh seeds 821-828, arms base / M2 at the
+hard push and base / M2 at the easy push (LE1 level), Saion V100, e44900-e44931
+(jobs 4823688-4823719), code snapshot `code_le3`, params `sbatch/wk/le3v.txt`.
