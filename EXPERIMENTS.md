@@ -644,6 +644,18 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0446-h0449: more real-switch runs (2026-11-15 21:20, array 4824385)
+
+Follow-up to the early h0434 read. `sbatch/goalhold_b8_params.txt`, queued last (may start after
+the Monday deadline; left to run).
+
+| Run | Task, seed | Blocks after V | Question |
+|---|---|---|---|
+| h0446 | pin pad five, 1 | `goal_hold_reach goal_hold_realsw` | second seed of h0434 (cap 32) |
+| h0447 | pin pad five, 0 | `goal_hold_reach goal_hold_cap8 goal_hold_realsw` | does it also help cap 8 (replay 7.8 vs real 6.5) |
+| h0448 | pin pad six, 0 | `goal_hold_reach goal_hold_realsw` | cap 32 on pin pad six |
+| h0449 | cheetah, 0 | `goal_hold_reach goal_hold_realsw` | cap 32 on DMC (before the fix: 419 late) |
+
 ### h0444-h0445: reach or 8 + TCE critic on pin pad six (2026-11-15 18:00, array 4824246)
 
 Pin pad six is 0 in every goal-hold run so far (h0413, h0415, h0423; h0427 and h0429 at 0 by

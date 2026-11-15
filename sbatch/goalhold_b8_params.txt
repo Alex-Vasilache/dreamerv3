@@ -1,0 +1,4 @@
+director pinpad_five 1 h0446 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_realsw pubmatch
+director pinpad_five 0 h0447 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 goal_hold_realsw pubmatch
+director pinpad_six 0 h0448 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_realsw pubmatch
+director dmc_cheetah_run 0 h0449 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_realsw pubmatch
