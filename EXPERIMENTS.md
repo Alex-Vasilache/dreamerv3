@@ -644,6 +644,15 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0442-h0443: reached by squared error (2026-11-15 16:35, array 4824166)
+
+`goal_reach_mode: mse`: reached = mean squared goal/state error <= mult x running
+self-reconstruction error. Calibration from logged values (h0426: self cos 0.92, self MSE
+0.0037): cos ~ 1 - MSE / (2 v) gives v ~ 0.023 per dimension, so the cosine rule at 0.8 x ceiling
+(0.74) corresponds to MSE ~ 0.012, i.e. mult ~ 3. Mult 2 (stricter) and 4 (looser) bracket it.
+Pin pad five, seed 0, cap 8; compare with h0414 / h0424 (cosine rule). Offline the two metrics had
+equal AUC, so the expectation is no difference. `sbatch/goalhold_b6_params.txt`, queued last.
+
 ### h0438-h0441: surprise that pays only outliers (2026-11-15 14:15, array 4824030)
 
 Reading h0422 / h0423 (surprise = max(0, KL - running mean)): the reward does not fade and is not
