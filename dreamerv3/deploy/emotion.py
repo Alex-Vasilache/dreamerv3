@@ -351,10 +351,21 @@ class EmotionV2(Emotion):
   def __init__(self, policy, hz=65.0, tau=650, arousal='pearce_hall',
                horizon=16, commands=32, fade_s=0.5, every=0, seed=0,
                efference=False, empower_extra=(), arousal_eta=0.07,
-               arousal_z_s=60.0, feel_every=1):
+               arousal_z_s=60.0, feel_every=1, dominance='empowerment',
+               evidence_k=0, evidence_s=2.0):
     """`tau`: calls in the ~10 s z window of the three axes; `feel_every`:
     control steps per step() call, for the Pearce-Hall z window
-    (`arousal_z_s` s) in calls."""
+    (`arousal_z_s` s) in calls.
+
+    `evidence_k` > 0: also the evidence of control (actor vs spectator,
+    11-15): how much better the prior on the action actually taken predicted
+    the new latent state than a prior averaged over `evidence_k` random
+    commands held from the previous state,
+      e_t = (1/n) [log p(s_t | a_t) - log mean_k p(s_t | a_k)],
+    averaged over `evidence_s` seconds (ctl_ev). With dominance='evidence'
+    it drives dominance instead of empowerment."""
+    assert dominance in ('empowerment', 'evidence'), dominance
+    assert dominance == 'empowerment' or int(evidence_k) > 0, 'evidence_k'
     arousal = {'error': 'total'}.get(arousal, arousal)
     assert arousal in self.MODES, arousal
     self.p = policy
@@ -378,6 +389,13 @@ class EmotionV2(Emotion):
     self.ph_alpha = 0.0
     self.ph_now = 0.0
     self._ph_prev_td = 0.0
+    self.dominance_mode = dominance
+    self.evidence_k = int(evidence_k)
+    self.evidence_s = float(evidence_s)
+    self.norm['ctl_ev'] = Running(tau)
+    self.ctl_ev = 0.0
+    self.ctl_e = 0.0
+    self._ev_prev = None
     self.faded = 0.0
     self.reset()
 
@@ -417,6 +435,7 @@ class EmotionV2(Emotion):
     z-scores carry on)."""
     self.prev_outlook = None
     self.steps = 0
+    self._ev_prev = None
     self.empowerment = getattr(self, 'empowerment', 0.0)
 
   # -- pieces ------------------------------------------------------------------
@@ -604,6 +623,27 @@ class EmotionV2(Emotion):
       kl += _kl(qc, self.head_probs('cst', pd, sp))
     return kl
 
+  def control_evidence(self, prev_deter, prev_stoch, deter, stoch, steps=1):
+    """e_t = (1/n)[log p(s_t | taken) - log mean_k p(s_t | a_k)]: the prior
+    at `deter` (reached on the actions taken) against priors reached by
+    holding each of `evidence_k` random commands for `steps` steps from the
+    previous posterior (prev_deter, prev_stoch); s_t = `stoch`, one-hot."""
+    unimix = self.p.meta['unimix']
+    pa = _probs(self.prior_logit(np.asarray(deter, F32)), unimix)
+    n = pa.shape[-2]
+    s = np.asarray(stoch, np.float64).reshape(pa.shape)
+    acts = self.rng.uniform(-1, 1, (self.evidence_k, 2)).astype(F32)
+    for out in self.rollout(np.asarray(prev_deter, F32),
+                            np.asarray(prev_stoch, F32), acts, max(1, int(steps))):
+      pass
+    d = out[0]
+    pk = _probs(self.prior_logit(d), unimix)              # (K, n, c)
+    ll_a = float((s * np.log(pa + 1e-8)).sum())
+    ll_k = (s[None] * np.log(pk + 1e-8)).sum((-2, -1))    # (K,)
+    m = ll_k.max()
+    ll_mix = float(m + np.log(np.mean(np.exp(ll_k - m))))
+    return (ll_a - ll_mix) / n
+
   # -- the step ------------------------------------------------------------------
 
   def arousal_signals(self, deter, post_logit, stoch, reward, cost,
@@ -664,6 +704,16 @@ class EmotionV2(Emotion):
     else:
       z_a = self.norm['arousal']((eff if self.efference else plain)[self.arousal_mode])
     z_d = self.norm['dominance'](self.empowerment)
+    z_ev = 0.0
+    if self.evidence_k > 0:
+      if self._ev_prev is not None and not first:
+        self.ctl_e = self.control_evidence(*self._ev_prev, deter, stoch, steps)
+        b = fade_lambda(self.hz, self.evidence_s) ** max(1, int(steps))
+        self.ctl_ev = b * self.ctl_ev + (1 - b) * self.ctl_e
+      self._ev_prev = (np.array(deter, F32), np.array(stoch, F32))
+      z_ev = self.norm['ctl_ev'](self.ctl_ev)
+      if self.dominance_mode == 'evidence':
+        z_d = z_ev
     pleasure = float(np.tanh(z_p))
     # Yu's terms: the prior and posterior probability of pain > 0 from the
     # cost head (0 without one); the critics' spread.
@@ -687,6 +737,8 @@ class EmotionV2(Emotion):
         td=td, o_reward=o_reward, o_pain=o_pain, version='v2',
         ph_alpha=float(self.ph_alpha), arousal_ph=float(sigmoid(np.float32(z_ph))),
         ph_now=float(self.ph_now), arousal_ph_now=float(sigmoid(np.float32(z_ph_now))),
+        ctl_e=float(self.ctl_e), ctl_ev=float(self.ctl_ev),
+        dominance_ev=float(np.tanh(z_ev)),
         value_std=value_std, threat_std=threat_std, **yu,
         efference=float(eff_deter is not None), **self.empower_terms,
         **{f'arousal_{k}': float(plain[k]) for k in ('total', 'unexpected', 'kl')},

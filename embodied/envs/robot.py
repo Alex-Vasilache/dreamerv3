@@ -680,7 +680,7 @@ class SmartphoneRobot(embodied.Env):
       cost_obs=False, pain_mode='bumper', pain_iota0=1.0, pain_iota1=3.0,
       emotion_model='v2', arousal_mode='pearce_hall', arousal_efference=False,
       arousal_eta=0.07, arousal_z_s=60.0, empower_steps=16, empower_extra='',
-      empower_s=3.0,
+      empower_s=3.0, dominance_mode='empowerment', evidence_k=0, evidence_s=2.0,
       catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4,
       catch_mode='slope', catch_dmax=0.0, catch_offsets='0.25,0.5,1',
       catch_z=0.0, catch_window=650, catch_zlog=False, catch_tmin=0.0,
@@ -1057,6 +1057,13 @@ class SmartphoneRobot(embodied.Env):
     self.arousal_z_s = float(arousal_z_s)
     self.empower_steps = int(empower_steps)
     self.empower_s = float(empower_s)
+    # dominance_mode 'evidence' (11-15): dominance from the evidence of
+    # control (the prior on the action taken vs evidence_k random commands,
+    # averaged over evidence_s s); evidence_k > 0 logs it either way.
+    assert dominance_mode in ('empowerment', 'evidence'), dominance_mode
+    self.dominance_mode = str(dominance_mode)
+    self.evidence_k = int(evidence_k)
+    self.evidence_s = float(evidence_s)
     # empower_extra '32' (comma-separated): also record the end-point terms
     # of these rollout lengths (analysis only; the rollout runs longer).
     self.empower_extra = [int(x) for x in str(empower_extra).split(',') if x.strip()]
@@ -1236,7 +1243,9 @@ class SmartphoneRobot(embodied.Env):
         arousal=self.arousal_mode, efference=self.arousal_efference,
         empower_steps=self.empower_steps, empower_extra=self.empower_extra,
         arousal_eta=self.arousal_eta, arousal_z_s=self.arousal_z_s,
-        empower_s=self.empower_s, reflex=dict(self.reflex),
+        empower_s=self.empower_s, dominance=self.dominance_mode,
+        evidence_k=self.evidence_k, evidence_s=self.evidence_s,
+        reflex=dict(self.reflex),
         body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
                   hi=self.bumper_hi, zone=self.pain_zone,
                   pain_mode=self.pain_mode, iota0=self.pain_iota[0],

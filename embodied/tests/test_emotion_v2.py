@@ -572,6 +572,31 @@ def test_pearce_hall_now_includes_the_current_error():
   assert emo.norm['ph_now'].a == pytest.approx(emo.norm['ph'].a)
 
 
+def test_control_evidence_drives_dominance():
+  """e_t = (1/n)[log p(s_t|taken) - log mean_k p(s_t|a_k)], averaged into
+  ctl_ev; dominance='evidence' uses it, the default does not."""
+  emo = emotion.EmotionV2(ToyPolicy(), dominance='evidence', evidence_k=8,
+                          evidence_s=0.5)
+  d, s, logit = emo.p.last_post
+  rng = np.random.default_rng(5)
+  sig = emo.step(d, logit, s, 0.0, 0.0)
+  assert sig['ctl_e'] == 0.0          # no previous state yet
+  for i in range(20):
+    sig = emo.step(d + 0.1 * rng.normal(size=d.shape).astype(np.float32),
+                   logit, s, 0.0, 0.0)
+    assert np.isfinite(sig['ctl_e']) and np.isfinite(sig['ctl_ev'])
+    assert sig['dominance'] == sig['dominance_ev']
+  # the direct formula, by hand, for one step
+  prev = (np.asarray(d, np.float32), np.asarray(s, np.float32))
+  e = emo.control_evidence(*prev, d, s, steps=1)
+  assert np.isfinite(e)
+  plain = emotion.EmotionV2(ToyPolicy())
+  sig = plain.step(d, logit, s, 0.0, 0.0)
+  assert sig['ctl_ev'] == 0.0 and plain.evidence_k == 0
+  with pytest.raises(AssertionError):
+    emotion.EmotionV2(ToyPolicy(), dominance='evidence')   # needs evidence_k
+
+
 def test_yu_pain_probabilities_and_critic_spread():
   emo = emotion.EmotionV2(ToyPolicy())
   d, s, logit = emo.p.last_post

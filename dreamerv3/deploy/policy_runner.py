@@ -276,7 +276,10 @@ class PolicyRunner:
             empower_extra=tuple(cfg.get('empower_extra') or ()),
             arousal_eta=float(cfg.get('arousal_eta', 0.07)),
             arousal_z_s=float(cfg.get('arousal_z_s', 60.0)),
-            feel_every=self.FEEL_EVERY)
+            feel_every=self.FEEL_EVERY,
+            dominance=cfg.get('dominance', 'empowerment'),
+            evidence_k=int(cfg.get('evidence_k', 0)),
+            evidence_s=float(cfg.get('evidence_s', 2.0)))
       else:
         self.emotion = emotion_lib.Emotion(
             policy, gamma=policy.meta['emotion']['gamma'], every=0,
@@ -395,6 +398,8 @@ class PolicyRunner:
           empowerment=sig['empowerment'], faded=sig['faded'], model='v2',
           ph_alpha=sig.get('ph_alpha', 0.0),
           ph_now=sig.get('ph_now', 0.0),
+          ctl_e=sig.get('ctl_e', 0.0), ctl_ev=sig.get('ctl_ev', 0.0),
+          dominance_ev=sig.get('dominance_ev', 0.0),
           p_pain_prior=sig.get('p_pain_prior', 0.0),
           q_pain_post=sig.get('q_pain_post', 0.0),
           value_std=sig.get('value_std', 0.0), threat_std=sig.get('threat_std', 0.0),
@@ -462,7 +467,10 @@ class PolicyRunner:
                       ('empower_extra', 'empower_extra'),
                       ('arousal_eta', 'arousal_eta'),
                       ('arousal_z_s', 'arousal_z_s'),
-                      ('empower_s', 'empower_s')):
+                      ('empower_s', 'empower_s'),
+                      ('dominance', 'dominance'),
+                      ('evidence_k', 'evidence_k'),
+                      ('evidence_s', 'evidence_s')):
       if settings.get(key) is not None:
         cfg[name] = settings[key]
     if cfg != self.emotion_cfg:

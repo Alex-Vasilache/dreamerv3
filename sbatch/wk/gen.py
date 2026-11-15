@@ -424,6 +424,15 @@ DC_ARMS = [('dc_g02', f'{EM_ARMS[1][1]} --env.robot.sim_control_cut {DC_CUT}'),
            ('dc_g05', f'{EM_ARMS[1][1]} --env.robot.sim_control_cut 20:5:0.5:300')]
 SEEDS_DC = [841, 842, 843, 844]
 
+# Round DE (11-15, evidence-based dominance): DC's x0.5 cut, plus a x0.35
+# cut, with the evidence of control logged beside empowerment
+# (evidence_k 8 random commands, averaged over 2 s; dominance itself stays
+# empowerment so both come from the same runs). 30 min, seeds 851-854, IAS.
+DE_EV = '--env.robot.evidence_k 8 --env.robot.evidence_s 2.0'
+DE_ARMS = [('de_g05', f'{EM_ARMS[1][1]} {DE_EV} --env.robot.sim_control_cut 20:5:0.5:300'),
+           ('de_g035', f'{EM_ARMS[1][1]} {DE_EV} --env.robot.sim_control_cut 20:5:0.35:300')]
+SEEDS_DE = [851, 852, 853, 854]
+
 
 def bal_line(exp, gpu, flags, seed, minutes=30, floor=FLOOR, base='live'):
   phone, bal = (PHONE, LIVE_BAL) if base == 'live' else (OLD_PHONE, OLD_BAL)
@@ -764,6 +773,12 @@ def main():
     seeds, minutes = {'dcsmoke': ([1], 4), 'dci': (SEEDS_DC, 30)}[rnd]
     for seed in seeds:
       for arm, flags in (DC_ARMS[:1] if rnd == 'dcsmoke' else DC_ARMS):
+        lines.append(f'# {arm}')
+        lines.append(bal_line(f'e{n}', 'any', flags, seed, minutes=minutes, base='old')); n += 1
+  elif rnd in ('desmoke', 'dei'):
+    seeds, minutes = {'desmoke': ([1], 4), 'dei': (SEEDS_DE, 30)}[rnd]
+    for seed in seeds:
+      for arm, flags in (DE_ARMS[:1] if rnd == 'desmoke' else DE_ARMS):
         lines.append(f'# {arm}')
         lines.append(bal_line(f'e{n}', 'any', flags, seed, minutes=minutes, base='old')); n += 1
   elif rnd.startswith('w1'):
