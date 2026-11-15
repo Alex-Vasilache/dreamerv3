@@ -710,6 +710,12 @@ Queued behind array 4823592 (A100 cap 8). `sbatch/goalhold_b3_params.txt`, all o
 | h0431 | pin pad five, 0 | `goal_hold_reach goal_hold_cap16` | cap 16 between 8 (0.30M) and 32 (1.93M) |
 | h0430 | cheetah, 0 | `goal_hold_reach goal_hold_cap8` | DMC with the fix (before: 580 late, V 536) |
 
+**18:20** h0428 (CONTROL, fixed 4-step holds, no reached test, pin pad five) cancelled at 3.0M:
+score 0 throughout, where reach or 8 scored from 0.3M (2 seeds) and old V fixed 8 from 1.1-1.5M
+(4 of 5 seeds). So shorter holds alone do not help (they are worse than 8); the gain comes from
+ending a hold when the goal is reached. h0427 (worker done, pin pad six) cancelled at 2.4M at 0.
+Both archived; slots go to arrays 4823918 / 4824030.
+
 ### h0418-h0425: ways to end a hold, and surprise (2026-11-15 05:05, array 4823592)
 
 All on V (`director director_og wkr_ent_fixed wkr_v3 ... pubmatch`) with the bootstrap fix, A100,
