@@ -853,3 +853,30 @@ control cuts x0.5 and x0.35 (`20:5:G:300`), seeds 851-854, 30 min, IAS array
 `sbatch/wk/dei.txt`. Smokes: e44989 (columns missing from sim_phone's fixed
 list, fixed), e44998 (cancelled, stale snapshot), e44999 (OK; ctl_e mean
 -0.005 ± 0.027 over the first 4 min).
+
+### Sun 11-15: DE results (evidence-based dominance)
+
+AUC of a low value for "inside a cut" (contact ±0.25 s excluded, minutes
+5-30), mean ± SD over n = 4 runs per gain; figure `figs/study/de.png`
+(script `tools/robot/dev/emo/de_analyse.py RUNS OUT`):
+
+| signal | x0.5 | x0.35 |
+|---|---|---|
+| dominance, empowerment (current) | 0.57 ± 0.04 | 0.54 ± 0.07 |
+| dominance, evidence in the world model (new switch) | 0.52 ± 0.06 | 0.58 ± 0.11 |
+| command→tilt slope, 2 s, model-free | **0.65 ± 0.03** | **0.65 ± 0.04** |
+| arousal, Pearce-Hall incl. current (reference; low) | 0.23 ± 0.03 | 0.34 ± 0.10 |
+
+- The world-model evidence (prior on the action taken vs 8 random commands)
+  hardly reacts: one feel call spans 4 steps, in which a command changes the
+  latent state little, so e_t is mostly noise (SD 0.027 vs mean -0.005).
+  Not adopted.
+- The model-free slope replicates the DC offline result (0.63) on new seeds
+  and both gains, and reacts within ~0.5 s of the cut; empowerment dips later
+  (~1.5 s) and mostly through bumper contact (x0.35: 94 % of cut steps in
+  contact, so that arm is weak evidence).
+- Candidate for dominance: the slope (a running regression of the observed
+  outcome on one's own commands), i.e. "how much do my actions move things
+  right now", a direct, task-free form of the Bayesian control estimate.
+  Not built on the robot; it needs a choice of outcome signal per body
+  (here tilt acceleration).
