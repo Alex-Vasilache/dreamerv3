@@ -1751,6 +1751,10 @@ goal_hold_frac07:
   agent: {goal_reach_frac: 0.7}
 goal_hold_frac09:
   agent: {goal_reach_frac: 0.9}
+# Short fixed hold through the same code path (use with goal_hold_noreach):
+# control for "is it the reached test or just shorter holds".
+goal_hold_cap4:
+  agent: {goal_duration_fixed: 4, imag_length: 16}
 # Longer cap with a rollout that fits it.
 goal_hold_cap48:
   agent: {goal_duration_fixed: 48, imag_length: 48}

@@ -1,0 +1,8 @@
+director pinpad_four 0 h0426 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_done pubmatch
+director pinpad_six 0 h0427 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_done pubmatch
+director pinpad_five 0 h0428 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap4 goal_hold_noreach pubmatch
+director pinpad_six 1 h0429 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 mgr_surprise pubmatch
+director dmc_cheetah_run 0 h0430 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 pubmatch
+director pinpad_five 0 h0431 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap16 pubmatch
+director pinpad_five 0 h0432 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_done mgr_surprise pubmatch
+director pinpad_five 1 h0433 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_done pubmatch
