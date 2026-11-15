@@ -118,17 +118,20 @@ __RUNS__
 <p>All runs below include the fix. They differ only in when the manager picks a new goal.</p>
 <figure><img alt="Pin pad five and four scores and real and imagined hold lengths for each way to end a hold" src="data:image/png;base64,__FIG2__">
 <figcaption>Top: scores. Bottom: how many steps a goal is really kept in the environment (left) and in imagination (right). Runs are in progress; curves end where the run currently is.</figcaption></figure>
-<div class="tw"><table><thead><tr><th>Rule</th><th>Real hold (steps)</th><th>First score (M steps)</th><th>Score at 2.5-3M</th></tr></thead><tbody>
+<div class="tw"><table><thead><tr><th>Rule</th><th>Real hold (steps)</th><th>First score (M steps)</th><th>Late score</th></tr></thead><tbody>
 <tr><td>V, fixed 8 (5 seeds)</td><td>8</td><td>1.1-2.6</td><td>about 280 (4 of 5 seeds)</td></tr>
-<tr class="hl"><td>reach or 8 + surprise</td><td>7</td><td>0.2</td><td>296</td></tr>
-<tr class="hl"><td>worker "done", cap 32</td><td>4-5</td><td>0.4</td><td>290</td></tr>
-<tr class="hl"><td>reach or 8 (2 seeds)</td><td>6-7</td><td>0.3</td><td>277, 278</td></tr>
-<tr><td>reach, threshold 0.7, cap 32</td><td>7-8</td><td>0.8</td><td>220</td></tr>
+<tr class="hl"><td>reach or 8 + surprise</td><td>7</td><td>0.2</td><td>295 (final)</td></tr>
+<tr class="hl"><td>worker "done", cap 32</td><td>4-5</td><td>0.4</td><td>293 (final)</td></tr>
+<tr class="hl"><td>reach or 8 (2 seeds)</td><td>6-7</td><td>0.3</td><td>277, 293 (final)</td></tr>
+<tr><td>reach or 16</td><td>about 9</td><td>0.5</td><td>running (230 at 1.4M)</td></tr>
+<tr><td>reach, threshold 0.7, cap 32</td><td>7-8</td><td>0.8</td><td>210 (final)</td></tr>
 <tr><td>reach, threshold 0.8, cap 32</td><td>about 10</td><td>1.9</td><td>201</td></tr>
 <tr><td>reach, threshold 0.9, cap 32</td><td>20-22</td><td>none by 2.2M</td><td>stopped</td></tr>
 <tr><td>manager picks 1-32</td><td>11-15</td><td>none by 2.6M</td><td>stopped</td></tr>
+<tr><td>fixed 4 steps, no reached test (control)</td><td>4</td><td>none by 3.0M</td><td>stopped</td></tr>
 </tbody></table></div>
-<p class="take">The worker "done" rule works without being gamed into trivial behaviour: it ends holds after 3 to 6 steps and learns pin pad five about as fast as the best rule. Letting the manager pick any length from 1 to 32 does not work: nothing pushes it to short holds before the first reward, so it stays near 15 steps. A 1 to 8 version and a control with fixed 4-step holds are queued; the control tells whether the reached test matters or only the shorter hold.</p>
+<p class="take">Three findings. (1) Ending a hold when the goal is reached is what helps: a control with fixed 4-step holds and no reached test never scored in 3M steps, so shorter holds alone are worse than 8. (2) The worker "done" rule works and is not gamed: it ends holds after 3 to 6 steps and learns pin pad five as fast as the best rule. (3) Letting the manager pick any length from 1 to 32 does not work: nothing pushes it to short holds before the first reward, so it stays near 15 steps. A 1 to 8 version is queued.</p>
+<p>Pin pad six is still unsolved by every rule (0 in 5 runs), with or without surprise. It is an exploration problem; runs with the earlier transition-count bonus on top of reach-or-8 are queued. Cheetah with reach-or-8 is at about 500 at 1.3M, in line with V.</p>
 <p><b>One more inconsistency found and being tested.</b> When the manager's value is trained on recorded experience, the code re-decided where goals would switch using today's manager on old data. Old data was following other goals, so "reached" almost never fires there and holds run to the cap: 22 to 29 steps in training against 10 to 11 in reality at cap 32. A new option stores the real switch points and trains on those. Cap 32 runs with it are queued.</p>
 <p class="note">Worker "done" is computed from the worker's own value estimate: stop when the expected future match is no better than keeping the current match, <span data-tex="(1-\gamma)\,V(s,g)\le \cos_{\max}(g,s)"></span>, and the match is at least half the ceiling. The worker cannot gain by stopping early, because stopping only pays what it already has.</p>
 </section>
