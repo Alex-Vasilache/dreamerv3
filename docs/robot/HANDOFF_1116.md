@@ -32,10 +32,10 @@ Details and tables: `SAMPLE_EFF_STUDY.md` (sections dated 11-14/11-15).
    seen the weak wheels; arousal (0.83) and pleasure (0.64) react. Offline,
    a model-free evidence measure (command→tilt slope) does better (0.58-0.63).
    Round DE (8 new runs): the world-model evidence switch (`dominance_mode
-   evidence`) does not help (0.52); the model-free command→tilt slope
-   replicates (0.65 at both cut strengths, reacts in ~0.5 s). Candidate
-   dominance = how much my commands move the outcome now; not built (needs an
-   outcome signal per body).
+   evidence`) does not help (0.52). **Corrected 11-16:** with a fair baseline
+   and a ~1 s delay, raw empowerment marks strong cuts well (AUC 0.85 at x0.2,
+   0.74 at x0.35, contact excluded) and beats the model-free slope; the
+   mild x0.5 cut is weak for all. The 10 s z-score costs ~0.1 AUC.
 3. **Sim round with the chosen definitions** (EM, 16 runs): definitions hold
    on new runs; arousal predicts the world-model error 1-2 s ahead.
 4. **Emotions that help learning** (literature: emotion acts selectively).
@@ -56,6 +56,6 @@ Nothing; all rounds analysed and archived to the bucket.
 
 - Live check of regret (`--agent.regret.beta 0.2`) from scratch on the robot;
   if it holds, make it the robot default.
-- Decide whether dominance becomes the command→outcome slope (body-specific
-  outcome choice) or stays empowerment.
+- Dominance stays empowerment; consider a longer z window (it adapts to the
+  drop).
 - Questions for Angela Yu: `LIT_AROUSAL_YU.md`.

@@ -902,3 +902,32 @@ vs base; figure `figs/study/le4.png`.
   in the learner only (agent.py, from replayed starts; needs the threat
   critic), so the phone app needs no change for it; it was tested in sim
   only, so a live check comes first.
+
+### Mon 11-16: correction, empowerment does track control cuts (with a ~1 s delay)
+
+Alex spotted that empowerment falls clearly ~1-2 s into each cut. The DC/DE
+AUCs above understated it twice over: they compared "inside the cut" with
+*all* other time, which includes the 1-2 s after each cut where empowerment
+is still low, and they allowed no delay. Redone (`tools/robot/dev/emo/dominance_lag.py`):
+inside = [onset + lag, offset + lag], outside = more than 10 s from any cut,
+bumper contact ±0.25 s excluded; AUC of a low value, mean over runs
+(DC + DE pooled per gain, n = 4-8; SD 0.02-0.07):
+
+| gain | lag | empowerment C (raw) | dominance (tanh z, 10 s) | command→tilt slope |
+|---|---|---|---|---|
+| x0.2 | 0 s | 0.60 | 0.54 | 0.57 |
+| x0.2 | 1 s | **0.85** | 0.75 | 0.58 |
+| x0.35 | 0 s | 0.65 | 0.56 | 0.55 |
+| x0.35 | 1.5 s | **0.74** | 0.63 | 0.52 |
+| x0.5 | 0-2 s | 0.58-0.59 | 0.55-0.57 | 0.55-0.59 |
+
+- Empowerment marks strong cuts well once a ~1-1.5 s delay is allowed, also
+  without contact and within tilt tertiles (x0.2: 0.84), so it is not just
+  "tilted further". At the mild cut all three signals are weak (~0.59).
+- The model-free slope's advantage in DE came from the baseline choice; with
+  the fair baseline it is no better than empowerment and worse on strong
+  cuts. Retracted as a candidate.
+- The z-score (10 s window) costs ~0.1 AUC: it adapts to the drop. Dominance
+  could use a longer z window or the raw C.
+- Delay: C is refreshed about once a second and needs the state to move
+  before the imagined rollouts differ.
