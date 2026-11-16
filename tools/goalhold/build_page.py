@@ -5,15 +5,14 @@ SRC = 'tools/goalhold/progress_page.html'
 OUT = sys.argv[1]
 RUNS = [
   ('h0410-h0433', 'batches 1-3: hold rules, thresholds, worker "done", controls, cheetah', '', 'V', 'ok', 'done'),
-  ('h0434 / h0435 / h0437', 'cap 32 with real switch points: five reach / five "done" / four reach', '32', '', 'ok', 'done: 209 / 298 / 271'),
-  ('h0438 / h0440 / h0441 / h0442', 'surprise (outliers) six seed 0 / five; surprise five seed 1; squared error x2', '8', '', 'ok', 'done: 0 / 304 / 296 / 293'),
-  ('h0439', 'pin pad six, surprise (outliers), seed 1', '8', 'first pin pad six score', 'run', 'continuing to 6M: ~228 at 4.0M'),
-  ('h0436', 'pin pad five, manager picks 1-8', '8', 'h0421', 'run', '1.2M: 0 (resumed after interruption)'),
-  ('h0443', 'pin pad five, squared error x4', '8', 'h0442', 'run', 'started'),
-  ('h0446 / h0447', 'pin pad five, real switch points: cap 32 seed 1 / cap 8', '', '', 'run', '2.5M: ~190 / 2.8M: ~296'),
-  ('h0448 / h0449', 'real switch points, cap 32, on pin pad six / cheetah', '32', '', 'run', '1.7M: 0 / started'),
-  ('h0444 / h0445', 'pin pad six, reach or 8 + transition-count bonus', '8', '', 'run', 'queued'),
-  ('h0450-h0452', 'pin pad six, surprise (outliers), seeds 2-4, to 6M', '8', 'h0439', 'run', 'queued'),
+  ('h0434-h0437', 'cap 32 with real switch points; manager picks 1-8', '', '', 'ok', 'done'),
+  ('h0438-h0443', 'surprise (first and outliers-only version); squared-error reached test', '8', '', 'ok', 'done'),
+  ('h0439', 'pin pad six, surprise (outliers), seed 1, continued to 6M', '8', 'first pin pad six score', 'ok', 'done: 215-225 from 4M'),
+  ('h0446 / h0447', 'pin pad five, real switch points: cap 32 seed 1 / cap 8', '', '', 'ok', 'done: 214 / 292'),
+  ('h0449', 'cheetah, reach or 32 with real switch points', '32', 'reach or 8: 616', 'run', '3.1M: ~340'),
+  ('h0444 / h0445', 'pin pad six, reach or 8 + transition-count bonus', '8', '', 'run', '3.9M / 1.8M: 0'),
+  ('h0450-h0452', 'pin pad six, surprise (outliers), seeds 2-4, to 6M', '8', 'h0439', 'run', '2.1-2.9M: 0'),
+  ('h0453', 'pin pad five, "done" + real switch points, seed 1', '32', 'h0435 (298)', 'run', 'waiting for a GPU'),
 ]
 TASKS = [
   ('Paper section', 'ok', 'done', 'Goal Flexibility: holding a goal until it is reached (15 pages, builds clean)'),
@@ -21,8 +20,8 @@ TASKS = [
   ('Find the cause of the pin pad drop', 'ok', 'done', 'wrong bootstrap state for the cut last hold'),
   ('Fix and confirmation runs', 'run', 'confirmed', 'cap 8 finished: 332 / 350 on pin pad four (V 311)'),
   ('More bug-hunt angles', 'run', 'ongoing', 'second inconsistency found and fixed (replay switch points); it lifts cap 32'),
-  ('Threshold, distance test, worker "done"', 'run', 'running', 'array 4823592'),
-  ('Manager-chosen goal length', 'run', 'queued', 'array 4823592'),
+  ('Threshold, distance test, worker "done"', 'ok', 'done', 'see the table above'),
+  ('Manager-chosen goal length', 'ok', 'done', 'fails at 1-32 and at 1-8'),
   ('Surprise reward', 'run', 'first results', 'pin pad five 295-304 (277-293 without); one pin pad six seed solved'),
   ('Real hold length in the environment', 'run', 'ok', 'working: real holds 6-18 steps in the first batch-2 runs'),
 ]
