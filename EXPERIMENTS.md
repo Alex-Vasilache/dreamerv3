@@ -649,6 +649,11 @@ to give its slot to the pin pad six surprise seeds. h0436 (duration head 1..8, r
 preemption) first reaches trailing-10 >= 50 at 1.86M (mean chosen duration 4.3-5.2, real hold
 ~4-5); kept.
 
+**14:17 (11-16)** h0436 final (duration head 1..8, pin pad five): 1 late; it crossed 50 once at
+1.86M and lost it. Chosen durations 4.3-5.2, real hold ~4-5. So the manager-chosen length fails
+at both ranges (1..32 and 1..8) on pin pad five, where reach-based and done-based switching with
+similar real holds score 277-298. Archived.
+
 ### h0453: worker done + real switch points, cap 32, pin pad five seed 1 (2026-11-16 13:25, array 4824840)
 
 Second seed of h0435 (298 late, first score 0.26M), the best cap-32 arm. Takes the slot h0439 freed.
