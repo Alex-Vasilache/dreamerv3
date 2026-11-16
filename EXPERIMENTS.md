@@ -644,6 +644,11 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+**11:00 (11-16)** h0448 (pin pad six, cap 32, real switches) cancelled at 2.47M at 0 and archived,
+to give its slot to the pin pad six surprise seeds. h0436 (duration head 1..8, resumed after the
+preemption) first reaches trailing-10 >= 50 at 1.86M (mean chosen duration 4.3-5.2, real hold
+~4-5); kept.
+
 ### h0450-h0452: pin pad six, surprise k = 2, three more seeds to 6M (2026-11-16 09:20, array 4824792)
 
 h0439 (seed 1) was the first goal-hold run to score on pin pad six, at 3.63M. Seeds 2-4 of the
