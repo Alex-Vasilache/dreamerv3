@@ -720,6 +720,10 @@ without; k = 2 starts later. The squared-error test at x2 matches the cosine rul
 later (stricter). h0439 continues to 6M as job 4824783 (started 08:54, one second after the array
 task ended).
 
+**13:20 (11-16): h0439 at 6M.** Pin pad six, 0.5M windows from 3.5M: 158, 225, 225, 224, 215.
+Stable once found (old V's one solved seed: 202 late; solved seeds of other arms 205-220).
+Archived (both SLURM logs, jobs 4824632 and 4824783).
+
 | Run | Task, seed | Blocks after V | Compare with |
 |---|---|---|---|
 | h0438 / h0439 | pin pad six, 0 / 1 | `goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2` | h0423, h0429 (k = 0), h0415 |
