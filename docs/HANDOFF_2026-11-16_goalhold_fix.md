@@ -11,7 +11,7 @@ reached" (figure script `figures/motivation/make_goal_hold.py`).
 
 See the table at the end of this file (section 6) for live jobs; it is updated last.
 
-- **Next free experiment number: h0453.**
+- **Next free experiment number: h0454.**
 - Autonomy given by the user ended Monday 2026-11-16 20:00 JST. Live jobs were left running.
 - The supervision cron was session-only. Recreate with `tools/goalhold/supervise.sh <array id>`
   (status) and `tools/goalhold/archive_done.sh <array id>` (archives terminal runs; skips run dirs

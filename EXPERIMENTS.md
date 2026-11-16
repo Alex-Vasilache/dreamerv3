@@ -649,6 +649,11 @@ to give its slot to the pin pad six surprise seeds. h0436 (duration head 1..8, r
 preemption) first reaches trailing-10 >= 50 at 1.86M (mean chosen duration 4.3-5.2, real hold
 ~4-5); kept.
 
+### h0453: worker done + real switch points, cap 32, pin pad five seed 1 (2026-11-16 13:25, array 4824840)
+
+Second seed of h0435 (298 late, first score 0.26M), the best cap-32 arm. Takes the slot h0439 freed.
+`sbatch/goalhold_b10_params.txt`. **Next free number: h0454.**
+
 ### h0450-h0452: pin pad six, surprise k = 2, three more seeds to 6M (2026-11-16 09:20, array 4824792)
 
 h0439 (seed 1) was the first goal-hold run to score on pin pad six, at 3.63M. Seeds 2-4 of the
