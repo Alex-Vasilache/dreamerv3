@@ -654,6 +654,10 @@ preemption) first reaches trailing-10 >= 50 at 1.86M (mean chosen duration 4.3-5
 at both ranges (1..32 and 1..8) on pin pad five, where reach-based and done-based switching with
 similar real holds score 277-298. Archived.
 
+**16:00 (11-16)** h0443 final (pin pad five, squared-error reached test x4): 298 late, first >= 50
+at 0.98M, sustained 1.25M (x2: 293, 0.74M; cosine rule: 277 / 293, 0.30M). The squared-error test
+reaches the same level and starts later at both multipliers. Archived.
+
 ### h0453: worker done + real switch points, cap 32, pin pad five seed 1 (2026-11-16 13:25, array 4824840)
 
 Second seed of h0435 (298 late, first score 0.26M), the best cap-32 arm. Takes the slot h0439 freed.
