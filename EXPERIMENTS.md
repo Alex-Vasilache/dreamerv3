@@ -644,6 +644,12 @@ codebook bins, then the Director reconstruction-error exploration reward off
 59% vs TCE 58% (+0.4 pts, p=0.95). Better on pin pad four/five (+21/+20), level
 elsewhere; the start side no longer depends on the goal encoder.
 
+### h0450-h0452: pin pad six, surprise k = 2, three more seeds to 6M (2026-11-16 09:20, array 4824792)
+
+h0439 (seed 1) was the first goal-hold run to score on pin pad six, at 3.63M. Seeds 2-4 of the
+same arm (`goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2 pubmatch steps6m`), run
+to 6M since the first score came late. 10 h limit with self-requeue. `sbatch/goalhold_b9_params.txt`.
+
 ### h0446-h0449: more real-switch runs (2026-11-15 21:20, array 4824385)
 
 Follow-up to the early h0434 read. `sbatch/goalhold_b8_params.txt`, queued last (may start after

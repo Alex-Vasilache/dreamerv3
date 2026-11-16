@@ -1,0 +1,3 @@
+director pinpad_six 2 h0450 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2 pubmatch steps6m
+director pinpad_six 3 h0451 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2 pubmatch steps6m
+director pinpad_six 4 h0452 director_og wkr_ent_fixed wkr_v3 goal_hold_reach goal_hold_cap8 mgr_surprise mgr_surprise_k2 pubmatch steps6m
