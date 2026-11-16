@@ -78,7 +78,7 @@ Pin pad five (old V, 5 seeds: 278 on 4 of 5; first 1.11-2.59):
 | reach or 8 | 6-7 | 277, 293 | 0.30, 0.31 |
 | reach or 8 + surprise (k=0) | 7 | 295, 296 | 0.22, 0.34 |
 | reach or 8 + surprise (k=2) | 7 | 304 | 0.76 |
-| reach or 8, squared error x2 | - | 293 | 0.74 |
+| reach or 8, squared error x2 / x4 | - | 293 / 298 | 0.74 / 0.98 |
 | reach or 8 + real switches | - | 292 | 0.27 |
 | worker done, cap 32 | 3-6 | 293, 294 | 0.36, 0.47 |
 | worker done + real switches, cap 32 | 4-5 | 298 | 0.26 |
@@ -89,11 +89,12 @@ Pin pad five (old V, 5 seeds: 278 on 4 of 5; first 1.11-2.59):
 | reach or 32 + real switches | ~10 | 209, 214 | 0.26, 0.83 |
 | reach 0.9, cap 32 | 20-22 | 0 (stopped 2.2M) | - |
 | manager picks 1..32 | 11-18 | 0 (stopped 2.6M) | - |
+| manager picks 1..8 | 4-5 | 1 | 1.86, then lost |
 | fixed 4, no reached test (control) | 4 | 0 (stopped 3.0M) | - |
 
 Pin pad four (old V 311): reach or 8 332 / 350; reach or 32 284 / 303; + real switches 271;
 worker done 287. Before the bootstrap fix: 181 (cap 8), 237 (cap 32).
-Cheetah: reach or 8 616 (old V 536).
+Cheetah: reach or 8 616 (old V 536); reach or 32 + real switches ~330 at 3.9M (h0449).
 Pin pad six: 0 in 7 runs (cap 8, cap 32, worker done, surprise k=0 x2, surprise k=2 seed 0,
 cap 32 + real switches); **surprise k=2 seed 1 (h0439) first scores at 3.63M, ~225 through 5.7M**.
 
@@ -104,11 +105,15 @@ Reading:
 - Cap 32 is fine when holds end early for another reason: worker done at cap 32 matches the best.
   For "cap 32" use `goal_hold_reach goal_hold_done` (optionally + `goal_hold_realsw`).
 - Manager-chosen length fails at 1..32 (entropy regulariser keeps durations near 15, nothing
-  favours short holds before the first reward); the 1..8 version is running.
+  favours short holds before the first reward) and at 1..8 (holds of 4-5 steps, scored once at
+  1.86M and lost it). Neither ran with real switch points; there the replay bias goes the other
+  way (replay holds SHORTER than real: ~2 vs 4-5 and ~12 vs 15-18), and the user suspects that is
+  what breaks it. h0454 / h0455 test this.
 - Surprise adds ~10-20 points on pin pad five; one pin pad six seed solved with k=2. All n <= 2.
 
 ## 4. Suggested next steps
 
+0. **Read h0454 / h0455 first** (duration head with real switch points; the user's open question).
 1. Read the live runs (section 6). Pin pad six seeds h0450-h0452 decide whether surprise k=2 is a
    real effect (need >= 3 of 5 against V's 1 of 5 to say anything).
 2. More seeds of the three best arms on all six tasks: reach or 8; reach or 8 + surprise k=2;
@@ -130,4 +135,23 @@ Reading:
 
 ## 6. Live jobs at handoff
 
-(filled in at the end of the session)
+State at 2026-11-16 18:40 JST. Check with `tools/goalhold/supervise.sh <array id>`; archive with
+`tools/goalhold/archive_done.sh <array id>` once a task is COMPLETED.
+
+| Run | Array_task | What | State |
+|---|---|---|---|
+| h0450 / h0451 / h0452 | 4824792_0 / _1 / _2 | pin pad six, reach or 8 + surprise k=2, seeds 2 / 3 / 4, to 6M | running: 4.25M / 4.06M / 3.39M, all 0 (h0439 first scored at 3.63M) |
+| h0445 | 4824246_1 | pin pad six, reach or 8 + TCE critic, seed 1 | running: 3.10M, 0 (seed 0, h0444: 0 at 4M, archived) |
+| h0449 | 4824385_3 | cheetah, reach or 32 + real switches | PENDING at 3.93M (requeued after an interruption; resumes from its checkpoint and finishes in minutes); 330 over 3.5-3.9M |
+| h0453 | 4824840_0 | pin pad five, worker done + real switches, cap 32, seed 1 | pending, estimated start 11-17 18:19 |
+| h0454 / h0455 | 4827526_0 / _1 | pin pad five, duration head 1..8 / 1..32 + real switches | pending, estimated start 11-18 23:08 |
+
+Everything else of h0410-h0452 is finished or stopped and archived in the bucket; nothing else of
+ours is in `/work` except the dev clone and `/work/DoyaU/vasilache/work/meetings/goalhold/`
+(figures). Arrays use a 10 h limit with self-requeue; h0450-h0452 will requeue once to reach 6M.
+
+To start the next session, paste:
+
+> Continue the HRL work in code/dreamerv3. Read docs/HANDOFF_2026-11-16_goalhold_fix.md in full,
+> then check the live arrays (4824792, 4824246, 4824385, 4824840, 4827526) with
+> tools/goalhold/supervise.sh and archive what is finished.
