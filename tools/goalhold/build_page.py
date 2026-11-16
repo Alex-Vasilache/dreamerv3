@@ -4,19 +4,16 @@ import base64, datetime, sys
 SRC = 'tools/goalhold/progress_page.html'
 OUT = sys.argv[1]
 RUNS = [
-  ('h0410-h0417', 'batch 1: reach or 8 / 32 on pin pads four, five, six', '8, 32', 'V', 'ok', 'done'),
-  ('h0418-h0425', 'batch 2: thresholds, worker "done", manager picks 1-32, surprise', '', '', 'ok', 'done'),
-  ('h0426-h0433', 'batch 3: "done" follow-ups, fixed-4 control, cap 16, cheetah (616)', '', '', 'ok', 'done'),
-  ('h0434 / h0435', 'pin pad five, cap 32 with real switch points: reach / "done"', '32', 'h0412, h0420', 'ok', 'done: 209 / 298'),
-  ('h0437', 'pin pad four, reach or 32 with real switch points', '32', 'h0411 (284)', 'run', '3.7M: ~280'),
-  ('h0436', 'pin pad five, manager picks 1-8', '8', 'h0421', 'run', 'interrupted by the cluster at 0.9M, waiting'),
-  ('h0438 / h0439', 'pin pad six, surprise paying only outliers, seeds 0 / 1', '8', '', 'run', '2.0M: 0'),
-  ('h0440', 'pin pad five, surprise paying only outliers', '8', 'h0422', 'run', '2.0M: ~290'),
-  ('h0441', 'pin pad five, reach or 8 + surprise, seed 1', '8', 'h0422', 'run', '2.0M: ~270'),
-  ('h0442 / h0443', 'pin pad five, reached by squared error (x2 / x4)', '8', 'h0414', 'run', 'x2 at 2.1M: ~280; x4 queued'),
-  ('h0446 / h0447', 'pin pad five, real switch points: cap 32 seed 1 / cap 8', '', '', 'run', 'started'),
-  ('h0448 / h0449', 'real switch points on pin pad six / cheetah', '32', '', 'run', 'queued'),
+  ('h0410-h0433', 'batches 1-3: hold rules, thresholds, worker "done", controls, cheetah', '', 'V', 'ok', 'done'),
+  ('h0434 / h0435 / h0437', 'cap 32 with real switch points: five reach / five "done" / four reach', '32', '', 'ok', 'done: 209 / 298 / 271'),
+  ('h0438 / h0440 / h0441 / h0442', 'surprise (outliers) six seed 0 / five; surprise five seed 1; squared error x2', '8', '', 'ok', 'done: 0 / 304 / 296 / 293'),
+  ('h0439', 'pin pad six, surprise (outliers), seed 1', '8', 'first pin pad six score', 'run', 'continuing to 6M: ~228 at 4.0M'),
+  ('h0436', 'pin pad five, manager picks 1-8', '8', 'h0421', 'run', '1.2M: 0 (resumed after interruption)'),
+  ('h0443', 'pin pad five, squared error x4', '8', 'h0442', 'run', 'started'),
+  ('h0446 / h0447', 'pin pad five, real switch points: cap 32 seed 1 / cap 8', '', '', 'run', '2.5M: ~190 / 2.8M: ~296'),
+  ('h0448 / h0449', 'real switch points, cap 32, on pin pad six / cheetah', '32', '', 'run', '1.7M: 0 / started'),
   ('h0444 / h0445', 'pin pad six, reach or 8 + transition-count bonus', '8', '', 'run', 'queued'),
+  ('h0450-h0452', 'pin pad six, surprise (outliers), seeds 2-4, to 6M', '8', 'h0439', 'run', 'queued'),
 ]
 TASKS = [
   ('Paper section', 'ok', 'done', 'Goal Flexibility: holding a goal until it is reached (15 pages, builds clean)'),
@@ -26,7 +23,7 @@ TASKS = [
   ('More bug-hunt angles', 'run', 'ongoing', 'second inconsistency found and fixed (replay switch points); it lifts cap 32'),
   ('Threshold, distance test, worker "done"', 'run', 'running', 'array 4823592'),
   ('Manager-chosen goal length', 'run', 'queued', 'array 4823592'),
-  ('Surprise reward', 'run', 'queued', 'array 4823592'),
+  ('Surprise reward', 'run', 'first results', 'pin pad five 295-304 (277-293 without); one pin pad six seed solved'),
   ('Real hold length in the environment', 'run', 'ok', 'working: real holds 6-18 steps in the first batch-2 runs'),
 ]
 s = open(SRC).read()
