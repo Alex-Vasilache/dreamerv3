@@ -11,7 +11,7 @@ reached" (figure script `figures/motivation/make_goal_hold.py`).
 
 See the table at the end of this file (section 6) for live jobs; it is updated last.
 
-- **Next free experiment number: h0456.**
+- **Next free experiment number: h0459.**
 - Autonomy given by the user ended Monday 2026-11-16 20:00 JST. Live jobs were left running.
 - The supervision cron was session-only. Recreate with `tools/goalhold/supervise.sh <array id>`
   (status) and `tools/goalhold/archive_done.sh <array id>` (archives terminal runs; skips run dirs
@@ -145,6 +145,7 @@ State at 2026-11-16 18:40 JST. Check with `tools/goalhold/supervise.sh <array id
 | h0449 | 4824385_3 | cheetah, reach or 32 + real switches | PENDING at 3.93M (requeued after an interruption; resumes from its checkpoint and finishes in minutes); 330 over 3.5-3.9M |
 | h0453 | 4824840_0 | pin pad five, worker done + real switches, cap 32, seed 1 | pending, estimated start 11-17 18:19 |
 | h0454 / h0455 | 4827526_0 / _1 | pin pad five, duration head 1..8 / 1..32 + real switches | pending, estimated start 11-18 23:08 |
+| h0456-h0458 | 4827569_0-2 | pin pad five real-switch panel: reach 0.7 cap 8 / cap 32, done cap 8 | pending (Priority) |
 
 Everything else of h0410-h0452 is finished or stopped and archived in the bucket; nothing else of
 ours is in `/work` except the dev clone and `/work/DoyaU/vasilache/work/meetings/goalhold/`
@@ -153,5 +154,5 @@ ours is in `/work` except the dev clone and `/work/DoyaU/vasilache/work/meetings
 To start the next session, paste:
 
 > Continue the HRL work in code/dreamerv3. Read docs/HANDOFF_2026-11-16_goalhold_fix.md in full,
-> then check the live arrays (4824792, 4824246, 4824385, 4824840, 4827526) with
+> then check the live arrays (4824792, 4824246, 4824385, 4824840, 4827526, 4827569) with
 > tools/goalhold/supervise.sh and archive what is finished.
