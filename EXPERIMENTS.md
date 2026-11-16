@@ -660,6 +660,12 @@ to 6M since the first score came late. 10 h limit with self-requeue. `sbatch/goa
 Follow-up to the early h0434 read. `sbatch/goalhold_b8_params.txt`, queued last (may start after
 the Monday deadline; left to run).
 
+**12:00 (11-16).** h0447 final (pin pad five, cap 8, real switches): 292 late, first >= 50 and
+sustained at 0.27M; as cap 8 without (277 / 293, 0.30 / 0.31M): no effect where replay and real
+holds were already close. h0446 (cap 32, real switches, seed 1) at 3.8M: 214 late, first 0.83M,
+sustained 2.29M after the long dip (seed 0: 209, 0.26M). h0449 (cheetah, cap 32, real switches):
+330 at 1.3M, well below reach or 8 (~520 at the same step).
+
 | Run | Task, seed | Blocks after V | Question |
 |---|---|---|---|
 | h0446 | pin pad five, 1 | `goal_hold_reach goal_hold_realsw` | second seed of h0434 (cap 32) |
