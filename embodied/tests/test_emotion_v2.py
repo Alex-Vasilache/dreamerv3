@@ -104,7 +104,7 @@ def test_pleasure_is_outcome_plus_outlook_change():
   lam = emo.lam
   assert after_tick == pytest.approx(lam * before + (1 - lam) * (0.4 - 0.25))
   sig = emo.step(d, logit, s, 4.0, 0.25)
-  change = (3.0 - 0.1) - (1.0 - 0.2)
+  change = emo.gamma * ((3.0 - 0.1) - (1.0 - 0.2))   # p = o + gamma (O_t - O_{t-1})
   assert sig['change'] == pytest.approx(change)
   assert emo.faded == pytest.approx(after_tick + (1 - lam) * change)
   assert -1 <= sig['pleasure'] <= 1 and sig['valence'] == sig['pleasure']
@@ -545,7 +545,7 @@ def test_pearce_hall_alpha_matches_the_offline_recursion():
 
 def test_pearce_hall_z_window_and_default():
   emo = emotion.EmotionV2(ToyPolicy(), hz=65.0, arousal_z_s=60.0, feel_every=4)
-  assert emo.arousal_mode == 'pearce_hall'
+  assert emo.arousal_mode == 'pearce_hall_now'
   assert emo.norm['ph'].a == pytest.approx(1 / 975)   # 60 s x 65 Hz / 4
   # The other modes still drive arousal and alpha is still reported.
   kl = emotion.EmotionV2(ToyPolicy(), arousal='kl')
@@ -620,7 +620,7 @@ def test_yu_pain_probabilities_and_critic_spread():
 
 def test_runner_passes_the_em_settings():
   r = _runner_v2()
-  assert r.emotion.arousal_mode == 'pearce_hall'
+  assert r.emotion.arousal_mode == 'pearce_hall_now'
   r.configure(dict(arousal_eta=0.1, arousal_z_s=30.0, empower_s=0.5))
   assert r.emotion.eta == 0.1 and r.emotion_cfg['empower_s'] == 0.5
   assert r.emotion.norm['ph'].a == pytest.approx(1 / round(30 * 65 / r.FEEL_EVERY))
@@ -635,7 +635,7 @@ def test_runner_passes_the_em_settings():
                                  sim_noise=0.0, empower_s=0.5, sim_phone_heavy_every=16)
   st = env._emotion_settings()
   assert (st['arousal'], st['arousal_eta'], st['arousal_z_s'], st['empower_s']) == (
-      'pearce_hall', 0.07, 60.0, 0.5)
+      'pearce_hall_now', 0.07, 60.0, 0.5)
   assert env._phone_args['heavy_every'] == 16
 
 

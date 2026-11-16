@@ -348,11 +348,11 @@ class EmotionV2(Emotion):
 
   MODES = ('kl', 'total', 'unexpected', 'pearce_hall', 'pearce_hall_now')
 
-  def __init__(self, policy, hz=65.0, tau=650, arousal='pearce_hall',
+  def __init__(self, policy, hz=65.0, tau=650, arousal='pearce_hall_now',
                horizon=16, commands=32, fade_s=0.5, every=0, seed=0,
                efference=False, empower_extra=(), arousal_eta=0.07,
                arousal_z_s=60.0, feel_every=1, dominance='empowerment',
-               evidence_k=0, evidence_s=2.0):
+               evidence_k=0, evidence_s=2.0, dominance_z_s=60.0):
     """`tau`: calls in the ~10 s z window of the three axes; `feel_every`:
     control steps per step() call, for the Pearce-Hall z window
     (`arousal_z_s` s) in calls.
@@ -393,6 +393,9 @@ class EmotionV2(Emotion):
     self.evidence_k = int(evidence_k)
     self.evidence_s = float(evidence_s)
     self.norm['ctl_ev'] = Running(tau)
+    # dominance z over 60 s (10 s adapts to a loss of control; 11-16).
+    self.norm['dominance'] = Running(max(1, int(round(
+        float(dominance_z_s) * self.hz / max(1, int(feel_every))))))
     self.ctl_ev = 0.0
     self.ctl_e = 0.0
     self._ev_prev = None
@@ -669,7 +672,8 @@ class EmotionV2(Emotion):
     threat = self.threat(deter, stoch)
     outlook = self.outlook(value, threat)
     first = self.prev_outlook is None
-    change = 0.0 if first else outlook - self.prev_outlook
+    # p_t = o_t + gamma (O_t - O_{t-1}) (EV = (1-gamma) O_{t-1}, 11-16).
+    change = 0.0 if first else self.gamma * (outlook - self.prev_outlook)
     # The parts, for rebuilding other combinations offline: the outcome's
     # reward and pain terms (this step's), and the plain TD error
     # o + gamma^steps O_{t+1} - O_t (exact with a call every step).

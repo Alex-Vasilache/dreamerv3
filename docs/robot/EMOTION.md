@@ -167,3 +167,17 @@ while the model is still poor and carries no guarantee.
 | Time constants: pleasure fading 0.5 s, z-score window ~10 s | open |
 
 Plan page with figures: claude.ai artifact "Robot Emotion Model".
+
+## Decided definitions (11-16, robot defaults)
+
+- **Pleasure:** p_t = o_t + γ (O_t − O_{t−1}), mood = λ-faded sum (λ: 0.5 s).
+  EV = (1−γ) Q_{t−1} ≈ (1−γ) O_{t−1} (only a V critic; the advantage is
+  exploration noise). γ = the agent's discount; λ is a separate forgetting
+  rate (human fits: past 0.89 vs future 0.69 per trial).
+- **Arousal:** Pearce-Hall incl. the current error,
+  α_t = η|δ_t| + (1−η) α_{t−1}, η 0.07, z over 60 s (`arousal_mode pearce_hall_now`).
+- **Dominance:** empowerment C (unchanged), z over 60 s instead of 10 s
+  (control cuts, 1 s lag, contact excluded: AUC 0.74/0.71/0.61 at x0.2/0.35/0.5
+  vs 0.67/0.65/0.57 with 10 s).
+- The phone app's copy of `emotion.py` / `policy_runner.py` must be synced
+  before a live run (`apps/dreamerBridge/src/main/python/`).

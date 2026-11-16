@@ -678,7 +678,7 @@ class SmartphoneRobot(embodied.Env):
       travel_hi=0.0, affect_vigour=0.0, affect_catch=0.0, affect_explore=0.0,
       pain_zone=0.035, emotion_event=0.0, event_signal='arousal',
       cost_obs=False, pain_mode='bumper', pain_iota0=1.0, pain_iota1=3.0,
-      emotion_model='v2', arousal_mode='pearce_hall', arousal_efference=False,
+      emotion_model='v2', arousal_mode='pearce_hall_now', arousal_efference=False,
       arousal_eta=0.07, arousal_z_s=60.0, empower_steps=16, empower_extra='',
       empower_s=3.0, dominance_mode='empowerment', evidence_k=0, evidence_s=2.0,
       catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4,

@@ -189,7 +189,7 @@ class PolicyRunner:
     # 'pearce_hall' since 11-14 (the bake-off winner): eta per control step,
     # z over arousal_z_s seconds. empower_s: the pause between empowerment
     # rollouts (EMPOWER_S if unset).
-    self.emotion_cfg = dict(model='v2', arousal='pearce_hall', empower_steps=16,
+    self.emotion_cfg = dict(model='v2', arousal='pearce_hall_now', empower_steps=16,
                             efference=False, arousal_eta=0.07, arousal_z_s=60.0)
     self.emp_n = 0         # empowerment rollouts finished
     self.emp_ms = 0.0      # the last one's compute time (without the gaps)
@@ -270,7 +270,7 @@ class PolicyRunner:
         hz = float(policy.meta.get('obs_scale', {}).get('hz', 65.0))
         self.emotion = emotion_lib.EmotionV2(
             policy, hz=hz, tau=max(1, int(10 * hz) // self.FEEL_EVERY),
-            arousal=cfg.get('arousal', 'pearce_hall'),
+            arousal=cfg.get('arousal', 'pearce_hall_now'),
             horizon=int(cfg.get('empower_steps', 16)), every=0,
             efference=bool(cfg.get('efference', False)),
             empower_extra=tuple(cfg.get('empower_extra') or ()),
