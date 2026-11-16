@@ -658,6 +658,16 @@ similar real holds score 277-298. Archived.
 at 0.98M, sustained 1.25M (x2: 293, 0.74M; cosine rule: 277 / 293, 0.30M). The squared-error test
 reaches the same level and starts later at both multipliers. Archived.
 
+### h0454-h0455: manager-chosen length with real switch points (2026-11-16 18:50, array 4827526)
+
+User's hypothesis: the duration-head arms fail because their replay bias goes the OTHER way. On
+replay the duration head's most likely value is used (holds ~2 steps at 1..8, ~12 at 1..32) while
+the real agent samples (4-5 and 15-18 steps), so the replay critic sees holds SHORTER than real;
+for reach it was longer. h0454: `goal_dur_head goal_dur_head8 goal_hold_realsw`; h0455:
+`goal_dur_head goal_hold_realsw`; pin pad five, seed 0. Compare with h0436 (1 late, scored once at
+1.86M) and h0421 (0 at 2.6M). The combination builds and trains (CPU check).
+`sbatch/goalhold_b11_params.txt`. **Next free number: h0456.**
+
 ### h0453: worker done + real switch points, cap 32, pin pad five seed 1 (2026-11-16 13:25, array 4824840)
 
 Second seed of h0435 (298 late, first score 0.26M), the best cap-32 arm. Takes the slot h0439 freed.
