@@ -681,6 +681,7 @@ class SmartphoneRobot(embodied.Env):
       emotion_model='v2', arousal_mode='pearce_hall_now', arousal_efference=False,
       arousal_eta=0.07, arousal_z_s=60.0, empower_steps=16, empower_extra='',
       empower_s=3.0, dominance_mode='empowerment', evidence_k=0, evidence_s=2.0,
+      feel_every=4,
       catch_reflex=False, catch_tmax=0.5, catch_eps=0.1, catch_steps=4,
       catch_mode='slope', catch_dmax=0.0, catch_offsets='0.25,0.5,1',
       catch_z=0.0, catch_window=650, catch_zlog=False, catch_tmin=0.0,
@@ -1064,6 +1065,7 @@ class SmartphoneRobot(embodied.Env):
     self.dominance_mode = str(dominance_mode)
     self.evidence_k = int(evidence_k)
     self.evidence_s = float(evidence_s)
+    self.feel_every = max(1, int(feel_every))
     # empower_extra '32' (comma-separated): also record the end-point terms
     # of these rollout lengths (analysis only; the rollout runs longer).
     self.empower_extra = [int(x) for x in str(empower_extra).split(',') if x.strip()]
@@ -1245,6 +1247,7 @@ class SmartphoneRobot(embodied.Env):
         arousal_eta=self.arousal_eta, arousal_z_s=self.arousal_z_s,
         empower_s=self.empower_s, dominance=self.dominance_mode,
         evidence_k=self.evidence_k, evidence_s=self.evidence_s,
+        feel_every=self.feel_every,
         reflex=dict(self.reflex),
         body=dict(theta_zero=self.theta_zero, lo=self.bumper_lo,
                   hi=self.bumper_hi, zone=self.pain_zone,

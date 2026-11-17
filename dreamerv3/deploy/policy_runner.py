@@ -460,6 +460,11 @@ class PolicyRunner:
     self.event_signal = settings.get('event_signal') or 'arousal'
     if settings.get('reflex'):
       self.reflex_cfg.update(settings['reflex'])
+    changed = False
+    fe = settings.get('feel_every')
+    if fe is not None and max(1, int(fe)) != self.FEEL_EVERY:
+      self.FEEL_EVERY = max(1, int(fe))
+      changed = True
     cfg = dict(self.emotion_cfg)
     for key, name in (('model', 'model'), ('arousal', 'arousal'),
                       ('empower_steps', 'empower_steps'),
@@ -473,7 +478,7 @@ class PolicyRunner:
                       ('evidence_s', 'evidence_s')):
       if settings.get(key) is not None:
         cfg[name] = settings[key]
-    if cfg != self.emotion_cfg:
+    if cfg != self.emotion_cfg or changed:
       self.emotion_cfg = cfg
       if self.policy is not None:
         with self._emo_lock:

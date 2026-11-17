@@ -150,6 +150,28 @@ balances poorly and can spin a wheel at power-up. See [Flash a base](#flash-a-ba
 4. Stop: `tools/robot/stop.sh` (cancels the job or kills the local learner,
    and stops the app). The base stops the wheels 250 ms after commands stop.
 
+**Variants** (environment variables before `train.sh`, flags after the name;
+the header of `tools/robot/train.sh` lists them all):
+
+```bash
+CONFIGS="robot robot_command" tools/robot/train.sh cmd   # command following
+tools/robot/train.sh face --env.robot.weights_emotion True \
+    --env.robot.feel_every 10          # face reacts; emotion update every 10 steps
+BASE_LATER=1 tools/robot/train.sh      # learner first, seat the base after
+PAUSED=1 tools/robot/train.sh          # start paused; begin from /dash
+NO_BASE=1 HZ=100 tools/robot/train.sh linktest   # phone alone
+ROBOT_PROFILE=ias tools/robot/train.sh           # TU Darmstadt Slurm (robot.ias.env)
+```
+
+`--env.robot.feel_every N` (default 4) sets how many control steps pass
+between emotion updates on the phone (the face's pleasure/arousal/dominance);
+it needs weights exported with emotion heads (`weights_emotion True`). A larger
+N is cheaper on the phone but makes the face react more slowly. The setting
+reaches the phone with the pause frames, so no app rebuild is needed, but the
+phone must run a `policy_runner.py` that reads it
+(`tools/robot/dev/push_python.sh dreamerv3/deploy/policy_runner.py`).
+A running training owns the phone: do not install or push to it mid-run.
+
 **Resume** a run with the same rate and configs:
 `RUN_DIR=<its run dir> tools/robot/train.sh resume`.
 
