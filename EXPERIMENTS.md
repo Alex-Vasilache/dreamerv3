@@ -658,6 +658,34 @@ similar real holds score 277-298. Archived.
 at 0.98M, sustained 1.25M (x2: 293, 0.74M; cosine rule: 277 / 293, 0.30M). The squared-error test
 reaches the same level and starts later at both multipliers. Archived.
 
+### h0545-h0691: full six-task panel + surprise + US-SOM, 5 seeds, 4M (2026-11-18, arrays 4831340-4831343)
+
+Replaces arrays 4831311/4831312 (h0459-h0544), cancelled after 27 min because they were submitted
+without `RUN_ENVS=4 DMC_PROPRIO=False` (8 envs, proprio on); h0459-h0466 deleted, h0467-h0544 never
+ran, numbers not reused. Same mistake voids h0456-h0458 (array 4827569 ran with 8 envs). All arrays
+below: `RUN_ENVS=4 DMC_PROPRIO=False`, %8, 4M, rows ordered by seed. Tasks: pin pad four / five / six,
+cartpole swingup, cheetah run, hopper hop; seeds 0-4. h0450-h0452 stay on hold.
+- 4831340 (`goalhold_b15_params.txt`), 57 runs h0545-h0601: reach 0.8 cap 8 (`goal_hold_reach
+  goal_hold_cap8 goal_hold_realsw`) and done cap 32 (`goal_hold_reach goal_hold_done
+  goal_hold_realsw`). Reused (4 envs, checked): h0447 reach 8 pin pad five s0; h0435 / h0453 done 32 s0 / s1.
+- 4831341 (`b16`), 30 runs h0602-h0631: done cap 8, afterany 4831340 (h0458 redone as h0603).
+- 4831342 (`b17`), 30 runs h0632-h0661: best + `mgr_surprise mgr_surprise_k2`, afterany 4831341,
+  held with `scontrol hold`; params start as done 32 and are edited to the best formulation before release.
+- 4831343 (`b18`), 30 runs h0662-h0691: best + surprise + US-SOM (`goal_som_line goal_even`),
+  afterany 4831342; surprise blocks are removed from b18 before it starts if surprise loses.
+Hypothesis: both hold arms at least match V on pin pad four / five and DMC; pin pad six decides.
+**Next free number: h0692.**
+
+### h0456-h0458: fill the real-switch panel on pin pad five (2026-11-16, array 4827569)
+
+Panel decided with the user: pin pad five, everything with `goal_hold_realsw`. Existing real-switch
+runs count as done (cap 8 / 0.8 h0447; cap 32 / 0.8 h0434, h0446; done cap 32 h0435, h0453 pending;
+duration head 1..8 / 1..32 h0454, h0455 pending). Gaps, seed 0, one seed each:
+h0456 `goal_hold_reach goal_hold_frac07 goal_hold_cap8 goal_hold_realsw`; h0457 same at cap 32
+(`goal_hold_frac07`, no cap block); h0458 `goal_hold_reach goal_hold_done goal_hold_cap8
+goal_hold_realsw`. Compare with h0447 (292), h0434 / h0446 (209 / 214), h0435 (298). Surprise waits
+until this panel is read. `sbatch/goalhold_b12_params.txt`. **Next free number: h0459.**
+
 ### h0454-h0455: manager-chosen length with real switch points (2026-11-16 18:50, array 4827526)
 
 User's hypothesis: the duration-head arms fail because their replay bias goes the OTHER way. On
