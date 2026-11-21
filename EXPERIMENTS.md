@@ -683,6 +683,10 @@ Rows start as done cap 32; if done cap 8 (4831341) wins at its halfway read, `go
 before release. Surprise array 4831342 now waits on this one (afterany). User allows stopping any panel
 early once the answer is clear.
 
+**11-22: done cap 8 halfway (15/30), late 3-4M, done 8 vs done 32:** cartpole 830 vs 711, cheetah 641 vs 554,
+hopper 251 vs 188, pin pad four 349 vs 344, five 298 vs 286, six 44 (1/3 seeds) vs 30. Done 8 is at least as good everywhere
+(2-3 seeds). Threshold array 4835447 set to done cap 8 (`goal_hold_cap8` added) and released.
+
 **11-21: array 4831340 done** (late mean 3.5-4M, 5 seeds, reach cap 8 / done cap 32): cartpole 777 / 682,
 cheetah 632 / 555, hopper 239 / 186, pin pad four 345 / 346, five 285 / 287, six 96 (2 of 5 seeds score) / 46 (1 of 5).
 Cap 8 wins on all three DMC tasks and pin pad six, ties on four / five. Done cap 8 (4831341) running.
