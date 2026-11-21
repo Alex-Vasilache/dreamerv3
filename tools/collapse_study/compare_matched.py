@@ -97,6 +97,12 @@ SETS = {
         ('crit', 'V + TCE critic', '#0072B2',
          'h0[3][1-4]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-fromto_dir-tce_hash-tce_critic-pubmatch_s*'),
     ],
+    'goalhold': [   # 11-21: goal-hold panel array A (4831340) vs V; V = e19xx at old worker lr 4e-5
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('V', 'V (fixed 8-step goals)', '#000000', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
+        ('c8', 'V + hold: reach 0.8, cap 8', '#0072B2', 'h0[4-6]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_cap8-goal_hold_realsw-pubmatch_s*'),
+        ('d32', 'V + hold: worker done, cap 32', '#009E73', 'h0[4-6]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_done-goal_hold_realsw-pubmatch_s*'),
+    ],
     'ogdv3': [   # meeting 11-10: the starting point
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('dv3', 'DreamerV3 (flat)', '#000000', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
@@ -247,12 +253,14 @@ MARKERS = {('ogdv3', 'og'): 'o', ('ogdv3', 'dv3'): 's', ('wkrstory', 'og'): 'o',
            ('ogustce', 'og'): 'o', ('ogustce', 'even'): 's', ('ogustce', 'hash'): '^',
            ('tcecrit', 'og'): 'o', ('tcecrit', 'V'): 'D', ('tcecrit', 'hash'): '^', ('tcecrit', 'crit'): 's',
            ('ogdv3v', 'og'): 'o', ('ogdv3v', 'dv3'): 's', ('ogdv3v', 'V'): '^'}
-FINISHED_ONLY = {'ogustce_all'}
-LATE = {'ogdv3': 1e6, 'wkrstory': 1e6, 'ogustce_all': 1e6, 'ogustce': 1e6, 'family': 1e6, 'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
+FINISHED_ONLY = {'ogustce_all', 'goalhold'}
+REF = {'goalhold': 'V'}   # baseline for p and % change (default OG)
+LATE = {'goalhold': 1e6, 'ogdv3': 1e6, 'wkrstory': 1e6, 'ogustce_all': 1e6, 'ogustce': 1e6, 'family': 1e6, 'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
 def main(which):
   arms = SETS[which]
+  ref = REF.get(which, 'og'); refname = 'V' if ref == 'V' else 'OG'
   window = LATE.get(which, WINDOW)
   paths = {(k, t): runs(p.format(t=t)) for k, _, _, p in arms for t, _, _ in TASKS}
   data = {key: [scores(d) for d in v] for key, v in paths.items()}
@@ -291,7 +299,7 @@ def main(which):
       w = [v for v in w if not np.isnan(v)]
       if w:
         norm[key][task] = [v / MAXRET[task] for v in w]
-        p = '' if key == 'og' or len(w) < 2 else f', p={perm_p(norm["og"][task], norm[key][task]):.2f}'
+        p = '' if key == ref or len(w) < 2 or task not in norm[ref] else f', p={perm_p(norm[ref][task], norm[key][task]):.2f}'
         cells.append(f'{np.mean(w):.0f} ± {np.std(w, ddof=1) if len(w) > 1 else 0:.0f} (n={len(w)}{p})')
       else:
         cells.append('-')
@@ -305,16 +313,16 @@ def main(which):
   h, l = axes[0, 0].get_legend_handles_labels()
   labels = []
   for key, label, *_ in arms:
-    tasks = [t for t in norm[key] if t in norm['og']]
+    tasks = [t for t in norm[key] if t in norm[ref]]
     if not tasks:
       labels.append(f'{label}\nno data in a scored window'); continue
     a = np.mean([np.mean(norm[key][t]) for t in tasks])
-    b = np.mean([np.mean(norm['og'][t]) for t in tasks])
+    b = np.mean([np.mean(norm[ref][t]) for t in tasks])
     ntask = '' if len(tasks) == len(TASKS) else f', {len(tasks)} tasks'
     ns = [len(data[key, t]) for t, *_ in TASKS if data[key, t]]
     label = f'{label} ({min(ns)}-{max(ns)} seeds)' if min(ns) != max(ns) else f'{label} ({ns[0]} seed{"s" * (ns[0] > 1)})'
-    labels.append(f'{label}\n{100 * a:.0f}%' if key == 'og' else
-                  f'{label}\n{100 * a:.0f}% ({100 * (a - b) / b:+.0f}% vs OG{ntask})')
+    labels.append(f'{label}\n{100 * a:.0f}%' if key == ref else
+                  f'{label}\n{100 * a:.0f}% ({100 * (a - b) / b:+.0f}% vs {refname}{ntask})')
   order = [l.index(lab) for _, lab, *_ in arms if lab in l]
   leg = fig.legend([h[i] for i in order], labels, loc='lower center', ncol=3, fontsize=12.5,
                    frameon=False, bbox_to_anchor=(0.5, 0.0), handlelength=3.5)
