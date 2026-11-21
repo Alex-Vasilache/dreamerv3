@@ -248,8 +248,6 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
       self.goal_ae_impl = str(getattr(config, 'goal_ae_impl', 'director'))
       if self.goal_reach:
-        assert self.goal_ae_impl == 'director', (
-            'goal_reach_frac is implemented for the Director goal autoencoder')
         self.goal_reach_ceil = goals_mod.ReachCeil(
             rate=float(getattr(config, 'goal_reach_rate', 0.01)),
             name='goal_reach')
@@ -1493,9 +1491,14 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       # encode -> decode goal (mode code, as the offline calibration used).
       # Feeds a Variable and metrics only; no gradient reaches the autoencoder.
       assert not groups, 'goal_reach_frac does not support goal masking'
-      self_code = jax.nn.one_hot(
-          jnp.argmax(sg(goal_dist.dist.logits), -1),
-          goal_dist.dist.logits.shape[-1], dtype=f32)
+      if self.goal_ae_impl == 'vq':
+        # VQ/SOM arms: the encoder's nearest-codebook code (what the actor's
+        # goal decoder sees), not a categorical mode.
+        self_code = self._encode_goal_code(deter_feat, 2)
+      else:
+        self_code = jax.nn.one_hot(
+            jnp.argmax(sg(goal_dist.dist.logits), -1),
+            goal_dist.dist.logits.shape[-1], dtype=f32)
       self_goal = sg(self.goal_dec(self_code, 2).pred())
       self_cos = goal_reward_cosine_max(f32(self_goal), sg(f32(deter_feat)))
       self_mse = ((f32(self_goal) - sg(f32(deter_feat))) ** 2).mean(-1)
