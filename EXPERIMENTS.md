@@ -674,7 +674,14 @@ cartpole swingup, cheetah run, hopper hop; seeds 0-4. h0450-h0452 stay on hold.
 - 4831343 (`b18`), 30 runs h0662-h0691: best + surprise + US-SOM (`goal_som_line goal_even`),
   afterany 4831342; surprise blocks are removed from b18 before it starts if surprise loses.
 Hypothesis: both hold arms at least match V on pin pad four / five and DMC; pin pad six decides.
-**Next free number: h0692.**
+**Next free number: h0708.**
+
+**11-21: h0692-h0707, worker-done threshold (array 4835447, held, `goalhold_b19_params.txt`).** Stop rule
+(1-gamma) V <= cos x (1 + margin); new blocks `goal_hold_done_soon` (+0.25, switch sooner) and
+`goal_hold_done_late` (-0.25, hold longer). Pin pad four / six, cheetah, hopper; seeds 0-1; 16 runs.
+Rows start as done cap 32; if done cap 8 (4831341) wins at its halfway read, `goal_hold_cap8` is added
+before release. Surprise array 4831342 now waits on this one (afterany). User allows stopping any panel
+early once the answer is clear.
 
 **11-21: array 4831340 done** (late mean 3.5-4M, 5 seeds, reach cap 8 / done cap 32): cartpole 777 / 682,
 cheetah 632 / 555, hopper 239 / 186, pin pad four 345 / 346, five 285 / 287, six 96 (2 of 5 seeds score) / 46 (1 of 5).

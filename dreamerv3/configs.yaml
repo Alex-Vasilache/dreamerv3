@@ -1785,6 +1785,11 @@ goal_hold_mse4:
 # Worker "done": optimal stopping on the worker critic, match floor 0.5 x ceiling.
 goal_hold_done:
   agent: {goal_reach_mode: done, goal_reach_frac: 0.5, goal_reach_done_margin: 0.0}
+# Worker-done threshold: stop when (1-gamma) V <= cos x (1 + margin). Positive = switch sooner.
+goal_hold_done_soon:
+  agent: {goal_reach_done_margin: 0.25}
+goal_hold_done_late:
+  agent: {goal_reach_done_margin: -0.25}
 # Price per manager decision (deliberation cost), in summed-reward units.
 goal_hold_cost:
   agent: {goal_switch_cost: 0.05}
