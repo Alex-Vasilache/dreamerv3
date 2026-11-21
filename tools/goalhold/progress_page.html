@@ -157,6 +157,25 @@ __RUNS__
 </section>
 
 <section>
+<span class="k">Real-switch panel</span>
+<h2>Pin pad five with real switch points: reach rules, worker done, manager picks</h2>
+<p>All arms below use the real switch points on replay (<code>goal_hold_realsw</code>). The three missing cells (reach 0.7 at cap 8 and 32, worker done at cap 8) were filled by h0456-h0458; h0453-h0455 finished from the queue. One seed each unless two run names are given. All arms are in one plot: the top panel is the score, the bottom panel how many steps a goal is really kept (V is fixed at 8, so it has no curve there). Colour is the rule and cap (reach cap 8 light blue, reach cap 32 orange, worker done cap 8 green and cap 32 yellow, manager picks 1-8 pink and 1-32 dark blue); dashed lines are the 0.7 threshold, dotted lines the manager-picks arms.</p>
+<figure><img alt="Pin pad five score (top) and real hold length (bottom) for all eight real-switch arms and V in one plot" src="data:image/png;base64,__FIG3__">
+<figcaption>Curves are 0.125M-step bins, averaged over the seeds named in the legend. Smallest colour distance under deuteranopia is 18; solid, dashed and dotted lines and the markers separate arms that share a colour.</figcaption></figure>
+<div class="tw"><table><thead><tr><th>Arm</th><th>Run</th><th>Real hold (steps)</th><th>First score (M steps)</th><th>Late score (3.5-4M)</th></tr></thead><tbody>
+<tr><td>reach 0.8, cap 8</td><td class="r">h0447</td><td>7</td><td>0.27</td><td>292</td></tr>
+<tr><td>reach 0.7, cap 8</td><td class="r">h0456</td><td>5</td><td>0.77</td><td>280</td></tr>
+<tr><td>reach 0.8, cap 32</td><td class="r">h0434, h0446</td><td>11-12</td><td>0.26, 0.83</td><td>209, 214</td></tr>
+<tr><td>reach 0.7, cap 32</td><td class="r">h0457</td><td>6-7</td><td>0.40</td><td>254</td></tr>
+<tr class="hl"><td>worker done, cap 32</td><td class="r">h0435, h0453</td><td>5</td><td>0.26, 0.65</td><td>298, 288</td></tr>
+<tr class="hl"><td>worker done, cap 8</td><td class="r">h0458</td><td>3</td><td>2.43</td><td>298</td></tr>
+<tr><td>manager picks 1-8</td><td class="r">h0454</td><td>5-6</td><td>2.31</td><td>89</td></tr>
+<tr><td>manager picks 1-32</td><td class="r">h0455</td><td>15-18</td><td>never</td><td>0</td></tr>
+</tbody></table></div>
+<p class="take">Reach with cap 8 and worker done reach the same level (280-298), and real switch points do not rescue manager-chosen length. At cap 32 a 0.7 threshold ends holds sooner and scores higher than 0.8 (254 against 209-214), but that is one seed against two, and worker done at cap 8 started scoring late (2.4M). Differences under about 20 points are within what one or two seeds can show.</p>
+</section>
+
+<section>
 <span class="k">5 · Next designs</span>
 <h2>What will be tested after the fix is confirmed</h2>
 <ol class="steps">

@@ -676,6 +676,10 @@ cartpole swingup, cheetah run, hopper hop; seeds 0-4. h0450-h0452 stay on hold.
 Hypothesis: both hold arms at least match V on pin pad four / five and DMC; pin pad six decides.
 **Next free number: h0692.**
 
+**11-21: array 4831340 done** (late mean 3.5-4M, 5 seeds, reach cap 8 / done cap 32): cartpole 777 / 682,
+cheetah 632 / 555, hopper 239 / 186, pin pad four 345 / 346, five 285 / 287, six 96 (2 of 5 seeds score) / 46 (1 of 5).
+Cap 8 wins on all three DMC tasks and pin pad six, ties on four / five. Done cap 8 (4831341) running.
+
 ### h0456-h0458: fill the real-switch panel on pin pad five (2026-11-16, array 4827569)
 
 Panel decided with the user: pin pad five, everything with `goal_hold_realsw`. Existing real-switch

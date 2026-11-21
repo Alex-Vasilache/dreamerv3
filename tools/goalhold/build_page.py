@@ -9,10 +9,13 @@ RUNS = [
   ('h0438-h0443', 'surprise (first and outliers-only version); squared-error reached test', '8', '', 'ok', 'done'),
   ('h0439', 'pin pad six, surprise (outliers), seed 1, continued to 6M', '8', 'first pin pad six score', 'ok', 'done: 215-225 from 4M'),
   ('h0446 / h0447', 'pin pad five, real switch points: cap 32 seed 1 / cap 8', '', '', 'ok', 'done: 214 / 292'),
-  ('h0449', 'cheetah, reach or 32 with real switch points', '32', 'reach or 8: 616', 'run', '3.1M: ~340'),
-  ('h0444 / h0445', 'pin pad six, reach or 8 + transition-count bonus', '8', '', 'run', '3.9M / 1.8M: 0'),
-  ('h0450-h0452', 'pin pad six, surprise (outliers), seeds 2-4, to 6M', '8', 'h0439', 'run', '2.1-2.9M: 0'),
-  ('h0453', 'pin pad five, "done" + real switch points, seed 1', '32', 'h0435 (298)', 'run', 'waiting for a GPU'),
+  ('h0449', 'cheetah, reach or 32 with real switch points', '32', 'reach or 8: 616', 'ok', 'done'),
+  ('h0444 / h0445', 'pin pad six, reach or 8 + transition-count bonus', '8', '', 'ok', 'ended (h0445 20:17 on 11-16)'),
+  ('h0450-h0452', 'pin pad six, surprise (outliers), seeds 2-4, to 6M', '8', 'h0439', 'todo', 'on hold at ~4M, waiting for GPU slots'),
+  ('h0453', 'pin pad five, "done" + real switch points, seed 1', '32', 'h0435 (298)', 'ok', 'done: 288'),
+  ('h0454 / h0455', 'pin pad five, manager picks 1-8 / 1-32 with real switch points', '8 / 32', 'h0436, h0421', 'ok', 'done: 89 / 0'),
+  ('h0456 / h0457', 'pin pad five, reach 0.7, cap 8 / cap 32, real switch points', '8 / 32', 'h0447, h0434', 'ok', 'done: 280 / 254'),
+  ('h0458', 'pin pad five, worker done, cap 8, real switch points', '8', 'h0435', 'ok', 'done: 298'),
 ]
 TASKS = [
   ('Paper section', 'ok', 'done', 'Goal Flexibility: holding a goal until it is reached (15 pages, builds clean)'),
@@ -28,6 +31,7 @@ TASKS = [
 s = open(SRC).read()
 s = s.replace('__FIG__', base64.b64encode(open('/work/DoyaU/vasilache/work/meetings/goalhold/progress.png', 'rb').read()).decode())
 s = s.replace('__FIG2__', base64.b64encode(open('/work/DoyaU/vasilache/work/meetings/goalhold/progress2.png', 'rb').read()).decode())
+s = s.replace('__FIG3__', base64.b64encode(open('/work/DoyaU/vasilache/work/meetings/goalhold/progress3.png', 'rb').read()).decode())
 s = s.replace('__DATE__', datetime.datetime.now().strftime('%d %b %Y, %H:%M JST'))
 s = s.replace('__RUNS__', '\n'.join('<tr><td>%s</td><td class="r">%s</td><td>%s</td><td class="r">%s</td><td><span class="st %s">%s</span></td></tr>' % r for r in RUNS))
 s = s.replace('__TASKS__', '\n'.join('<tr><td>%s</td><td><span class="st %s">%s</span></td><td class="r">%s</td></tr>' % t for t in TASKS))
