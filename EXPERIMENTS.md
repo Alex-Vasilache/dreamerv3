@@ -691,6 +691,13 @@ hopper 251 vs 188, pin pad four 349 vs 344, five 298 vs 286, six 44 (1/3 seeds) 
 hopper 235 / 316 / 248, pin pad four 320 / 319 / 342, six 0 / 4 / 33. Neither margin beats margin 0 (2 seeds;
 hopper "late" is one 415 seed). Keep `goal_reach_done_margin: 0`. Holds: ~3.8 steps with "soon".
 
+**11-23: done cap 8 (4831341) done; best formulation = worker done, cap 8.** Late 3-4M, 5 seeds, % of max over
+6 tasks (vs V 54%): reach cap 8 60%, done cap 8 58%, done 32 53%, OG 50%, flat DreamerV3 53%. Done cap 8 is ahead of
+reach cap 8 on 5 of 6 tasks (pin pad five 301 vs 284, p=0.01 vs V; cartpole 801 vs 775; cheetah 647 vs 629; hopper 272
+vs 232); reach cap 8's overall lead is pin pad six only (2 of 5 seeds score vs 1 of 5, not significant). Chose done
+cap 8: `goal_hold_cap8` added to b17 / b18 rows, surprise array 4831342 released. V = old e19xx (worker lr 4e-5).
+Figure: collapse_figs/misc/goalhold_matched.png (`compare_matched.py goalhold`).
+
 **11-21: array 4831340 done** (late mean 3.5-4M, 5 seeds, reach cap 8 / done cap 32): cartpole 777 / 682,
 cheetah 632 / 555, hopper 239 / 186, pin pad four 345 / 346, five 285 / 287, six 96 (2 of 5 seeds score) / 46 (1 of 5).
 Cap 8 wins on all three DMC tasks and pin pad six, ties on four / five. Done cap 8 (4831341) running.

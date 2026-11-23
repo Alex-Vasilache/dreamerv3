@@ -102,6 +102,7 @@ SETS = {
         ('V', 'V (fixed 8-step goals)', '#000000', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
         ('c8', 'V + hold: reach 0.8, cap 8', '#0072B2', 'h0[4-6]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_cap8-goal_hold_realsw-pubmatch_s*'),
         ('d32', 'V + hold: worker done, cap 32', '#009E73', 'h0[4-6]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_done-goal_hold_realsw-pubmatch_s*'),
+        ('d8', 'V + hold: worker done, cap 8', '#CC79A7', 'h06[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-pubmatch_s*'),
         ('dv3', 'DreamerV3 (flat)', '#999999', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
     ],
     'ogdv3': [   # meeting 11-10: the starting point
