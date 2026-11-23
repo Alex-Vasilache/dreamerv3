@@ -687,6 +687,10 @@ early once the answer is clear.
 hopper 251 vs 188, pin pad four 349 vs 344, five 298 vs 286, six 44 (1/3 seeds) vs 30. Done 8 is at least as good everywhere
 (2-3 seeds). Threshold array 4835447 set to done cap 8 (`goal_hold_cap8` added) and released.
 
+**11-23: threshold array 4835447 done** (late 3-4M, soon +0.25 / late -0.25 / done cap 8): cheetah 625 / 641 / 648,
+hopper 235 / 316 / 248, pin pad four 320 / 319 / 342, six 0 / 4 / 33. Neither margin beats margin 0 (2 seeds;
+hopper "late" is one 415 seed). Keep `goal_reach_done_margin: 0`. Holds: ~3.8 steps with "soon".
+
 **11-21: array 4831340 done** (late mean 3.5-4M, 5 seeds, reach cap 8 / done cap 32): cartpole 777 / 682,
 cheetah 632 / 555, hopper 239 / 186, pin pad four 345 / 346, five 285 / 287, six 96 (2 of 5 seeds score) / 46 (1 of 5).
 Cap 8 wins on all three DMC tasks and pin pad six, ties on four / five. Done cap 8 (4831341) running.
