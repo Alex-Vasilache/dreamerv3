@@ -143,10 +143,14 @@ def main():
   ap.add_argument('--from_npz', default=None,
                   help='re-encode an existing <out>.npz instead of rolling out '
                        'again; needs no GPU and no checkpoint')
+  ap.add_argument('--flip', action='store_true',
+                  help='row order goal image (top) | code | observation (bottom)')
   a = ap.parse_args()
+  # The three rows have equal height (each is upscaled to s*H); flip reverses them.
+  flip = (lambda x: np.concatenate(np.split(x, 3, axis=1)[::-1], axis=1)) if a.flip else (lambda x: x)
 
   if a.from_npz:
-    arr = np.load(a.from_npz)['frames']
+    arr = flip(np.load(a.from_npz)['frames'])
     out = pathlib.Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     print('re-encoded', write_mp4(arr, out, a.fps), '<-', a.from_npz)
@@ -163,7 +167,7 @@ def main():
       print('   ', k)
     raise SystemExit('mask_viz_image not produced -- see keys above')
 
-  arr = np.stack(frames)
+  arr = flip(np.stack(frames))
   print(f'{len(arr)} frames of {arr.shape[1:]}, episode scores: '
         f'{["%.1f" % s for s in scores]}')
   out = pathlib.Path(a.out)
