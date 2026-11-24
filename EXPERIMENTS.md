@@ -2731,3 +2731,5 @@ Getting under 24 h therefore requires changing something that *is* a parameter
 (train_ratio, batch, imag_length, or the step budget), or splitting one run
 across 2 GPUs --- which does not help throughput here, since the 8-GPU quota
 already runs all 8 seeds concurrently.
+
+- 11-25 surprise array C (4831342, h0632-h0661) done: done cap 8 + surprise = 58% of max vs 58% for done cap 8; no task significant (p >= 0.32). Not worse, so US-SOM array D (4831343) keeps surprise. Plot: collapse_figs/misc/goalsur_matched.png.
