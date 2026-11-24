@@ -199,6 +199,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     self.goal_smdp = self.goal_reach or (
         self.variable_goal_length and self.goal_duration_fixed <= 0
         and bool(getattr(config, 'goal_duration_smdp', False)))
+    self.goal_deadline_frac = float(getattr(config, 'goal_deadline_frac', 0.0))
+    self.goal_deadline = self.goal_deadline_frac > 0.0
+    if self.goal_deadline:
+      assert self.goal_smdp and not self.goal_reach, (
+          'goal_deadline_frac needs the SMDP path with manager-chosen '
+          'durations (goal_hits), not the reached test')
+    self.goal_ceil = self.goal_reach or self.goal_deadline
     if self.goal_reach:
       assert self.variable_goal_length and self.goal_duration_fixed > 0, (
           'goal_reach_frac needs variable_goal_length with goal_duration_fixed '
@@ -247,7 +254,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
     if self.use_hrl:
       self.goal_code_space = elements.Space(np.float32, skill_shape_t, 0.0, 1.0)
       self.goal_ae_impl = str(getattr(config, 'goal_ae_impl', 'director'))
-      if self.goal_reach:
+      if self.goal_ceil:
         self.goal_reach_ceil = goals_mod.ReachCeil(
             rate=float(getattr(config, 'goal_reach_rate', 0.01)),
             name='goal_reach')
@@ -1486,7 +1493,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         raise NotImplementedError(goal_rec_agg)
       goal_base_loss = goal_rec_loss
     goal_dist = _head_inner(encoded_goal)
-    if self.goal_reach:
+    if self.goal_ceil:
       # Running ceiling for the reached test: how well a state matches its own
       # encode -> decode goal (mode code, as the offline calibration used).
       # Feeds a Variable and metrics only; no gradient reaches the autoencoder.
@@ -2224,6 +2231,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         goals_prev = prev(goals)
         skills_prev = jax.tree.map(prev, mgr_skills)
         wkr_goal_rew = self._wkr_goal_reward(goals_prev, imgfeat)
+        if self.goal_deadline:
+          # HiTS: paid only at the deadline (the switch state), 1 if close
+          # enough there; the deadline is terminal for the worker critic.
+          wkr_goal_rew, dl_mets = self._wkr_deadline_reward(
+              wkr_goal_rew, switch_mask)
+          metrics.update({f'goal/imag_{k}': v for k, v in dl_mets.items()})
+          kwargs_wkr.update(boot_zero=f32(switch_mask).at[:, 0].set(0.0))
         # Under the old goal a switch state has no time left (countdown 0).
         cd_prev = jnp.where(f32(switch_mask) > 0.5, 0, img_countdowns)
         feat_goal_prev = self._feat_goal2tensor(
@@ -2398,6 +2412,11 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
                       * vscale_w + voff_w)
         repl_wkr_reset = f32(repl_wkr_switch).at[:, 0].set(0.0)
         repl_wkr_boot = jnp.where(repl_wkr_reset > 0.5, tar_prev, repl_wkr_boot)
+        if self.goal_deadline:
+          repl_wkr_goal_rew, dl_mets = self._wkr_deadline_reward(
+              repl_wkr_goal_rew, repl_wkr_reset)
+          metrics.update({f'goal/repl_{k}': v for k, v in dl_mets.items()})
+          repl_wkr_boot = jnp.where(repl_wkr_reset > 0.5, 0.0, repl_wkr_boot)
 
       # --- 3. Compute Value Losses ---
       # Manager Replay Value Loss (predicts combined return)

@@ -51,6 +51,7 @@ def imag_loss_wkr(
     wkr_actent_perdim=True,
     boot_value=None,
     boot_slowvalue=None,
+    boot_zero=None,
 ):
   """Worker actor-critic losses on imagined trajectories.
 
@@ -97,6 +98,9 @@ def imag_loss_wkr(
   if boot_value is not None:
     boot_head = boot_slowvalue if slowtar else boot_value
     wkr_goal_boot = sg(boot_head.pred() * wkr_goal_vscale + wkr_goal_voffset)
+  if boot_zero is not None:
+    # Terminal hold ends (HiTS deadlines): no bootstrap past them.
+    wkr_goal_boot = wkr_goal_boot * (1.0 - boot_zero)
   wkr_goal_ret = lambda_return(
       last, term, wkr_goal_rew, wkr_goal_tarval, wkr_goal_boot, disc, lam)
 

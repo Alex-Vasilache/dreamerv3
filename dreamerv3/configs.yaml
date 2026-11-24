@@ -477,6 +477,12 @@ defaults:
     goal_reach_mode: cos
     goal_reach_mse_mult: 2.0
     goal_reach_done_margin: 0.0
+    # HiTS deadline reward (Guertler et al. 2021), 2026-11-25. >0: the worker is
+    # paid ONLY at the step its hold ends (the manager-chosen deadline), 1 if
+    # cos_max(goal, state) >= goal_deadline_frac x the running ceiling there,
+    # else 0; the deadline is terminal for the worker critic (no bootstrap).
+    # Needs the SMDP path with manager-chosen durations (block goal_hits).
+    goal_deadline_frac: 0.0
     # Manager-chosen durations (goal_duration_fixed 0) on the SMDP training
     # path of goal_hold_reach: worker return ends at the switch and bootstraps
     # under the old goal, replay manager return discounted per env step.
@@ -1805,6 +1811,21 @@ goal_dur_head:
     mgr_reward_agg: sum
     imag_length: 32
     worker_timed_goals: True
+
+# HiTS timed subgoals (2026-11-25): the manager picks goal + duration 1..8, the
+# worker sees the countdown and is paid only at the deadline if the match there
+# is >= 0.8 x ceiling. Layer on V INSTEAD of goal_hold_reach/done/cap8.
+goal_hits:
+  agent:
+    variable_goal_length: True
+    goal_duration_fixed: 0
+    goal_duration_min: 1
+    goal_duration_max: 8
+    goal_duration_smdp: True
+    mgr_reward_agg: sum
+    imag_length: 16
+    worker_timed_goals: True
+    goal_deadline_frac: 0.8
 
 # Diagnostics for the pin pad drop of goal_hold_reach (2026-11-13); layer after
 # goal_hold_cap8. `noreach`: the reached test never fires (threshold far above

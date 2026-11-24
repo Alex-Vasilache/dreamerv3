@@ -131,6 +131,20 @@ class GoalCodeMixin:
     cos = goal_reward_cosine_max(goal, feat)
     return imag_reward_pad(cos[:, 1:])
 
+  def _wkr_deadline_reward(self, cos_rew, switch):
+    """HiTS deadline reward from the per-step match ``cos_rew`` (B, T).
+
+    1 where a hold ends (``switch``, step 0 excluded) and the match there is
+    >= goal_deadline_frac x the running ceiling, else 0 everywhere."""
+    dl = f32(switch).at[:, 0].set(0.0)
+    tau = self.goal_deadline_frac * self.goal_reach_ceil.read()
+    hit = f32(cos_rew >= tau)
+    n = jnp.maximum(dl.sum(), 1.0)
+    mets = {'deadline_hit': (hit * dl).sum() / n,
+            'deadline_cos': (cos_rew * dl).sum() / n,
+            'deadline_tau': tau}
+    return hit * dl, mets
+
   def _goal_reach_tau(self):
     """Reached threshold on cos_max: ``goal_reach_frac`` x the running ceiling."""
     return self.goal_reach_frac * self.goal_reach_ceil.read()
