@@ -268,7 +268,7 @@ LATE = {'goalhold': 1e6, 'goalsur': 1e6, 'ogdv3': 1e6, 'wkrstory': 1e6, 'ogustce
 
 def main(which):
   arms = SETS[which]
-  ref = REF.get(which, 'og'); refname = 'V' if ref == 'V' else 'OG'
+  ref = REF.get(which, 'og'); refname = {'V': 'V', 'd8': 'done cap 8'}.get(ref, 'OG')
   window = LATE.get(which, WINDOW)
   paths = {(k, t): runs(p.format(t=t)) for k, _, _, p in arms for t, _, _ in TASKS}
   data = {key: [scores(d) for d in v] for key, v in paths.items()}
