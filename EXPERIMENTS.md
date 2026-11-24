@@ -2733,3 +2733,4 @@ across 2 GPUs --- which does not help throughput here, since the 8-GPU quota
 already runs all 8 seeds concurrently.
 
 - 11-25 surprise array C (4831342, h0632-h0661) done: done cap 8 + surprise = 58% of max vs 58% for done cap 8; no task significant (p >= 0.32). Not worse, so US-SOM array D (4831343) keeps surprise. Plot: collapse_figs/misc/goalsur_matched.png.
+- 11-25 h0708-h0737 (array 4837421, params sbatch/goalhold_b20_params.txt): V + US-SOM + hold worker done cap 8, NO surprise, 6 tasks x 5 seeds, 4 envs, proprio off. Pairs with D (h0662-h0691, same + surprise) to isolate surprise under US-SOM. Shares the 8 A100 slots with D.
