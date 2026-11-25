@@ -123,7 +123,7 @@ SETS = {
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('V', 'V (fixed 8-step goals)', '#000000', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
         ('d8', 'V + hold: worker done, cap 8', '#CC79A7', 'h06[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-pubmatch_s*'),
-        ('hits', 'V + timed goals (HiTS)', '#D55E00', 'h07[3-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hits-goal_hold_realsw-pubmatch_s*'),
+        ('hits', 'timed goals, graded (HiTS-cos)', '#D55E00', 'h07[6-9]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3*goal_hits-goal_hits_cos-goal_hold_realsw-pubmatch_s*'),
         ('dv3', 'DreamerV3 (flat)', '#999999', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
     ],
     'ogdv3': [   # meeting 11-10: the starting point

@@ -483,6 +483,9 @@ defaults:
     # else 0; the deadline is terminal for the worker critic (no bootstrap).
     # Needs the SMDP path with manager-chosen durations (block goal_hits).
     goal_deadline_frac: 0.0
+    # True: pay the match cos_max itself at the deadline (graded) instead of
+    # the 0/1 threshold test (h0738-h0767 showed 0/1 is too sparse: ~1% hits).
+    goal_deadline_graded: False
     # Manager-chosen durations (goal_duration_fixed 0) on the SMDP training
     # path of goal_hold_reach: worker return ends at the switch and bootstraps
     # under the old goal, replay manager return discounted per env step.
@@ -1826,6 +1829,10 @@ goal_hits:
     imag_length: 16
     worker_timed_goals: True
     goal_deadline_frac: 0.8
+
+# Graded deadline reward: cos_max at the deadline, still paid only there.
+goal_hits_cos:
+  agent: {goal_deadline_graded: True}
 
 # Diagnostics for the pin pad drop of goal_hold_reach (2026-11-13); layer after
 # goal_hold_cap8. `noreach`: the reached test never fires (threshold far above

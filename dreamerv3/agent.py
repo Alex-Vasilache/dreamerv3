@@ -201,6 +201,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         and bool(getattr(config, 'goal_duration_smdp', False)))
     self.goal_deadline_frac = float(getattr(config, 'goal_deadline_frac', 0.0))
     self.goal_deadline = self.goal_deadline_frac > 0.0
+    self.goal_deadline_graded = bool(getattr(config, 'goal_deadline_graded', False))
     if self.goal_deadline:
       assert self.goal_smdp and not self.goal_reach, (
           'goal_deadline_frac needs the SMDP path with manager-chosen '

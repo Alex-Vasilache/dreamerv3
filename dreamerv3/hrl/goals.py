@@ -143,6 +143,8 @@ class GoalCodeMixin:
     mets = {'deadline_hit': (hit * dl).sum() / n,
             'deadline_cos': (cos_rew * dl).sum() / n,
             'deadline_tau': tau}
+    if getattr(self, 'goal_deadline_graded', False):
+      return cos_rew * dl, mets
     return hit * dl, mets
 
   def _goal_reach_tau(self):
