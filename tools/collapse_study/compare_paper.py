@@ -20,6 +20,12 @@ LO, HI = 3.5e6, 4.0e6
 arms = [a for a in SETS['ussom'] if a[0] in ('og', 'dv3', 'us')]
 arms = [a for k in ('og', 'dv3', 'us') for a in arms if a[0] == k]
 
+# colour + dash + marker per arm (Okabe-Ito; black / orange / grey / blue stay apart under deuteranopia)
+LOOK = {'og': ('#E69F00', (0, (6, 2, 1.5, 2)), 'o'), 'dv3': ('#7F7F7F', (0, (5, 2.5)), 's'), 'us': ('#0072B2', '-', None)}
+LABEL = {'og': 'Director (our reimplementation)', 'dv3': 'DreamerV3', 'us': 'done cap 8 + surprise + US-SOM'}
+arms = [(k, LABEL[k], c, p) for k, _, c, p in arms]
+
+
 def paper(task):
   f = 'fig5_pinpad.csv' if task.startswith('pinpad') else 'figJ1_control_suite.csv'
   r = [row for row in csv.DictReader(open(f'{PUB}/{f}')) if row['figure_panel'] == PUBNAME[task]]
@@ -31,8 +37,8 @@ rows, norm = [], {k: [] for k in ['paper'] + [a[0] for a in arms]}
 for ax, (task, title, _) in zip(axes.ravel(), TASKS):
   p = paper(task); g = np.linspace(LO, HI, 11)
   pm, psd = np.interp(g, p[:, 0], p[:, 1]).mean(), np.interp(g, p[:, 0], (p[:, 3] - p[:, 2]) / 2).mean()
-  ax.fill_between(p[:, 0] / 1e6, p[:, 2], p[:, 3], color='#56B4E9', lw=0, alpha=0.18)
-  ax.plot(p[:, 0] / 1e6, p[:, 1], color='#56B4E9', lw=2.4, ls='-.', label='Director (paper)')
+  ax.fill_between(p[:, 0] / 1e6, p[:, 2], p[:, 3], color='#000000', lw=0, alpha=0.08)
+  ax.plot(p[:, 0] / 1e6, p[:, 1], color='#000000', lw=2.6, ls=(0, (1, 1.5)), label='Director (paper)')
   cells = [f'{pm:.0f} ± {psd:.0f}']; norm['paper'].append(pm / MAXRET[task]); ref = None
   for key, label, color, pat in arms:
     seeds = [a for a in (scores(d) for d in runs(pat.format(t=task))) if len(a) and a[:, 0].max() >= FULL]
@@ -40,8 +46,9 @@ for ax, (task, title, _) in zip(axes.ravel(), TASKS):
     st = np.stack([binned(a) for a in seeds])
     with np.errstate(all='ignore'):
       m = np.nanmean(st, 0); sd = np.nanstd(st, 0, ddof=1)
+    color, ls, mk = LOOK[key]
     ax.fill_between(x, m - sd, m + sd, color=color, lw=0, alpha=0.13)
-    ax.plot(x, m, color=color, lw=2.4, ls={'og': ':', 'dv3': '--'}.get(key, '-'), label=label)
+    ax.plot(x, m, color=color, lw=2.6, ls=ls, marker=mk, markevery=6, ms=7, mec='white', mew=0.8, label=label)
     w = np.array([a[(a[:, 0] >= LO) & (a[:, 0] < HI), 1].mean() for a in seeds])
     norm[key].append(w.mean() / MAXRET[task])
     if key == 'og': ref = w
