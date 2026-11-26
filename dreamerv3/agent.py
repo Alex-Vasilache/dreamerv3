@@ -207,6 +207,17 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           'goal_deadline_frac needs the SMDP path with manager-chosen '
           'durations (goal_hits), not the reached test')
     self.goal_ceil = self.goal_reach or self.goal_deadline
+    # Manager horizon in env steps on the SMDP path (2026-11-26). 0 = the shared
+    # ``horizon``. The per-step continuation the manager sees is rescaled from
+    # gamma = 1 - 1/horizon to gamma_m = 1 - 1/manager_horizon, so a hold of n
+    # steps is discounted gamma_m^n. manager_horizon 800 makes an 8-step hold
+    # cost 0.99, as one fixed-K Director decision did.
+    mh = float(getattr(config, 'manager_horizon', 0) or 0)
+    self.mgr_con_scale = 1.0
+    if mh > 0:
+      assert self.goal_smdp and config.contdisc, (
+          'manager_horizon needs the SMDP goal-hold path with contdisc')
+      self.mgr_con_scale = (1.0 - 1.0 / mh) / (1.0 - 1.0 / float(config.horizon))
     if self.goal_reach:
       assert self.variable_goal_length and self.goal_duration_fixed > 0, (
           'goal_reach_frac needs variable_goal_length with goal_duration_fixed '
@@ -1918,13 +1929,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
       n_mgr = imgfeat_eff['deter'].shape[1]
       mgr_extr_rew, mgr_expl_rew, mgr_cont, mgr_switch = (
           variable_block_director_tensors(
-              rew_step, con, expl_step, switch_mask, n_mgr,
+              rew_step, jnp.minimum(con * self.mgr_con_scale, 1.0), expl_step, switch_mask, n_mgr,
               agg_mode=self.mgr_reward_agg))
       mgr_novel_rew = None
       if self.mgr_novel:
         # Same pooling as the other two rewards; only the reward channel differs.
         _, mgr_novel_rew, _, _ = variable_block_director_tensors(
-            rew_step, con, novel_step, switch_mask, n_mgr,
+            rew_step, jnp.minimum(con * self.mgr_con_scale, 1.0), novel_step, switch_mask, n_mgr,
             agg_mode=self.mgr_reward_agg)
       if self.mgr_cond_goalcode:
         preedit_eff = {'goal_code': downsample_at_switch_mask(
@@ -2281,6 +2292,7 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
 
       # --- 1. Replay sequence for Manager ---
       repl_con_full = self.con(self.feat2tensor(feat), 2).prob(1)
+      repl_con_mgr = jnp.minimum(repl_con_full * self.mgr_con_scale, 1.0)
       # Real replayed rewards, as in flat v3's ``repl_loss`` -- not the reward
       # head's prediction, which can blur sparse rewards (pinpad). Same
       # alignment as the reward loss: ``rew(feat[t])`` is fit to ``reward[t]``.
@@ -2326,12 +2338,12 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         n_mgr = feat_down['deter'].shape[1]
         repl_mgr_extr_rew, repl_mgr_expl_rew, repl_mgr_cont, valid_mgr = (
             variable_block_director_tensors(
-                repl_rew_full, repl_con_full, repl_expl_full,
+                repl_rew_full, repl_con_mgr, repl_expl_full,
                 repl_switch, n_mgr, agg_mode=self.mgr_reward_agg))
         repl_mgr_novel_rew = None
         if self.mgr_novel:
           _, repl_mgr_novel_rew, _, _ = variable_block_director_tensors(
-              repl_rew_full, repl_con_full, repl_novel_full,
+              repl_rew_full, repl_con_mgr, repl_novel_full,
               repl_switch, n_mgr, agg_mode=self.mgr_reward_agg)
         last_down = downsample_at_switch_mask(
             {'last': last.astype(f32)}, repl_switch)['last']
