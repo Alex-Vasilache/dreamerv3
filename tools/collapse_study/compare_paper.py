@@ -22,7 +22,7 @@ arms = [a for k in ('og', 'dv3', 'us') for a in arms if a[0] == k]
 
 # colour + dash + marker per arm (Okabe-Ito; black / orange / grey / blue stay apart under deuteranopia)
 LOOK = {'og': ('#E69F00', (0, (6, 2, 1.5, 2)), 'o'), 'dv3': ('#7F7F7F', (0, (5, 2.5)), 's'), 'us': ('#0072B2', '-', None)}
-LABEL = {'og': 'Director (our reimplementation)', 'dv3': 'DreamerV3', 'us': 'done cap 8 + surprise + US-SOM'}
+LABEL = {'og': 'Director (DreamerV3 backbone)', 'dv3': 'DreamerV3', 'us': 'done cap 8 + surprise + US-SOM'}
 arms = [(k, LABEL[k], c, p) for k, _, c, p in arms]
 
 
