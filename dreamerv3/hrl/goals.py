@@ -131,6 +131,26 @@ class GoalCodeMixin:
     cos = goal_reward_cosine_max(goal, feat)
     return imag_reward_pad(cos[:, 1:])
 
+  def _wkr_shaped_reward(self, goals, imgfeat):
+    """Potential-based shaping of the worker goal reward (2026-11-28).
+
+    ``goals`` is the goal in force at each step (B, T, D), NOT shifted. The
+    reward for the transition into state t is the change in match to the goal
+    in force when the action was taken: cos(g[t-1], s[t]) - cos(g[t-1], s[t-1]).
+    Within one hold these telescope to cos(g, s_deadline) - cos(g, s_start), so
+    the worker's objective is "be at the goal when the hold ends" (HiTS) while
+    it still gets a signal every step. Pair with a zero bootstrap at switches."""
+    feat = sg(self.feat2deter(imgfeat))
+    goal = sg(goals)
+    groups = getattr(self, 'goal_mask_groups', 0)
+    if groups:
+      keep = goal_mask.group_keep(goal, groups)
+      feat = feat * goal_mask.expand_groups(keep, feat.shape[-1]).astype(feat.dtype)
+    g = goal[:, :-1]
+    after = goal_reward_cosine_max(g, feat[:, 1:])
+    before = goal_reward_cosine_max(g, feat[:, :-1])
+    return imag_reward_pad(after - before)
+
   def _wkr_deadline_reward(self, cos_rew, switch):
     """HiTS deadline reward from the per-step match ``cos_rew`` (B, T).
 

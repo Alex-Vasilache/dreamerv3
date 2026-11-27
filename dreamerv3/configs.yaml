@@ -486,6 +486,7 @@ defaults:
     # True: pay the match cos_max itself at the deadline (graded) instead of
     # the 0/1 threshold test (h0738-h0767 showed 0/1 is too sparse: ~1% hits).
     goal_deadline_graded: False
+    goal_shaped: False
     # Manager horizon in env steps on the SMDP goal-hold path; 0 = horizon.
     manager_horizon: 0
     # Manager-chosen durations (goal_duration_fixed 0) on the SMDP training
@@ -1831,6 +1832,22 @@ goal_hits:
     imag_length: 16
     worker_timed_goals: True
     goal_deadline_frac: 0.8
+
+# Timed goals with a dense, potential-shaped worker reward (2026-11-28): the
+# manager picks goal + duration 1..8, the worker sees the countdown, no
+# done-at-reach; worker reward cos(g, s_t) - cos(g, s_t-1), zero bootstrap at
+# the deadline, so each hold pays the match at its end (HiTS objective).
+goal_timed_shaped:
+  agent:
+    variable_goal_length: True
+    goal_duration_fixed: 0
+    goal_duration_min: 1
+    goal_duration_max: 8
+    goal_duration_smdp: True
+    mgr_reward_agg: sum
+    imag_length: 16
+    worker_timed_goals: True
+    goal_shaped: True
 
 # Manager looks ~800 env steps ahead (8-step hold discounted 0.99, as one
 # fixed-K Director decision); worker keeps horizon 100. Layer after goal_hold_*.

@@ -207,6 +207,13 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
           'goal_deadline_frac needs the SMDP path with manager-chosen '
           'durations (goal_hits), not the reached test')
     self.goal_ceil = self.goal_reach or self.goal_deadline
+    # Potential-based shaping of the worker reward (2026-11-28): see
+    # _wkr_shaped_reward. Dense, but the hold's total is the match at its end.
+    self.goal_shaped = bool(getattr(config, 'goal_shaped', False))
+    if self.goal_shaped:
+      assert self.goal_smdp and not self.goal_reach and not self.goal_deadline, (
+          'goal_shaped needs the SMDP path with manager-chosen durations '
+          '(goal_timed_shaped), without the reached test or the deadline reward')
     # Manager horizon in env steps on the SMDP path (2026-11-26). 0 = the shared
     # ``horizon``. The per-step continuation the manager sees is rescaled from
     # gamma = 1 - 1/horizon to gamma_m = 1 - 1/manager_horizon, so a hold of n
@@ -2243,6 +2250,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
         goals_prev = prev(goals)
         skills_prev = jax.tree.map(prev, mgr_skills)
         wkr_goal_rew = self._wkr_goal_reward(goals_prev, imgfeat)
+        if self.goal_shaped:
+          wkr_goal_rew = self._wkr_shaped_reward(goals, imgfeat)
+          kwargs_wkr.update(boot_zero=f32(switch_mask).at[:, 0].set(0.0))
         if self.goal_deadline:
           # HiTS: paid only at the deadline (the switch state), 1 if close
           # enough there; the deadline is terminal for the worker critic.
@@ -2425,6 +2435,9 @@ class Agent(ManagerMixin, GoalCodeMixin, ReportMixin, embodied.jax.Agent):
                       * vscale_w + voff_w)
         repl_wkr_reset = f32(repl_wkr_switch).at[:, 0].set(0.0)
         repl_wkr_boot = jnp.where(repl_wkr_reset > 0.5, tar_prev, repl_wkr_boot)
+        if self.goal_shaped:
+          repl_wkr_goal_rew = self._wkr_shaped_reward(repl_goals, feat_wkr)
+          repl_wkr_boot = jnp.where(repl_wkr_reset > 0.5, 0.0, repl_wkr_boot)
         if self.goal_deadline:
           repl_wkr_goal_rew, dl_mets = self._wkr_deadline_reward(
               repl_wkr_goal_rew, repl_wkr_reset)
