@@ -17,14 +17,18 @@ PUB = '/apps/unit/DoyaU/vasilache/apps/code/26_04_HRL-paper/figures/motivation/d
 PUBNAME = {'pinpad_four': 'Pin Pad Four', 'pinpad_five': 'Pin Pad Five', 'pinpad_six': 'Pin Pad Six',
            'dmc_cartpole_swingup': 'Cartpole Swingup', 'dmc_cheetah_run': 'Cheetah Run', 'dmc_hopper_hop': 'Hopper Hop'}
 LO, HI = 3.5e6, 4.0e6
-USN = len(sys.argv) > 1 and sys.argv[1] == 'usn'   # add US-SOM without surprise (control tasks only)
-KEYS = ('og', 'dv3', 'us') + (('usn',) if USN else ())
-arms = [a for k in KEYS for a in SETS['ussom'] if a[0] == k]
-TAG = '_usn' if USN else ''
+# extra arms from argv, e.g. `usn` (US-SOM without surprise, control tasks only), `d8`, `sur`
+EXTRA = tuple(sys.argv[1:])
+KEYS = ('og', 'dv3', 'us') + EXTRA
+POOL = {a[0]: a for a in SETS['goalsur'] + SETS['ussom']}
+arms = [POOL[k] for k in KEYS]
+TAG = ''.join('_' + k for k in EXTRA)
 
 # colour + dash + marker per arm (Okabe-Ito; black / orange / grey / blue stay apart under deuteranopia)
-LOOK = {'og': ('#E69F00', (0, (6, 2, 1.5, 2)), 'o'), 'dv3': ('#7F7F7F', (0, (5, 2.5)), 's'), 'us': ('#0072B2', '-', None), 'usn': ('#D55E00', (0, (2, 1.2)), '^')}
-LABEL = {'og': 'Director (DreamerV3 backbone)', 'dv3': 'DreamerV3', 'us': 'done cap 8 + surprise + US-SOM', 'usn': 'done cap 8 + US-SOM (no surprise)'}
+LOOK = {'og': ('#E69F00', (0, (6, 2, 1.5, 2)), 'o'), 'dv3': ('#7F7F7F', (0, (5, 2.5)), 's'), 'us': ('#0072B2', '-', None), 'usn': ('#D55E00', (0, (2, 1.2)), '^'),
+        'd8': ('#CC79A7', (0, (4, 1.5, 1, 1.5, 1, 1.5)), 'D'), 'sur': ('#56B4E9', '-', 'v')}
+LABEL = {'og': 'Director (DreamerV3 backbone)', 'dv3': 'DreamerV3', 'us': 'done cap 8 + surprise + US-SOM', 'usn': 'done cap 8 + US-SOM (no surprise)',
+         'd8': 'done cap 8', 'sur': 'done cap 8 + surprise'}
 arms = [(k, LABEL[k], c, p) for k, _, c, p in arms]
 
 
@@ -65,7 +69,7 @@ h, l = axes[1, 0].get_legend_handles_labels()   # control tasks carry every arm
 names = ['paper'] + [a[0] for a in arms]
 l = [f'{lab}  ({100 * np.mean(norm[k]):.0f}% of max' + (', control tasks only)' if k == 'usn' else ')') for lab, k in zip(l, names)]
 fig.legend(h, l, loc='lower center', ncol=2, fontsize=14, frameon=False)
-fig.tight_layout(rect=(0, 0.11, 1, 1))
+fig.tight_layout(rect=(0, 0.035 + 0.04 * -(-len(h) // 2), 1, 1))
 out = figdir('misc'); fig.savefig(f'{out}/paper_vs_ours{TAG}.png', dpi=200); fig.savefig(f'{out}/paper_vs_ours{TAG}.pdf')
 hdr = '| task (3.5-4.0M) | Director (paper) | ' + ' | '.join(a[1] for a in arms) + ' |'
 tab = '\n'.join([hdr, '|' + '---|' * (len(arms) + 2)] + rows +
