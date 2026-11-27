@@ -120,6 +120,12 @@ SETS = {
         ('dv3', 'DreamerV3 (flat)', '#999999', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
         ('usn', 'done cap 8 + US-SOM (no surprise)', '#56B4E9', 'h0[78]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-pubmatch_s*'),
     ],
+    'h800': [   # 11-27: array 4841664, done cap 8 with manager horizon 800 (per-step discount scaled so an 8-step hold = 0.99)
+        ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
+        ('d8', 'done cap 8', '#CC79A7', 'h06[0-3]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-pubmatch_s*'),
+        ('h8', 'done cap 8 + manager horizon 800', '#0072B2', 'h08[4-7]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-mgr_h800-pubmatch_s*'),
+        ('dv3', 'DreamerV3 (flat)', '#999999', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
+    ],
     'hits': [   # 11-25: array 4837438 HiTS timed goals on V
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('V', 'V (fixed 8-step goals)', '#000000', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
@@ -269,7 +275,7 @@ def window_mean(a, lo, hi):
 
 
 # Line style as a second cue besides colour (reference arms).
-STYLE = {('ussom', 'dv3'): '--', ('ussom', 'og'): ':', ('hits', 'dv3'): '--', ('hits', 'og'): ':', ('goalhold', 'dv3'): '--', ('goalsur', 'dv3'): '--', ('goalsur', 'og'): ':', ('goalhold', 'og'): ':', ('wkrstory', 'dv3'): '--', ('wkrstory', 'R'): '-.', ('family', 'og'): ':', ('family', 'V'): '-', ('family', 'even'): '-.', ('family', 'ft'): (0, (8, 3)), ('family', 'hash'): '--', ('family', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
+STYLE = {('h800', 'dv3'): '--', ('h800', 'og'): ':', ('ussom', 'dv3'): '--', ('ussom', 'og'): ':', ('hits', 'dv3'): '--', ('hits', 'og'): ':', ('goalhold', 'dv3'): '--', ('goalsur', 'dv3'): '--', ('goalsur', 'og'): ':', ('goalhold', 'og'): ':', ('wkrstory', 'dv3'): '--', ('wkrstory', 'R'): '-.', ('family', 'og'): ':', ('family', 'V'): '-', ('family', 'even'): '-.', ('family', 'ft'): (0, (8, 3)), ('family', 'hash'): '--', ('family', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('someven', 'V'): '--', ('someven', 'og'): ':', ('ucbkde', 'V'): '--', ('ucbkde', 'og'): ':', ('ucbtab', 'og'): ':', ('fromto', 'og'): ':', ('tceanneal', 'og'): ':', ('tceanneal', 'fta'): '-.', ('tcegrow', 'og'): ':', ('tcegrow', 'ftg'): '-.', ('somtce', 'og'): ':', ('somtce', 'som'): '--', ('somtce', 'fts'): '-.', ('weekend', 'og'): ':', ('weekend', 'hash'): '-.', ('weekend', 'noexpl'): '--', ('hash4e', 'og'): ':', ('hash4e', 'hash'): '--', ('hash4e', 'h4es'): '-.', ('hash16', 'og'): ':', ('hash16', 'even'): '--', ('hash16', 'hash'): '-.', ('weekend', 'hash4'): (0, (5, 1, 1, 1)), ('final4x12', 'og'): ':', ('final4x12', 'hash'): '--', ('final4x12', 'h4es'): '-.', ('tcekl', 'og'): ':', ('tcekl', 'even'): '-.', ('tcekl', 'kl10x4'): (0, (8, 3)), ('tcekl', 'kl10f'): (0, (6, 2, 1, 2, 1, 2)), ('final4x12', 'even'): (0, (1, 1)), ('tcekl', 'hash'): '--', ('tcekl', 'kl1'): '-.'}
 # Colour-blind check per figure (deuteranopia, OKLab x100): OG/US-SOM/TCE and OG/DV3/V
 # min pair 19.7 -> solid lines + markers; 'family' (6 arms, min 11.0) keeps dash patterns.
 MARKERS = {('ogdv3', 'og'): 'o', ('ogdv3', 'dv3'): 's', ('wkrstory', 'og'): 'o', ('wkrstory', 'ent'): 's', ('wkrstory', 'R'): '^', ('wkrstory', 'V'): 'D',
@@ -278,7 +284,7 @@ MARKERS = {('ogdv3', 'og'): 'o', ('ogdv3', 'dv3'): 's', ('wkrstory', 'og'): 'o',
            ('tcecrit', 'og'): 'o', ('tcecrit', 'V'): 'D', ('tcecrit', 'hash'): '^', ('tcecrit', 'crit'): 's',
            ('ogdv3v', 'og'): 'o', ('ogdv3v', 'dv3'): 's', ('ogdv3v', 'V'): '^'}
 FINISHED_ONLY = {'ogustce_all', 'goalhold', 'goalsur'}
-REF = {'goalhold': 'V', 'goalsur': 'd8', 'ussom': 'sur', 'hits': 'd8'}   # baseline for p and % change (default OG)
+REF = {'h800': 'd8', 'goalhold': 'V', 'goalsur': 'd8', 'ussom': 'sur', 'hits': 'd8'}   # baseline for p and % change (default OG)
 LATE = {'goalhold': 1e6, 'goalsur': 1e6, 'ogdv3': 1e6, 'wkrstory': 1e6, 'ogustce_all': 1e6, 'ogustce': 1e6, 'family': 1e6, 'ogdv3v': 1e6, 'final4x12': 1e6, 'base3': 1e6, 'someven': 1e6, 'ogv': 1e6}   # window length for sets whose runs are all finished
 
 
