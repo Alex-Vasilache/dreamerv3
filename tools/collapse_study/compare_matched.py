@@ -116,7 +116,7 @@ SETS = {
         ('og', 'Director (OG)', '#E69F00', 'e12[3-8]?_{t}_director-director_og-pubmatch_s*'),
         ('V', 'V (fixed 8-step goals)', '#000000', 'e19[1-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-pubmatch_s*'),
         ('sur', 'done cap 8 + surprise', '#0072B2', 'h06[3-6]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-mgr_surprise-mgr_surprise_k2-pubmatch_s*'),
-        ('us', 'done cap 8 + surprise + US-SOM', '#009E73', 'h06[6-9]?_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-mgr_surprise-mgr_surprise_k2-pubmatch_s*'),
+        ('us', 'done cap 8 + surprise + US-SOM', '#009E73', 'h0[68]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-mgr_surprise-mgr_surprise_k2-pubmatch_s*'),
         ('dv3', 'DreamerV3 (flat)', '#999999', 'e12[3-8]?_{t}_dreamerv3-pubmatch_s*'),
         ('usn', 'done cap 8 + US-SOM (no surprise)', '#56B4E9', 'h0[78]??_{t}_director-director_og-wkr_ent_fixed-wkr_v3-goal_som_line-goal_even-goal_hold_reach-goal_hold_done-goal_hold_cap8-goal_hold_realsw-pubmatch_s*'),
     ],
